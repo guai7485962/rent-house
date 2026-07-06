@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export interface Env {
   ASSETS: Fetcher;
+  GEMINI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
 }
 
@@ -65,8 +66,42 @@ function parseResult(text: string): { diary: string; newMemory: { label: string;
   }
 }
 
+/** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出 */
+async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM }] },
+      contents: [{ parts: [{ text: buildPrompt(ctx) }] }],
+      generationConfig: {
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 }, // 關思考,確保輸出、更快更省
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status} ${await res.text()}`);
+  const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  return (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+}
+
+/** Claude(備援,需 Anthropic 額度) */
+async function callClaude(ctx: NarrateCtx, key: string): Promise<string> {
+  const anthropic = new Anthropic({ apiKey: key });
+  const msg = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 500,
+    system: SYSTEM,
+    messages: [{ role: "user", content: buildPrompt(ctx) }],
+  });
+  return msg.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+}
+
 async function handleNarrate(req: Request, env: Env): Promise<Response> {
-  if (!env.ANTHROPIC_API_KEY) return Response.json({ error: "no_key" }, { status: 503 });
+  const provider = env.GEMINI_API_KEY ? "gemini" : env.ANTHROPIC_API_KEY ? "claude" : null;
+  if (!provider) return Response.json({ error: "no_key" }, { status: 503 });
+
   let ctx: NarrateCtx;
   try {
     ctx = (await req.json()) as NarrateCtx;
@@ -75,14 +110,10 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
   }
 
   try {
-    const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-    const msg = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 500,
-      system: SYSTEM,
-      messages: [{ role: "user", content: buildPrompt(ctx) }],
-    });
-    const text = msg.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+    const text =
+      provider === "gemini"
+        ? await callGemini(ctx, env.GEMINI_API_KEY!)
+        : await callClaude(ctx, env.ANTHROPIC_API_KEY!);
     const result = parseResult(text);
     if (!result) return Response.json({ error: "parse_failed", raw: text }, { status: 502 });
     return Response.json(result);

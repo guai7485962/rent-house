@@ -1,0 +1,117 @@
+[
+  {
+    "id": "tenant_chen_engineer",
+    "name": "陳家豪",
+    "occupation": "後端工程師",
+    "bio": "29 歲,新創公司後端工程師。上週在公司樓下撿到一隻流浪橘貓偷偷帶回租屋處,正處於連續加班的崩潰邊緣,靠貓續命。",
+    "coreTags": [
+      {
+        "id": "introvert",
+        "label": "[社恐]",
+        "behaviorHint": "極力避免與房東正面接觸。包裹會堆在門口好幾天才在深夜取回,聽到敲門聲會先靜止不動假裝不在。"
+      },
+      {
+        "id": "workaholic",
+        "label": "[工作狂]",
+        "behaviorHint": "醒著的時間幾乎都在電腦前。會忘記吃飯,外送餐盒堆積。上線 deploy 的日子情緒特別緊繃。"
+      },
+      {
+        "id": "night_owl",
+        "label": "[夜貓子]",
+        "behaviorHint": "凌晨 2~4 點是活動高峰,中午前幾乎不會起床。深夜螢幕光是這個房間的常態。"
+      }
+    ],
+    "memoryTags": [
+      {
+        "id": "stray_cat_adopted",
+        "label": "[偷養浪貓]",
+        "behaviorHint": "橘貓名叫「Bug」。租約禁止養寵物,他一直提心吊膽怕被房東發現。貓叫聲、貓砂袋、突然增加的紙箱都是破綻。",
+        "acquiredAt": "2026-06-28T22:30:00+08:00",
+        "source": "system"
+      },
+      {
+        "id": "crunch_mode",
+        "label": "[連續加班中]",
+        "behaviorHint": "產品下週上線,已連續加班 12 天。回家時間越來越晚,黑眼圈嚴重,開始在沙發上和衣睡著。",
+        "acquiredAt": "2026-06-22T09:00:00+08:00",
+        "source": "system"
+      },
+      {
+        "id": "near_breakdown",
+        "label": "[瀕臨崩潰]",
+        "behaviorHint": "情緒臨界點。可能出現深夜獨自崩潰、對著貓說話、突然大掃除或衝動購物等失常行為。一個小事件就可能引爆。",
+        "acquiredAt": "2026-07-02T03:15:00+08:00",
+        "source": "ai_event"
+      }
+    ],
+    "finance": {
+      "monthlyRent": 14000,
+      "paymentReliability": 75,
+      "monthsOverdue": 0
+    },
+    "stats": {
+      "mood": 32,
+      "stress": 88,
+      "hygiene": 40,
+      "affinity": 55
+    },
+    "preferences": {
+      "tech": 8,
+      "soundproof": 6,
+      "cozy": 4
+    },
+    "visualState": "working_at_desk",
+    "recentSummary": "連續加班第 12 天。昨天凌晨三點才回家,進門第一件事是抱起橘貓 Bug 埋在牠身上很久。外送盒已經堆了五個,垃圾兩天沒倒。今天有一個 deploy,他早上出門前反常地餵了雙倍貓食,像是預感今天會很晚回來。"
+  },
+  {
+    "id": "tenant_lin_asmr",
+    "name": "林小婕",
+    "occupation": "ASMR 實況主",
+    "bio": "25 歲,全職 ASMR 實況主,頻道剛破萬訂閱。生活完全日夜顛倒但異常自律:準時交租、房間一塵不染,只是她的「上班時間」是凌晨十二點到清晨六點。",
+    "coreTags": [
+      {
+        "id": "night_owl",
+        "label": "[夜貓子]",
+        "behaviorHint": "凌晨 0 點到 6 點開直播,白天睡覺。窗簾永遠拉死,作息與整棟樓相反。"
+      },
+      {
+        "id": "sound_sensitive",
+        "label": "[聲音敏感]",
+        "behaviorHint": "職業病:對聲音極度敏感。樓上腳步聲、水管聲、鄰居裝修都會讓她抓狂,可能因噪音問題主動聯絡房東(罕見地正面溝通)。"
+      },
+      {
+        "id": "self_disciplined",
+        "label": "[高度自律]",
+        "behaviorHint": "生活儀式感極強:直播前固定泡茶、擦拭設備、做嗓音熱身。房間永遠整齊,交租永遠提前一天。"
+      }
+    ],
+    "memoryTags": [
+      {
+        "id": "channel_milestone",
+        "label": "[頻道破萬]",
+        "behaviorHint": "上週訂閱破一萬,接到第一筆業配。最近情緒高昂,考慮升級直播設備,可能會添購大型器材(搬運聲響、包裹暴增)。",
+        "acquiredAt": "2026-06-26T05:40:00+08:00",
+        "source": "ai_event"
+      }
+    ],
+    "finance": {
+      "monthlyRent": 16500,
+      "paymentReliability": 100,
+      "monthsOverdue": 0
+    },
+    "stats": {
+      "mood": 78,
+      "stress": 35,
+      "hygiene": 92,
+      "affinity": 70
+    },
+    "preferences": {
+      "soundproof": 10,
+      "cozy": 7,
+      "style": 5,
+      "noise": -10
+    },
+    "visualState": "sleeping_on_bed",
+    "recentSummary": "頻道破萬後的第一週。昨晚直播到清晨六點,狀態很好,下播後罕見地開了一瓶氣泡酒自己慶祝。白天睡覺時被隔壁棟裝修聲吵醒兩次,睡眠品質變差,已在筆記本上寫下「跟房東反映?」但還在猶豫。"
+  }
+]

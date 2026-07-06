@@ -1,0 +1,274 @@
+/**
+ * 《房東監視中》(AI Landlord Observer) — 核心資料結構
+ * Phase 1:系統底層定義
+ *
+ * 設計原則:
+ * 1. AI 只輸出「狀態標籤」,前端讀取標籤切換圖層 —— 不依賴即時生成圖像。
+ * 2. 所有 AI 回傳內容必須嚴格符合 AIEventResponse,由 API 的
+ *    structured output (JSON Schema) 強制保證格式。
+ * 3. 數值變化一律用「增量 (delta)」而非絕對值,防止 AI 覆寫遊戲經濟。
+ */
+
+// ---------------------------------------------------------------------------
+// 視覺狀態標籤 (Visual State Tags)
+// ---------------------------------------------------------------------------
+
+/**
+ * 租客可能出現的視覺狀態。前端為每個狀態準備對應立繪/動畫圖層。
+ * ⚠️ 刻意控制在 15 種以內以壓低美術成本;新增狀態 = 新增美術資源,
+ *    必須同步更新此列表與 AI prompt 中的允許清單。
+ */
+export const TENANT_VISUAL_STATES = [
+  "idle",               // 發呆/站立(預設)
+  "sleeping_on_bed",    // 床上睡覺
+  "sleeping_on_couch",  // 沙發上睡死(加班暗示)
+  "working_at_desk",    // 在桌前工作/打電腦
+  "gaming",             // 打電動
+  "streaming",          // 開直播(實況主專用姿勢)
+  "eating",             // 吃東西
+  "cooking",            // 下廚
+  "playing_with_cat",   // 逗貓
+  "crying",             // 情緒崩潰
+  "pacing",             // 焦慮踱步
+  "away",               // 不在房間(上班/外出)
+  "showering",          // 浴室(顯示浴室門關+蒸氣)
+  "cleaning",           // 打掃
+  "talking_on_phone",   // 講電話
+  // ─ 由家具目錄解鎖的新狀態(sprite 待與房間細看一起補) ─
+  "watching_tv",        // 看電視(電視/遊戲主機)
+  "eating_at_table",    // 在餐桌用餐(交誼廳)
+  "reading",            // 看書(書架)
+  "painting",           // 畫畫(畫架)
+  "using_appliance",    // 使用家電(咖啡機/洗衣機)
+] as const;
+
+export type TenantVisualState = (typeof TENANT_VISUAL_STATES)[number];
+
+/**
+ * 房間內「非租客」的視覺小物件狀態(疊加圖層,可同時多個)。
+ * 例:貓在桌上、外送袋堆積、垃圾滿出來。
+ */
+export const ROOM_PROP_STATES = [
+  "cat_on_table",
+  "cat_sleeping_on_couch",
+  "cat_hiding",
+  "delivery_boxes_piled",
+  "trash_overflow",
+  "laundry_piled",
+  "lights_off",
+  "curtains_closed",
+  "mic_setup_active",   // 直播麥克風亮燈
+  "screen_glow",        // 深夜螢幕光
+] as const;
+
+export type RoomPropState = (typeof ROOM_PROP_STATES)[number];
+
+// ---------------------------------------------------------------------------
+// 標籤系統 (Tag System)
+// ---------------------------------------------------------------------------
+
+/** 固化核心性格標籤 —— 入住時決定,遊戲中不變 */
+export interface CoreTag {
+  id: string;           // 例 "introvert"
+  label: string;        // 例 "[社恐]"
+  /** 給 AI 的行為指引,會注入 prompt */
+  behaviorHint: string; // 例 "避免與房東正面接觸,包裹堆在門口三天才拿"
+}
+
+/** 動態累積記憶標籤 —— 由劇情事件與房東抉擇產生/移除 */
+export interface MemoryTag {
+  id: string;           // 例 "stray_cat_adopted"
+  label: string;        // 例 "[偷養浪貓]"
+  behaviorHint: string;
+  /** 遊戲內時間戳,用於劇情連貫(例:失戀第 3 天 vs 第 30 天寫法不同) */
+  acquiredAt: string;   // ISO 8601
+  /** 來源:AI 劇情產生 / 房東抉擇 / 系統事件 */
+  source: "ai_event" | "landlord_decision" | "system";
+}
+
+// ---------------------------------------------------------------------------
+// 房間環境屬性 (Room Environment)
+// ---------------------------------------------------------------------------
+
+/** 家具累積出的房間屬性軸 —— 用來吸引對應偏好的租客 */
+export const ROOM_ATTRIBUTES = [
+  "tech",        // 科技感
+  "cozy",        // 療癒感
+  "noise",       // 噪音(可為負面)
+  "soundproof",  // 隔音
+  "storage",     // 收納
+  "style",       // 品味/美感
+] as const;
+
+export type RoomAttribute = (typeof ROOM_ATTRIBUTES)[number];
+
+export interface RoomState {
+  id: string;
+  /** 各屬性累積值(由擺放的家具加總) */
+  attributes: Partial<Record<RoomAttribute, number>>;
+  /** 0~100,受租客習性與事件影響 */
+  cleanliness: number;
+  /** 目前擺放的家具 id 列表 */
+  furnitureIds: string[];
+  /** 目前疊加的視覺小物件 */
+  activeProps: RoomPropState[];
+}
+
+// ---------------------------------------------------------------------------
+// 租客 (Tenant)
+// ---------------------------------------------------------------------------
+
+export interface Tenant {
+  id: string;
+  name: string;
+  occupation: string;
+  /** 一句話人物側寫,注入 prompt 用 */
+  bio: string;
+
+  coreTags: CoreTag[];
+  memoryTags: MemoryTag[];
+
+  /** 付租能力與行為 */
+  finance: {
+    monthlyRent: number;
+    /** 0~100:100 = 永遠準時,低於 40 開始出現拖欠劇情 */
+    paymentReliability: number;
+    /** 目前積欠月數 */
+    monthsOverdue: number;
+  };
+
+  /** 遊戲數值(0~100)。AI 只能透過 delta 修改 */
+  stats: {
+    mood: number;        // 心情
+    stress: number;      // 壓力
+    hygiene: number;     // 個人整潔習慣(影響房間 cleanliness 變化速度)
+    affinity: number;    // 對房東好感度
+  };
+
+  /** 入住偏好:與 RoomState.attributes 匹配計算吸引力 */
+  preferences: Partial<Record<RoomAttribute, number>>;
+
+  /** 當前視覺狀態(前端讀這個畫圖) */
+  visualState: TenantVisualState;
+
+  /**
+   * 近期劇情摘要(50~150 字)。每次 AI 生成後由 AI 回寫更新,
+   * 下次生成時注入 prompt —— 這是跨批次劇情連貫性的關鍵。
+   */
+  recentSummary: string;
+}
+
+// ---------------------------------------------------------------------------
+// 家具 (Furniture)
+// ---------------------------------------------------------------------------
+
+export interface Furniture {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  /** 對房間屬性的加成(可為負,例:電競桌 noise +10) */
+  attributes: Partial<Record<RoomAttribute, number>>;
+  /** 擺放格位類型,前端佈局用 */
+  slot: "floor_large" | "floor_small" | "wall" | "desk" | "ceiling";
+  /** 前端圖層資源 id */
+  visualLayerId: string;
+  /**
+   * 專屬互動解鎖:租客帶有指定標籤時,AI 才被允許生成
+   * 這件家具的專屬劇情(例:有 [偷養浪貓] 才會出現「貓抓爛沙發」)。
+   */
+  unlockInteractions: FurnitureInteraction[];
+}
+
+export interface FurnitureInteraction {
+  id: string;
+  /** 需要租客具備的標籤 id(core 或 memory 皆可),OR 邏輯 */
+  requiredTagIds: string[];
+  /** 給 AI 的劇情素材提示 */
+  promptHint: string;
+  /** 觸發時建議的視覺狀態 */
+  suggestedVisualState?: TenantVisualState;
+  suggestedProps?: RoomPropState[];
+}
+
+// ---------------------------------------------------------------------------
+// AI 回傳介面 (AIEventResponse) —— AI 必須嚴格遵守
+// ---------------------------------------------------------------------------
+
+/** 單條觀察日誌 */
+export interface ObservationLog {
+  /** 遊戲內時間 "HH:mm" */
+  time: string;
+  /** 日誌正文,監視器旁白視角,繁體中文,30~80 字 */
+  text: string;
+  /** 這條日誌發生時租客的視覺狀態(前端可做時間軸回放) */
+  visualState: TenantVisualState;
+  /** minor: 日常 / notable: 值得注意 / major: 劇情轉折 */
+  importance: "minor" | "notable" | "major";
+}
+
+/** 突發抉擇事件(需要房東做決定) */
+export interface DecisionEvent {
+  id: string;
+  title: string;        // 例 "牆壁裡傳來貓叫聲?"
+  description: string;  // 事件描述,80~150 字
+  choices: DecisionChoice[]; // 固定 2~3 個選項
+}
+
+export interface DecisionChoice {
+  id: string;           // 例 "confront" | "ignore" | "leave_cat_food"
+  label: string;        // 按鈕文字,10 字以內
+  /** 給玩家的後果暗示(模糊即可,保留懸念) */
+  hint: string;
+}
+
+/** 數值增量:AI 只能給 -20 ~ +20 的變化量 */
+export interface StatDeltas {
+  mood?: number;
+  stress?: number;
+  affinity?: number;
+  cleanliness?: number; // 作用於房間
+}
+
+/** 標籤變更 */
+export interface MemoryTagChange {
+  add: Array<{
+    id: string;
+    label: string;
+    behaviorHint: string;
+  }>;
+  /** 要移除的 memory tag id */
+  remove: string[];
+}
+
+/**
+ * ✦ AI 引擎每次生成的完整回傳 ✦
+ * 後端呼叫 Claude API 時以 output_config.format (JSON Schema)
+ * 強制此結構 —— 見 prompts/ai-engine-prompt.md
+ */
+export interface AIEventResponse {
+  /** 這段掛機時間內的觀察日誌,按時間排序,3~6 條 */
+  logs: ObservationLog[];
+  /** 生成結束時租客的最終視覺狀態(前端主畫面顯示用) */
+  finalVisualState: TenantVisualState;
+  /** 房間疊加小物件(完整替換 activeProps) */
+  roomProps: RoomPropState[];
+  /** 數值增量 */
+  statDeltas: StatDeltas;
+  /** 記憶標籤變更 */
+  memoryTagChanges: MemoryTagChange;
+  /** 突發抉擇事件;無事件時為 null(大多數批次應為 null) */
+  pendingEvent: DecisionEvent | null;
+  /** 回寫 Tenant.recentSummary 的新摘要(50~150 字) */
+  updatedSummary: string;
+}
+
+// ---------------------------------------------------------------------------
+// 房東抉擇的結果回傳(玩家做出選擇後,下一批生成的輸入)
+// ---------------------------------------------------------------------------
+
+export interface LandlordDecision {
+  eventId: string;
+  choiceId: string;
+  decidedAt: string; // ISO 8601 遊戲內時間
+}

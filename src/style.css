@@ -1,0 +1,52 @@
+:root {
+  --bg: #16141f;
+  --panel: #221f2e;
+  --panel-2: #2a2738;
+  --line: #37334a;
+  --text: #eae6f2;
+  --text-dim: #9a93b0;
+  --accent: #ffb45e;
+  --accent-2: #8f7bff;
+  --good: #6fd08c;
+  --bad: #e8657a;
+  --radius: 14px;
+  font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #0d0c12;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  max-width: 430px;
+  height: 100vh;
+  height: 100dvh; /* 行動裝置動態視窗高度 */
+  overflow: hidden;
+  margin: 0 auto;
+  background: var(--bg);
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "furn_gaming_desk_pro",
+    "name": "頂級電競桌",
+    "description": "三螢幕支架、RGB 燈條、升降桌面。科技宅的夢想,也是加班的溫床。",
+    "price": 28000,
+    "attributes": {
+      "tech": 9,
+      "style": 3,
+      "noise": 2
+    },
+    "slot": "floor_large",
+    "visualLayerId": "layer_gaming_desk_pro",
+    "unlockInteractions": [
+      {
+        "id": "interact_crunch_allnighter",
+        "requiredTagIds": ["workaholic", "crunch_mode"],
+        "promptHint": "租客在電競桌前連續工作超過 10 小時,RGB 燈從彩色被切成單色白光(他嫌閃)。可生成:趴在桌上睡著、對著螢幕自言自語、深夜敲鍵盤聲被鄰居注意到。",
+        "suggestedVisualState": "working_at_desk",
+        "suggestedProps": ["screen_glow", "delivery_boxes_piled"]
+      },
+      {
+        "id": "interact_cat_on_desk",
+        "requiredTagIds": ["stray_cat_adopted"],
+        "promptHint": "貓跳上電競桌踩鍵盤、坐在螢幕前擋住畫面、把桌上的小物撥到地上。租客一邊崩潰一邊拍照。可能導致工作事故(貓踩到 Enter 送出未完成的訊息)。",
+        "suggestedVisualState": "playing_with_cat",
+        "suggestedProps": ["cat_on_table", "screen_glow"]
+      },
+      {
+        "id": "interact_streaming_upgrade",
+        "requiredTagIds": ["channel_milestone"],
+        "promptHint": "實況主評估把電競桌改造成直播桌:量尺寸、測試燈光角度、試音。",
+        "suggestedVisualState": "streaming",
+        "suggestedProps": ["mic_setup_active"]
+      }
+    ]
+  },
+  {
+    "id": "furn_cozy_sofa_double",
+    "name": "療癒系雙人沙發",
+    "description": "奶茶色布面雙人沙發,深到可以整個人陷進去。附兩顆羊毛抱枕。",
+    "price": 15500,
+    "attributes": {
+      "cozy": 8,
+      "style": 4
+    },
+    "slot": "floor_large",
+    "visualLayerId": "layer_cozy_sofa_double",
+    "unlockInteractions": [
+      {
+        "id": "interact_couch_crash",
+        "requiredTagIds": ["crunch_mode", "near_breakdown"],
+        "promptHint": "加班到極限的租客回家後沒力氣走到床上,和衣倒在沙發上睡死,鞋子只脫了一隻。凌晨被自己的手機鬧鐘(還是昨天的)嚇醒。",
+        "suggestedVisualState": "sleeping_on_couch",
+        "suggestedProps": ["lights_off"]
+      },
+      {
+        "id": "interact_cat_claims_sofa",
+        "requiredTagIds": ["stray_cat_adopted"],
+        "promptHint": "橘貓宣示沙發主權:在羊毛抱枕上踩奶、留下抓痕、睡成一攤液體。抓痕是房東查房時可能發現的破綻(可觸發抉擇事件)。",
+        "suggestedVisualState": "playing_with_cat",
+        "suggestedProps": ["cat_sleeping_on_couch"]
+      },
+      {
+        "id": "interact_asmr_reading_corner",
+        "requiredTagIds": ["self_disciplined"],
+        "promptHint": "自律型租客把沙發當成下播後的緩衝儀式空間:泡茶、裹毯子、看紙本書半小時才去睡。",
+        "suggestedVisualState": "idle",
+        "suggestedProps": ["curtains_closed"]
+      }
+    ]
+  }
+]

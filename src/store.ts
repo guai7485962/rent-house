@@ -1,0 +1,494 @@
+/**
+ * 遊戲狀態管理 —— 異步掛機觀察模式。
+ *
+ * - 遊戲時間跟現實掛鉤(8×:現實 1 天 = 遊戲 8 天),關掉再開自動補進度。
+ * - 每遊戲小時:每租客依「作息 + 偏離」上狀態,由 generateHourly 產生日誌。
+ * - 未讀模型:每租客記 lastSeenMs;進房 markSeen。
+ * - localStorage 存檔。
+ */
+import { computed, reactive } from "vue";
+import type {
+  DecisionEvent,
+  RoomPropState,
+  StatDeltas,
+  Tenant,
+  TenantVisualState,
+} from "./types";
+import tenantsJson from "../data/tenants.json";
+import {
+  MAX_CATCHUP_HOURS,
+  MS_PER_GAME_HOUR,
+  currentGameMs,
+} from "./sim/clock";
+import { routineSlot, resolveTarget, registerRoutine, type Role } from "./sim/routine";
+import { generateHourly } from "./sim/generate";
+import { TENANT_SPOTS } from "./floor/map";
+import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
+import { getDef } from "./furniture/catalog";
+import type { Applicant } from "./sim/recruit";
+import type { Tile } from "./floor/pathfind";
+
+const SAVE_KEY = "rent_house_save_v1";
+const GAME_START = new Date("2026-07-05T22:00:00+08:00");
+const LOG_CAP = 60;
+
+export interface LogEntry {
+  gameMs: number;
+  timeLabel: string; // "7/5 02:00"
+  text: string;
+  visualState: TenantVisualState;
+  importance: "minor" | "notable" | "major";
+  decisionNote?: string;
+}
+
+export interface TenantRuntime {
+  tenant: Tenant;
+  roomNo: string;
+  cleanliness: number;
+  roomProps: RoomPropState[];
+  log: LogEntry[];
+  lastSeenMs: number;
+  pendingEvent: DecisionEvent | null;
+  decisions: string[];
+  /** 當前活動的目標家具互動格(給 agent 走過去);null=外出/原地 */
+  targetTile: Tile | null;
+  /** 動態入住租客的作息原型(存檔重載時重新登記作息用) */
+  archetypeKey?: string;
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const clampDelta = (d: number | undefined) => clamp(d ?? 0, -20, 20);
+const tenants = tenantsJson as unknown as Tenant[];
+
+function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, props: RoomPropState[]): TenantRuntime {
+  return reactive({
+    tenant: JSON.parse(JSON.stringify(t)) as Tenant, // 深拷貝,避免改到 import 的原始資料
+    roomNo,
+    cleanliness,
+    roomProps: props,
+    log: [] as LogEntry[],
+    lastSeenMs: GAME_START.getTime(),
+    pendingEvent: null,
+    decisions: [] as string[],
+    targetTile: null as Tile | null,
+  });
+}
+
+export const state = reactive({
+  realAnchorMs: Date.now(),
+  gameAnchorMs: GAME_START.getTime(),
+  gameMs: GAME_START.getTime(),
+  money: 52000,
+  activeId: "tenant_chen_engineer",
+  /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
+  pendingPlace: null as string | null,
+  /** 房間 → 租客 id(動態,招租入住會新增) */
+  occupancy: {
+    r301: "tenant_chen_engineer",
+    r302: "tenant_lin_asmr",
+  } as Record<string, string>,
+  runtimes: {
+    tenant_chen_engineer: makeRuntime(tenants[0], "301", 35, []),
+    tenant_lin_asmr: makeRuntime(tenants[1], "302", 92, []),
+  } as Record<string, TenantRuntime>,
+});
+
+export function isVacant(roomId: string): boolean {
+  return !state.occupancy[roomId];
+}
+
+export const activeRuntime = computed(() => state.runtimes[state.activeId]);
+export const hasAnyPending = computed(() =>
+  Object.values(state.runtimes).some((r) => r.pendingEvent !== null),
+);
+
+function fmt(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+export const clockLabel = computed(() => fmt(state.gameMs));
+
+/** 某租客未讀日誌數(晚於 lastSeenMs) */
+export function unreadCount(tenantId: string): number {
+  const rt = state.runtimes[tenantId];
+  if (!rt) return 0;
+  return rt.log.filter((e) => e.gameMs > rt.lastSeenMs).length;
+}
+
+/** 進房查看:標記已讀 */
+export function markSeen(tenantId: string) {
+  const rt = state.runtimes[tenantId];
+  if (rt) {
+    rt.lastSeenMs = state.gameMs;
+    save();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 每小時模擬
+// ---------------------------------------------------------------------------
+
+const homeTile = (tenantId: string): Tile => {
+  const s = TENANT_SPOTS.find((x) => x.tenantId === tenantId);
+  if (s) return { c: s.c, r: s.r };
+  const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId)?.[0];
+  const rect = roomId ? roomRect(roomId) : null;
+  if (rect) return { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) };
+  return { c: 7, r: 10 };
+};
+
+/** 作息 + 偏離 → 最終 { state, role, isDeviation } */
+function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualState; role: Role; isDeviation: boolean } {
+  const slot = routineSlot(rt.tenant.id, hour);
+  const stress = rt.tenant.stats.stress;
+  // 壓力偏離:睡不著 / 崩潰
+  if (stress >= 95 && slot.state !== "away") {
+    return { state: "crying", role: "bed", isDeviation: true };
+  }
+  if (stress >= 90 && slot.state === "sleeping_on_bed") {
+    return { state: "pacing", role: "bed", isDeviation: true };
+  }
+  return { state: slot.state, role: slot.role, isDeviation: false };
+}
+
+/** 依狀態衍生房間小物件(給房間細看畫面氛圍) */
+function deriveProps(tenantId: string, st: TenantVisualState, hour: number): RoomPropState[] {
+  const props: RoomPropState[] = [];
+  if (["working_at_desk", "gaming", "streaming"].includes(st)) props.push("screen_glow");
+  if (st === "streaming") props.push("mic_setup_active");
+  if (st === "sleeping_on_bed" && (hour < 6 || hour >= 22)) props.push("lights_off");
+  if (tenantId === "tenant_lin_asmr") props.push("curtains_closed");
+  if (tenantId === "tenant_chen_engineer" && st === "playing_with_cat") props.push("cat_on_table");
+  return props;
+}
+
+function applyStat(rt: TenantRuntime, d: StatDeltas) {
+  const s = rt.tenant.stats;
+  s.mood = clamp(s.mood + clampDelta(d.mood), 0, 100);
+  s.stress = clamp(s.stress + clampDelta(d.stress), 0, 100);
+  s.affinity = clamp(s.affinity + clampDelta(d.affinity), 0, 100);
+  rt.cleanliness = clamp(rt.cleanliness + clampDelta(d.cleanliness), 0, 100);
+}
+
+/** 幫一位租客套用某小時的活動(addLog=false 用於初始定位,不寫日誌) */
+function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
+  const decided = decideState(rt, hour);
+  let st = decided.state;
+  const isDeviation = decided.isDeviation;
+
+  // 目標家具格
+  const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === rt.tenant.id)?.[0] ?? null;
+  if (st === "away") {
+    rt.targetTile = null;
+  } else if (isDeviation) {
+    rt.targetTile = homeTile(rt.tenant.id);
+  } else {
+    const tgt = resolveTarget(decided.role, roomId);
+    if (tgt) {
+      rt.targetTile = tgt.tile;
+    } else {
+      // 房裡缺對應家具、共用區也沒有 → 在自己房間發呆(不闖別人房)
+      st = "idle";
+      rt.targetTile = homeTile(rt.tenant.id);
+    }
+  }
+  rt.tenant.visualState = st;
+  rt.roomProps = deriveProps(rt.tenant.id, st, hour);
+
+  if (!addLog) return;
+  const gen = generateHourly({
+    tenantId: rt.tenant.id,
+    tenantName: rt.tenant.name,
+    hour,
+    timeLabel: fmt(state.gameMs),
+    state: st,
+    isDeviation,
+    recentSummary: rt.tenant.recentSummary,
+  });
+  applyStat(rt, gen.statDeltas);
+  rt.log.push({
+    gameMs: state.gameMs,
+    timeLabel: fmt(state.gameMs),
+    text: gen.logText,
+    visualState: st,
+    importance: gen.importance,
+  });
+  if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
+}
+
+/** 每日收租(遊戲日換日時觸發):日租 = 月租/30,依付租能力與好感調整 */
+function collectRent() {
+  for (const rt of Object.values(state.runtimes)) {
+    const f = rt.tenant.finance;
+    const daily = Math.round(f.monthlyRent / 30);
+    const factor = clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3, 0, 100) / 100;
+    const paid = Math.round(daily * factor);
+    state.money += paid;
+    const full = paid >= daily * 0.95;
+    rt.log.push({
+      gameMs: state.gameMs,
+      timeLabel: fmt(state.gameMs),
+      text: full ? `準時繳清今日房租 $${paid}。` : `今日只繳了部分房租 $${paid},其餘拖欠。`,
+      visualState: rt.tenant.visualState,
+      importance: paid < daily * 0.6 ? "notable" : "minor",
+    });
+    if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
+  }
+}
+
+/** 推進一個遊戲小時 */
+function hourlyTick() {
+  const prevDay = new Date(state.gameMs).getDate();
+  state.gameMs += MS_PER_GAME_HOUR;
+  const d = new Date(state.gameMs);
+  const hour = d.getHours();
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.pendingEvent) continue; // 有待決事件則暫停該租客
+    applyHour(rt, hour, true);
+  }
+  if (d.getDate() !== prevDay) collectRent();
+}
+
+/** 對齊到現在(補進度)。回傳實際補了幾小時 */
+function syncToNow(): number {
+  const target = currentGameMs(state.realAnchorMs, state.gameAnchorMs);
+  let need = Math.floor((target - state.gameMs) / MS_PER_GAME_HOUR);
+  if (need <= 0) return 0;
+  const capped = need > MAX_CATCHUP_HOURS;
+  need = Math.min(need, MAX_CATCHUP_HOURS);
+  for (let i = 0; i < need; i++) hourlyTick();
+  if (capped) {
+    // 離開太久,跳過的時間直接重錨,避免無限追趕
+    state.realAnchorMs = Date.now();
+    state.gameAnchorMs = state.gameMs;
+  }
+  save();
+  return need;
+}
+
+/** 除錯:一鍵快轉 N 遊戲小時 */
+export function fastForward(hours = 6) {
+  for (let i = 0; i < hours; i++) hourlyTick();
+  // 重錨,讓掛機時鐘從現在繼續
+  state.realAnchorMs = Date.now();
+  state.gameAnchorMs = state.gameMs;
+  save();
+}
+
+/** 招租入住:把一位應徵者變成正式租客 */
+export function moveIn(roomId: string, ap: Applicant) {
+  if (!isVacant(roomId)) return;
+  const roomNo = roomId.replace(/^r/, "");
+  const tenant: Tenant = {
+    id: ap.id,
+    name: ap.name,
+    occupation: ap.occupation,
+    bio: ap.bio,
+    coreTags: ap.coreTags,
+    memoryTags: [],
+    finance: { monthlyRent: ap.monthlyRent, paymentReliability: 80, monthsOverdue: 0 },
+    stats: { mood: 72, stress: 28, hygiene: 70, affinity: 55 },
+    preferences: ap.preferences,
+    visualState: "idle",
+    recentSummary: `${ap.name} 剛搬進 ${roomNo} 房。${ap.bio}`,
+  };
+  const rt = makeRuntime(tenant, roomNo, 70, []);
+  rt.archetypeKey = ap.archetypeKey;
+  state.runtimes[ap.id] = rt;
+  state.occupancy[roomId] = ap.id;
+  registerRoutine(ap.id, ap.archetypeKey);
+  applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
+  save();
+}
+
+/** 購買並擺放一件家具到指定房間 */
+export function buyFurniture(defId: string, roomId: string): { ok: boolean; reason?: string } {
+  const def = getDef(defId);
+  if (state.money < def.price) return { ok: false, reason: "金錢不足" };
+  const slot = findFreeSlot(roomId, def.footprint.w, def.footprint.h);
+  if (!slot) return { ok: false, reason: "房間沒有空位" };
+  addPlacement({ defId, room: roomId, c: slot.c, r: slot.r });
+  state.money -= def.price;
+  save();
+  return { ok: true };
+}
+
+/** 進入擺放模式:選好家具、待點地圖決定位置(此時尚未扣款) */
+export function startPlacing(defId: string): { ok: boolean; reason?: string } {
+  if (state.money < getDef(defId).price) return { ok: false, reason: "金錢不足" };
+  state.pendingPlace = defId;
+  return { ok: true };
+}
+
+export function cancelPlacing() {
+  state.pendingPlace = null;
+}
+
+/** 在指定格擺放待放置的家具(扣款) */
+export function placeAt(c: number, r: number): { ok: boolean; reason?: string } {
+  const defId = state.pendingPlace;
+  if (!defId) return { ok: false, reason: "沒有待擺放的家具" };
+  const def = getDef(defId);
+  if (state.money < def.price) return { ok: false, reason: "金錢不足" };
+  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h);
+  if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
+  addPlacement({ defId, room, c, r });
+  state.money -= def.price;
+  state.pendingPlace = null;
+  save();
+  return { ok: true };
+}
+
+/** 賣掉某格上的家具(退回半價) */
+export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: number } {
+  const removed = removePlacementAt(c, r);
+  if (!removed) return { ok: false };
+  const refund = Math.round(getDef(removed.defId).price * 0.5);
+  state.money += refund;
+  save();
+  return { ok: true, refund };
+}
+
+/** 玩家做出房東抉擇 */
+export function decide(tenantId: string, choiceId: string, choiceLabel: string) {
+  const rt = state.runtimes[tenantId];
+  if (!rt.pendingEvent) return;
+  rt.decisions.push(choiceId);
+  const title = rt.pendingEvent.title;
+  rt.pendingEvent = null;
+  rt.log.push({
+    gameMs: state.gameMs,
+    timeLabel: fmt(state.gameMs),
+    text: "",
+    visualState: rt.tenant.visualState,
+    importance: "major",
+    decisionNote: `【${title}】你的決定:${choiceLabel}`,
+  });
+  save();
+}
+
+// ---------------------------------------------------------------------------
+// 存檔 / 載入 / 啟動
+// ---------------------------------------------------------------------------
+
+function save() {
+  try {
+    const runtimes: Record<string, unknown> = {};
+    for (const [id, rt] of Object.entries(state.runtimes)) {
+      runtimes[id] = {
+        tenant: rt.tenant, // 存完整租客(動態入住者沒有原始種子可依)
+        roomNo: rt.roomNo,
+        cleanliness: rt.cleanliness,
+        roomProps: rt.roomProps,
+        log: rt.log,
+        lastSeenMs: rt.lastSeenMs,
+        pendingEvent: rt.pendingEvent,
+        decisions: rt.decisions,
+        targetTile: rt.targetTile,
+        archetypeKey: rt.archetypeKey,
+      };
+    }
+    localStorage.setItem(
+      SAVE_KEY,
+      JSON.stringify({
+        v: 2,
+        realAnchorMs: state.realAnchorMs,
+        gameAnchorMs: state.gameAnchorMs,
+        gameMs: state.gameMs,
+        money: state.money,
+        occupancy: state.occupancy,
+        placements: placements.list,
+        runtimes,
+      }),
+    );
+  } catch {
+    /* localStorage 不可用時忽略 */
+  }
+}
+
+function load(): boolean {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (s.v !== 2) return false;
+    state.realAnchorMs = s.realAnchorMs;
+    state.gameAnchorMs = s.gameAnchorMs;
+    state.gameMs = s.gameMs;
+    state.money = s.money;
+
+    // 家具擺放
+    placements.list.splice(0, placements.list.length, ...s.placements.map((p: unknown) => ({ ...(p as object) })));
+    placements.version++;
+
+    // 房間佔用
+    for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+    Object.assign(state.occupancy, s.occupancy);
+
+    // 重建所有租客 runtime(含動態入住者)
+    for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];
+    for (const [id, saved] of Object.entries<any>(s.runtimes)) {
+      state.runtimes[id] = reactive({
+        tenant: saved.tenant as Tenant,
+        roomNo: saved.roomNo,
+        cleanliness: saved.cleanliness,
+        roomProps: saved.roomProps,
+        log: saved.log,
+        lastSeenMs: saved.lastSeenMs,
+        pendingEvent: saved.pendingEvent,
+        decisions: saved.decisions,
+        targetTile: saved.targetTile,
+        archetypeKey: saved.archetypeKey,
+      });
+      if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
+    }
+    if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let timer: number | undefined;
+
+/** App 掛載時呼叫:載入 → 補進度 → 啟動掛機計時器 */
+export function initGame() {
+  const loaded = load();
+  if (!loaded) {
+    // 全新遊戲:先幫每位租客定位到開場時刻的活動(不寫日誌)
+    const hour = new Date(state.gameMs).getHours();
+    for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
+    save();
+  }
+  syncToNow();
+  // 用最新的可站立點邏輯重新定位當前活動(修正舊存檔可能殘留的牆上目標)
+  const hour = new Date(state.gameMs).getHours();
+  for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
+  if (timer) clearInterval(timer);
+  // 每 5 秒檢查是否跨過遊戲小時(前景掛機)
+  if (typeof window !== "undefined") timer = window.setInterval(syncToNow, 5000);
+}
+
+// --- 測試/自我檢測用鉤子(headless 模擬追蹤器呼叫)---
+/** 定位到目前時刻的活動(不寫日誌) */
+export function debugInit() {
+  const hour = new Date(state.gameMs).getHours();
+  for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
+}
+/** 手動推進一個遊戲小時(不重錨、不存檔) */
+export function debugStepHour() {
+  hourlyTick();
+}
+/** 目前遊戲時間標籤 */
+export function debugClock() {
+  return fmt(state.gameMs);
+}
+
+export function stopGame() {
+  if (timer) clearInterval(timer);
+}
+
+/** 分頁重新可見時:只補進度,不重載(避免蓋掉記憶體中的最新狀態) */
+export function resume() {
+  syncToNow();
+}

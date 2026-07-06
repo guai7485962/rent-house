@@ -4,6 +4,8 @@
     "name": "陳家豪",
     "occupation": "後端工程師",
     "bio": "29 歲,新創公司後端工程師。上週在公司樓下撿到一隻流浪橘貓偷偷帶回租屋處,正處於連續加班的崩潰邊緣,靠貓續命。",
+    "gender": "male",
+    "attractedTo": ["female"],
     "coreTags": [
       {
         "id": "introvert",
@@ -68,6 +70,8 @@
     "name": "林小婕",
     "occupation": "ASMR 實況主",
     "bio": "25 歲,全職 ASMR 實況主,頻道剛破萬訂閱。生活完全日夜顛倒但異常自律:準時交租、房間一塵不染,只是她的「上班時間」是凌晨十二點到清晨六點。",
+    "gender": "female",
+    "attractedTo": ["male"],
     "coreTags": [
       {
         "id": "night_owl",

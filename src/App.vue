@@ -7,6 +7,9 @@ import DecisionModal from "./components/DecisionModal.vue";
 import FurnitureShop from "./components/FurnitureShop.vue";
 import RecruitPanel from "./components/RecruitPanel.vue";
 import FurnitureInfo from "./components/FurnitureInfo.vue";
+import RelationshipsPanel from "./components/RelationshipsPanel.vue";
+import CohabitModal from "./components/CohabitModal.vue";
+import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
@@ -31,6 +34,7 @@ type View = "floor" | "room";
 const view = ref<View>("floor");
 const showSummary = ref(false);
 const showShop = ref(false);
+const showRels = ref(false);
 const recruitRoom = ref<string | null>(null);
 const inspectItem = ref<{ c: number; r: number; defId: string } | null>(null);
 const vacantNote = ref("");
@@ -97,6 +101,20 @@ function toast(msg: string) {
 }
 
 const pendingName = computed(() => (state.pendingPlace ? getDef(state.pendingPlace).name : ""));
+
+// 目前這位租客的感情狀態(顯示在房間細看抬頭)
+const partnerLine = computed(() => {
+  const id = state.activeId;
+  const bonds = listRelationships().filter(
+    (r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId],
+  );
+  const other = (r: { aId: string; bId: string }) => (r.aId === id ? r.bId : r.aId);
+  const love = bonds.find((r) => r.romantic);
+  if (love) return `❤️ 與 ${state.runtimes[other(love)].tenant.name} 交往中`;
+  const friend = bonds.find((r) => r.value >= 50);
+  if (friend) return `🤝 與 ${state.runtimes[other(friend)].tenant.name} 是好友`;
+  return "";
+});
 
 function onPlace(tile: { c: number; r: number }) {
   const name = pendingName.value;
@@ -170,6 +188,7 @@ function onDecide(choiceId: string, label: string) {
 
     <div class="floor-actions">
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
+      <button class="rel-btn" @click="showRels = true">💞 關係</button>
       <button class="advance" @click="fastForward(6)">⏩ 快轉 6 小時</button>
     </div>
     <p v-if="hasAnyPending" class="pending-hint">🔴 有房間出現突發事件,點進去做決定。</p>
@@ -186,6 +205,7 @@ function onDecide(choiceId: string, label: string) {
       <span class="rno">{{ rt.roomNo }}</span>
       <span class="rname">{{ rt.tenant.name }}</span>
       <span class="rjob">{{ rt.tenant.occupation }}</span>
+      <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
     </div>
 
     <PixelDollhouse
@@ -255,6 +275,12 @@ function onDecide(choiceId: string, label: string) {
   />
 
   <FurnitureShop v-if="showShop" @close="showShop = false" />
+  <RelationshipsPanel v-if="showRels" @close="showRels = false" />
+  <CohabitModal
+    v-if="state.pendingCohabit"
+    :a-name="state.pendingCohabit.aName"
+    :b-name="state.pendingCohabit.bName"
+  />
   <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" />
   <FurnitureInfo
     v-if="inspectItem"
@@ -326,6 +352,8 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .floor-actions { display: flex; gap: 8px; }
 .shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
 .shop-btn:hover { background: #322c46; }
+.rel-btn { flex: 0.7; background: var(--panel-2); border: 1px solid #d9548a; color: #f0a8c6; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
+.rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
 .advance:hover { transform: translateY(-1px); }
 

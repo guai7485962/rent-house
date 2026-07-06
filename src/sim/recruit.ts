@@ -2,7 +2,7 @@
  * 招租系統:依房間屬性產生「應徵租客」,並算出契合度。
  * 房東裝潢空房 → 屬性上升 → 吸引偏好相符的租客 → 選一位入住(store.moveIn)。
  */
-import type { CoreTag, RoomAttribute } from "../types";
+import type { CoreTag, Gender, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 
 interface Archetype {
@@ -73,6 +73,21 @@ export interface Applicant {
   preferences: Partial<Record<RoomAttribute, number>>;
   monthlyRent: number;
   stars: number; // 1~5 契合度
+  gender: Gender;
+  attractedTo: Gender[];
+}
+
+/** 隨機生成性別與戀愛取向 */
+function randomIdentity(): { gender: Gender; attractedTo: Gender[] } {
+  const gender: Gender = Math.random() < 0.1 ? "nonbinary" : Math.random() < 0.5 ? "male" : "female";
+  const opp: Gender = gender === "male" ? "female" : "male";
+  const roll = Math.random();
+  let attractedTo: Gender[];
+  if (gender === "nonbinary") attractedTo = ["male", "female", "nonbinary"];
+  else if (roll < 0.6) attractedTo = [opp]; // 異性
+  else if (roll < 0.85) attractedTo = ["male", "female"]; // 雙性
+  else attractedTo = [gender]; // 同性
+  return { gender, attractedTo };
 }
 
 /** 契合度:房間屬性 × 偏好權重 */
@@ -113,5 +128,6 @@ export function generateApplicants(roomId: string): Applicant[] {
       preferences: a.preferences,
       monthlyRent: a.monthlyRent,
       stars: matchStars(a.preferences, attrs),
+      ...randomIdentity(),
     }));
 }

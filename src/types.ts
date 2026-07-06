@@ -118,12 +118,19 @@ export interface RoomState {
 // 租客 (Tenant)
 // ---------------------------------------------------------------------------
 
+export type Gender = "male" | "female" | "nonbinary";
+
 export interface Tenant {
   id: string;
   name: string;
   occupation: string;
   /** 一句話人物側寫,注入 prompt 用 */
   bio: string;
+
+  /** 性別與戀愛取向(決定鄰居間能否發展戀情) */
+  gender?: Gender;
+  /** 會被哪些性別吸引;空陣列=不對任何人動心 */
+  attractedTo?: Gender[];
 
   coreTags: CoreTag[];
   memoryTags: MemoryTag[];

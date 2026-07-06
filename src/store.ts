@@ -16,6 +16,14 @@ import {
 } from "./sim/clock";
 import { routineSlot, resolveTarget, registerRoutine, routineRoles, type Role } from "./sim/routine";
 import { rollEvent, type EventDef, type EventEffect } from "./sim/events";
+import {
+  encounter,
+  removeTenantRelations,
+  getRel,
+  serializeRelationships,
+  loadRelationships,
+  type SocialEffect,
+} from "./sim/social";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
@@ -53,6 +61,8 @@ export interface TenantRuntime {
   satisfaction: number;
   unhappyHours: number;
   lastEventDay: number;
+  /** 本小時是否在交誼廳(社交相遇判定用,不需存檔) */
+  inLounge: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -73,6 +83,7 @@ function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, props: Room
     satisfaction: 62,
     unhappyHours: 0,
     lastEventDay: -99,
+    inLounge: false,
   });
 }
 
@@ -84,6 +95,8 @@ export const state = reactive({
   activeId: "tenant_chen_engineer",
   /** 系統通知(退租等),App 監看後彈 toast */
   notice: "",
+  /** 待決的同居抉擇(情侶關係極高時觸發) */
+  pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
   /** 房間 → 租客 id(動態,招租入住會新增) */
@@ -203,6 +216,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
 
   // 目標家具格
   const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === rt.tenant.id)?.[0] ?? null;
+  rt.inLounge = false;
   if (st === "away") {
     rt.targetTile = null;
   } else if (isDeviation) {
@@ -211,6 +225,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     const tgt = resolveTarget(decided.role, roomId);
     if (tgt) {
       rt.targetTile = tgt.tile;
+      rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
     } else {
       // 房裡缺對應家具、共用區也沒有 → 在自己房間發呆(不闖別人房)
       st = "idle";
@@ -300,7 +315,44 @@ function hourlyTick() {
   }
 
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
+
+  socialPass(); // 鄰居在交誼廳相遇 → 聊天/衝突/戀愛
   if (d.getDate() !== prevDay) collectRent();
+}
+
+function applySocialEffect(rt: TenantRuntime, eff?: SocialEffect) {
+  if (!eff) return;
+  const s = rt.tenant.stats;
+  if (eff.mood) s.mood = clamp(s.mood + eff.mood, 0, 100);
+  if (eff.stress) s.stress = clamp(s.stress + eff.stress, 0, 100);
+  if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
+}
+
+/** 鄰居社交:找出同在交誼廳的租客,兩兩相遇互動 */
+function socialPass() {
+  const inLounge = Object.values(state.runtimes).filter((rt) => rt.inLounge && !rt.pendingEvent);
+  for (let i = 0; i < inLounge.length; i++) {
+    for (let j = i + 1; j < inLounge.length; j++) {
+      if (Math.random() > 0.55) continue; // 不是每小時都會互動
+      const A = inLounge[i];
+      const B = inLounge[j];
+      const res = encounter(A.tenant, B.tenant);
+      pushSocialLog(A, res.textA, res.importance);
+      pushSocialLog(B, res.textB, res.importance);
+      applySocialEffect(A, res.effectA);
+      applySocialEffect(B, res.effectB);
+      if (res.milestone === "became_couple") state.notice = `${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`;
+      if (res.milestone === "broke_up") state.notice = `${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`;
+      if (res.cohabit && !state.pendingCohabit) {
+        state.pendingCohabit = { aId: A.tenant.id, bId: B.tenant.id, aName: A.tenant.name, bName: B.tenant.name };
+      }
+    }
+  }
+}
+
+function pushSocialLog(rt: TenantRuntime, text: string, importance: "minor" | "notable" | "major") {
+  rt.log.push({ gameMs: state.gameMs, timeLabel: fmt(state.gameMs), text, visualState: rt.tenant.visualState, importance });
+  if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
 }
 
 /** 租客退租搬走:清空房間佔用、移除 runtime */
@@ -311,8 +363,39 @@ function moveOut(tenantId: string, reason: string) {
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
   if (entry) delete state.occupancy[entry[0]];
   delete state.runtimes[tenantId];
+  removeTenantRelations(tenantId);
+  if (state.pendingCohabit && (state.pendingCohabit.aId === tenantId || state.pendingCohabit.bId === tenantId)) {
+    state.pendingCohabit = null;
+  }
   if (state.activeId === tenantId) state.activeId = Object.keys(state.runtimes)[0] ?? "";
   state.notice = `${name} 退租搬走了(${reason})`;
+  save();
+}
+
+/** 同居抉擇:同意 → 一人搬去和對方擠(空出一間房、少一份租、兩人大加成) */
+export function resolveCohabit(accept: boolean) {
+  const pc = state.pendingCohabit;
+  if (!pc) return;
+  state.pendingCohabit = null;
+  const a = state.runtimes[pc.aId];
+  const b = state.runtimes[pc.bId];
+  if (!a || !b) return;
+  if (accept) {
+    // b 搬進 a 的房間(b 的房空出可再招租),a 得到同居加成
+    a.satisfaction = clamp(a.satisfaction + 15, 0, 100);
+    a.tenant.stats.mood = clamp(a.tenant.stats.mood + 15, 0, 100);
+    a.unhappyHours = 0;
+    pushSocialLog(a, `❤️ ${pc.bName} 搬進來一起住了`, "major");
+    moveOut(pc.bId, `搬去和 ${pc.aName} 同居`);
+    state.notice = `${pc.bName} 搬去和 ${pc.aName} 同居了 ❤️(${pc.bName} 原本的房間空出來了)`;
+  } else {
+    // 不同意 → 兩人失望,關係回落
+    const rel = getRel(pc.aId, pc.bId);
+    if (rel) rel.value = clamp(rel.value - 15, 0, 100);
+    applySocialEffect(a, { satisfaction: -8, mood: -6 });
+    applySocialEffect(b, { satisfaction: -8, mood: -6 });
+    state.notice = `你婉拒了 ${pc.aName} 和 ${pc.bName} 的同居請求。`;
+  }
   save();
 }
 
@@ -351,6 +434,8 @@ export function moveIn(roomId: string, ap: Applicant) {
     name: ap.name,
     occupation: ap.occupation,
     bio: ap.bio,
+    gender: ap.gender,
+    attractedTo: ap.attractedTo,
     coreTags: ap.coreTags,
     memoryTags: [],
     finance: { monthlyRent: ap.monthlyRent, paymentReliability: 80, monthsOverdue: 0 },
@@ -483,6 +568,7 @@ function save() {
         money: state.money,
         occupancy: state.occupancy,
         placements: placements.list,
+        relationships: serializeRelationships(),
         runtimes,
       }),
     );
@@ -510,6 +596,9 @@ function load(): boolean {
     for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
     Object.assign(state.occupancy, s.occupancy);
 
+    // 鄰居關係
+    loadRelationships(s.relationships ?? []);
+
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];
     for (const [id, saved] of Object.entries<any>(s.runtimes)) {
@@ -527,6 +616,7 @@ function load(): boolean {
         satisfaction: saved.satisfaction ?? 62,
         unhappyHours: saved.unhappyHours ?? 0,
         lastEventDay: saved.lastEventDay ?? -99,
+        inLounge: false,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
     }

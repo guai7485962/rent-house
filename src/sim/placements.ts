@@ -28,6 +28,16 @@ export function addPlacement(p: Placement) {
   placements.version++;
 }
 
+/** 查詢某格上是哪一件家具(涵蓋其佔位範圍);沒有回傳 null */
+export function furnitureAt(c: number, r: number): Placement | null {
+  for (let i = placements.list.length - 1; i >= 0; i--) {
+    const p = placements.list[i];
+    const def = getDef(p.defId);
+    if (c >= p.c && c < p.c + def.footprint.w && r >= p.r && r < p.r + def.footprint.h) return p;
+  }
+  return null;
+}
+
 export function removePlacementAt(c: number, r: number): Placement | null {
   const idx = placements.list.findIndex((p) => {
     const def = getDef(p.defId);

@@ -6,6 +6,7 @@ import LogFeed from "./components/LogFeed.vue";
 import DecisionModal from "./components/DecisionModal.vue";
 import FurnitureShop from "./components/FurnitureShop.vue";
 import RecruitPanel from "./components/RecruitPanel.vue";
+import FurnitureInfo from "./components/FurnitureInfo.vue";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
@@ -23,6 +24,7 @@ import {
   resume,
   placeAt,
   cancelPlacing,
+  sellFurnitureAt,
 } from "./store";
 
 type View = "floor" | "room";
@@ -30,6 +32,7 @@ const view = ref<View>("floor");
 const showSummary = ref(false);
 const showShop = ref(false);
 const recruitRoom = ref<string | null>(null);
+const inspectItem = ref<{ c: number; r: number; defId: string } | null>(null);
 const vacantNote = ref("");
 const sinceMs = ref(0);
 
@@ -89,6 +92,15 @@ function onPlace(tile: { c: number; r: number }) {
   toast(res.ok ? `已擺放:${name}` : `放不了:${res.reason}`);
 }
 
+function onSell() {
+  const item = inspectItem.value;
+  if (!item) return;
+  const name = getDef(item.defId).name;
+  const res = sellFurnitureAt(item.c, item.r);
+  inspectItem.value = null;
+  if (res.ok) toast(`已賣掉:${name},退回 $${res.refund?.toLocaleString()}`);
+}
+
 const allTags = computed(() => [
   ...rt.value.tenant.coreTags.map((t) => ({ label: t.label, core: true })),
   ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false })),
@@ -129,13 +141,19 @@ function onDecide(choiceId: string, label: string) {
 
   <!-- ============ 樓層總覽 ============ -->
   <main v-if="view === 'floor'" class="floor-main">
-    <p v-if="!state.pendingPlace" class="hint">掛機中 · 現實 1 天 = 遊戲 8 天 · 點房間看未讀觀察</p>
+    <p v-if="!state.pendingPlace" class="hint">點房間看觀察 · 點家具查看/賣掉 · 現實 1 天 = 遊戲 8 天</p>
     <div v-else class="place-bar">
       🪑 擺放中:<b>{{ pendingName }}</b> — 點地圖任一格放置
       <button class="cancel" @click="cancelPlacing()">取消</button>
     </div>
     <div class="map-viewport">
-      <FloorMap :pending-rooms="pendingRooms" :unread="unreadRooms" @enter="onEnterRoom" @place="onPlace" />
+      <FloorMap
+        :pending-rooms="pendingRooms"
+        :unread="unreadRooms"
+        @enter="onEnterRoom"
+        @place="onPlace"
+        @inspect="inspectItem = $event"
+      />
     </div>
 
     <div class="floor-actions">
@@ -220,6 +238,14 @@ function onDecide(choiceId: string, label: string) {
 
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" />
+  <FurnitureInfo
+    v-if="inspectItem"
+    :c="inspectItem.c"
+    :r="inspectItem.r"
+    :def-id="inspectItem.defId"
+    @close="inspectItem = null"
+    @sell="onSell"
+  />
 </template>
 
 <style scoped>

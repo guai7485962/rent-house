@@ -4,9 +4,14 @@ import { composeFloor, FLOOR_W, FLOOR_H } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { state } from "../store";
+import { furnitureAt } from "../sim/placements";
 
 const props = defineProps<{ pendingRooms: string[]; unread: Record<string, number> }>();
-const emit = defineEmits<{ enter: [room: RoomInfo]; place: [tile: { c: number; r: number }] }>();
+const emit = defineEmits<{
+  enter: [room: RoomInfo];
+  place: [tile: { c: number; r: number }];
+  inspect: [item: { c: number; r: number; defId: string }];
+}>();
 
 const placing = computed(() => state.pendingPlace !== null);
 
@@ -65,6 +70,13 @@ function onClick(e: MouseEvent) {
     emit("place", { c: tc, r: tr });
     return;
   }
+  // 先看是否點到家具 → 顯示資訊/可賣掉
+  const f = furnitureAt(tc, tr);
+  if (f) {
+    emit("inspect", { c: f.c, r: f.r, defId: f.defId });
+    return;
+  }
+  // 否則點空地/房間 → 進入該房
   const hit = ROOM_INFO.find(
     (r) => tc >= r.rect.c0 && tc <= r.rect.c1 && tr >= r.rect.r0 && tr <= r.rect.r1,
   );

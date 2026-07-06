@@ -1,0 +1,4 @@
+# 本地用 `wrangler dev` 測試 AI 時,把這個檔複製成 .dev.vars 並填入你的金鑰。
+# .dev.vars 已被 .gitignore 忽略,不會進版控。
+# 正式環境改用:npx wrangler secret put ANTHROPIC_API_KEY
+ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxx

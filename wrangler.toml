@@ -1,6 +1,9 @@
 name = "rent-house"
+main = "worker/index.ts"
 compatibility_date = "2026-06-17"
+compatibility_flags = ["nodejs_compat"]
 
-# 純靜態網站：把 vite build 產生的 dist/ 當作網站內容部署,不需要 Worker 程式碼。
+# 靜態網站(vite build 產物)綁定成 ASSETS,Worker 未匹配的請求交還它服務。
 [assets]
 directory = "./dist"
+binding = "ASSETS"

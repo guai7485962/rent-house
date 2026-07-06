@@ -27,6 +27,14 @@ const unreadCount = computed(() => rows.value.filter((r) => r.unread).length);
         🏠 {{ row.e.decisionNote }}
         <span class="time">{{ row.e.timeLabel }}</span>
       </div>
+      <div v-else-if="row.e.ai" class="diary" :class="{ unread: row.unread }">
+        <div class="diary-head">
+          <span class="badge">📖 當日觀察</span>
+          <span class="time">{{ row.e.timeLabel }}</span>
+          <span v-if="row.unread" class="new-dot">NEW</span>
+        </div>
+        <p class="text">{{ row.e.text }}</p>
+      </div>
       <div v-else class="log" :class="[row.e.importance, { unread: row.unread }]">
         <div class="log-head">
           <span class="imp">{{ IMPORTANCE_ICON[row.e.importance] }}</span>
@@ -73,4 +81,13 @@ const unreadCount = computed(() => rows.value.filter((r) => r.unread).length);
   border-radius: 10px; padding: 8px 12px;
 }
 .decision-note .time { margin-left: 6px; }
+
+.diary {
+  background: linear-gradient(180deg, rgba(143,123,255,0.10), rgba(143,123,255,0.02));
+  border: 1px solid var(--accent-2); border-radius: 10px; padding: 9px 12px;
+}
+.diary.unread { box-shadow: 0 0 0 1px rgba(143,123,255,0.3); }
+.diary-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+.diary .badge { font-size: 11px; font-weight: 700; color: #cdbcff; }
+.diary .text { font-size: 13.5px; line-height: 1.75; color: #e8e2ff; }
 </style>

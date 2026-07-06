@@ -20,10 +20,12 @@ import {
   encounter,
   removeTenantRelations,
   getRel,
+  listRelationships,
   serializeRelationships,
   loadRelationships,
   type SocialEffect,
 } from "./sim/social";
+import { narrateDay, templateDiary, type NarrateCtx } from "./sim/narrate";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
@@ -42,6 +44,8 @@ export interface LogEntry {
   visualState: TenantVisualState;
   importance: "minor" | "notable" | "major";
   decisionNote?: string;
+  /** 這筆是否為每日 AI 敘事(前端用來加特殊樣式) */
+  ai?: boolean;
 }
 
 export interface TenantRuntime {
@@ -279,8 +283,8 @@ function collectRent() {
   }
 }
 
-/** 推進一個遊戲小時 */
-function hourlyTick() {
+/** 推進一個遊戲小時(live=true 才在換日時打 AI;補進度/快轉用模板避免大量 API 呼叫) */
+function hourlyTick(live = false) {
   const prevDay = new Date(state.gameMs).getDate();
   state.gameMs += MS_PER_GAME_HOUR;
   const d = new Date(state.gameMs);
@@ -317,7 +321,70 @@ function hourlyTick() {
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
   socialPass(); // 鄰居在交誼廳相遇 → 聊天/衝突/戀愛
-  if (d.getDate() !== prevDay) collectRent();
+  if (d.getDate() !== prevDay) {
+    collectRent();
+    void produceDailyDiaries(live); // 換日 → 每位租客一篇當日 AI 日記(fire-and-forget)
+  }
+}
+
+/** 換日時,為每位租客產生一篇「當日日記」(live 才呼叫 AI,否則模板) */
+async function produceDailyDiaries(live: boolean) {
+  const dayLabel = `第 ${gameDayIndex() + 1} 天`;
+  const ids = Object.keys(state.runtimes);
+  for (const id of ids) {
+    const rt = state.runtimes[id];
+    if (!rt) continue;
+    const ctx = buildNarrateCtx(rt, dayLabel);
+    const result = live ? await narrateDay(ctx) : { diary: templateDiary(ctx), newMemory: null, ai: false };
+    const cur = state.runtimes[id];
+    if (!cur) continue; // 期間可能已退租
+    cur.log.push({
+      gameMs: state.gameMs,
+      timeLabel: fmt(state.gameMs),
+      text: result.diary,
+      visualState: cur.tenant.visualState,
+      importance: "major",
+      ai: result.ai,
+    });
+    if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
+    if (result.newMemory) {
+      cur.tenant.memoryTags.push({
+        id: `ai_${Date.now()}`,
+        label: result.newMemory.label,
+        behaviorHint: result.newMemory.hint,
+        acquiredAt: new Date(state.gameMs).toISOString(),
+        source: "ai_event",
+      });
+    }
+    save();
+  }
+}
+
+/** 從 runtime 組出當天的敘事 context */
+function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
+  const dayAgo = state.gameMs - 24 * 3600 * 1000;
+  const today = rt.log.filter((e) => e.gameMs >= dayAgo);
+  const todayLog = today.map((e) => e.text).filter((t) => t && t.length > 0).slice(-12);
+  const events = today.map((e) => e.decisionNote).filter((t): t is string => !!t);
+  const id = rt.tenant.id;
+  const relationships = listRelationships()
+    .filter((r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId])
+    .map((r) => {
+      const otherId = r.aId === id ? r.bId : r.aId;
+      return `與 ${state.runtimes[otherId].tenant.name} ${r.label}`;
+    });
+  return {
+    name: rt.tenant.name,
+    occupation: rt.tenant.occupation,
+    bio: rt.tenant.bio,
+    dayLabel,
+    coreTags: rt.tenant.coreTags.map((t) => t.label),
+    memoryTags: rt.tenant.memoryTags.map((t) => t.label),
+    stats: { mood: rt.tenant.stats.mood, stress: rt.tenant.stats.stress, affinity: rt.tenant.stats.affinity, satisfaction: Math.round(rt.satisfaction) },
+    todayLog,
+    relationships,
+    events,
+  };
 }
 
 function applySocialEffect(rt: TenantRuntime, eff?: SocialEffect) {
@@ -406,7 +473,9 @@ function syncToNow(): number {
   if (need <= 0) return 0;
   const capped = need > MAX_CATCHUP_HOURS;
   need = Math.min(need, MAX_CATCHUP_HOURS);
-  for (let i = 0; i < need; i++) hourlyTick();
+  // 前景即時只推進 1~2 小時 → live(換日打 AI);大量補進度用模板,避免 API 轟炸
+  const live = need <= 2;
+  for (let i = 0; i < need; i++) hourlyTick(live);
   if (capped) {
     // 離開太久,跳過的時間直接重錨,避免無限追趕
     state.realAnchorMs = Date.now();
@@ -416,9 +485,9 @@ function syncToNow(): number {
   return need;
 }
 
-/** 除錯:一鍵快轉 N 遊戲小時 */
+/** 除錯:一鍵快轉 N 遊戲小時(手動快轉視為 live,跨過午夜會觸發 AI 日記) */
 export function fastForward(hours = 6) {
-  for (let i = 0; i < hours; i++) hourlyTick();
+  for (let i = 0; i < hours; i++) hourlyTick(true);
   // 重錨,讓掛機時鐘從現在繼續
   state.realAnchorMs = Date.now();
   state.gameAnchorMs = state.gameMs;

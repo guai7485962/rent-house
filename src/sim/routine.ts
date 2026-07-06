@@ -130,6 +130,15 @@ export function registerRoutine(tenantId: string, archetypeKey: string) {
   ROUTINES[tenantId] = ARCHETYPE_ROUTINES[archetypeKey] ?? ARCHETYPE_ROUTINES.office;
 }
 
+/** 該租客作息中用到的家具角色(去重、排除 out)——用來算房間是否滿足他 */
+export function routineRoles(tenantId: string): Role[] {
+  const table = ROUTINES[tenantId];
+  if (!table) return [];
+  const set = new Set<Role>();
+  for (const s of table) if (s.role !== "out") set.add(s.role);
+  return [...set];
+}
+
 /** 該租客該小時的作息 slot */
 export function routineSlot(tenantId: string, hour: number): Slot {
   const table = ROUTINES[tenantId];

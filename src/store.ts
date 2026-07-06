@@ -7,20 +7,15 @@
  * - localStorage 存檔。
  */
 import { computed, reactive } from "vue";
-import type {
-  DecisionEvent,
-  RoomPropState,
-  StatDeltas,
-  Tenant,
-  TenantVisualState,
-} from "./types";
+import type { RoomPropState, StatDeltas, Tenant, TenantVisualState } from "./types";
 import tenantsJson from "../data/tenants.json";
 import {
   MAX_CATCHUP_HOURS,
   MS_PER_GAME_HOUR,
   currentGameMs,
 } from "./sim/clock";
-import { routineSlot, resolveTarget, registerRoutine, type Role } from "./sim/routine";
+import { routineSlot, resolveTarget, registerRoutine, routineRoles, type Role } from "./sim/routine";
+import { rollEvent, type EventDef, type EventEffect } from "./sim/events";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
@@ -48,12 +43,16 @@ export interface TenantRuntime {
   roomProps: RoomPropState[];
   log: LogEntry[];
   lastSeenMs: number;
-  pendingEvent: DecisionEvent | null;
+  pendingEvent: EventDef | null;
   decisions: string[];
   /** 當前活動的目標家具互動格(給 agent 走過去);null=外出/原地 */
   targetTile: Tile | null;
   /** 動態入住租客的作息原型(存檔重載時重新登記作息用) */
   archetypeKey?: string;
+  /** 張力系統:滿意度、不滿累積時數、上次事件的遊戲日 */
+  satisfaction: number;
+  unhappyHours: number;
+  lastEventDay: number;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -68,9 +67,12 @@ function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, props: Room
     roomProps: props,
     log: [] as LogEntry[],
     lastSeenMs: GAME_START.getTime(),
-    pendingEvent: null,
+    pendingEvent: null as EventDef | null,
     decisions: [] as string[],
     targetTile: null as Tile | null,
+    satisfaction: 62,
+    unhappyHours: 0,
+    lastEventDay: -99,
   });
 }
 
@@ -80,6 +82,8 @@ export const state = reactive({
   gameMs: GAME_START.getTime(),
   money: 52000,
   activeId: "tenant_chen_engineer",
+  /** 系統通知(退租等),App 監看後彈 toast */
+  notice: "",
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
   /** 房間 → 租客 id(動態,招租入住會新增) */
@@ -170,6 +174,27 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   rt.cleanliness = clamp(rt.cleanliness + clampDelta(d.cleanliness), 0, 100);
 }
 
+/** 單調遞增的遊戲日序號 */
+const gameDayIndex = () => Math.floor((state.gameMs - GAME_START.getTime()) / (24 * 3600 * 1000));
+
+/** 房間滿足租客需求的比例(作息要用的家具角色有幾成能在自房/共用區找到)*/
+function needsMet(tenantId: string, roomId: string | null): number {
+  const roles = routineRoles(tenantId);
+  if (roles.length === 0) return 1;
+  let served = 0;
+  for (const role of roles) if (resolveTarget(role, roomId)) served++;
+  return served / roles.length;
+}
+
+/** 更新滿意度:由心情/好感/壓力 + 房間是否滿足需求,緩慢趨近目標 */
+function updateSatisfaction(rt: TenantRuntime, roomId: string | null) {
+  const s = rt.tenant.stats;
+  const nm = needsMet(rt.tenant.id, roomId);
+  const base = clamp(0.3 * s.mood + 0.4 * s.affinity + 0.3 * (100 - s.stress), 0, 100);
+  const target = base * (0.55 + 0.45 * nm);
+  rt.satisfaction = clamp(rt.satisfaction + (target - rt.satisfaction) * 0.2, 0, 100);
+}
+
 /** 幫一位租客套用某小時的活動(addLog=false 用於初始定位,不寫日誌) */
 function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   const decided = decideState(rt, hour);
@@ -196,6 +221,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   rt.roomProps = deriveProps(rt.tenant.id, st, hour);
 
   if (!addLog) return;
+  const roomId2 = Object.entries(state.occupancy).find(([, tid]) => tid === rt.tenant.id)?.[0] ?? null;
   const gen = generateHourly({
     tenantId: rt.tenant.id,
     tenantName: rt.tenant.name,
@@ -206,6 +232,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     recentSummary: rt.tenant.recentSummary,
   });
   applyStat(rt, gen.statDeltas);
+  updateSatisfaction(rt, roomId2);
   rt.log.push({
     gameMs: state.gameMs,
     timeLabel: fmt(state.gameMs),
@@ -221,7 +248,8 @@ function collectRent() {
   for (const rt of Object.values(state.runtimes)) {
     const f = rt.tenant.finance;
     const daily = Math.round(f.monthlyRent / 30);
-    const factor = clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3, 0, 100) / 100;
+    const factor =
+      clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3 + (rt.satisfaction - 50) * 0.2, 0, 100) / 100;
     const paid = Math.round(daily * factor);
     state.money += paid;
     const full = paid >= daily * 0.95;
@@ -242,11 +270,50 @@ function hourlyTick() {
   state.gameMs += MS_PER_GAME_HOUR;
   const d = new Date(state.gameMs);
   const hour = d.getHours();
+  const day = gameDayIndex();
+  const moveOuts: string[] = [];
+
   for (const rt of Object.values(state.runtimes)) {
-    if (rt.pendingEvent) continue; // 有待決事件則暫停該租客
+    if (rt.pendingEvent) continue; // 有待決事件則暫停該租客,等房東抉擇
     applyHour(rt, hour, true);
+
+    // 張力:不滿累積(滿意度過低會逐時累加,回升則消退)
+    if (rt.satisfaction < 25) rt.unhappyHours += 1;
+    else rt.unhappyHours = Math.max(0, rt.unhappyHours - 2);
+
+    // 觸發突發事件(每位租客冷卻 2 遊戲日,避免連發)
+    if (day - rt.lastEventDay >= 2) {
+      const ev = rollEvent({
+        name: rt.tenant.name,
+        stress: rt.tenant.stats.stress,
+        satisfaction: rt.satisfaction,
+        affinity: rt.tenant.stats.affinity,
+      });
+      if (ev) {
+        rt.pendingEvent = ev;
+        rt.lastEventDay = day;
+      }
+    }
+
+    // 長期不滿(約 2.5 遊戲日)→ 退租
+    if (rt.unhappyHours >= 60 && !rt.pendingEvent) moveOuts.push(rt.tenant.id);
   }
+
+  for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
   if (d.getDate() !== prevDay) collectRent();
+}
+
+/** 租客退租搬走:清空房間佔用、移除 runtime */
+function moveOut(tenantId: string, reason: string) {
+  const rt = state.runtimes[tenantId];
+  if (!rt) return;
+  const name = rt.tenant.name;
+  const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
+  if (entry) delete state.occupancy[entry[0]];
+  delete state.runtimes[tenantId];
+  if (state.activeId === tenantId) state.activeId = Object.keys(state.runtimes)[0] ?? "";
+  state.notice = `${name} 退租搬走了(${reason})`;
+  save();
 }
 
 /** 對齊到現在(補進度)。回傳實際補了幾小時 */
@@ -349,12 +416,23 @@ export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: n
   return { ok: true, refund };
 }
 
-/** 玩家做出房東抉擇 */
+function applyEffect(rt: TenantRuntime, eff: EventEffect) {
+  if (eff.money) state.money = Math.max(0, state.money + eff.money);
+  const s = rt.tenant.stats;
+  if (eff.mood) s.mood = clamp(s.mood + eff.mood, 0, 100);
+  if (eff.stress) s.stress = clamp(s.stress + eff.stress, 0, 100);
+  if (eff.affinity) s.affinity = clamp(s.affinity + eff.affinity, 0, 100);
+  if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
+  if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
+}
+
+/** 玩家做出房東抉擇 → 套用該選項的後果 */
 export function decide(tenantId: string, choiceId: string, choiceLabel: string) {
   const rt = state.runtimes[tenantId];
-  if (!rt.pendingEvent) return;
-  rt.decisions.push(choiceId);
+  if (!rt?.pendingEvent) return;
   const title = rt.pendingEvent.title;
+  const choice = rt.pendingEvent.choices.find((c) => c.id === choiceId);
+  rt.decisions.push(choiceId);
   rt.pendingEvent = null;
   rt.log.push({
     gameMs: state.gameMs,
@@ -364,6 +442,10 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
     importance: "major",
     decisionNote: `【${title}】你的決定:${choiceLabel}`,
   });
+  if (choice) {
+    applyEffect(rt, choice.effect);
+    if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
+  }
   save();
 }
 
@@ -386,6 +468,9 @@ function save() {
         decisions: rt.decisions,
         targetTile: rt.targetTile,
         archetypeKey: rt.archetypeKey,
+        satisfaction: rt.satisfaction,
+        unhappyHours: rt.unhappyHours,
+        lastEventDay: rt.lastEventDay,
       };
     }
     localStorage.setItem(
@@ -439,6 +524,9 @@ function load(): boolean {
         decisions: saved.decisions,
         targetTile: saved.targetTile,
         archetypeKey: saved.archetypeKey,
+        satisfaction: saved.satisfaction ?? 62,
+        unhappyHours: saved.unhappyHours ?? 0,
+        lastEventDay: saved.lastEventDay ?? -99,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
     }

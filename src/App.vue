@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import FloorMap from "./components/FloorMap.vue";
 import PixelDollhouse from "./components/PixelDollhouse.vue";
 import LogFeed from "./components/LogFeed.vue";
@@ -62,6 +62,18 @@ onUnmounted(() => {
 function onVisible() {
   if (!document.hidden) resume();
 }
+
+// 系統通知(如退租)→ 彈 toast
+watch(
+  () => state.notice,
+  (msg) => {
+    if (msg) {
+      toast(msg);
+      state.notice = "";
+      if (view.value === "room" && !state.runtimes[state.activeId]) view.value = "floor";
+    }
+  },
+);
 
 function onEnterRoom(room: RoomInfo) {
   if (room.type === "facility") {
@@ -205,7 +217,13 @@ function onDecide(choiceId: string, label: string) {
         <div class="bar"><div :style="{ width: rt.cleanliness + '%', background: statColor(rt.cleanliness) }"></div></div>
         <span>{{ rt.cleanliness }}</span>
       </div>
+      <div class="stat span2">
+        <label>滿意</label>
+        <div class="bar"><div :style="{ width: Math.round(rt.satisfaction) + '%', background: statColor(rt.satisfaction) }"></div></div>
+        <span>{{ Math.round(rt.satisfaction) }}</span>
+      </div>
     </section>
+    <p v-if="rt.unhappyHours >= 24" class="warn">⚠ {{ rt.tenant.name }} 住得不開心,再不改善可能會退租。</p>
 
     <section class="tags">
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }">{{ t.label }}</span>
@@ -288,6 +306,8 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .stat span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .bar { flex: 1; height: 7px; background: #17151f; border-radius: 4px; overflow: hidden; }
 .bar > div { height: 100%; border-radius: 4px; transition: width 0.6s ease, background 0.6s; }
+.stat.span2 { grid-column: 1 / -1; }
+.warn { font-size: 12px; color: var(--bad); }
 
 .attrs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .attrs-title { font-size: 11px; color: var(--text-dim); }

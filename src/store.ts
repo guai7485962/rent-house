@@ -620,6 +620,16 @@ function load(): boolean {
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
     }
+    // 舊存檔的種子租客沒有性別/取向 → 從種子資料補回
+    for (const rt of Object.values(state.runtimes)) {
+      if (!rt.tenant.gender) {
+        const seed = tenants.find((t) => t.id === rt.tenant.id);
+        if (seed?.gender) {
+          rt.tenant.gender = seed.gender;
+          rt.tenant.attractedTo = seed.attractedTo;
+        }
+      }
+    }
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     return true;
   } catch {

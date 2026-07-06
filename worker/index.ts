@@ -77,7 +77,7 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
   try {
     const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
     const msg = await anthropic.messages.create({
-      model: "claude-opus-4-8",
+      model: "claude-haiku-4-5",
       max_tokens: 500,
       system: SYSTEM,
       messages: [{ role: "user", content: buildPrompt(ctx) }],

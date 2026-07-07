@@ -23,6 +23,9 @@ import {
   listRelationships,
   serializeRelationships,
   loadRelationships,
+  adjustRelationship,
+  setCouple,
+  canRomance,
   type SocialEffect,
 } from "./sim/social";
 import { narrateDay, templateDiary, type NarrateCtx } from "./sim/narrate";
@@ -36,6 +39,19 @@ import type { Tile } from "./floor/pathfind";
 const SAVE_KEY = "rent_house_save_v1";
 const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 const LOG_CAP = 60;
+const LEDGER_CAP = 60;
+
+// 每日管理費(讓「支出」有意義;小額、可調)
+const BASE_UPKEEP = 300;
+const PER_ROOM_UPKEEP = 150;
+
+export type TxnCategory = "rent" | "furniture" | "event" | "upkeep" | "other";
+export interface Txn {
+  gameMs: number;
+  label: string;
+  amount: number; // 正=收入、負=支出(記錄實際變動)
+  category: TxnCategory;
+}
 
 export interface LogEntry {
   gameMs: number;
@@ -103,6 +119,8 @@ export const state = reactive({
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
+  /** 收支帳:每筆金錢進出(綠進紅出),供財務面板檢視 */
+  ledger: [] as Txn[],
   /** 房間 → 租客 id(動態,招租入住會新增) */
   occupancy: {
     r301: "tenant_chen_engineer",
@@ -116,6 +134,16 @@ export const state = reactive({
 
 export function isVacant(roomId: string): boolean {
   return !state.occupancy[roomId];
+}
+
+/** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
+function addMoney(amount: number, label: string, category: TxnCategory) {
+  const before = state.money;
+  state.money = Math.max(0, state.money + amount);
+  const actual = state.money - before;
+  if (actual === 0) return;
+  state.ledger.push({ gameMs: state.gameMs, label, amount: actual, category });
+  if (state.ledger.length > LEDGER_CAP) state.ledger.splice(0, state.ledger.length - LEDGER_CAP);
 }
 
 export const activeRuntime = computed(() => state.runtimes[state.activeId]);
@@ -270,7 +298,7 @@ function collectRent() {
     const factor =
       clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3 + (rt.satisfaction - 50) * 0.2, 0, 100) / 100;
     const paid = Math.round(daily * factor);
-    state.money += paid;
+    addMoney(paid, `${rt.tenant.name} 房租`, "rent");
     const full = paid >= daily * 0.95;
     rt.log.push({
       gameMs: state.gameMs,
@@ -281,6 +309,9 @@ function collectRent() {
     });
     if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
   }
+  // 每日管理費(水電/清潔/公共維護)
+  const upkeep = BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP;
+  addMoney(-upkeep, "管理費 / 水電", "upkeep");
 }
 
 /** 推進一個遊戲小時(live=true 才在換日時打 AI;補進度/快轉用模板避免大量 API 呼叫) */
@@ -358,7 +389,9 @@ async function produceDailyDiaries(live: boolean) {
     }
     // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
     if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
-      const ev = sanitizeAiEvent(result.event);
+      const roster: Record<string, string> = {};
+      for (const o of Object.values(state.runtimes)) if (o.tenant.id !== cur.tenant.id) roster[o.tenant.name] = o.tenant.id;
+      const ev = sanitizeAiEvent(result.event, roster);
       if (ev) {
         cur.pendingEvent = ev;
         cur.lastEventDay = gameDayIndex();
@@ -381,6 +414,9 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
       const otherId = r.aId === id ? r.bId : r.aId;
       return `與 ${state.runtimes[otherId].tenant.name} ${r.label}`;
     });
+  const neighbors = Object.values(state.runtimes)
+    .filter((o) => o.tenant.id !== id)
+    .map((o) => o.tenant.name);
   return {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
@@ -392,6 +428,7 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     todayLog,
     relationships,
     events,
+    neighbors,
   };
 }
 
@@ -537,7 +574,7 @@ export function buyFurniture(defId: string, roomId: string): { ok: boolean; reas
   const slot = findFreeSlot(roomId, def.footprint.w, def.footprint.h);
   if (!slot) return { ok: false, reason: "房間沒有空位" };
   addPlacement({ defId, room: roomId, c: slot.c, r: slot.r });
-  state.money -= def.price;
+  addMoney(-def.price, `購買 ${def.name}`, "furniture");
   save();
   return { ok: true };
 }
@@ -562,7 +599,7 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
   const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h);
   if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
   addPlacement({ defId, room, c, r });
-  state.money -= def.price;
+  addMoney(-def.price, `擺放 ${def.name}`, "furniture");
   state.pendingPlace = null;
   save();
   return { ok: true };
@@ -572,14 +609,15 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
 export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: number } {
   const removed = removePlacementAt(c, r);
   if (!removed) return { ok: false };
-  const refund = Math.round(getDef(removed.defId).price * 0.5);
-  state.money += refund;
+  const def = getDef(removed.defId);
+  const refund = Math.round(def.price * 0.5);
+  addMoney(refund, `賣出 ${def.name}`, "furniture");
   save();
   return { ok: true, refund };
 }
 
 function applyEffect(rt: TenantRuntime, eff: EventEffect) {
-  if (eff.money) state.money = Math.max(0, state.money + eff.money);
+  if (eff.money) addMoney(eff.money, `事件:${rt.tenant.name}`, "event");
   const s = rt.tenant.stats;
   if (eff.mood) s.mood = clamp(s.mood + eff.mood, 0, 100);
   if (eff.stress) s.stress = clamp(s.stress + eff.stress, 0, 100);
@@ -597,11 +635,31 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   }
 }
 
+/** 套用 AI 跨租客事件對「第二位鄰居」與兩人關係的影響(夾值 + 取向把關) */
+function applyCrossTenant(aId: string, bId: string, eff: EventEffect) {
+  const b = state.runtimes[bId];
+  if (!b) return;
+  if (eff.other) {
+    const bs = b.tenant.stats;
+    if (eff.other.mood) bs.mood = clamp(bs.mood + eff.other.mood, 0, 100);
+    if (eff.other.stress) bs.stress = clamp(bs.stress + eff.other.stress, 0, 100);
+    if (eff.other.affinity) bs.affinity = clamp(bs.affinity + eff.other.affinity, 0, 100);
+    if (eff.other.satisfaction) b.satisfaction = clamp(b.satisfaction + eff.other.satisfaction, 0, 100);
+  }
+  if (eff.rel) {
+    if (typeof eff.rel.delta === "number" && eff.rel.delta) adjustRelationship(aId, bId, eff.rel.delta);
+    const a = state.runtimes[aId];
+    if (eff.rel.breakup) setCouple(aId, bId, false);
+    else if (eff.rel.couple && a && canRomance(a.tenant, b.tenant)) setCouple(aId, bId, true, a.tenant, b.tenant);
+  }
+}
+
 /** 玩家做出房東抉擇 → 套用該選項的後果 */
 export function decide(tenantId: string, choiceId: string, choiceLabel: string) {
   const rt = state.runtimes[tenantId];
   if (!rt?.pendingEvent) return;
   const title = rt.pendingEvent.title;
+  const withId = rt.pendingEvent.withId;
   const choice = rt.pendingEvent.choices.find((c) => c.id === choiceId);
   rt.decisions.push(choiceId);
   rt.pendingEvent = null;
@@ -615,6 +673,7 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
   });
   if (choice) {
     applyEffect(rt, choice.effect);
+    if (withId) applyCrossTenant(tenantId, withId, choice.effect);
     if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
   }
   save();
@@ -655,6 +714,7 @@ function save() {
         occupancy: state.occupancy,
         placements: placements.list,
         relationships: serializeRelationships(),
+        ledger: state.ledger,
         runtimes,
       }),
     );
@@ -684,6 +744,9 @@ function load(): boolean {
 
     // 鄰居關係
     loadRelationships(s.relationships ?? []);
+
+    // 收支帳
+    state.ledger.splice(0, state.ledger.length, ...((s.ledger ?? []) as Txn[]));
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

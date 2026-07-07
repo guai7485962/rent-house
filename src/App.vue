@@ -9,6 +9,7 @@ import RecruitPanel from "./components/RecruitPanel.vue";
 import FurnitureInfo from "./components/FurnitureInfo.vue";
 import RelationshipsPanel from "./components/RelationshipsPanel.vue";
 import CohabitModal from "./components/CohabitModal.vue";
+import FinancePanel from "./components/FinancePanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -35,6 +36,7 @@ const view = ref<View>("floor");
 const showSummary = ref(false);
 const showShop = ref(false);
 const showRels = ref(false);
+const showFinance = ref(false);
 const recruitRoom = ref<string | null>(null);
 const inspectItem = ref<{ c: number; r: number; defId: string } | null>(null);
 const vacantNote = ref("");
@@ -171,7 +173,7 @@ function onDecide(choiceId: string, label: string) {
 
   <!-- ============ 樓層總覽 ============ -->
   <main v-if="view === 'floor'" class="floor-main">
-    <p v-if="!state.pendingPlace" class="hint">點房間看觀察 · 點家具查看/賣掉 · 現實 1 天 = 遊戲 8 天</p>
+    <p v-if="!state.pendingPlace" class="hint">點房間看觀察 · 點家具查看/賣掉 · 現實 1 天 = 遊戲 7 天</p>
     <div v-else class="place-bar">
       🪑 擺放中:<b>{{ pendingName }}</b> — 點地圖任一格放置
       <button class="cancel" @click="cancelPlacing()">取消</button>
@@ -189,6 +191,7 @@ function onDecide(choiceId: string, label: string) {
     <div class="floor-actions">
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
       <button class="rel-btn" @click="showRels = true">💞 關係</button>
+      <button class="rel-btn" @click="showFinance = true">💰 收支</button>
       <button class="advance" @click="fastForward(6)">⏩ 快轉 6 小時</button>
     </div>
     <p v-if="hasAnyPending" class="pending-hint">🔴 有房間出現突發事件,點進去做決定。</p>
@@ -276,6 +279,7 @@ function onDecide(choiceId: string, label: string) {
 
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
+  <FinancePanel v-if="showFinance" @close="showFinance = false" />
   <CohabitModal
     v-if="state.pendingCohabit"
     :a-name="state.pendingCohabit.aName"

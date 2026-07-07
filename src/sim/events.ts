@@ -13,6 +13,10 @@ export interface EventEffect {
   evict?: boolean;
   /** 選項可留下一個新記憶標籤(讓抉擇有長期延續) */
   memory?: { label: string; hint: string };
+  /** 對事件牽涉的第二位鄰居的數值影響 */
+  other?: { mood?: number; stress?: number; affinity?: number; satisfaction?: number };
+  /** 兩人關係變化:delta 正=拉近/戀情加速、負=吵架疏遠;couple/breakup 直接成/斷情侶 */
+  rel?: { delta?: number; couple?: boolean; breakup?: boolean };
 }
 
 export interface EventChoiceDef {
@@ -29,6 +33,9 @@ export interface EventDef {
   choices: EventChoiceDef[];
   /** 是否為 AI 依當前處境即時生成(給 UI 標示) */
   ai?: boolean;
+  /** 事件牽涉的第二位鄰居(AI 跨租客事件) */
+  withId?: string;
+  withName?: string;
 }
 
 export interface EventCtx {
@@ -90,7 +97,7 @@ function cleanMemory(v: unknown): { label: string; hint: string } | undefined {
   return label && hint ? { label, hint } : undefined;
 }
 
-function cleanEffect(v: unknown): EventEffect {
+function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
   const e = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   const eff: EventEffect = {
     mood: clampNum(e.mood, -25, 25),
@@ -102,29 +109,57 @@ function cleanEffect(v: unknown): EventEffect {
   };
   const mem = cleanMemory(e.memory);
   if (mem) eff.memory = mem;
+
+  // 跨租客欄位:只有事件確實牽涉第二位鄰居(hasOther)才保留
+  if (hasOther) {
+    const o = (e.other && typeof e.other === "object" ? e.other : {}) as Record<string, unknown>;
+    eff.other = {
+      mood: clampNum(o.mood, -25, 25),
+      stress: clampNum(o.stress, -25, 25),
+      affinity: clampNum(o.affinity, -25, 25),
+      satisfaction: clampNum(o.satisfaction, -25, 25),
+    };
+    const rl = (e.rel && typeof e.rel === "object" ? e.rel : {}) as Record<string, unknown>;
+    eff.rel = {
+      delta: clampNum(rl.delta, -40, 40),
+      couple: rl.couple === true,
+      breakup: rl.breakup === true,
+    };
+  }
   return eff;
 }
 
 /**
  * 把 AI 回傳的原始 event 物件消毒成安全的 EventDef;不合格回 null。
  * 強制夾值、截斷字串、丟棄 evict/未知欄位、choices 需 2~3 個。
+ * roster(名字→租客 id):用來解析事件牽涉的第二位鄰居 `with`;對不上就丟棄跨租客效果。
  */
-export function sanitizeAiEvent(raw: unknown): EventDef | null {
+export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>): EventDef | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const title = str(r.title, 40);
   if (!title || !Array.isArray(r.choices)) return null;
+
+  // 解析第二位鄰居:名字要對得上 roster
+  const withName = str(r.with, 20);
+  const withId = roster && withName && roster[withName] ? roster[withName] : undefined;
+  const hasOther = !!withId;
 
   const choices: EventChoiceDef[] = r.choices
     .slice(0, 3)
     .filter((c) => c && typeof c === "object" && typeof (c as Record<string, unknown>).label === "string")
     .map((c, i) => {
       const cc = c as Record<string, unknown>;
-      return { id: `ai${i}`, label: str(cc.label, 40), hint: str(cc.hint, 60), effect: cleanEffect(cc.effect) };
+      return { id: `ai${i}`, label: str(cc.label, 40), hint: str(cc.hint, 60), effect: cleanEffect(cc.effect, hasOther) };
     });
   if (choices.length < 2) return null;
 
-  return { id: "ai_event", title, description: str(r.description, 200), choices, ai: true };
+  const ev: EventDef = { id: "ai_event", title, description: str(r.description, 200), choices, ai: true };
+  if (hasOther) {
+    ev.withId = withId;
+    ev.withName = withName;
+  }
+  return ev;
 }
 
 function grievance(name: string): EventDef {

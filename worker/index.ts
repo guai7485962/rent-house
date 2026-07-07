@@ -22,6 +22,7 @@ interface NarrateCtx {
   todayLog: string[];
   relationships: string[];
   events: string[];
+  neighbors: string[];
 }
 
 const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎。玩家是房東,透過監視器觀察租客的日常。
@@ -35,15 +36,18 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 
 另外:如果今天的處境**值得房東做一個決定**(鄰居衝突、戀情轉折、財務吃緊、崩潰邊緣、養寵物…),可以**額外**產生一個 event(房東抉擇);**平淡的日子就不要給 event(填 null),不要每天都給**。
 event 規則:
-- 2~3 個選項,每個選項有 label(選項文字)、hint(一句後果提示)、effect(後果數值)。
-- effect 數值請**小幅**:mood/stress/affinity/satisfaction 建議在 ±15 內、money 在 ±3000 內(正=給房東加錢,負=房東花錢)。
-- 選項可選擇性留下一個記憶標籤 memory(讓後續劇情延續)。
-- 不要驅逐租客。
+- 2~3 個選項,每個選項有 label、hint、effect。
+- effect.mood/stress/affinity/satisfaction 建議 ±15 內、money ±3000 內(正=房東收入,負=房東支出)。
+- 選項可選擇性留 memory(記憶標籤,讓後續劇情延續)。**不要驅逐租客。**
+- **可以製造牽涉「另一位鄰居」的劇情**(如室友吵架/打架、戀情告白或加速、和好):把 event 的 "with" 設成那位鄰居的名字(必須是上面「同棟其他租客」清單裡的名字)。此時每個選項的 effect 可加:
+  - "other":對那位鄰居的數值 {mood,stress,affinity,satisfaction}。
+  - "rel":兩人關係 {delta(正=拉近/戀情加速、負=吵架疏遠), couple(true=在一起), breakup(true=分手)}。
+  - 例:讓兩人戀情加速 → rel.delta 給較大正值、必要時 couple 設 true;室友打架 → rel.delta 負值 + 雙方 stress 上升。
 
 只輸出 JSON,格式:
-{"diary": "當日日記文字",
- "newMemory": {"label": "[標籤]", "hint": "一句行為指引"} 或 null,
- "event": {"title":"事件標題","description":"情況描述","choices":[{"label":"選項","hint":"後果提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":{"label":"[標籤]","hint":"指引"} 或 null}}]} 或 null}`;
+{"diary":"當日日記文字",
+ "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
+ "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false}}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {
   const lines = [
@@ -53,6 +57,7 @@ function buildPrompt(c: NarrateCtx): string {
     `既有記憶:${c.memoryTags.join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
+    `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `今天(${c.dayLabel})的觀察片段:`,
     ...c.todayLog.map((l) => `  - ${l}`),
   ];

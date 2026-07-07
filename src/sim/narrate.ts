@@ -15,6 +15,8 @@ export interface NarrateCtx {
   todayLog: string[];
   relationships: string[];
   events: string[];
+  /** 同棟其他在住租客的名字(讓 AI 能點名鄰居製造跨租客劇情) */
+  neighbors: string[];
 }
 
 export interface NarrateResult {

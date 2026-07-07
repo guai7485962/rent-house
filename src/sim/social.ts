@@ -50,6 +50,30 @@ export function getRel(a: string, b: string): Relationship | undefined {
   return relationships[pairKey(a, b)];
 }
 
+/** 兩人是否可能發展戀情(性別/取向相容)—— 供 store 端 AI 事件把關 */
+export function canRomance(a: Tenant, b: Tenant): boolean {
+  return attractedMutual(a, b);
+}
+
+/** 夾值調整兩人關係值(AI 事件用:拉近/疏遠) */
+export function adjustRelationship(aId: string, bId: string, delta: number) {
+  const rel = ensureRel(aId, bId);
+  rel.value = clamp(rel.value + delta, 0, 100);
+}
+
+/** 設定/解除情侶關係;成為情侶仍受取向限制(需傳入雙方 Tenant 檢查) */
+export function setCouple(aId: string, bId: string, value: boolean, aT?: Tenant, bT?: Tenant) {
+  const rel = ensureRel(aId, bId);
+  if (!value) {
+    rel.romantic = false;
+    return;
+  }
+  if (aT && bT && attractedMutual(aT, bT)) {
+    rel.romantic = true;
+    rel.value = Math.max(rel.value, 75); // 在一起至少拉到曖昧線以上
+  }
+}
+
 /** 兩人是否互有戀愛意願(性別 × 取向) */
 function attractedMutual(a: Tenant, b: Tenant): boolean {
   if (!a.gender || !b.gender || !a.attractedTo || !b.attractedTo) return false;
@@ -122,7 +146,7 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     res.effectB = { stress: 4 };
   } else {
     const before = rel.value;
-    rel.value = clamp(rel.value + (2 + Math.max(0, comp) * 0.8 + Math.random() * 2), 0, 100);
+    rel.value = clamp(rel.value + (2.5 + Math.max(0, comp) * 1.0 + Math.random() * 2.5), 0, 100);
     const line = rel.romantic ? pick(ROMANTIC_LINES) : pick(FRIEND_LINES);
     res.textA = fill(line, b.name);
     res.textB = fill(line, a.name);

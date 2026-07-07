@@ -15,7 +15,7 @@ import {
   currentGameMs,
 } from "./sim/clock";
 import { routineSlot, resolveTarget, registerRoutine, routineRoles, type Role } from "./sim/routine";
-import { rollEvent, type EventDef, type EventEffect } from "./sim/events";
+import { rollEvent, sanitizeAiEvent, type EventDef, type EventEffect } from "./sim/events";
 import {
   encounter,
   removeTenantRelations,
@@ -356,6 +356,14 @@ async function produceDailyDiaries(live: boolean) {
         source: "ai_event",
       });
     }
+    // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
+    if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
+      const ev = sanitizeAiEvent(result.event);
+      if (ev) {
+        cur.pendingEvent = ev;
+        cur.lastEventDay = gameDayIndex();
+      }
+    }
     save();
   }
 }
@@ -578,6 +586,15 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.affinity) s.affinity = clamp(s.affinity + eff.affinity, 0, 100);
   if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
+  if (eff.memory) {
+    rt.tenant.memoryTags.push({
+      id: `ai_${Date.now()}`,
+      label: eff.memory.label,
+      behaviorHint: eff.memory.hint,
+      acquiredAt: new Date(state.gameMs).toISOString(),
+      source: "landlord_decision",
+    });
+  }
 }
 
 /** 玩家做出房東抉擇 → 套用該選項的後果 */

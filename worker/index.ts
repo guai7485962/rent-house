@@ -33,8 +33,17 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
 - 若今天發生了值得長期記住的轉折(戀愛、養寵物、失業、和好/決裂…),可提出一個新的記憶標籤。
 
+另外:如果今天的處境**值得房東做一個決定**(鄰居衝突、戀情轉折、財務吃緊、崩潰邊緣、養寵物…),可以**額外**產生一個 event(房東抉擇);**平淡的日子就不要給 event(填 null),不要每天都給**。
+event 規則:
+- 2~3 個選項,每個選項有 label(選項文字)、hint(一句後果提示)、effect(後果數值)。
+- effect 數值請**小幅**:mood/stress/affinity/satisfaction 建議在 ±15 內、money 在 ±3000 內(正=給房東加錢,負=房東花錢)。
+- 選項可選擇性留下一個記憶標籤 memory(讓後續劇情延續)。
+- 不要驅逐租客。
+
 只輸出 JSON,格式:
-{"diary": "當日日記文字", "newMemory": {"label": "[標籤]", "hint": "一句行為指引"} 或 null}`;
+{"diary": "當日日記文字",
+ "newMemory": {"label": "[標籤]", "hint": "一句行為指引"} 或 null,
+ "event": {"title":"事件標題","description":"情況描述","choices":[{"label":"選項","hint":"後果提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":{"label":"[標籤]","hint":"指引"} 或 null}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {
   const lines = [
@@ -52,7 +61,9 @@ function buildPrompt(c: NarrateCtx): string {
   return lines.join("\n");
 }
 
-function parseResult(text: string): { diary: string; newMemory: { label: string; hint: string } | null } | null {
+function parseResult(
+  text: string,
+): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown } | null {
   try {
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return null;
@@ -60,7 +71,9 @@ function parseResult(text: string): { diary: string; newMemory: { label: string;
     if (typeof obj.diary !== "string") return null;
     const nm = obj.newMemory;
     const newMemory = nm && typeof nm.label === "string" && typeof nm.hint === "string" ? { label: nm.label, hint: nm.hint } : null;
-    return { diary: obj.diary.trim(), newMemory };
+    // event 原封不動透傳(數值夾值/消毒在前端 store 端統一做)
+    const event = obj.event && typeof obj.event === "object" ? obj.event : null;
+    return { diary: obj.diary.trim(), newMemory, event };
   } catch {
     return null;
   }

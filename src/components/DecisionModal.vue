@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import type { DecisionEvent } from "../types";
+import type { EventDef } from "../sim/events";
 
-defineProps<{ event: DecisionEvent; tenantName: string }>();
+defineProps<{ event: EventDef; tenantName: string }>();
 const emit = defineEmits<{ decide: [choiceId: string, label: string] }>();
 </script>
 
 <template>
   <div class="overlay">
-    <div class="modal">
-      <div class="tag">⚠ 房東抉擇 — {{ tenantName }}</div>
+    <div class="modal" :class="{ ai: event.ai }">
+      <div class="tag">
+        <span v-if="event.ai" class="ai-badge">✨ AI 事件</span>
+        ⚠ 房東抉擇 — {{ tenantName }}
+      </div>
       <h2>{{ event.title }}</h2>
       <p class="desc">{{ event.description }}</p>
       <div class="choices">
@@ -60,6 +63,16 @@ const emit = defineEmits<{ decide: [choiceId: string, label: string] }>();
   color: var(--accent);
   letter-spacing: 1px;
   margin-bottom: 8px;
+}
+.modal.ai { border-color: var(--accent-2); }
+.ai-badge {
+  color: #cdbcff;
+  background: rgba(143, 123, 255, 0.16);
+  border: 1px solid var(--accent-2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  margin-right: 6px;
+  letter-spacing: 0;
 }
 
 h2 {

@@ -20,6 +20,8 @@ export interface NarrateCtx {
 export interface NarrateResult {
   diary: string;
   newMemory: { label: string; hint: string } | null;
+  /** AI 依當前處境可選附上的原始抉擇事件(由 store 消毒夾值後才採用) */
+  event: unknown;
   ai: boolean; // 是否真的由 AI 生成(false=模板 fallback)
 }
 
@@ -31,13 +33,17 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
       body: JSON.stringify(ctx),
     });
     if (res.ok) {
-      const data = (await res.json()) as { diary?: string; newMemory?: { label: string; hint: string } | null };
-      if (data.diary) return { diary: data.diary, newMemory: data.newMemory ?? null, ai: true };
+      const data = (await res.json()) as {
+        diary?: string;
+        newMemory?: { label: string; hint: string } | null;
+        event?: unknown;
+      };
+      if (data.diary) return { diary: data.diary, newMemory: data.newMemory ?? null, event: data.event ?? null, ai: true };
     }
   } catch {
     /* 離線 / 無後端 → 走 fallback */
   }
-  return { diary: templateDiary(ctx), newMemory: null, ai: false };
+  return { diary: templateDiary(ctx), newMemory: null, event: null, ai: false };
 }
 
 const MOOD_PHRASE = (s: NarrateCtx["stats"]) =>

@@ -86,17 +86,17 @@ function parseResult(
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出 */
 async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent", {
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: SYSTEM }] },
       contents: [{ parts: [{ text: buildPrompt(ctx) }] }],
-      // 敘事多一點變化:提高溫度
       generationConfig: {
         maxOutputTokens: 1024,
         responseMimeType: "application/json",
-        temperature: 1.1,
+        temperature: 1.1, // 敘事多一點變化
+        thinkingConfig: { thinkingBudget: 0 }, // 關思考,確保輸出、更快更省
       },
     }),
   });

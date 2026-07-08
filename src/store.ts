@@ -62,8 +62,10 @@ export interface LogEntry {
   visualState: TenantVisualState;
   importance: "minor" | "notable" | "major";
   decisionNote?: string;
-  /** 這筆是否為每日 AI 敘事(前端用來加特殊樣式) */
+  /** 這筆是否為每日 AI 敘事(前端用來加 ✨AI 標示) */
   ai?: boolean;
+  /** 這筆是否為「當日觀察」總結(AI 或模板都算,用來套 📖 卡片) */
+  daily?: boolean;
 }
 
 export interface TenantRuntime {
@@ -393,6 +395,7 @@ async function produceDailyDiaries(live: boolean) {
       visualState: cur.tenant.visualState,
       importance: "major",
       ai: result.ai,
+      daily: true,
     });
     if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
     if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");

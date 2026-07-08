@@ -4,6 +4,8 @@
  * 無後端 / 無金鑰 / 離線時,自動 fallback 成模板日記,遊戲照跑。
  */
 
+import { DAILY_TEMPLATES } from "../content/observationLines";
+
 export interface NarrateCtx {
   name: string;
   occupation: string;
@@ -48,14 +50,13 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
   return { diary: templateDiary(ctx), newMemory: null, event: null, ai: false };
 }
 
-const MOOD_PHRASE = (s: NarrateCtx["stats"]) =>
-  s.stress >= 75 ? "壓力全寫在臉上" : s.mood >= 68 ? "看起來心情不錯" : s.satisfaction < 35 ? "顯得有些心不在焉" : "如常地過了一天";
-
-/** 無 AI 時的模板日記:用當天重點拼一段 */
+/** 無 AI 時的模板日記:從多樣模板庫隨機挑一句 + 補上當天重點 */
 export function templateDiary(ctx: NarrateCtx): string {
-  const parts: string[] = [`${ctx.dayLabel},${ctx.name}${MOOD_PHRASE(ctx.stats)}。`];
+  const tpl = DAILY_TEMPLATES[Math.floor(Math.random() * DAILY_TEMPLATES.length)]
+    .replace(/\{name\}/g, ctx.name)
+    .replace(/\{time\}/g, "夜裡");
+  const parts: string[] = [tpl];
   if (ctx.events.length) parts.push(ctx.events[0].replace(/^【.*?】/, "").trim() + "。");
-  else if (ctx.relationships.length) parts.push(`和鄰居的關係:${ctx.relationships[0]}。`);
-  else if (ctx.todayLog.length) parts.push(ctx.todayLog[ctx.todayLog.length - 1]);
+  else if (ctx.relationships.length) parts.push(`和鄰居:${ctx.relationships[0]}。`);
   return parts.join("");
 }

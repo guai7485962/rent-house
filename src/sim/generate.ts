@@ -10,6 +10,7 @@
  *       回傳符合 AIEventResponse 的結果)。store 與 UI 完全不用動。
  */
 import type { ObservationLog, StatDeltas, TenantVisualState } from "../types";
+import { OBSERVATION_LINES } from "../content/observationLines";
 
 export interface GenCtx {
   tenantId: string;
@@ -48,27 +49,6 @@ const EFFECT: Partial<Record<TenantVisualState, StatDeltas>> = {
   idle: {},
 };
 
-/** 各狀態的旁白模板(監視器口吻);{name} 會替換成租客名 */
-const LINES: Partial<Record<TenantVisualState, string[]>> = {
-  sleeping_on_bed: ["蜷在被窩裡睡得像被拔掉電源,連翻身都省了。", "睡死。鬧鐘大概又會被按掉三次。"],
-  sleeping_on_couch: ["沒力氣走到床上,和衣癱在沙發睡著,鞋只脫了一隻。"],
-  working_at_desk: ["又坐回電腦前,三螢幕的光是這房間唯一的動靜。", "盯著螢幕敲鍵盤,肩膀一小時比一小時垮。"],
-  gaming: ["切到遊戲畫面,難得聽見一聲短促的歡呼。", "打電動打到對著螢幕罵了一句髒話。"],
-  streaming: ["開播了。麥克風亮起紅燈,一萬人在另一端一起屏住呼吸。", "直播中,對鏡頭維持著溫柔的聲線。"],
-  cooking: ["在共用廚房開火,{time}的飯菜香味飄了出來。", "{time}在廚房煮東西,鍋鏟聲叮叮噹噹。"],
-  eating: ["在餐桌前吃東西,一個人,配著手機。", "{time}隨便扒了幾口飯果腹。"],
-  showering: ["浴室門關上,蒸氣從門縫爬出來。"],
-  playing_with_cat: ["把橘貓 Bug 抱起來轉圈,貓表達了強烈的不同意。", "逗貓逗到笑出來,今天的疲憊暫時退場。"],
-  watching_tv: ["癱在沙發上追劇,遙控器擱在肚子上。"],
-  reading: ["裹著毯子看紙本書,翻頁聲規律得像 ASMR。"],
-  cleaning: ["難得動手打掃,垃圾終於被倒了。"],
-  pacing: ["在房間中央來回踱步,手指掐著手臂——壓力到臨界了。"],
-  crying: ["獨自崩潰,對著空氣把情緒倒了出來。"],
-  talking_on_phone: ["講了很久的電話,語氣起伏不定。"],
-  away: ["房間空著,外出上班去了。"],
-  idle: ["站在房間中央發了一會呆。"],
-};
-
 function pick(arr: string[] | undefined, seed: number): string {
   if (!arr || arr.length === 0) return "";
   return arr[seed % arr.length];
@@ -84,7 +64,9 @@ function timeWord(hour: number): string {
 }
 
 export function generateHourly(ctx: GenCtx): GenResult {
-  const base = (pick(LINES[ctx.state], ctx.hour) || "度過了平淡的一小時。").replace(/\{time\}/g, timeWord(ctx.hour));
+  // 從豐富句庫隨機挑一句(每次不同,避免每天雷同),再把 {time} 換成實際時段
+  const seed = Math.floor(Math.random() * 1000);
+  const base = (pick(OBSERVATION_LINES[ctx.state], seed) || "度過了平淡的一小時。").replace(/\{time\}/g, timeWord(ctx.hour));
   const importance: ObservationLog["importance"] = ctx.isDeviation
     ? "major"
     : ctx.state === "crying" || ctx.state === "pacing"

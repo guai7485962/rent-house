@@ -84,9 +84,23 @@ function hashStr(s: string): number {
   return Math.abs(h);
 }
 
-/** 取得租客外觀主題:固定兩位用專屬,動態入住者依 id 分配配色池(穩定不變) */
+/** 由 store 指派的外觀索引(依房間,確保同時在住的租客配色彼此不同) */
+const appearanceReg = new Map<string, number>();
+export const THEME_POOL_SIZE = THEME_POOL.length;
+export function setAppearance(tenantId: string, index: number) {
+  appearanceReg.set(tenantId, index);
+}
+/** 是否為固定專屬外觀的種子租客(不佔用配色池) */
+export function hasFixedTheme(tenantId: string): boolean {
+  return !!THEMES[tenantId];
+}
+
+/** 取得租客外觀主題:固定兩位用專屬,動態入住者用 store 指派的索引(不同房間必不同色) */
 export function getTheme(tenantId: string): Theme {
   if (THEMES[tenantId]) return THEMES[tenantId];
+  const idx = appearanceReg.get(tenantId);
+  if (idx != null) return THEME_POOL[idx % THEME_POOL.length];
+  // 未登記(舊存檔/尚未指派)→ 退回雜湊
   let t = generatedThemes.get(tenantId);
   if (!t) {
     t = THEME_POOL[hashStr(tenantId) % THEME_POOL.length];

@@ -31,6 +31,7 @@ import {
 import { narrateDay, templateDiary, type NarrateCtx } from "./sim/narrate";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
+import { setAppearance, hasFixedTheme } from "./pixel/scene";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
 import type { Applicant } from "./sim/recruit";
@@ -40,6 +41,7 @@ const SAVE_KEY = "rent_house_save_v1";
 const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 const LOG_CAP = 60;
 const LEDGER_CAP = 60;
+const MEMORY_CAP = 8; // 記憶標籤上限,超過丟最舊(避免無限增長)
 
 // 每日管理費(讓「支出」有意義;小額、可調)
 const BASE_UPKEEP = 300;
@@ -134,6 +136,21 @@ export const state = reactive({
 
 export function isVacant(roomId: string): boolean {
   return !state.occupancy[roomId];
+}
+
+/** 依房間指派動態租客的外觀索引,確保同時在住者配色彼此不同(種子租客用專屬色不佔用) */
+const ROOM_APPEARANCE: Record<string, number> = { r301: 0, r302: 1, r303: 2, r304: 3 };
+function refreshAppearances() {
+  for (const [roomId, tid] of Object.entries(state.occupancy)) {
+    if (state.runtimes[tid] && !hasFixedTheme(tid)) setAppearance(tid, ROOM_APPEARANCE[roomId] ?? 0);
+  }
+}
+
+/** 新增記憶標籤:不重複、有上限(超過丟最舊) */
+function pushMemory(t: Tenant, label: string, hint: string, source: "ai_event" | "landlord_decision") {
+  if (t.memoryTags.some((m) => m.label === label)) return;
+  t.memoryTags.push({ id: `ai_${Date.now()}`, label, behaviorHint: hint, acquiredAt: new Date(state.gameMs).toISOString(), source });
+  if (t.memoryTags.length > MEMORY_CAP) t.memoryTags.splice(0, t.memoryTags.length - MEMORY_CAP);
 }
 
 /** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
@@ -378,15 +395,7 @@ async function produceDailyDiaries(live: boolean) {
       ai: result.ai,
     });
     if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
-    if (result.newMemory) {
-      cur.tenant.memoryTags.push({
-        id: `ai_${Date.now()}`,
-        label: result.newMemory.label,
-        behaviorHint: result.newMemory.hint,
-        acquiredAt: new Date(state.gameMs).toISOString(),
-        source: "ai_event",
-      });
-    }
+    if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
     // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
     if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
       const roster: Record<string, string> = {};
@@ -563,6 +572,7 @@ export function moveIn(roomId: string, ap: Applicant) {
   state.runtimes[ap.id] = rt;
   state.occupancy[roomId] = ap.id;
   registerRoutine(ap.id, ap.archetypeKey);
+  refreshAppearances(); // 指派配色(依房間,確保彼此不同)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
   save();
 }
@@ -624,15 +634,7 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.affinity) s.affinity = clamp(s.affinity + eff.affinity, 0, 100);
   if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
-  if (eff.memory) {
-    rt.tenant.memoryTags.push({
-      id: `ai_${Date.now()}`,
-      label: eff.memory.label,
-      behaviorHint: eff.memory.hint,
-      acquiredAt: new Date(state.gameMs).toISOString(),
-      source: "landlord_decision",
-    });
-  }
+  if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
 }
 
 /** 套用 AI 跨租客事件對「第二位鄰居」與兩人關係的影響(夾值 + 取向把關) */
@@ -779,6 +781,7 @@ function load(): boolean {
         }
       }
     }
+    refreshAppearances(); // 依房間指派配色,修正舊存檔可能的撞色
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     return true;
   } catch {

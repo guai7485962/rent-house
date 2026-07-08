@@ -55,15 +55,15 @@ const LINES: Partial<Record<TenantVisualState, string[]>> = {
   working_at_desk: ["又坐回電腦前,三螢幕的光是這房間唯一的動靜。", "盯著螢幕敲鍵盤,肩膀一小時比一小時垮。"],
   gaming: ["切到遊戲畫面,難得聽見一聲短促的歡呼。", "打電動打到對著螢幕罵了一句髒話。"],
   streaming: ["開播了。麥克風亮起紅燈,一萬人在另一端一起屏住呼吸。", "直播中,對鏡頭維持著溫柔的聲線。"],
-  cooking: ["在共用廚房開火,半夜的泡麵香味飄出來。"],
-  eating: ["在餐桌前吃東西,一個人,配著手機。"],
+  cooking: ["在共用廚房開火,{time}的飯菜香味飄了出來。", "{time}在廚房煮東西,鍋鏟聲叮叮噹噹。"],
+  eating: ["在餐桌前吃東西,一個人,配著手機。", "{time}隨便扒了幾口飯果腹。"],
   showering: ["浴室門關上,蒸氣從門縫爬出來。"],
   playing_with_cat: ["把橘貓 Bug 抱起來轉圈,貓表達了強烈的不同意。", "逗貓逗到笑出來,今天的疲憊暫時退場。"],
   watching_tv: ["癱在沙發上追劇,遙控器擱在肚子上。"],
   reading: ["裹著毯子看紙本書,翻頁聲規律得像 ASMR。"],
   cleaning: ["難得動手打掃,垃圾終於被倒了。"],
   pacing: ["在房間中央來回踱步,手指掐著手臂——壓力到臨界了。"],
-  crying: ["深夜獨自崩潰,對著空氣把情緒倒出來。"],
+  crying: ["獨自崩潰,對著空氣把情緒倒了出來。"],
   talking_on_phone: ["講了很久的電話,語氣起伏不定。"],
   away: ["房間空著,外出上班去了。"],
   idle: ["站在房間中央發了一會呆。"],
@@ -74,8 +74,17 @@ function pick(arr: string[] | undefined, seed: number): string {
   return arr[seed % arr.length];
 }
 
+/** 依小時給時段詞,避免「白天卻說半夜」 */
+function timeWord(hour: number): string {
+  if (hour >= 5 && hour <= 10) return "早晨";
+  if (hour >= 11 && hour <= 13) return "中午";
+  if (hour >= 14 && hour <= 17) return "午後";
+  if (hour >= 18 && hour <= 21) return "傍晚";
+  return "深夜";
+}
+
 export function generateHourly(ctx: GenCtx): GenResult {
-  const base = pick(LINES[ctx.state], ctx.hour) || "度過了平淡的一小時。";
+  const base = (pick(LINES[ctx.state], ctx.hour) || "度過了平淡的一小時。").replace(/\{time\}/g, timeWord(ctx.hour));
   const importance: ObservationLog["importance"] = ctx.isDeviation
     ? "major"
     : ctx.state === "crying" || ctx.state === "pacing"

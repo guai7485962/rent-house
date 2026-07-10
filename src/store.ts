@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 遊戲狀態管理 —— 異步掛機觀察模式。
  *
  * - 遊戲時間跟現實掛鉤(8×:現實 1 天 = 遊戲 8 天),關掉再開自動補進度。
@@ -120,6 +120,8 @@ export const state = reactive({
   activeId: "tenant_chen_engineer",
   /** 系統通知(退租等),App 監看後彈 toast */
   notice: "",
+  /** 通知歷史(toast 會消失,這裡留存;cap 30、入存檔) */
+  noticeLog: [] as { gameMs: number; text: string }[],
   /** 待決的同居抉擇(情侶關係極高時觸發) */
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
@@ -179,6 +181,13 @@ function pushMemory(t: Tenant, label: string, hint: string, source: "ai_event" |
   if (t.memoryTags.some((m) => m.label === label)) return;
   t.memoryTags.push({ id: `ai_${Date.now()}`, label, behaviorHint: hint, acquiredAt: new Date(state.gameMs).toISOString(), source });
   if (t.memoryTags.length > MEMORY_CAP) t.memoryTags.splice(0, t.memoryTags.length - MEMORY_CAP);
+}
+
+/** 系統通知單一入口:彈 toast(state.notice)+ 留存歷史(即使 toast 被同刻的下一則蓋掉,歷史都在) */
+function notify(text: string) {
+  state.notice = text;
+  state.noticeLog.push({ gameMs: state.gameMs, text });
+  if (state.noticeLog.length > 30) state.noticeLog.splice(0, state.noticeLog.length - 30);
 }
 
 /** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
@@ -526,9 +535,9 @@ function socialPass() {
       pushSocialLog(B, res.textB, res.importance);
       applySocialEffect(A, res.effectA);
       applySocialEffect(B, res.effectB);
-      if (res.milestone === "became_couple") state.notice = `${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`;
+      if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
       if (res.milestone === "broke_up") {
-        state.notice = `${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`;
+        notify(`${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`);
         endCohabitOnBreakup(A.tenant.id, B.tenant.id);
       }
       if (res.cohabit && !state.pendingCohabit) {
@@ -556,7 +565,7 @@ function endCohabitOnBreakup(aId: string, bId: string) {
     rt.roomNo = vacant.replace(/^r/, "");
     refreshAppearances();
     pushSocialLog(rt, `💔 分手後搬到 ${rt.roomNo} 房,一個人重新開始。`, "major");
-    state.notice = `${rt.tenant.name} 分手後搬進了空房 ${rt.roomNo}。`;
+    notify(`${rt.tenant.name} 分手後搬進了空房 ${rt.roomNo}。`);
   } else {
     moveOut(mateId, "分手後無處可住,搬離公寓");
   }
@@ -597,7 +606,7 @@ function moveOut(tenantId: string, reason: string) {
   }
   if (state.activeId === tenantId) state.activeId = Object.keys(state.runtimes)[0] ?? "";
   refreshAppearances();
-  state.notice = `${name} 退租搬走了(${reason})`;
+  notify(`${name} 退租搬走了(${reason})`);
   save();
 }
 
@@ -629,14 +638,14 @@ export function resolveCohabit(accept: boolean) {
     pushSocialLog(b, `❤️ 搬進 ${pc.aName} 的房間,開始同居生活`, "major");
     refreshAppearances();
     applyHour(b, new Date(state.gameMs).getHours(), false); // 立即重新定位到新房間
-    state.notice = `${pc.bName} 搬去和 ${pc.aName} 同居了 ❤️(${pc.bName} 原本的房間空出來了)`;
+    notify(`${pc.bName} 搬去和 ${pc.aName} 同居了 ❤️(${pc.bName} 原本的房間空出來了)`);
   } else {
     // 不同意 → 兩人失望,關係回落
     const rel = getRel(pc.aId, pc.bId);
     if (rel) rel.value = clamp(rel.value - 15, 0, 100);
     applySocialEffect(a, { satisfaction: -8, mood: -6 });
     applySocialEffect(b, { satisfaction: -8, mood: -6 });
-    state.notice = `你婉拒了 ${pc.aName} 和 ${pc.bName} 的同居請求。`;
+    notify(`你婉拒了 ${pc.aName} 和 ${pc.bName} 的同居請求。`);
   }
   save();
 }
@@ -892,6 +901,7 @@ function save() {
         placements: placements.list,
         relationships: serializeRelationships(),
         ledger: state.ledger,
+        noticeLog: state.noticeLog,
         runtimes,
       }),
     );
@@ -926,8 +936,9 @@ function load(): boolean {
     // 鄰居關係
     loadRelationships(s.relationships ?? []);
 
-    // 收支帳
+    // 收支帳 + 通知歷史
     state.ledger.splice(0, state.ledger.length, ...((s.ledger ?? []) as Txn[]));
+    state.noticeLog.splice(0, state.noticeLog.length, ...(s.noticeLog ?? []));
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

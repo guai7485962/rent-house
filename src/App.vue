@@ -41,6 +41,11 @@ const showSummary = ref(false);
 const showShop = ref(false);
 const showRels = ref(false);
 const showFinance = ref(false);
+const showNotices = ref(false);
+function fmtMs(ms: number) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 const recruitRoom = ref<string | null>(null);
 const inspectItem = ref<{ c: number; r: number; defId: string } | null>(null);
 const vacantNote = ref("");
@@ -218,6 +223,7 @@ function onDecide(choiceId: string, label: string) {
     <div class="meta">
       <span>🕐 {{ clockLabel }}</span>
       <span>💰 {{ state.money.toLocaleString() }}</span>
+      <button class="bell" @click="showNotices = true">🔔</button>
     </div>
   </header>
 
@@ -336,6 +342,23 @@ function onDecide(choiceId: string, label: string) {
     @decide="onDecide"
   />
 
+  <!-- 通知歷史(toast 錯過了這裡都在) -->
+  <div v-if="showNotices" class="notice-overlay" @click.self="showNotices = false">
+    <div class="notice-panel">
+      <header class="np-head">
+        <div class="np-ttl">🔔 通知紀錄</div>
+        <button class="np-x" @click="showNotices = false">✕</button>
+      </header>
+      <div class="np-list">
+        <p v-if="!state.noticeLog.length" class="np-empty">還沒有任何大事發生。</p>
+        <div v-for="(n, i) in [...state.noticeLog].reverse()" :key="i" class="np-item">
+          <span class="np-time">{{ fmtMs(n.gameMs) }}</span>
+          <span class="np-text">{{ n.text }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
@@ -362,7 +385,19 @@ header {
 }
 .title { font-weight: 700; font-size: 16px; }
 .ver { font-size: 10px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; vertical-align: 2px; }
-.meta { display: flex; gap: 12px; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.meta { display: flex; gap: 12px; align-items: center; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.bell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 13px; }
+
+.notice-overlay { position: fixed; inset: 0; z-index: 125; background: rgba(8,7,12,0.7); backdrop-filter: blur(3px); display: flex; align-items: flex-end; justify-content: center; }
+.notice-panel { width: 100%; max-width: 430px; max-height: 70vh; background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px 16px 0 0; display: flex; flex-direction: column; }
+.np-head { display: flex; align-items: center; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.np-ttl { font-weight: 700; font-size: 15px; }
+.np-x { margin-left: auto; background: none; color: var(--text-dim); font-size: 16px; }
+.np-list { overflow-y: auto; padding: 8px 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+.np-empty { font-size: 12.5px; color: var(--text-dim); text-align: center; padding: 20px 0; }
+.np-item { display: flex; gap: 8px; font-size: 12.5px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.np-time { color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.np-text { line-height: 1.5; }
 
 main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 12px; }
 .room-main { overflow-y: auto; }

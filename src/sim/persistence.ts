@@ -72,6 +72,8 @@ export function save() {
         lastEventDay: rt.lastEventDay,
         rentChangeDay: rt.rentChangeDay,
         directive: rt.directive,
+        arc: rt.arc,
+        flags: rt.flags,
       };
     }
     localStorage.setItem(
@@ -151,6 +153,8 @@ export function load(): boolean {
         lastEventDay: saved.lastEventDay ?? -99,
         rentChangeDay: saved.rentChangeDay ?? -99,
         directive: saved.directive ?? null,
+        arc: saved.arc ?? null,
+        flags: saved.flags ?? [],
         inLounge: false,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);

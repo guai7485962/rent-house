@@ -21,6 +21,10 @@ export interface NarrateCtx {
   neighbors: string[];
   /** 滾動劇情摘要(上次 AI 回寫的 summaryUpdate)——跨日連貫性的關鍵 */
   summary: string;
+  /** 進行中的劇情弧(連載骨架;null = 沒有進行中的弧,AI 可開新弧) */
+  arc: { theme: string; stage: number; maxStage: number; summary: string } | null;
+  /** 事件連鎖伏筆旗標(事件選項留下的,AI 用來回收伏筆) */
+  flags: string[];
 }
 
 export interface NarrateResult {
@@ -30,6 +34,8 @@ export interface NarrateResult {
   event: unknown;
   /** AI 回寫的新劇情摘要(取代舊摘要,下次餵回去);null = 沿用舊的 */
   summaryUpdate: string | null;
+  /** AI 回的原始劇情弧更新(由 sim/arcs 消毒後才採用);null = 不動 */
+  arcUpdate: unknown;
   ai: boolean; // 是否真的由 AI 生成(false=模板 fallback)
 }
 
@@ -46,6 +52,7 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
         newMemory?: { label: string; hint: string } | null;
         event?: unknown;
         summaryUpdate?: string | null;
+        arcUpdate?: unknown;
       };
       if (data.diary)
         return {
@@ -53,13 +60,14 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
           newMemory: data.newMemory ?? null,
           event: data.event ?? null,
           summaryUpdate: typeof data.summaryUpdate === "string" ? data.summaryUpdate.slice(0, 220).trim() || null : null,
+          arcUpdate: data.arcUpdate ?? null,
           ai: true,
         };
     }
   } catch {
     /* 離線 / 無後端 → 走 fallback */
   }
-  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, ai: false };
+  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false };
 }
 
 /** 無 AI 時的模板日記:從多樣模板庫隨機挑一句 + 補上當天重點 */

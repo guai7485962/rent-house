@@ -11,6 +11,7 @@ import type { RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
+import type { StoryArc } from "./arcs";
 import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
 import type { Tile } from "../floor/pathfind";
@@ -64,6 +65,10 @@ export interface TenantRuntime {
   rentChangeDay: number;
   /** 進行中的行為指令(AI 事件選項/規則事件授予;到期自動恢復) */
   directive: ActiveDirective | null;
+  /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
+  arc: StoryArc | null;
+  /** 事件連鎖伏筆旗標(事件選項留下,之後餵回 AI 回收伏筆) */
+  flags: string[];
   /** 本小時是否在交誼廳(社交相遇判定用,不需存檔) */
   inLounge: boolean;
 }
@@ -88,8 +93,17 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     lastEventDay: -99,
     rentChangeDay: -99,
     directive: null as ActiveDirective | null,
+    arc: null as StoryArc | null,
+    flags: [] as string[],
     inLounge: false,
   });
+}
+
+/** 記一個事件連鎖伏筆旗標(去重、cap 12;之後每天餵回 AI 用來回收伏筆) */
+export function addFlag(rt: TenantRuntime, flag: string) {
+  if (rt.flags.includes(flag)) return;
+  rt.flags.push(flag);
+  if (rt.flags.length > 12) rt.flags.splice(0, rt.flags.length - 12);
 }
 
 export const state = reactive({

@@ -18,6 +18,8 @@ export interface EventEffect {
   memory?: { label: string; hint: string };
   /** 行為指令(白名單):讓租客接下來 N 遊戲日的行為在畫面上看得見地改變 */
   directive?: { id: DirectiveId; days: number };
+  /** 事件連鎖伏筆旗標(≤16 字):記在租客身上,之後每天餵回 AI 回收伏筆 */
+  flag?: string;
   /** 對事件牽涉的第二位鄰居的數值影響 */
   other?: { mood?: number; stress?: number; affinity?: number; satisfaction?: number };
   /** 兩人關係變化:delta 正=拉近/戀情加速、負=吵架疏遠;couple/breakup 直接成/斷情侶 */
@@ -136,6 +138,9 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
   // 行為指令:白名單驗證,不合格直接丟棄(AI 不能發明機制)
   const dir = sanitizeDirective(e.directive);
   if (dir) eff.directive = dir;
+  // 伏筆旗標:純文字截斷即可(只回餵 AI 當 context,不驅動任何機制)
+  const fl = str(e.flag, 16);
+  if (fl) eff.flag = fl;
 
   // 跨租客欄位:只有事件確實牽涉第二位鄰居(hasOther)才保留
   if (hasOther) {

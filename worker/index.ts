@@ -25,6 +25,10 @@ interface NarrateCtx {
   neighbors: string[];
   /** 滾動劇情摘要(上次的 summaryUpdate) */
   summary?: string;
+  /** 進行中的劇情弧(null = 可開新弧) */
+  arc?: { theme: string; stage: number; maxStage: number; summary: string } | null;
+  /** 事件連鎖伏筆旗標 */
+  flags?: string[];
 }
 
 const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎。玩家是房東,透過監視器觀察租客的日常。
@@ -37,6 +41,12 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
 - **summaryUpdate(必填)**:輸出一段更新後的劇情摘要(50~150 字):以舊摘要為底,保留仍然重要的事實與未回收的伏筆,寫入今天的變化。這段會在明天餵回給你,是劇情連續性的唯一載體——寫得像「連載的前情提要」。
 - **記憶標籤 newMemory:只要今天出現值得記住的變化(情緒明顯起伏、關係進展、養成新習慣、突發小事、心境轉變…),就給一個 newMemory,讓角色記憶隨時間累積、越玩越立體。不必每天給,但別太吝嗇;標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])。已經有的記憶就不要重複。**
+
+- **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
+  - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
+  - 有進行中的弧:今天的日記與摘要要推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
+  - 弧是純敘事骨架,不帶數值效果;要影響數值請照常用 event。
+- 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
 另外:如果今天的處境**值得房東做一個決定**(鄰居衝突、戀情轉折、財務吃緊、崩潰邊緣、養寵物…),可以**額外**產生一個 event(房東抉擇);**平淡的日子就不要給 event(填 null),不要每天都給**。
 event 規則:
@@ -55,6 +65,7 @@ event 規則:
 只輸出 JSON,格式:
 {"diary":"當日日記文字",
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
+ "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false}}}]} 或 null}`;
 
@@ -68,6 +79,10 @@ function buildPrompt(c: NarrateCtx): string {
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
+    c.arc
+      ? `進行中的劇情弧(必須推進或收束):「${c.arc.theme}」第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
+      : `進行中的劇情弧:無(適合的話可開新弧)`,
+    `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
     `今天(${c.dayLabel})的觀察片段:`,
     ...c.todayLog.map((l) => `  - ${l}`),
   ];
@@ -78,7 +93,7 @@ function buildPrompt(c: NarrateCtx): string {
 
 function parseResult(
   text: string,
-): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown; summaryUpdate: string | null } | null {
+): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown; summaryUpdate: string | null; arcUpdate: unknown } | null {
   try {
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return null;
@@ -86,10 +101,11 @@ function parseResult(
     if (typeof obj.diary !== "string") return null;
     const nm = obj.newMemory;
     const newMemory = nm && typeof nm.label === "string" && typeof nm.hint === "string" ? { label: nm.label, hint: nm.hint } : null;
-    // event 原封不動透傳(數值夾值/消毒在前端 store 端統一做)
+    // event / arcUpdate 原封不動透傳(夾值/消毒在前端 store 端統一做)
     const event = obj.event && typeof obj.event === "object" ? obj.event : null;
+    const arcUpdate = obj.arcUpdate && typeof obj.arcUpdate === "object" ? obj.arcUpdate : null;
     const summaryUpdate = typeof obj.summaryUpdate === "string" ? obj.summaryUpdate.slice(0, 220).trim() || null : null;
-    return { diary: obj.diary.trim(), newMemory, event, summaryUpdate };
+    return { diary: obj.diary.trim(), newMemory, event, summaryUpdate, arcUpdate };
   } catch {
     return null;
   }

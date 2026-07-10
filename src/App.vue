@@ -248,6 +248,12 @@ const allTags = computed(() => [
   ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false, fade: 0.45 + 0.55 * (t.intensity ?? 1) })),
 ]);
 
+/** 進行中的劇情弧(AI 連載主線),顯示在標籤列最前 */
+const arcChip = computed(() => {
+  const a = rt.value?.arc;
+  return a ? `📖 ${a.theme} · ${a.stage}/${a.maxStage}` : null;
+});
+
 /** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
 const directiveChip = computed(() => {
   const d = rt.value?.directive;
@@ -439,6 +445,7 @@ function onDecide(choiceId: string, label: string) {
     <p v-if="rt.unhappyHours >= 24" class="warn">⚠ {{ rt.tenant.name }} 住得不開心,再不改善可能會退租。</p>
 
     <section class="tags">
+      <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }" :style="{ opacity: t.fade }">{{ t.label }}</span>
     </section>
@@ -456,6 +463,7 @@ function onDecide(choiceId: string, label: string) {
         <span class="arrow">{{ showSummary ? "▲" : "▼" }}</span>
       </div>
       <p v-if="showSummary">{{ rt.tenant.recentSummary }}</p>
+      <p v-if="showSummary && rt.arc" class="arc-sum">📖 {{ rt.arc.theme }}(第 {{ rt.arc.stage }}/{{ rt.arc.maxStage }} 章):{{ rt.arc.summary }}</p>
     </section>
 
     <LogFeed :entries="rt.log" :since-ms="sinceMs" />
@@ -624,10 +632,12 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .chip { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent-2); color: #c9befc; background: rgba(143, 123, 255, 0.08); }
 .chip.mem { border-color: var(--accent); color: #ffd6a3; background: rgba(255, 180, 94, 0.08); }
 .chip.dir { border-color: #5ad06a; color: #b6ffbe; background: rgba(90, 208, 106, 0.08); }
+.chip.arc { border-color: #58a6ff; color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }
 .summary p { margin-top: 8px; line-height: 1.7; color: var(--text); }
+.summary .arc-sum { font-size: 12px; color: #a9d1ff; line-height: 1.6; }
 .arrow { font-size: 10px; }
 
 .floor-actions { display: flex; gap: 8px; }

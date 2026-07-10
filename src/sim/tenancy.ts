@@ -23,6 +23,7 @@ import {
   notify,
   pushMemory,
   pushSocialLog,
+  addFlag,
   applySocialEffect,
   refreshAppearances,
   makeRuntime,
@@ -272,6 +273,7 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
   if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
+  if (eff.flag) addFlag(rt, eff.flag); // 事件連鎖:留伏筆旗標,之後每天餵回 AI
   // 行為指令(已在 events 消毒過白名單):接下來 N 遊戲日的行為看得見地改變
   if (eff.directive) {
     const def = DIRECTIVES[eff.directive.id];

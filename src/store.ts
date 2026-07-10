@@ -47,6 +47,8 @@ export { getApplicants, moveIn, moveOut, resolveCohabit, decide, previewRent, pr
 
 export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 
+export type { StoryArc } from "./sim/arcs";
+
 export { SAVE_KEY, SAVE_VERSION, exportSave, importSave, clearSave } from "./sim/persistence";
 
 export { initGame, stopGame, resume, debugInit, debugStepHour, debugClock } from "./sim/lifecycle";

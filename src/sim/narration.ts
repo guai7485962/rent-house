@@ -6,8 +6,9 @@
  */
 import { narrateDay, templateDiary, type NarrateCtx, type NarrateResult } from "./narrate";
 import { sanitizeAiEvent } from "./events";
+import { sanitizeArcUpdate } from "./arcs";
 import { listRelationships } from "./social";
-import { state, fmt, gameDayIndex, pushMemory, LOG_CAP, type TenantRuntime } from "./gameState";
+import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 
 /** narrate 節流:多位租客串行、每次間隔 ≥4 秒(Gemini 免費層 RPM 低,快轉跨多日尤其容易連發) */
@@ -26,7 +27,7 @@ export async function produceDailyDiaries(live: boolean) {
     const ctx = buildNarrateCtx(rt, dayLabel);
     const result: NarrateResult = live
       ? await narrateDay(ctx)
-      : { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, ai: false };
+      : { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false };
     const cur = state.runtimes[id];
     if (!cur) continue; // 期間可能已退租
     cur.log.push({
@@ -42,6 +43,7 @@ export async function produceDailyDiaries(live: boolean) {
     if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
     // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
     if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
+    applyArcUpdate(cur, result.arcUpdate); // 劇情弧:開新弧/推進/收束(消毒後才採用)
     // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
     if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
       const roster: Record<string, string> = {};
@@ -53,6 +55,22 @@ export async function produceDailyDiaries(live: boolean) {
       }
     }
     save();
+  }
+}
+
+/** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed) */
+function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
+  const action = sanitizeArcUpdate(raw, rt.arc);
+  if (!action) return;
+  if (action.kind === "start") {
+    rt.arc = action.arc;
+    pushSocialLog(rt, `📖 新篇章開始:「${action.arc.theme}」`, "notable");
+  } else if (action.kind === "advance") {
+    rt.arc = action.arc;
+  } else {
+    rt.arc = null;
+    pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
+    pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
   }
 }
 
@@ -85,5 +103,7 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     events,
     neighbors,
     summary: rt.tenant.recentSummary,
+    arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
+    flags: [...rt.flags],
   };
 }

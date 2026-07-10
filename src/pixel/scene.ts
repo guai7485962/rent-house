@@ -75,6 +75,8 @@ const THEME_POOL: Theme[] = [
   { wall: "#7a5a6a", floor: "#b0906a", hair: "#241f2c", shirt: "#c85a4a", pants: "#4a4055", skin: "#e8b088", poster: "music" },
   { wall: "#5a6a7a", floor: "#a88a66", hair: "#7a4530", shirt: "#d0a040", pants: "#3a4a5a", skin: "#f4c9a6", poster: "code" },
   { wall: "#6a5a7a", floor: "#9a8a6a", hair: "#b58a4a", shirt: "#3fa0a0", pants: "#5a4a60", skin: "#f0c19a", poster: "music" },
+  { wall: "#6a7a5a", floor: "#a08a60", hair: "#2c2620", shirt: "#b070c8", pants: "#44503a", skin: "#e8b088", poster: "code" },
+  { wall: "#7a6a5a", floor: "#96825e", hair: "#5a3020", shirt: "#e8e2d4", pants: "#30363f", skin: "#f4c9a6", poster: "music" },
 ];
 
 const generatedThemes = new Map<string, Theme>();

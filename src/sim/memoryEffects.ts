@@ -26,8 +26,10 @@ interface MemoryRule {
 
 /** 關鍵字 → 效果。label 只要「包含」任一關鍵字就套用 */
 export const MEMORY_RULES: MemoryRule[] = [
-  { keywords: ["熱戀", "戀愛", "告白", "曖昧", "交往", "喜歡上", "心動"], drift: { mood: 0.8, stress: -0.5 }, note: "戀愛中,心情變好、壓力下降" },
+  { keywords: ["熱戀", "戀愛", "告白", "曖昧", "交往", "喜歡上", "心動", "同居"], drift: { mood: 0.8, stress: -0.5 }, note: "戀愛中,心情變好、壓力下降" },
   { keywords: ["失戀", "分手", "被甩", "心碎", "單戀"], drift: { mood: -0.9, stress: 0.6 }, note: "情傷,心情低落、壓力上升" },
+  { keywords: ["低落", "憂鬱", "沮喪", "難過", "消沉", "低潮"], drift: { mood: -0.6, stress: 0.3 }, note: "情緒低潮" },
+  { keywords: ["搬走", "離開了", "退租"], drift: { mood: -0.4, stress: 0.2 }, note: "身邊的人離開的失落" },
   { keywords: ["貓", "狗", "寵", "毛孩", "倉鼠", "兔"], drift: { mood: 0.6, stress: -0.4 }, note: "養寵物療癒" },
   { keywords: ["晨跑", "運動", "健身", "跑步", "瑜伽", "早起"], drift: { stress: -0.5, hygiene: 0.5, mood: 0.3 }, note: "規律運動,身心變好" },
   { keywords: ["熬夜", "失眠", "爆肝", "通宵", "作息亂"], drift: { stress: 0.7, hygiene: -0.3, mood: -0.2 }, note: "熬夜傷身、壓力累積" },
@@ -44,23 +46,54 @@ export const MEMORY_RULES: MemoryRule[] = [
 const PER_HOUR_CAP = 1.5;
 const clampCap = (v: number) => Math.min(PER_HOUR_CAP, Math.max(-PER_HOUR_CAP, v));
 
-/** 依租客目前所有記憶標籤,算出這一小時的合計漂移(已夾上限) */
-export function memoryDrift(tenant: Tenant): Drift {
-  const total: Drift = { mood: 0, stress: 0, hygiene: 0, affinity: 0 };
-  for (const tag of tenant.memoryTags) {
-    for (const rule of MEMORY_RULES) {
-      if (rule.keywords.some((k) => tag.label.includes(k))) {
-        total.mood! += rule.drift.mood ?? 0;
-        total.stress! += rule.drift.stress ?? 0;
-        total.hygiene! += rule.drift.hygiene ?? 0;
-        total.affinity! += rule.drift.affinity ?? 0;
-      }
+/** 單一標籤(label)命中的規則合計漂移 */
+function labelDrift(label: string): Required<Drift> {
+  const d = { mood: 0, stress: 0, hygiene: 0, affinity: 0 };
+  for (const rule of MEMORY_RULES) {
+    if (rule.keywords.some((k) => label.includes(k))) {
+      d.mood += rule.drift.mood ?? 0;
+      d.stress += rule.drift.stress ?? 0;
+      d.hygiene += rule.drift.hygiene ?? 0;
+      d.affinity += rule.drift.affinity ?? 0;
     }
   }
+  return d;
+}
+
+/** 依租客目前所有記憶標籤,算出這一小時的合計漂移(已夾上限) */
+export function memoryDrift(tenant: Tenant): Drift {
+  const total = { mood: 0, stress: 0, hygiene: 0, affinity: 0 };
+  for (const tag of tenant.memoryTags) {
+    const d = labelDrift(tag.label);
+    total.mood += d.mood;
+    total.stress += d.stress;
+    total.hygiene += d.hygiene;
+    total.affinity += d.affinity;
+  }
   return {
-    mood: clampCap(total.mood!),
-    stress: clampCap(total.stress!),
-    hygiene: clampCap(total.hygiene!),
-    affinity: clampCap(total.affinity!),
+    mood: clampCap(total.mood),
+    stress: clampCap(total.stress),
+    hygiene: clampCap(total.hygiene),
+    affinity: clampCap(total.affinity),
   };
+}
+
+/**
+ * 記憶與現況矛盾檢查(每日呼叫):數值已明顯走出該記憶的方向 → 該記憶淡出移除。
+ * 例:帶 [情緒低落] 但心情長期 ≥85 → 顯然已走出來,不該再掛著這個標籤。
+ * 回傳被移除的 label(供寫「心境轉變」日誌)。
+ */
+export function pruneContradictedMemories(tenant: Tenant): string[] {
+  const removed: string[] = [];
+  const s = tenant.stats;
+  tenant.memoryTags = tenant.memoryTags.filter((tag) => {
+    const d = labelDrift(tag.label);
+    const contradicted =
+      (d.mood < 0 && s.mood >= 85) || // 負面情緒記憶,但心情已很好 → 走出來了
+      (d.stress > 0 && d.mood >= 0 && s.stress <= 10) || // 高壓型記憶,但壓力已極低
+      (d.affinity < 0 && s.affinity >= 85); // 對房東的芥蒂,但好感已極高 → 和解
+    if (contradicted) removed.push(tag.label);
+    return !contradicted;
+  });
+  return removed;
 }

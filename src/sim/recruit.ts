@@ -112,12 +112,19 @@ function shuffle<T>(a: T[]): T[] {
   return r;
 }
 
-/** 為某空房產生 3 位應徵者(契合度依房間目前屬性) */
-export function generateApplicants(roomId: string): Applicant[] {
+/** 依「當前」房間屬性重算一批應徵者的契合星等(裝潢改變後即時反映,不必重抽人) */
+export function rescoreApplicants(list: Applicant[], roomId: string): Applicant[] {
   const attrs = roomAttributes(roomId);
-  const names = shuffle(NAMES);
+  for (const a of list) a.stars = matchStars(a.preferences, attrs);
+  return list;
+}
+
+/** 為某空房產生 3 位應徵者(契合度依房間目前屬性);excludeNames = 已在住租客,避免同名 */
+export function generateApplicants(roomId: string, excludeNames: string[] = []): Applicant[] {
+  const attrs = roomAttributes(roomId);
+  const names = shuffle(NAMES.filter((n) => !excludeNames.includes(n)));
   return shuffle(ARCHETYPES)
-    .slice(0, 3)
+    .slice(0, Math.min(3, names.length))
     .map((a, i) => ({
       id: `tenant_${roomId}_${Date.now()}_${i}`,
       name: names[i],

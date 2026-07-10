@@ -29,6 +29,7 @@ import {
   placeAt,
   cancelPlacing,
   sellFurnitureAt,
+  roomOfTenant,
 } from "./store";
 
 type View = "floor" | "room";
@@ -44,15 +45,23 @@ const sinceMs = ref(0);
 
 const rt = activeRuntime;
 
-const pendingRooms = computed(() =>
-  Object.entries(state.occupancy)
-    .filter(([, tid]) => state.runtimes[tid]?.pendingEvent)
-    .map(([roomId]) => roomId),
-);
+// 各房間的租客(含同居者)→ 事件紅點/未讀徽章都要涵蓋
+const pendingRooms = computed(() => {
+  const out = new Set<string>();
+  for (const rt of Object.values(state.runtimes)) {
+    if (!rt.pendingEvent) continue;
+    const roomId = roomOfTenant(rt.tenant.id);
+    if (roomId) out.add(roomId);
+  }
+  return [...out];
+});
 
 const unreadRooms = computed<Record<string, number>>(() => {
   const out: Record<string, number> = {};
-  for (const [roomId, tid] of Object.entries(state.occupancy)) out[roomId] = unreadCount(tid);
+  for (const rt of Object.values(state.runtimes)) {
+    const roomId = roomOfTenant(rt.tenant.id);
+    if (roomId) out[roomId] = (out[roomId] ?? 0) + unreadCount(rt.tenant.id);
+  }
   return out;
 });
 
@@ -141,9 +150,21 @@ const allTags = computed(() => [
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
-const activeRoomId = computed(() =>
-  Object.entries(state.occupancy).find(([, tid]) => tid === state.activeId)?.[0] ?? "",
-);
+const activeRoomId = computed(() => roomOfTenant(state.activeId) ?? "");
+
+// 同房的另一位租客(同居中)→ 房間細看可切換查看
+const roomMates = computed(() => {
+  const roomId = activeRoomId.value;
+  if (!roomId) return [];
+  return Object.values(state.runtimes)
+    .filter((r) => r.tenant.id !== state.activeId && roomOfTenant(r.tenant.id) === roomId)
+    .map((r) => ({ id: r.tenant.id, name: r.tenant.name }));
+});
+function switchTenant(id: string) {
+  state.activeId = id;
+  sinceMs.value = state.runtimes[id].lastSeenMs;
+  markSeen(id);
+}
 const roomAttrs = computed(() => {
   const a = roomAttributes(activeRoomId.value);
   return Object.entries(a)
@@ -209,6 +230,11 @@ function onDecide(choiceId: string, label: string) {
       <span class="rname">{{ rt.tenant.name }}</span>
       <span class="rjob">{{ rt.tenant.occupation }}</span>
       <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
+    </div>
+    <div v-if="roomMates.length" class="mates">
+      <button v-for="m in roomMates" :key="m.id" class="mate" @click="switchTenant(m.id)">
+        👥 查看同住的 {{ m.name }}
+      </button>
     </div>
 
     <PixelDollhouse
@@ -326,6 +352,8 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .back:hover { border-color: var(--accent-2); }
 
 .room-head { display: flex; align-items: baseline; gap: 8px; }
+.mates { display: flex; gap: 6px; }
+.mate { background: var(--panel); border: 1px solid #d9548a; color: #f0a8c6; border-radius: 999px; padding: 4px 12px; font-size: 12px; }
 .rno { font-weight: 700; color: var(--accent); font-size: 15px; }
 .rname { font-weight: 600; font-size: 15px; }
 .rjob { font-size: 12px; color: var(--text-dim); }

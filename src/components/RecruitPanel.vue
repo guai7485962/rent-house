@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { generateApplicants, type Applicant } from "../sim/recruit";
+import { computed } from "vue";
+import type { Applicant } from "../sim/recruit";
 import { roomAttributes } from "../sim/placements";
-import { moveIn } from "../store";
+import { moveIn, getApplicants } from "../store";
 
 const props = defineProps<{ roomId: string }>();
 const emit = defineEmits<{ close: [] }>();
 
-const applicants = ref<Applicant[]>(generateApplicants(props.roomId));
+// 每遊戲日換一批(存在 store,開關面板/重整頁面不重抽;星等隨當前裝潢即時更新)
+const applicants = computed<Applicant[]>(() => getApplicants(props.roomId));
 
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
@@ -42,7 +43,7 @@ function stars(n: number) {
         <span v-else class="empty">尚未裝潢(先去家具商店佈置,能吸引更契合的租客)</span>
       </div>
 
-      <div class="hint">契合度越高的租客,越滿意這個房間、越準時交租。</div>
+      <div class="hint">契合度越高的租客,越滿意這個房間、越準時交租。每個遊戲日會換一批應徵者。</div>
 
       <div class="list">
         <div v-for="a in applicants" :key="a.id" class="app">

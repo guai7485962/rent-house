@@ -29,13 +29,13 @@ import {
   type SocialEffect,
 } from "./sim/social";
 import { narrateDay, templateDiary, type NarrateCtx } from "./sim/narrate";
-import { memoryDrift } from "./sim/memoryEffects";
+import { memoryDrift, pruneContradictedMemories } from "./sim/memoryEffects";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
-import { setAppearance, hasFixedTheme } from "./pixel/scene";
+import { setAppearance, hasFixedTheme, THEME_POOL_SIZE } from "./pixel/scene";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
-import type { Applicant } from "./sim/recruit";
+import { generateApplicants, rescoreApplicants, type Applicant } from "./sim/recruit";
 import type { Tile } from "./floor/pathfind";
 
 const SAVE_KEY = "rent_house_save_v1";
@@ -131,6 +131,10 @@ export const state = reactive({
     r301: "tenant_chen_engineer",
     r302: "tenant_lin_asmr",
   } as Record<string, string>,
+  /** 同居者:租客 id → 同居的房間 id(住在伴侶房裡、不佔 occupancy、不另收租) */
+  cohabits: {} as Record<string, string>,
+  /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
+  applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {
     tenant_chen_engineer: makeRuntime(tenants[0], "301", 35, []),
     tenant_lin_asmr: makeRuntime(tenants[1], "302", 92, []),
@@ -141,11 +145,30 @@ export function isVacant(roomId: string): boolean {
   return !state.occupancy[roomId];
 }
 
+/** 租客實際住在哪間房:自己承租的房,或同居的伴侶房 */
+export function roomOfTenant(tenantId: string): string | null {
+  const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
+  return entry ? entry[0] : state.cohabits[tenantId] ?? null;
+}
+
 /** 依房間指派動態租客的外觀索引,確保同時在住者配色彼此不同(種子租客用專屬色不佔用) */
 const ROOM_APPEARANCE: Record<string, number> = { r301: 0, r302: 1, r303: 2, r304: 3 };
 function refreshAppearances() {
+  const used = new Set<number>();
   for (const [roomId, tid] of Object.entries(state.occupancy)) {
-    if (state.runtimes[tid] && !hasFixedTheme(tid)) setAppearance(tid, ROOM_APPEARANCE[roomId] ?? 0);
+    if (state.runtimes[tid] && !hasFixedTheme(tid)) {
+      const idx = ROOM_APPEARANCE[roomId] ?? 0;
+      setAppearance(tid, idx);
+      used.add(idx);
+    }
+  }
+  // 同居者不佔房間,改領「還沒被用掉」的配色(池已擴到 6 色,足夠 4 房 + 同居者)
+  for (const tid of Object.keys(state.cohabits)) {
+    if (!state.runtimes[tid] || hasFixedTheme(tid)) continue;
+    let idx = 0;
+    while (used.has(idx) && idx < THEME_POOL_SIZE - 1) idx++;
+    setAppearance(tid, idx);
+    used.add(idx);
   }
 }
 
@@ -198,9 +221,15 @@ export function markSeen(tenantId: string) {
 // ---------------------------------------------------------------------------
 
 const homeTile = (tenantId: string): Tile => {
+  // 同居者優先回伴侶的房(即使是有固定床位的種子租客)
+  const cohabitRoom = state.cohabits[tenantId];
+  if (cohabitRoom) {
+    const rr = roomRect(cohabitRoom);
+    if (rr) return { c: Math.floor((rr.c0 + rr.c1) / 2), r: Math.floor((rr.r0 + rr.r1) / 2) };
+  }
   const s = TENANT_SPOTS.find((x) => x.tenantId === tenantId);
   if (s) return { c: s.c, r: s.r };
-  const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId)?.[0];
+  const roomId = roomOfTenant(tenantId);
   const rect = roomId ? roomRect(roomId) : null;
   if (rect) return { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) };
   return { c: 7, r: 10 };
@@ -276,8 +305,8 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   let st = decided.state;
   const isDeviation = decided.isDeviation;
 
-  // 目標家具格
-  const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === rt.tenant.id)?.[0] ?? null;
+  // 目標家具格(同居者用伴侶房)
+  const roomId = roomOfTenant(rt.tenant.id);
   rt.inLounge = false;
   if (st === "away") {
     rt.targetTile = null;
@@ -298,7 +327,6 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   rt.roomProps = deriveProps(rt.tenant.id, st, hour);
 
   if (!addLog) return;
-  const roomId2 = Object.entries(state.occupancy).find(([, tid]) => tid === rt.tenant.id)?.[0] ?? null;
   const gen = generateHourly({
     tenantId: rt.tenant.id,
     tenantName: rt.tenant.name,
@@ -310,7 +338,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   });
   applyStat(rt, gen.statDeltas);
   applyMemoryDrift(rt); // 記憶標籤造成的長期數值漂移
-  updateSatisfaction(rt, roomId2);
+  updateSatisfaction(rt, roomId);
   rt.log.push({
     gameMs: state.gameMs,
     timeLabel: fmt(state.gameMs),
@@ -324,6 +352,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
 /** 每日收租(遊戲日換日時觸發):日租 = 月租/30,依付租能力與好感調整 */
 function collectRent() {
   for (const rt of Object.values(state.runtimes)) {
+    if (state.cohabits[rt.tenant.id]) continue; // 同居者不另收租(同意同居時已說好少一份租)
     const f = rt.tenant.finance;
     const daily = Math.round(f.monthlyRent / 30);
     const factor =
@@ -384,8 +413,26 @@ function hourlyTick(live = false) {
 
   socialPass(); // 鄰居在交誼廳相遇 → 聊天/衝突/戀愛
   if (d.getDate() !== prevDay) {
+    pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     collectRent();
     void produceDailyDiaries(live); // 換日 → 每位租客一篇當日 AI 日記(fire-and-forget)
+  }
+}
+
+/** 每日:移除與現況矛盾的記憶標籤,並留一筆「心境轉變」日誌 */
+function pruneStaleMemories() {
+  for (const rt of Object.values(state.runtimes)) {
+    const removed = pruneContradictedMemories(rt.tenant);
+    for (const label of removed) {
+      rt.log.push({
+        gameMs: state.gameMs,
+        timeLabel: fmt(state.gameMs),
+        text: `🕊️ 看起來已經走出「${label.replace(/[[\]]/g, "")}」了。`,
+        visualState: rt.tenant.visualState,
+        importance: "notable",
+      });
+      if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
+    }
   }
 }
 
@@ -478,7 +525,10 @@ function socialPass() {
       applySocialEffect(A, res.effectA);
       applySocialEffect(B, res.effectB);
       if (res.milestone === "became_couple") state.notice = `${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`;
-      if (res.milestone === "broke_up") state.notice = `${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`;
+      if (res.milestone === "broke_up") {
+        state.notice = `${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`;
+        endCohabitOnBreakup(A.tenant.id, B.tenant.id);
+      }
       if (res.cohabit && !state.pendingCohabit) {
         state.pendingCohabit = { aId: A.tenant.id, bId: B.tenant.id, aName: A.tenant.name, bName: B.tenant.name };
       }
@@ -491,24 +541,65 @@ function pushSocialLog(rt: TenantRuntime, text: string, importance: "minor" | "n
   if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
 }
 
-/** 租客退租搬走:清空房間佔用、移除 runtime */
+/** 同居情侶分手:同居的一方搬離伴侶房(有空房就搬過去續租,沒有就退租離開) */
+function endCohabitOnBreakup(aId: string, bId: string) {
+  const mateId = state.cohabits[aId] ? aId : state.cohabits[bId] ? bId : null;
+  if (!mateId) return;
+  const rt = state.runtimes[mateId];
+  if (!rt) return;
+  const vacant = Object.keys(ROOM_APPEARANCE).find((roomId) => !state.occupancy[roomId]);
+  if (vacant) {
+    delete state.cohabits[mateId];
+    state.occupancy[vacant] = mateId;
+    rt.roomNo = vacant.replace(/^r/, "");
+    refreshAppearances();
+    pushSocialLog(rt, `💔 分手後搬到 ${rt.roomNo} 房,一個人重新開始。`, "major");
+    state.notice = `${rt.tenant.name} 分手後搬進了空房 ${rt.roomNo}。`;
+  } else {
+    moveOut(mateId, "分手後無處可住,搬離公寓");
+  }
+}
+
+/** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶 */
 function moveOut(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
   const name = rt.tenant.name;
+  // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
+  const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
-  if (entry) delete state.occupancy[entry[0]];
+  if (entry) {
+    delete state.occupancy[entry[0]];
+    // 若有同居者住在這間房 → 伴侶接手承租(轉正,開始付租)
+    const mateId = Object.keys(state.cohabits).find((id) => state.cohabits[id] === entry[0]);
+    if (mateId && state.runtimes[mateId] && mateId !== tenantId) {
+      delete state.cohabits[mateId];
+      state.occupancy[entry[0]] = mateId;
+      state.runtimes[mateId].roomNo = entry[0].replace(/^r/, "");
+    }
+  }
+  delete state.cohabits[tenantId];
   delete state.runtimes[tenantId];
   removeTenantRelations(tenantId);
+  // 其他租客身上「提到他」的記憶標籤一併移除(人都走了,AI 不該再寫跟他的互動)
+  for (const other of Object.values(state.runtimes)) {
+    const t = other.tenant;
+    t.memoryTags = t.memoryTags.filter((m) => !m.label.includes(name) && !m.behaviorHint.includes(name));
+    const bond = bonds.find((b) => b.aId === t.id || b.bId === t.id);
+    if (bond && (bond.romantic || bond.value >= 50)) {
+      pushMemory(t, `[${name}搬走了]`, `親近的${bond.romantic ? "戀人" : "朋友"} ${name} 已退租離開,心裡有些失落。`, "ai_event");
+    }
+  }
   if (state.pendingCohabit && (state.pendingCohabit.aId === tenantId || state.pendingCohabit.bId === tenantId)) {
     state.pendingCohabit = null;
   }
   if (state.activeId === tenantId) state.activeId = Object.keys(state.runtimes)[0] ?? "";
+  refreshAppearances();
   state.notice = `${name} 退租搬走了(${reason})`;
   save();
 }
 
-/** 同居抉擇:同意 → 一人搬去和對方擠(空出一間房、少一份租、兩人大加成) */
+/** 同居抉擇:同意 → b 搬進 a 的房一起住(b 仍是遊戲中的角色!空出 b 的房、少一份租、兩人大加成) */
 export function resolveCohabit(accept: boolean) {
   const pc = state.pendingCohabit;
   if (!pc) return;
@@ -517,12 +608,25 @@ export function resolveCohabit(accept: boolean) {
   const b = state.runtimes[pc.bId];
   if (!a || !b) return;
   if (accept) {
-    // b 搬進 a 的房間(b 的房空出可再招租),a 得到同居加成
-    a.satisfaction = clamp(a.satisfaction + 15, 0, 100);
-    a.tenant.stats.mood = clamp(a.tenant.stats.mood + 15, 0, 100);
-    a.unhappyHours = 0;
+    const aRoom = Object.entries(state.occupancy).find(([, tid]) => tid === pc.aId)?.[0];
+    if (!aRoom) return; // 異常(a 沒有自己的房)→ 不處理
+    // b 讓出自己的房(空出可再招租),搬進 a 的房;runtime/關係全部保留
+    const bRoomEntry = Object.entries(state.occupancy).find(([, tid]) => tid === pc.bId);
+    if (bRoomEntry) delete state.occupancy[bRoomEntry[0]];
+    state.cohabits[pc.bId] = aRoom;
+    b.roomNo = aRoom.replace(/^r/, "");
+    // 兩人同居加成 + 記憶
+    for (const rt of [a, b]) {
+      rt.satisfaction = clamp(rt.satisfaction + 15, 0, 100);
+      rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 15, 0, 100);
+      rt.unhappyHours = 0;
+    }
+    pushMemory(a.tenant, `[與${pc.bName}同居]`, `${pc.bName} 搬進來一起住,兩人開始同居生活。`, "landlord_decision");
+    pushMemory(b.tenant, `[與${pc.aName}同居]`, `搬進 ${pc.aName} 的房間,兩人開始同居生活。`, "landlord_decision");
     pushSocialLog(a, `❤️ ${pc.bName} 搬進來一起住了`, "major");
-    moveOut(pc.bId, `搬去和 ${pc.aName} 同居`);
+    pushSocialLog(b, `❤️ 搬進 ${pc.aName} 的房間,開始同居生活`, "major");
+    refreshAppearances();
+    applyHour(b, new Date(state.gameMs).getHours(), false); // 立即重新定位到新房間
     state.notice = `${pc.bName} 搬去和 ${pc.aName} 同居了 ❤️(${pc.bName} 原本的房間空出來了)`;
   } else {
     // 不同意 → 兩人失望,關係回落
@@ -563,6 +667,18 @@ export function fastForward(hours = 6) {
   save();
 }
 
+/** 取得某空房的應徵者(每遊戲日換一批;重開面板/重整頁面不重抽,星等隨當前裝潢即時更新) */
+export function getApplicants(roomId: string): Applicant[] {
+  const day = gameDayIndex();
+  const pool = state.applicantPools[roomId];
+  if (!pool || pool.day !== day || pool.applicants.length === 0) {
+    const excludeNames = Object.values(state.runtimes).map((rt) => rt.tenant.name);
+    state.applicantPools[roomId] = { day, applicants: generateApplicants(roomId, excludeNames) };
+    save();
+  }
+  return rescoreApplicants(state.applicantPools[roomId].applicants, roomId);
+}
+
 /** 招租入住:把一位應徵者變成正式租客 */
 export function moveIn(roomId: string, ap: Applicant) {
   if (!isVacant(roomId)) return;
@@ -586,6 +702,8 @@ export function moveIn(roomId: string, ap: Applicant) {
   rt.archetypeKey = ap.archetypeKey;
   state.runtimes[ap.id] = rt;
   state.occupancy[roomId] = ap.id;
+  delete state.applicantPools[roomId]; // 房間租出去,該池作廢
+  for (const p of Object.values(state.applicantPools)) p.applicants = p.applicants.filter((x) => x.name !== ap.name); // 別的房不能再出現同名應徵者
   registerRoutine(ap.id, ap.archetypeKey);
   refreshAppearances(); // 指派配色(依房間,確保彼此不同)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
@@ -729,6 +847,8 @@ function save() {
         gameMs: state.gameMs,
         money: state.money,
         occupancy: state.occupancy,
+        cohabits: state.cohabits,
+        applicantPools: state.applicantPools,
         placements: placements.list,
         relationships: serializeRelationships(),
         ledger: state.ledger,
@@ -755,9 +875,13 @@ function load(): boolean {
     placements.list.splice(0, placements.list.length, ...s.placements.map((p: unknown) => ({ ...(p as object) })));
     placements.version++;
 
-    // 房間佔用
+    // 房間佔用 + 同居 + 應徵者池
     for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
     Object.assign(state.occupancy, s.occupancy);
+    for (const k of Object.keys(state.cohabits)) delete state.cohabits[k];
+    Object.assign(state.cohabits, s.cohabits ?? {});
+    for (const k of Object.keys(state.applicantPools)) delete state.applicantPools[k];
+    Object.assign(state.applicantPools, s.applicantPools ?? {});
 
     // 鄰居關係
     loadRelationships(s.relationships ?? []);

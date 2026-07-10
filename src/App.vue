@@ -109,9 +109,9 @@ function onEnterRoom(room: RoomInfo) {
   view.value = "room";
 }
 
-function toast(msg: string) {
+function toast(msg: string, ms = 2200) {
   vacantNote.value = msg;
-  window.setTimeout(() => (vacantNote.value = ""), 2200);
+  window.setTimeout(() => (vacantNote.value = ""), ms);
 }
 
 const pendingName = computed(() => (state.pendingPlace ? getDef(state.pendingPlace).name : ""));
@@ -188,6 +188,18 @@ const roomAttrs = computed(() => {
     .filter(([, v]) => v)
     .map(([k, v]) => ({ label: ATTR_LABEL[k] ?? k, value: v as number }));
 });
+
+/** 點數值名稱 → 一句話說明(8-5) */
+const STAT_HELP: Record<string, string> = {
+  心情: "心情:短期情緒,受作息/事件/社交影響;太低會影響滿意度。",
+  壓力: "壓力:太高會失眠、崩潰,還會觸發突發事件;放鬆活動能降。",
+  好感: "好感:對你(房東)的信任,影響繳租意願;你的抉擇會改變它。",
+  整潔: "整潔:房間狀態,反映租客的生活習慣。",
+  滿意: "滿意:綜合心情/好感/壓力/房間裝潢;長期過低租客會退租!",
+};
+function explainStat(key: string) {
+  toast(STAT_HELP[key] ?? "", 4200);
+}
 
 function statColor(v: number, invert = false) {
   const good = invert ? v < 40 : v > 60;
@@ -268,27 +280,27 @@ function onDecide(choiceId: string, label: string) {
 
     <section class="stats">
       <div class="stat">
-        <label>心情</label>
+        <label @click="explainStat('心情')">心情</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.mood + '%', background: statColor(rt.tenant.stats.mood) }"></div></div>
         <span>{{ rt.tenant.stats.mood }}</span>
       </div>
       <div class="stat">
-        <label>壓力</label>
+        <label @click="explainStat('壓力')">壓力</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.stress + '%', background: statColor(rt.tenant.stats.stress, true) }"></div></div>
         <span>{{ rt.tenant.stats.stress }}</span>
       </div>
       <div class="stat">
-        <label>好感</label>
+        <label @click="explainStat('好感')">好感</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.affinity + '%', background: statColor(rt.tenant.stats.affinity) }"></div></div>
         <span>{{ rt.tenant.stats.affinity }}</span>
       </div>
       <div class="stat">
-        <label>整潔</label>
+        <label @click="explainStat('整潔')">整潔</label>
         <div class="bar"><div :style="{ width: rt.cleanliness + '%', background: statColor(rt.cleanliness) }"></div></div>
         <span>{{ rt.cleanliness }}</span>
       </div>
       <div class="stat span2">
-        <label>滿意</label>
+        <label @click="explainStat('滿意')">滿意</label>
         <div class="bar"><div :style="{ width: Math.round(rt.satisfaction) + '%', background: statColor(rt.satisfaction) }"></div></div>
         <span>{{ Math.round(rt.satisfaction) }}</span>
       </div>
@@ -382,7 +394,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.stat label { color: var(--text-dim); white-space: nowrap; }
+.stat label { color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
 .stat span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .bar { flex: 1; height: 7px; background: #17151f; border-radius: 4px; overflow: hidden; }
 .bar > div { height: 100%; border-radius: 4px; transition: width 0.6s ease, background 0.6s; }

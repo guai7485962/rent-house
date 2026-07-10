@@ -8,7 +8,7 @@ import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships } from "./social";
-import { memoryDrift, pruneContradictedMemories } from "./memoryEffects";
+import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
 import { DIRECTIVES } from "./directives";
 import { generateHourly } from "./generate";
 import { TENANT_SPOTS } from "../floor/map";
@@ -293,19 +293,17 @@ export function hourlyTick(live = false) {
   }
 }
 
-/** 每日:移除與現況矛盾的記憶標籤,並留一筆「心境轉變」日誌 */
+/** 每日:記憶生命週期(衰減淡忘)+ 移除與現況矛盾的記憶標籤,各留一筆日誌 */
 function pruneStaleMemories() {
   for (const rt of Object.values(state.runtimes)) {
+    // 1) 自然衰減:情緒記憶隨時間變淡,歸零淡忘(失戀會慢慢好起來)
+    for (const label of decayMemories(rt.tenant)) {
+      pushSocialLog(rt, `🍂 「${label.replace(/[[\]]/g, "")}」的記憶漸漸淡了,不再影響心情。`, "notable");
+    }
+    // 2) 矛盾淡出:數值已明顯走出該記憶的方向 → 直接移除
     const removed = pruneContradictedMemories(rt.tenant);
     for (const label of removed) {
-      rt.log.push({
-        gameMs: state.gameMs,
-        timeLabel: fmt(state.gameMs),
-        text: `🕊️ 看起來已經走出「${label.replace(/[[\]]/g, "")}」了。`,
-        visualState: rt.tenant.visualState,
-        importance: "notable",
-      });
-      if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
+      pushSocialLog(rt, `🕊️ 看起來已經走出「${label.replace(/[[\]]/g, "")}」了。`, "notable");
     }
   }
 }

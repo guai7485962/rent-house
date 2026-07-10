@@ -206,8 +206,9 @@ function onSell() {
 }
 
 const allTags = computed(() => [
-  ...rt.value.tenant.coreTags.map((t) => ({ label: t.label, core: true })),
-  ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false })),
+  ...rt.value.tenant.coreTags.map((t) => ({ label: t.label, core: true, fade: 1 })),
+  // 記憶越淡,chip 越透明(生命週期可視化)
+  ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false, fade: 0.45 + 0.55 * (t.intensity ?? 1) })),
 ]);
 
 /** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
@@ -395,7 +396,7 @@ function onDecide(choiceId: string, label: string) {
 
     <section class="tags">
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
-      <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }">{{ t.label }}</span>
+      <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }" :style="{ opacity: t.fade }">{{ t.label }}</span>
     </section>
 
     <section v-if="roomAttrs.length" class="attrs">

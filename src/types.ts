@@ -84,6 +84,11 @@ export interface MemoryTag {
   acquiredAt: string;   // ISO 8601
   /** 來源:AI 劇情產生 / 房東抉擇 / 系統事件 */
   source: "ai_event" | "landlord_decision" | "system";
+  /**
+   * 記憶強度 0~1(生命週期):每日依標籤語意衰減,數值漂移乘上它,
+   * 歸零自動淡忘移除。缺欄位(舊存檔)視為 1。持續狀態類(養貓/同居)不衰減。
+   */
+  intensity?: number;
 }
 
 // ---------------------------------------------------------------------------

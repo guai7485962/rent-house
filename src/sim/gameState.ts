@@ -158,10 +158,10 @@ export function refreshAppearances() {
   }
 }
 
-/** 新增記憶標籤:不重複、有上限(超過丟最舊) */
+/** 新增記憶標籤:不重複、有上限(超過丟最舊);intensity=1 起跳,每日依語意衰減(memoryEffects) */
 export function pushMemory(t: Tenant, label: string, hint: string, source: "ai_event" | "landlord_decision") {
   if (t.memoryTags.some((m) => m.label === label)) return;
-  t.memoryTags.push({ id: `ai_${Date.now()}`, label, behaviorHint: hint, acquiredAt: new Date(state.gameMs).toISOString(), source });
+  t.memoryTags.push({ id: `ai_${Date.now()}`, label, behaviorHint: hint, acquiredAt: new Date(state.gameMs).toISOString(), source, intensity: 1 });
   if (t.memoryTags.length > MEMORY_CAP) t.memoryTags.splice(0, t.memoryTags.length - MEMORY_CAP);
 }
 

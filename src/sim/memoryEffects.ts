@@ -62,16 +62,17 @@ function labelDrift(label: string): Required<Drift> {
   return d;
 }
 
-/** 依租客目前所有記憶標籤,算出這一小時的合計漂移(已夾上限) */
+/** 依租客目前所有記憶標籤,算出這一小時的合計漂移(乘上記憶強度、已夾上限) */
 export function memoryDrift(tenant: Tenant): Drift {
   const total = { mood: 0, stress: 0, wellbeing: 0, energy: 0, affinity: 0 };
   for (const tag of tenant.memoryTags) {
     const d = labelDrift(tag.label);
-    total.mood += d.mood;
-    total.stress += d.stress;
-    total.wellbeing += d.wellbeing;
-    total.energy += d.energy;
-    total.affinity += d.affinity;
+    const k = tag.intensity ?? 1; // 記憶越淡,影響越弱
+    total.mood += d.mood * k;
+    total.stress += d.stress * k;
+    total.wellbeing += d.wellbeing * k;
+    total.energy += d.energy * k;
+    total.affinity += d.affinity * k;
   }
   return {
     mood: clampCap(total.mood),
@@ -80,6 +81,39 @@ export function memoryDrift(tenant: Tenant): Drift {
     energy: clampCap(total.energy),
     affinity: clampCap(total.affinity),
   };
+}
+
+// ---------------------------------------------------------------------------
+// 記憶生命週期(設計檢討 §2):每日衰減,歸零淡忘
+// ---------------------------------------------------------------------------
+
+/** 不衰減的「持續狀態」關鍵字:這類記憶由事件收尾(分手/矛盾淡出/搬走清理)移除,不會自然淡忘 */
+const PERSISTENT_KEYWORDS = ["貓", "狗", "寵", "毛孩", "倉鼠", "兔", "同居", "交往", "熱戀", "戀愛"];
+/** 強情緒記憶:痛得深但也好得快(約 11 天淡出) */
+const INTENSE_KEYWORDS = ["失戀", "分手", "被甩", "心碎", "低落", "憂鬱", "搬走了", "崩潰"];
+
+/** 每日衰減率:持續狀態 0 / 強情緒 0.09 / 一般 0.05(約 20 天淡出) */
+export function decayRate(label: string): number {
+  if (PERSISTENT_KEYWORDS.some((k) => label.includes(k))) return 0;
+  if (INTENSE_KEYWORDS.some((k) => label.includes(k))) return 0.09;
+  return 0.05;
+}
+
+/**
+ * 每日呼叫:所有記憶依語意衰減 intensity,歸零的移除。
+ * 回傳被淡忘的 label(供寫「記憶淡了」日誌)。
+ */
+export function decayMemories(tenant: Tenant): string[] {
+  const faded: string[] = [];
+  tenant.memoryTags = tenant.memoryTags.filter((tag) => {
+    const rate = decayRate(tag.label);
+    if (rate === 0) return true;
+    tag.intensity = (tag.intensity ?? 1) - rate;
+    if (tag.intensity > 0) return true;
+    faded.push(tag.label);
+    return false;
+  });
+  return faded;
 }
 
 /**

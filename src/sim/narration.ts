@@ -10,17 +10,23 @@ import { listRelationships } from "./social";
 import { state, fmt, gameDayIndex, pushMemory, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 
+/** narrate 節流:多位租客串行、每次間隔 ≥4 秒(Gemini 免費層 RPM 低,快轉跨多日尤其容易連發) */
+const NARRATE_GAP_MS = 4000;
+
 /** 換日時,為每位租客產生一篇「當日日記」(live 才呼叫 AI,否則模板) */
 export async function produceDailyDiaries(live: boolean) {
   const dayLabel = `第 ${gameDayIndex() + 1} 天`;
   const ids = Object.keys(state.runtimes);
+  let first = true;
   for (const id of ids) {
     const rt = state.runtimes[id];
     if (!rt) continue;
+    if (live && !first) await new Promise((r) => setTimeout(r, NARRATE_GAP_MS));
+    first = false;
     const ctx = buildNarrateCtx(rt, dayLabel);
     const result: NarrateResult = live
       ? await narrateDay(ctx)
-      : { diary: templateDiary(ctx), newMemory: null, event: null, ai: false };
+      : { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, ai: false };
     const cur = state.runtimes[id];
     if (!cur) continue; // 期間可能已退租
     cur.log.push({
@@ -34,6 +40,8 @@ export async function produceDailyDiaries(live: boolean) {
     });
     if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
     if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
+    // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
+    if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
     // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
     if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
       const roster: Record<string, string> = {};
@@ -76,5 +84,6 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     relationships,
     events,
     neighbors,
+    summary: rt.tenant.recentSummary,
   };
 }

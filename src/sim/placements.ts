@@ -10,6 +10,7 @@
 import { reactive } from "vue";
 import { INITIAL_PLACEMENTS, ROOM_RECTS, FACILITY_RECTS, buildGrid, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
+import { upgradeAttributes } from "./upgrades";
 import type { RoomAttribute } from "../types";
 
 export const ROOM_ATTRIBUTES: RoomAttribute[] = ["tech", "cozy", "noise", "soundproof", "storage", "style"];
@@ -49,9 +50,9 @@ export function removePlacementAt(c: number, r: number): Placement | null {
   return removed;
 }
 
-/** 某房間由家具累積出的屬性總和 */
+/** 某房間由家具累積出的屬性總和(疊加一次性升級改建的永久加成) */
 export function roomAttributes(roomId: string): Partial<Record<RoomAttribute, number>> {
-  const totals: Partial<Record<RoomAttribute, number>> = {};
+  const totals: Partial<Record<RoomAttribute, number>> = { ...upgradeAttributes(roomId) };
   for (const p of placements.list) {
     if (p.room !== roomId) continue;
     const def = getDef(p.defId);

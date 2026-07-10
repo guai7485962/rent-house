@@ -71,8 +71,11 @@ check("快轉完成後 ffRemaining = 0", state.ffRemaining === 0);
 check("快轉剛好推進 24 小時(重按未疊加)", state.gameMs - before === 24 * MS_PER_GAME_HOUR);
 
 // --- 8-4 存檔管理 ---
+const { buyUpgrade } = await import("../src/store");
+buyUpgrade("r304", "smart_home"); // 讓存檔帶一筆升級,驗證欄位入檔
 const json = exportSave();
 check("匯出存檔為有效 JSON 且 v=SAVE_VERSION", !!json && JSON.parse(json!).v === SAVE_VERSION);
+check("房間升級入存檔", JSON.parse(json!).upgrades?.r304?.includes("smart_home") === true);
 check("匯入非 JSON → 拒絕", !importSave("這不是存檔"));
 check("匯入無升級路徑的舊版 → 拒絕", !importSave('{"v":1,"runtimes":{},"occupancy":{}}'));
 check("匯入缺欄位 → 拒絕", !importSave(`{"v":${SAVE_VERSION}}`));

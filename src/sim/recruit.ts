@@ -4,6 +4,7 @@
  */
 import type { CoreTag, Gender, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
+import { upgradeRentBonus } from "./upgrades";
 
 interface Archetype {
   key: string; // 對應 ARCHETYPE_ROUTINES 的作息
@@ -72,9 +73,16 @@ export interface Applicant {
   coreTags: CoreTag[];
   preferences: Partial<Record<RoomAttribute, number>>;
   monthlyRent: number;
+  /** 原型基礎租金(行情加成前;monthlyRent = baseRent × (1+升級加成)) */
+  baseRent?: number;
   stars: number; // 1~5 契合度
   gender: Gender;
   attractedTo: Gender[];
+}
+
+/** 應徵者實際開的月租:基礎租金 × 房間升級行情加成,取整到百位 */
+function offeredRent(base: number, roomId: string): number {
+  return Math.round((base * (1 + upgradeRentBonus(roomId))) / 100) * 100;
 }
 
 /** 隨機生成性別與戀愛取向 */
@@ -112,10 +120,14 @@ function shuffle<T>(a: T[]): T[] {
   return r;
 }
 
-/** 依「當前」房間屬性重算一批應徵者的契合星等(裝潢改變後即時反映,不必重抽人) */
+/** 依「當前」房間屬性重算一批應徵者的契合星等與租金行情(裝潢/升級改變後即時反映,不必重抽人) */
 export function rescoreApplicants(list: Applicant[], roomId: string): Applicant[] {
   const attrs = roomAttributes(roomId);
-  for (const a of list) a.stars = matchStars(a.preferences, attrs);
+  for (const a of list) {
+    a.stars = matchStars(a.preferences, attrs);
+    a.baseRent = a.baseRent ?? a.monthlyRent; // 舊存檔的池沒有 baseRent → 以現值為底
+    a.monthlyRent = offeredRent(a.baseRent, roomId);
+  }
   return list;
 }
 
@@ -133,7 +145,8 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       bio: a.bio,
       coreTags: a.coreTags,
       preferences: a.preferences,
-      monthlyRent: a.monthlyRent,
+      monthlyRent: offeredRent(a.monthlyRent, roomId),
+      baseRent: a.monthlyRent,
       stars: matchStars(a.preferences, attrs),
       ...randomIdentity(),
     }));

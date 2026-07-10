@@ -5,7 +5,7 @@ import { roomAttributes } from "../sim/placements";
 import { moveIn, getApplicants } from "../store";
 
 const props = defineProps<{ roomId: string }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; upgrade: [roomId: string] }>();
 
 // 每遊戲日換一批(存在 store,開關面板/重整頁面不重抽;星等隨當前裝潢即時更新)
 const applicants = computed<Applicant[]>(() => getApplicants(props.roomId));
@@ -32,6 +32,7 @@ function stars(n: number) {
     <div class="panel">
       <header class="head">
         <div class="ttl">🔑 {{ roomNo }} 房招租</div>
+        <button class="reno" @click="emit('upgrade', props.roomId)">🔨 改建</button>
         <button class="x" @click="emit('close')">✕</button>
       </header>
 
@@ -71,7 +72,8 @@ function stars(n: number) {
 
 .head { display: flex; align-items: center; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
 .ttl { font-weight: 700; font-size: 15px; }
-.x { margin-left: auto; background: none; color: var(--text-dim); font-size: 16px; }
+.x { background: none; color: var(--text-dim); font-size: 16px; }
+.reno { margin-left: auto; margin-right: 10px; background: var(--panel); border: 1px solid var(--accent); color: #ffd6a3; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
 
 .room-attrs { padding: 10px 16px 4px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .room-attrs .lbl { color: var(--text-dim); }

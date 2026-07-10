@@ -8,6 +8,7 @@
 import { reactive } from "vue";
 import type { Tenant } from "../types";
 import { placements } from "./placements";
+import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships } from "./social";
 import { registerRoutine } from "./routine";
 import { state, tenants, refreshAppearances, type Txn } from "./gameState";
@@ -85,6 +86,7 @@ export function save() {
         cohabits: state.cohabits,
         applicantPools: state.applicantPools,
         placements: placements.list,
+        upgrades: upgradeState.byRoom,
         relationships: serializeRelationships(),
         ledger: state.ledger,
         noticeLog: state.noticeLog,
@@ -107,9 +109,11 @@ export function load(): boolean {
     state.gameMs = s.gameMs;
     state.money = s.money;
 
-    // 家具擺放
+    // 家具擺放 + 房間升級
     placements.list.splice(0, placements.list.length, ...s.placements.map((p: unknown) => ({ ...(p as object) })));
     placements.version++;
+    for (const k of Object.keys(upgradeState.byRoom)) delete upgradeState.byRoom[k];
+    Object.assign(upgradeState.byRoom, s.upgrades ?? {});
 
     // 房間佔用 + 同居 + 應徵者池
     for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];

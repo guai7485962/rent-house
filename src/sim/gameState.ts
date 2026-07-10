@@ -22,7 +22,7 @@ export const LOG_CAP = 60;
 export const LEDGER_CAP = 60;
 export const MEMORY_CAP = 8; // 記憶標籤上限,超過丟最舊(避免無限增長)
 
-export type TxnCategory = "rent" | "furniture" | "event" | "upkeep" | "other";
+export type TxnCategory = "rent" | "furniture" | "upgrade" | "event" | "upkeep" | "other";
 export interface Txn {
   gameMs: number;
   label: string;

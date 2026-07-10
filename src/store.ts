@@ -31,6 +31,7 @@ export { fastForward, startFastForward } from "./sim/tick";
 export {
   addMoney,
   buyFurniture,
+  buyUpgrade,
   startPlacing,
   cancelPlacing,
   placeAt,

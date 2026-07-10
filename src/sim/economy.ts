@@ -5,7 +5,8 @@
  */
 import { getDef } from "../furniture/catalog";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt } from "./placements";
-import { state, clamp, fmt, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
+import { getUpgradeDef, roomUpgradeIds, upgradeState } from "./upgrades";
+import { state, clamp, fmt, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
 import { applyHour } from "./tick";
 import { save } from "./persistence";
 
@@ -132,6 +133,29 @@ export function canDropAt(c: number, r: number): boolean {
     return canPlaceFree(c, r, def.footprint.w, def.footprint.h) !== null;
   }
   return false;
+}
+
+/** 購買一次性房間升級改建(7-1 升級階梯:大額投資、不可退、永久生效) */
+export function buyUpgrade(roomId: string, upgradeId: string): { ok: boolean; reason?: string } {
+  const def = getUpgradeDef(upgradeId);
+  if (!def) return { ok: false, reason: "沒有這種改建" };
+  if (roomUpgradeIds(roomId).includes(upgradeId)) return { ok: false, reason: "這間房已經做過這項改建" };
+  if (state.money < def.price) return { ok: false, reason: "金錢不足" };
+  addMoney(-def.price, `改建:${roomId.replace(/^r/, "")} 房${def.name}`, "upgrade");
+  (upgradeState.byRoom[roomId] ??= []).push(upgradeId);
+  // 在住租客:住的房變好了,立即有感(滿意/心情↑ + 記憶,AI 也能拿去寫)
+  const tid = state.occupancy[roomId];
+  const rt = tid ? state.runtimes[tid] : null;
+  if (rt) {
+    rt.satisfaction = clamp(rt.satisfaction + 10, 0, 100);
+    rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 8, 0, 100);
+    rt.unhappyHours = 0;
+    pushMemory(rt.tenant, `[房間${def.name}了]`, `房東花大錢幫房間做了${def.name},住起來明顯升級,心存好感。`, "landlord_decision");
+    pushSocialLog(rt, `${def.icon} 房東幫房間做了「${def.name}」,整個空間質感都不一樣了!`, "major");
+  }
+  notify(`${def.icon} ${roomId.replace(/^r/, "")} 房完成「${def.name}」改建`);
+  save();
+  return { ok: true };
 }
 
 /** 賣掉某格上的家具(退回半價) */

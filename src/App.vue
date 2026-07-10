@@ -12,6 +12,7 @@ import CohabitModal from "./components/CohabitModal.vue";
 import FinancePanel from "./components/FinancePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import RentPanel from "./components/RentPanel.vue";
+import UpgradePanel from "./components/UpgradePanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -49,6 +50,8 @@ const showFinance = ref(false);
 const showNotices = ref(false);
 const showSettings = ref(false);
 const showRent = ref(false);
+/** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
+const upgradeRoom = ref<string | null>(null);
 /** 只有「承租人」能談房租(同居者不付租) */
 const isLeaseHolder = computed(() => Object.values(state.occupancy).includes(state.activeId));
 function fmtMs(ms: number) {
@@ -340,6 +343,7 @@ function onDecide(choiceId: string, label: string) {
       <span class="rent-now">月租 ${{ rt.tenant.finance.monthlyRent.toLocaleString() }}</span>
       <button v-if="isLeaseHolder" class="rent-btn" @click="showRent = true">💲 談房租</button>
       <span v-else class="rent-note">同居中(不另收租)</span>
+      <button class="rent-btn" @click="upgradeRoom = activeRoomId">🔨 改建</button>
     </div>
     <div v-if="roomMates.length" class="mates">
       <button v-for="m in roomMates" :key="m.id" class="mate" @click="switchTenant(m.id)">
@@ -443,6 +447,7 @@ function onDecide(choiceId: string, label: string) {
 
   <SettingsPanel v-if="showSettings" @close="showSettings = false" />
   <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" />
+  <UpgradePanel v-if="upgradeRoom" :room-id="upgradeRoom" @close="upgradeRoom = null" @done="toast($event, 3200)" />
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
@@ -451,7 +456,7 @@ function onDecide(choiceId: string, label: string) {
     :a-name="state.pendingCohabit.aName"
     :b-name="state.pendingCohabit.bName"
   />
-  <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" />
+  <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" @upgrade="upgradeRoom = $event" />
   <FurnitureInfo
     v-if="inspectItem"
     :c="inspectItem.c"

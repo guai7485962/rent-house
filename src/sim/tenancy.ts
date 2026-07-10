@@ -32,6 +32,7 @@ import {
 } from "./gameState";
 import { applyHour } from "./tick";
 import { addMoney } from "./economy";
+import { upgradeTolBonus } from "./upgrades";
 import { save } from "./persistence";
 
 /** 取得某空房的應徵者(每遊戲日換一批;重開面板/重整頁面不重抽,星等隨當前裝潢即時更新) */
@@ -205,7 +206,9 @@ export function previewRent(tenantId: string, newRent: number): RentPreview | nu
   const cur = rt.tenant.finance.monthlyRent;
   const next = Math.round(clamp(newRent, cur * (1 - RENT_MAX_STEP), cur * (1 + RENT_MAX_STEP)));
   const pct = (next - cur) / cur;
-  const tol = raiseTolerance(rt);
+  // 房間做過升級改建 → 漲租更站得住腳(容忍度加成,合計上限 0.35)
+  const roomId = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId)?.[0] ?? "";
+  const tol = Math.min(0.35, raiseTolerance(rt) + upgradeTolBonus(roomId));
   const verdict = pct <= 0 ? "cut" : pct <= tol * 0.75 ? "safe" : pct <= tol ? "risky" : "reject";
   const cooldownLeft = Math.max(0, RENT_COOLDOWN_DAYS - (gameDayIndex() - rt.rentChangeDay));
   return { next, pct, verdict, cooldownLeft };

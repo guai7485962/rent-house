@@ -5,7 +5,7 @@ import { state, type TxnCategory } from "../store";
 const emit = defineEmits<{ close: [] }>();
 
 const CAT_LABEL: Record<TxnCategory, string> = {
-  rent: "租金收入", furniture: "家具", event: "事件", upkeep: "管理費", other: "其他",
+  rent: "租金收入", furniture: "家具", upgrade: "房間改建", event: "事件", upkeep: "管理費", other: "其他",
 };
 
 const income = computed(() => state.ledger.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));

@@ -102,6 +102,8 @@ export const state = reactive({
   notice: "",
   /** 通知歷史(toast 會消失,這裡留存;cap 30、入存檔) */
   noticeLog: [] as { gameMs: number; text: string }[],
+  /** 上次查看動態 Feed 的遊戲時間(未讀徽章基準;入存檔) */
+  feedSeenMs: 0,
   /** 待決的同居抉擇(情侶關係極高時觸發) */
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */

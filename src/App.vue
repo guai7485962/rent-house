@@ -13,6 +13,7 @@ import FinancePanel from "./components/FinancePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import RentPanel from "./components/RentPanel.vue";
 import UpgradePanel from "./components/UpgradePanel.vue";
+import FeedPanel from "./components/FeedPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -39,10 +40,16 @@ import {
   cancelMoving,
   moveFurnitureTo,
   canDropAt,
+  feedUnreadCount,
+  markFeedSeen,
 } from "./store";
 
-type View = "floor" | "room";
+type View = "floor" | "room" | "feed";
 const view = ref<View>("floor");
+/** 進房間前所在的分頁(回上一頁用:從動態點進來就回動態) */
+const roomFrom = ref<"floor" | "feed">("floor");
+/** 這次進動態分頁時的「上次已讀」快照(NEW 標記基準) */
+const feedSinceMs = ref(0);
 const showSummary = ref(false);
 const showShop = ref(false);
 const showRels = ref(false);
@@ -75,6 +82,32 @@ const pendingRooms = computed(() => {
   }
   return [...out];
 });
+
+/** 底部導覽「動態」徽章:待決事件優先(紅),否則未讀動態數(紫) */
+const pendingCount = computed(() => Object.values(state.runtimes).filter((r) => r.pendingEvent).length);
+const feedUnread = computed(() => feedUnreadCount());
+
+// 進動態分頁:快照上次已讀點(給 NEW 標記)後立即標為已讀;離開時再標一次,
+// 把停留期間湧入的動態也吸收掉,徽章才不會馬上又亮
+watch(view, (nv, ov) => {
+  if (nv === "feed") {
+    feedSinceMs.value = state.feedSeenMs;
+    markFeedSeen();
+  } else if (ov === "feed") {
+    markFeedSeen();
+  }
+});
+
+/** 從動態時間軸/事件中心點某則 → 跳進該租客房間 */
+function gotoTenant(tid: string) {
+  const target = state.runtimes[tid];
+  if (!target) return;
+  roomFrom.value = view.value === "feed" ? "feed" : "floor";
+  state.activeId = tid;
+  sinceMs.value = target.lastSeenMs;
+  markSeen(tid);
+  view.value = "room";
+}
 
 const unreadRooms = computed<Record<string, number>>(() => {
   const out: Record<string, number> = {};
@@ -120,6 +153,7 @@ function onEnterRoom(room: RoomInfo) {
     recruitRoom.value = room.id; // 空房 → 開招租面板
     return;
   }
+  roomFrom.value = "floor";
   state.activeId = tid;
   sinceMs.value = state.runtimes[tid].lastSeenMs; // 進房前快照
   markSeen(tid); // 清未讀徽章
@@ -316,8 +350,6 @@ function onDecide(choiceId: string, label: string) {
 
     <div class="floor-actions">
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
-      <button class="rel-btn" @click="showRels = true">💞 關係</button>
-      <button class="rel-btn" @click="showFinance = true">💰 收支</button>
       <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(6)">
         {{ state.ffRemaining > 0 ? "⏳ 快轉中…" : "⏩ 6 小時" }}
       </button>
@@ -329,9 +361,17 @@ function onDecide(choiceId: string, label: string) {
     </transition>
   </main>
 
+  <!-- ============ 動態 Feed ============ -->
+  <main v-else-if="view === 'feed'" class="feed-main">
+    <FeedPanel :since-ms="feedSinceMs" @goto="gotoTenant" />
+    <transition name="fade">
+      <div v-if="vacantNote" class="toast">{{ vacantNote }}</div>
+    </transition>
+  </main>
+
   <!-- ============ 房間細看 ============ -->
   <main v-else class="room-main">
-    <button class="back" @click="view = 'floor'">← 回樓層</button>
+    <button class="back" @click="view = roomFrom">{{ roomFrom === "feed" ? "← 回動態" : "← 回樓層" }}</button>
 
     <div class="room-head">
       <span class="rno">{{ rt.roomNo }}</span>
@@ -421,6 +461,24 @@ function onDecide(choiceId: string, label: string) {
     <LogFeed :entries="rt.log" :since-ms="sinceMs" />
   </main>
 
+  <!-- ============ 底部導覽(§3:樓層/動態/收支/關係)============ -->
+  <nav class="bottom-nav">
+    <button :class="{ on: view === 'floor' || (view === 'room' && roomFrom === 'floor') }" @click="view = 'floor'">
+      <span class="nav-ic">🏠</span><span class="nav-lb">樓層</span>
+    </button>
+    <button :class="{ on: view === 'feed' || (view === 'room' && roomFrom === 'feed') }" @click="view = 'feed'">
+      <span class="nav-ic">📰</span><span class="nav-lb">動態</span>
+      <em v-if="pendingCount" class="nbadge red">{{ pendingCount }}</em>
+      <em v-else-if="feedUnread && view !== 'feed'" class="nbadge">{{ feedUnread > 99 ? "99+" : feedUnread }}</em>
+    </button>
+    <button :class="{ on: showFinance }" @click="showFinance = true">
+      <span class="nav-ic">💰</span><span class="nav-lb">收支</span>
+    </button>
+    <button :class="{ on: showRels }" @click="showRels = true">
+      <span class="nav-ic">💞</span><span class="nav-lb">關係</span>
+    </button>
+  </nav>
+
   <DecisionModal
     v-if="view === 'room' && rt.pendingEvent"
     :event="rt.pendingEvent"
@@ -493,9 +551,29 @@ header {
 .np-time { color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .np-text { line-height: 1.5; }
 
-main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
 .room-main { overflow-y: auto; }
-.floor-main { overflow: hidden; padding-bottom: 16px; }
+.floor-main { overflow: hidden; padding-bottom: 12px; }
+.feed-main { overflow-y: auto; padding-top: 10px; }
+
+.bottom-nav {
+  display: flex; gap: 4px; flex-shrink: 0;
+  border-top: 1px solid var(--line); background: var(--panel-2);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+}
+.bottom-nav button {
+  flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: none; color: var(--text-dim); border-radius: 10px; padding: 5px 0 4px;
+}
+.bottom-nav button.on { color: var(--accent); background: rgba(255, 180, 94, 0.08); }
+.nav-ic { font-size: 17px; line-height: 1.2; }
+.nav-lb { font-size: 10px; letter-spacing: 1px; }
+.nbadge {
+  position: absolute; top: 0; left: 50%; margin-left: 8px;
+  font-style: normal; font-size: 9px; font-weight: 700; line-height: 1.5;
+  background: var(--accent-2); color: #fff; border-radius: 999px; padding: 0 5px; min-width: 16px; text-align: center;
+}
+.nbadge.red { background: var(--bad); }
 .map-viewport {
   flex: 1; min-height: 0; overflow-y: auto;
   border: 1px solid var(--line); border-radius: 10px; background: #0d0c12;
@@ -555,7 +633,6 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .floor-actions { display: flex; gap: 8px; }
 .shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
 .shop-btn:hover { background: #322c46; }
-.rel-btn { flex: 0.7; background: var(--panel-2); border: 1px solid #d9548a; color: #f0a8c6; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
 .advance:hover { transform: translateY(-1px); }

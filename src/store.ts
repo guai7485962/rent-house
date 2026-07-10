@@ -10,6 +10,7 @@
  * - sim/economy.ts     金錢唯一入口 addMoney、收租/管理費、家具買/擺/移/賣
  * - sim/tenancy.ts     招租/入住/退租/同居、房東抉擇(decide)
  * - sim/narration.ts   每日 AI 日記(live 打 API、否則模板)
+ * - sim/feed.ts        全棟動態 Feed 彙整(重要日誌+通知的時間軸,唯讀)
  * - sim/persistence.ts 存檔/載入 + 版本遷移層(SAVE_VERSION/MIGRATIONS)+ 匯出入
  * - sim/lifecycle.ts   啟動/掛機計時器/除錯鉤子
  */
@@ -43,6 +44,8 @@ export {
 } from "./sim/economy";
 
 export { getApplicants, moveIn, moveOut, resolveCohabit, decide, previewRent, proposeRent, type RentPreview } from "./sim/tenancy";
+
+export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 
 export { SAVE_KEY, SAVE_VERSION, exportSave, importSave, clearSave } from "./sim/persistence";
 

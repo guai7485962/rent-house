@@ -90,6 +90,7 @@ export function save() {
         relationships: serializeRelationships(),
         ledger: state.ledger,
         noticeLog: state.noticeLog,
+        feedSeenMs: state.feedSeenMs,
         runtimes,
       }),
     );
@@ -129,6 +130,7 @@ export function load(): boolean {
     // 收支帳 + 通知歷史
     state.ledger.splice(0, state.ledger.length, ...((s.ledger ?? []) as Txn[]));
     state.noticeLog.splice(0, state.noticeLog.length, ...(s.noticeLog ?? []));
+    state.feedSeenMs = s.feedSeenMs ?? 0; // 舊檔沒有 → 全部視為未讀,無害
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

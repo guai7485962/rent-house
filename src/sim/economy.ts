@@ -1,0 +1,146 @@
+/**
+ * 經濟(store 拆分:economy 模組)。
+ * 金錢進出唯一入口 addMoney()(分類記帳)、每日收租與管理費、
+ * 家具的買/擺/移/賣(含 8-2 預覽判定 canDropAt)。
+ */
+import { getDef } from "../furniture/catalog";
+import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt } from "./placements";
+import { state, clamp, fmt, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
+import { applyHour } from "./tick";
+import { save } from "./persistence";
+
+// 每日管理費(讓「支出」有意義;小額、可調)
+const BASE_UPKEEP = 300;
+const PER_ROOM_UPKEEP = 150;
+
+/** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
+export function addMoney(amount: number, label: string, category: TxnCategory) {
+  const before = state.money;
+  state.money = Math.max(0, state.money + amount);
+  const actual = state.money - before;
+  if (actual === 0) return;
+  state.ledger.push({ gameMs: state.gameMs, label, amount: actual, category });
+  if (state.ledger.length > LEDGER_CAP) state.ledger.splice(0, state.ledger.length - LEDGER_CAP);
+}
+
+/** 每日收租(遊戲日換日時觸發):日租 = 月租/30,依付租能力與好感調整 */
+export function collectRent() {
+  for (const rt of Object.values(state.runtimes)) {
+    if (state.cohabits[rt.tenant.id]) continue; // 同居者不另收租(同意同居時已說好少一份租)
+    const f = rt.tenant.finance;
+    const daily = Math.round(f.monthlyRent / 30);
+    const factor =
+      clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3 + (rt.satisfaction - 50) * 0.2, 0, 100) / 100;
+    const paid = Math.round(daily * factor);
+    addMoney(paid, `${rt.tenant.name} 房租`, "rent");
+    const full = paid >= daily * 0.95;
+    rt.log.push({
+      gameMs: state.gameMs,
+      timeLabel: fmt(state.gameMs),
+      text: full ? `準時繳清今日房租 $${paid}。` : `今日只繳了部分房租 $${paid},其餘拖欠。`,
+      visualState: rt.tenant.visualState,
+      importance: paid < daily * 0.6 ? "notable" : "minor",
+    });
+    if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
+  }
+  // 每日管理費(水電/清潔/公共維護)
+  const upkeep = BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP;
+  addMoney(-upkeep, "管理費 / 水電", "upkeep");
+}
+
+/** 購買並擺放一件家具到指定房間 */
+export function buyFurniture(defId: string, roomId: string): { ok: boolean; reason?: string } {
+  const def = getDef(defId);
+  if (state.money < def.price) return { ok: false, reason: "金錢不足" };
+  const slot = findFreeSlot(roomId, def.footprint.w, def.footprint.h);
+  if (!slot) return { ok: false, reason: "房間沒有空位" };
+  addPlacement({ defId, room: roomId, c: slot.c, r: slot.r });
+  addMoney(-def.price, `購買 ${def.name}`, "furniture");
+  save();
+  return { ok: true };
+}
+
+/** 進入擺放模式:選好家具、待點地圖決定位置(此時尚未扣款) */
+export function startPlacing(defId: string): { ok: boolean; reason?: string } {
+  if (state.money < getDef(defId).price) return { ok: false, reason: "金錢不足" };
+  state.pendingPlace = defId;
+  return { ok: true };
+}
+
+export function cancelPlacing() {
+  state.pendingPlace = null;
+}
+
+/** 在指定格擺放待放置的家具(扣款) */
+export function placeAt(c: number, r: number): { ok: boolean; reason?: string } {
+  const defId = state.pendingPlace;
+  if (!defId) return { ok: false, reason: "沒有待擺放的家具" };
+  const def = getDef(defId);
+  if (state.money < def.price) return { ok: false, reason: "金錢不足" };
+  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h);
+  if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
+  addPlacement({ defId, room, c, r });
+  addMoney(-def.price, `擺放 ${def.name}`, "furniture");
+  state.pendingPlace = null;
+  save();
+  return { ok: true };
+}
+
+/** 進入家具移動模式:記下這件家具的原位,等玩家點地圖選新位置(免費,家具已是玩家資產) */
+export function startMoving(c: number, r: number): { ok: boolean } {
+  const p = furnitureAt(c, r);
+  if (!p) return { ok: false };
+  state.pendingMove = { c: p.c, r: p.r, defId: p.defId };
+  state.pendingPlace = null; // 移動與擺放互斥
+  return { ok: true };
+}
+
+export function cancelMoving() {
+  state.pendingMove = null;
+}
+
+/** 把待移動的家具搬到 (c,r):判定新位置(排除自己的舊佔位)→ 成功才真的搬 */
+export function moveFurnitureTo(c: number, r: number): { ok: boolean; reason?: string } {
+  const mv = state.pendingMove;
+  if (!mv) return { ok: false, reason: "沒有待移動的家具" };
+  const def = getDef(mv.defId);
+  // 判定時排除自己,否則會被自己的舊佔位擋住
+  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h, { c: mv.c, r: mv.r });
+  if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
+  const original = removePlacementAt(mv.c, mv.r);
+  if (!original) {
+    state.pendingMove = null;
+    return { ok: false, reason: "找不到這件家具" };
+  }
+  addPlacement({ defId: mv.defId, room, c, r });
+  state.pendingMove = null;
+  // 全員重新定位:有租客正走向這件家具時,下一步改走新位置
+  const hour = new Date(state.gameMs).getHours();
+  for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
+  save();
+  return { ok: true };
+}
+
+/** 擺放/移動預覽判定:目前待處理的家具能否落在 (c,r)(只判定、不成交) */
+export function canDropAt(c: number, r: number): boolean {
+  if (state.pendingMove) {
+    const def = getDef(state.pendingMove.defId);
+    return canPlaceFree(c, r, def.footprint.w, def.footprint.h, { c: state.pendingMove.c, r: state.pendingMove.r }) !== null;
+  }
+  if (state.pendingPlace) {
+    const def = getDef(state.pendingPlace);
+    return canPlaceFree(c, r, def.footprint.w, def.footprint.h) !== null;
+  }
+  return false;
+}
+
+/** 賣掉某格上的家具(退回半價) */
+export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: number } {
+  const removed = removePlacementAt(c, r);
+  if (!removed) return { ok: false };
+  const def = getDef(removed.defId);
+  const refund = Math.round(def.price * 0.5);
+  addMoney(refund, `賣出 ${def.name}`, "furniture");
+  save();
+  return { ok: true, refund };
+}

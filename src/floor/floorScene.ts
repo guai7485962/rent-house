@@ -89,6 +89,20 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[]) {
   }
 }
 
+/** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */
+export function drawFootprintPreview(ctx: Ctx, c: number, r: number, w: number, h: number, ok: boolean) {
+  const x = c * TILE;
+  const y = r * TILE;
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = ok ? "#5ad06a" : "#e5395a";
+  ctx.fillRect(x, y, w * TILE, h * TILE);
+  ctx.restore();
+  ctx.strokeStyle = ok ? "#b6ffbe" : "#ffb3c1";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w * TILE - 1, h * TILE - 1);
+}
+
 function drawAgent(ctx: Ctx, a: Agent) {
   groundShadow(ctx, a.px + TILE / 2, a.py + TILE - 1, 11);
   let sprite = CHAR_STAND;

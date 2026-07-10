@@ -28,25 +28,28 @@ export interface GenResult {
   statDeltas: StatDeltas;
 }
 
-/** 各狀態的小幅每小時數值效果 */
+/** 各狀態的小幅每小時數值效果(energy=精力資源:睡覺充、活動耗;wellbeing=身心健康慢變) */
 const EFFECT: Partial<Record<TenantVisualState, StatDeltas>> = {
-  sleeping_on_bed: { stress: -5, mood: 2 },
-  sleeping_on_couch: { stress: -2, mood: -1 },
-  working_at_desk: { stress: 3, mood: -1 },
-  gaming: { mood: 4, stress: -3 },
-  streaming: { mood: 3, stress: 1 },
-  cooking: { mood: 2, cleanliness: -1 },
-  eating: { mood: 2, cleanliness: -1 },
-  showering: { stress: -4, cleanliness: 1 },
-  playing_with_cat: { mood: 6, stress: -4 },
-  watching_tv: { mood: 2, stress: -1 },
-  reading: { mood: 1, stress: -2 },
-  cleaning: { cleanliness: 6, mood: -1 },
-  pacing: { stress: 6, mood: -3 },
-  crying: { mood: -7, stress: 3 },
+  sleeping_on_bed: { stress: -5, mood: 2, energy: 9, wellbeing: 0.3 },
+  sleeping_on_couch: { stress: -2, mood: -1, energy: 5 },
+  working_at_desk: { stress: 3, mood: -1, energy: -4 },
+  gaming: { mood: 4, stress: -3, energy: -2 },
+  streaming: { mood: 3, stress: 1, energy: -4 },
+  cooking: { mood: 2, cleanliness: -1, energy: -1, wellbeing: 0.3 },
+  eating: { mood: 2, cleanliness: -1, energy: 1 },
+  eating_at_table: { mood: 2, energy: 1 },
+  showering: { stress: -4, cleanliness: 1, energy: 1, wellbeing: 0.5 },
+  playing_with_cat: { mood: 6, stress: -4, energy: 1 },
+  watching_tv: { mood: 2, stress: -1, energy: 2 },
+  reading: { mood: 1, stress: -2, energy: 2 },
+  cleaning: { cleanliness: 6, mood: -1, energy: -2, wellbeing: 0.4 },
+  painting: { mood: 3, stress: -2, energy: -1 },
+  using_appliance: { energy: 0 },
+  pacing: { stress: 6, mood: -3, energy: -2 },
+  crying: { mood: -7, stress: 3, energy: -3 },
   talking_on_phone: { mood: 0 },
-  away: { stress: 2 },
-  idle: {},
+  away: { stress: 2, energy: -3 },
+  idle: { energy: 1 },
 };
 
 function pick(arr: string[] | undefined, seed: number): string {

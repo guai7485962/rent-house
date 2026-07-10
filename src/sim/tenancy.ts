@@ -1,0 +1,315 @@
+/**
+ * 租約與人事(store 拆分:tenancy 模組)。
+ * 招租應徵者池、入住、退租、同居/分手搬遷,以及房東抉擇(decide)的後果套用。
+ */
+import type { Tenant } from "../types";
+import { generateApplicants, rescoreApplicants, type Applicant } from "./recruit";
+import { registerRoutine } from "./routine";
+import {
+  removeTenantRelations,
+  getRel,
+  listRelationships,
+  adjustRelationship,
+  setCouple,
+  canRomance,
+} from "./social";
+import type { EventEffect } from "./events";
+import {
+  state,
+  clamp,
+  fmt,
+  gameDayIndex,
+  notify,
+  pushMemory,
+  pushSocialLog,
+  applySocialEffect,
+  refreshAppearances,
+  makeRuntime,
+  isVacant,
+  ROOM_APPEARANCE,
+  type TenantRuntime,
+} from "./gameState";
+import { applyHour } from "./tick";
+import { addMoney } from "./economy";
+import { save } from "./persistence";
+
+/** 取得某空房的應徵者(每遊戲日換一批;重開面板/重整頁面不重抽,星等隨當前裝潢即時更新) */
+export function getApplicants(roomId: string): Applicant[] {
+  const day = gameDayIndex();
+  const pool = state.applicantPools[roomId];
+  if (!pool || pool.day !== day || pool.applicants.length === 0) {
+    const excludeNames = Object.values(state.runtimes).map((rt) => rt.tenant.name);
+    state.applicantPools[roomId] = { day, applicants: generateApplicants(roomId, excludeNames) };
+    save();
+  }
+  return rescoreApplicants(state.applicantPools[roomId].applicants, roomId);
+}
+
+/** 招租入住:把一位應徵者變成正式租客 */
+export function moveIn(roomId: string, ap: Applicant) {
+  if (!isVacant(roomId)) return;
+  const roomNo = roomId.replace(/^r/, "");
+  const tenant: Tenant = {
+    id: ap.id,
+    name: ap.name,
+    occupation: ap.occupation,
+    bio: ap.bio,
+    gender: ap.gender,
+    attractedTo: ap.attractedTo,
+    coreTags: ap.coreTags,
+    memoryTags: [],
+    finance: { monthlyRent: ap.monthlyRent, paymentReliability: 80, monthsOverdue: 0 },
+    stats: { mood: 72, stress: 28, wellbeing: 70, energy: 65, affinity: 55 },
+    preferences: ap.preferences,
+    visualState: "idle",
+    recentSummary: `${ap.name} 剛搬進 ${roomNo} 房。${ap.bio}`,
+  };
+  const rt = makeRuntime(tenant, roomNo, 70, []);
+  rt.archetypeKey = ap.archetypeKey;
+  state.runtimes[ap.id] = rt;
+  state.occupancy[roomId] = ap.id;
+  delete state.applicantPools[roomId]; // 房間租出去,該池作廢
+  for (const p of Object.values(state.applicantPools)) p.applicants = p.applicants.filter((x) => x.name !== ap.name); // 別的房不能再出現同名應徵者
+  registerRoutine(ap.id, ap.archetypeKey);
+  refreshAppearances(); // 指派配色(依房間,確保彼此不同)
+  applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
+  save();
+}
+
+/** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶 */
+export function moveOut(tenantId: string, reason: string) {
+  const rt = state.runtimes[tenantId];
+  if (!rt) return;
+  const name = rt.tenant.name;
+  // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
+  const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
+  const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
+  if (entry) {
+    delete state.occupancy[entry[0]];
+    // 若有同居者住在這間房 → 伴侶接手承租(轉正,開始付租)
+    const mateId = Object.keys(state.cohabits).find((id) => state.cohabits[id] === entry[0]);
+    if (mateId && state.runtimes[mateId] && mateId !== tenantId) {
+      delete state.cohabits[mateId];
+      state.occupancy[entry[0]] = mateId;
+      state.runtimes[mateId].roomNo = entry[0].replace(/^r/, "");
+    }
+  }
+  delete state.cohabits[tenantId];
+  delete state.runtimes[tenantId];
+  removeTenantRelations(tenantId);
+  // 其他租客身上「提到他」的記憶標籤一併移除(人都走了,AI 不該再寫跟他的互動)
+  for (const other of Object.values(state.runtimes)) {
+    const t = other.tenant;
+    t.memoryTags = t.memoryTags.filter((m) => !m.label.includes(name) && !m.behaviorHint.includes(name));
+    const bond = bonds.find((b) => b.aId === t.id || b.bId === t.id);
+    if (bond && (bond.romantic || bond.value >= 50)) {
+      pushMemory(t, `[${name}搬走了]`, `親近的${bond.romantic ? "戀人" : "朋友"} ${name} 已退租離開,心裡有些失落。`, "ai_event");
+    }
+  }
+  if (state.pendingCohabit && (state.pendingCohabit.aId === tenantId || state.pendingCohabit.bId === tenantId)) {
+    state.pendingCohabit = null;
+  }
+  if (state.activeId === tenantId) state.activeId = Object.keys(state.runtimes)[0] ?? "";
+  refreshAppearances();
+  notify(`${name} 退租搬走了(${reason})`);
+  save();
+}
+
+/** 同居情侶分手:同居的一方搬離伴侶房(有空房就搬過去續租,沒有就退租離開) */
+export function endCohabitOnBreakup(aId: string, bId: string) {
+  const mateId = state.cohabits[aId] ? aId : state.cohabits[bId] ? bId : null;
+  if (!mateId) return;
+  const rt = state.runtimes[mateId];
+  if (!rt) return;
+  const vacant = Object.keys(ROOM_APPEARANCE).find((roomId) => !state.occupancy[roomId]);
+  if (vacant) {
+    delete state.cohabits[mateId];
+    state.occupancy[vacant] = mateId;
+    rt.roomNo = vacant.replace(/^r/, "");
+    refreshAppearances();
+    pushSocialLog(rt, `💔 分手後搬到 ${rt.roomNo} 房,一個人重新開始。`, "major");
+    notify(`${rt.tenant.name} 分手後搬進了空房 ${rt.roomNo}。`);
+  } else {
+    moveOut(mateId, "分手後無處可住,搬離公寓");
+  }
+}
+
+/** 同居抉擇:同意 → b 搬進 a 的房一起住(b 仍是遊戲中的角色!空出 b 的房、少一份租、兩人大加成) */
+export function resolveCohabit(accept: boolean) {
+  const pc = state.pendingCohabit;
+  if (!pc) return;
+  state.pendingCohabit = null;
+  const a = state.runtimes[pc.aId];
+  const b = state.runtimes[pc.bId];
+  if (!a || !b) return;
+  if (accept) {
+    const aRoom = Object.entries(state.occupancy).find(([, tid]) => tid === pc.aId)?.[0];
+    if (!aRoom) return; // 異常(a 沒有自己的房)→ 不處理
+    // b 讓出自己的房(空出可再招租),搬進 a 的房;runtime/關係全部保留
+    const bRoomEntry = Object.entries(state.occupancy).find(([, tid]) => tid === pc.bId);
+    if (bRoomEntry) delete state.occupancy[bRoomEntry[0]];
+    state.cohabits[pc.bId] = aRoom;
+    b.roomNo = aRoom.replace(/^r/, "");
+    // 兩人同居加成 + 記憶
+    for (const rt of [a, b]) {
+      rt.satisfaction = clamp(rt.satisfaction + 15, 0, 100);
+      rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 15, 0, 100);
+      rt.unhappyHours = 0;
+    }
+    pushMemory(a.tenant, `[與${pc.bName}同居]`, `${pc.bName} 搬進來一起住,兩人開始同居生活。`, "landlord_decision");
+    pushMemory(b.tenant, `[與${pc.aName}同居]`, `搬進 ${pc.aName} 的房間,兩人開始同居生活。`, "landlord_decision");
+    pushSocialLog(a, `❤️ ${pc.bName} 搬進來一起住了`, "major");
+    pushSocialLog(b, `❤️ 搬進 ${pc.aName} 的房間,開始同居生活`, "major");
+    refreshAppearances();
+    applyHour(b, new Date(state.gameMs).getHours(), false); // 立即重新定位到新房間
+    notify(`${pc.bName} 搬去和 ${pc.aName} 同居了 ❤️(${pc.bName} 原本的房間空出來了)`);
+  } else {
+    // 不同意 → 兩人失望,關係回落
+    const rel = getRel(pc.aId, pc.bId);
+    if (rel) rel.value = clamp(rel.value - 15, 0, 100);
+    applySocialEffect(a, { satisfaction: -8, mood: -6 });
+    applySocialEffect(b, { satisfaction: -8, mood: -6 });
+    notify(`你婉拒了 ${pc.aName} 和 ${pc.bName} 的同居請求。`);
+  }
+  save();
+}
+
+// ---------------------------------------------------------------------------
+// 調租談判(設計檢討 7-1:投資遊戲性的核心 trade-off)
+// ---------------------------------------------------------------------------
+
+export const RENT_COOLDOWN_DAYS = 5; // 同一位租客談過(不論成敗)後的冷卻遊戲日
+const RENT_MAX_STEP = 0.3; // 單次談判最多 ±30%
+
+/** 租客對漲租的容忍度(比例):滿意度與好感越高越能接受;狀態差時任何漲租都翻臉 */
+function raiseTolerance(rt: TenantRuntime): number {
+  return clamp((rt.satisfaction * 0.5 + rt.tenant.stats.affinity * 0.5 - 35) / 200, 0, 0.25);
+}
+
+export interface RentPreview {
+  /** 夾在 ±30% 內的實際提案金額 */
+  next: number;
+  /** 相對現租的漲跌幅(-0.3 ~ 0.3) */
+  pct: number;
+  /** 預估反應:cut=降租必開心 / safe=應會接受 / risky=勉強接受但傷感情 / reject=會拒絕並翻臉 */
+  verdict: "cut" | "safe" | "risky" | "reject";
+  /** 冷卻剩餘遊戲日(0 = 可以談) */
+  cooldownLeft: number;
+}
+
+/** 預覽調租反應(不成交);非承租人(同居者)回傳 null */
+export function previewRent(tenantId: string, newRent: number): RentPreview | null {
+  const rt = state.runtimes[tenantId];
+  if (!rt || !Object.values(state.occupancy).includes(tenantId)) return null;
+  const cur = rt.tenant.finance.monthlyRent;
+  const next = Math.round(clamp(newRent, cur * (1 - RENT_MAX_STEP), cur * (1 + RENT_MAX_STEP)));
+  const pct = (next - cur) / cur;
+  const tol = raiseTolerance(rt);
+  const verdict = pct <= 0 ? "cut" : pct <= tol * 0.75 ? "safe" : pct <= tol ? "risky" : "reject";
+  const cooldownLeft = Math.max(0, RENT_COOLDOWN_DAYS - (gameDayIndex() - rt.rentChangeDay));
+  return { next, pct, verdict, cooldownLeft };
+}
+
+/** 對承租人提出新月租。降租必成;漲租依容忍度接受(傷感情)或拒絕(房租不變+惹惱)。 */
+export function proposeRent(tenantId: string, newRent: number): { ok: boolean; accepted: boolean; text: string } {
+  const rt = state.runtimes[tenantId];
+  const pv = previewRent(tenantId, newRent);
+  if (!rt || !pv) return { ok: false, accepted: false, text: "只有承租人才能談房租" };
+  if (pv.cooldownLeft > 0) return { ok: false, accepted: false, text: `才剛談過房租,${pv.cooldownLeft} 天後再開口吧` };
+  const f = rt.tenant.finance;
+  const cur = f.monthlyRent;
+  if (pv.next === cur) return { ok: false, accepted: false, text: "金額沒有變,不用談" };
+  rt.rentChangeDay = gameDayIndex(); // 不論成敗都進冷卻(才談完不能馬上再凹)
+  const s = rt.tenant.stats;
+  const name = rt.tenant.name;
+  let accepted: boolean;
+  let text: string;
+
+  if (pv.pct < 0) {
+    // 降租:必接受,好感/滿意度上升(幅度與降幅成正比)
+    f.monthlyRent = pv.next;
+    s.affinity = clamp(s.affinity + Math.min(12, Math.round(-pv.pct * 50)), 0, 100);
+    rt.satisfaction = clamp(rt.satisfaction + Math.min(10, Math.round(-pv.pct * 40)), 0, 100);
+    rt.unhappyHours = Math.max(0, rt.unhappyHours - 12);
+    if (pv.pct <= -0.1) pushMemory(rt.tenant, "[房東主動降租]", `房東把月租降到 $${pv.next},心存感激,想住久一點。`, "landlord_decision");
+    accepted = true;
+    text = `${name} 又驚又喜地答應了,月租降為 $${pv.next.toLocaleString()}`;
+    pushSocialLog(rt, `💲 房東主動把月租降到 $${pv.next.toLocaleString()},太感動了!`, "major");
+  } else if (pv.verdict !== "reject") {
+    // 漲租且在容忍範圍:勉強接受,好感/滿意度下降
+    f.monthlyRent = pv.next;
+    s.affinity = clamp(s.affinity - Math.round(pv.pct * 60), 0, 100);
+    rt.satisfaction = clamp(rt.satisfaction - Math.round(pv.pct * 80), 0, 100);
+    accepted = true;
+    text = `${name} 皺著眉答應了,月租調為 $${pv.next.toLocaleString()}(好感/滿意度下降)`;
+    pushSocialLog(rt, `💲 房東把月租漲到 $${pv.next.toLocaleString()},雖然答應了,心裡不太舒服。`, "notable");
+  } else {
+    // 漲太多:拒絕,房租不變,關係惡化 + 不滿累積 + 留記憶給 AI 發揮
+    s.affinity = clamp(s.affinity - (6 + Math.round(pv.pct * 40)), 0, 100);
+    rt.satisfaction = clamp(rt.satisfaction - (8 + Math.round(pv.pct * 50)), 0, 100);
+    rt.unhappyHours += 10;
+    pushMemory(rt.tenant, "[對漲租不滿]", `房東想把月租漲到 $${pv.next},被拒絕了;開始考慮這裡值不值得住。`, "landlord_decision");
+    accepted = false;
+    text = `${name} 一口回絕:「這價錢我就搬走!」(關係惡化,房租維持 $${cur.toLocaleString()})`;
+    pushSocialLog(rt, `💢 房東開口要漲租到 $${pv.next.toLocaleString()},當場回絕了。這裡還值得住嗎…`, "major");
+  }
+  save();
+  return { ok: true, accepted, text };
+}
+
+function applyEffect(rt: TenantRuntime, eff: EventEffect) {
+  if (eff.money) addMoney(eff.money, `事件:${rt.tenant.name}`, "event");
+  const s = rt.tenant.stats;
+  if (eff.mood) s.mood = clamp(s.mood + eff.mood, 0, 100);
+  if (eff.stress) s.stress = clamp(s.stress + eff.stress, 0, 100);
+  if (eff.wellbeing) s.wellbeing = clamp(s.wellbeing + eff.wellbeing, 0, 100);
+  if (eff.energy) s.energy = clamp(s.energy + eff.energy, 0, 100);
+  if (eff.affinity) s.affinity = clamp(s.affinity + eff.affinity, 0, 100);
+  if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
+  if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
+  if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
+}
+
+/** 套用 AI 跨租客事件對「第二位鄰居」與兩人關係的影響(夾值 + 取向把關) */
+function applyCrossTenant(aId: string, bId: string, eff: EventEffect) {
+  const b = state.runtimes[bId];
+  if (!b) return;
+  if (eff.other) {
+    const bs = b.tenant.stats;
+    if (eff.other.mood) bs.mood = clamp(bs.mood + eff.other.mood, 0, 100);
+    if (eff.other.stress) bs.stress = clamp(bs.stress + eff.other.stress, 0, 100);
+    if (eff.other.affinity) bs.affinity = clamp(bs.affinity + eff.other.affinity, 0, 100);
+    if (eff.other.satisfaction) b.satisfaction = clamp(b.satisfaction + eff.other.satisfaction, 0, 100);
+  }
+  if (eff.rel) {
+    if (typeof eff.rel.delta === "number" && eff.rel.delta) adjustRelationship(aId, bId, eff.rel.delta);
+    const a = state.runtimes[aId];
+    if (eff.rel.breakup) setCouple(aId, bId, false);
+    else if (eff.rel.couple && a && canRomance(a.tenant, b.tenant)) setCouple(aId, bId, true, a.tenant, b.tenant);
+  }
+}
+
+/** 玩家做出房東抉擇 → 套用該選項的後果 */
+export function decide(tenantId: string, choiceId: string, choiceLabel: string) {
+  const rt = state.runtimes[tenantId];
+  if (!rt?.pendingEvent) return;
+  const title = rt.pendingEvent.title;
+  const withId = rt.pendingEvent.withId;
+  const choice = rt.pendingEvent.choices.find((c) => c.id === choiceId);
+  rt.decisions.push(choiceId);
+  rt.pendingEvent = null;
+  rt.log.push({
+    gameMs: state.gameMs,
+    timeLabel: fmt(state.gameMs),
+    text: "",
+    visualState: rt.tenant.visualState,
+    importance: "major",
+    decisionNote: `【${title}】你的決定:${choiceLabel}`,
+  });
+  if (choice) {
+    applyEffect(rt, choice.effect);
+    if (withId) applyCrossTenant(tenantId, withId, choice.effect);
+    if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
+  }
+  save();
+}

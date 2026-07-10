@@ -146,10 +146,11 @@ export interface Tenant {
 
   /** 遊戲數值(0~100)。AI 只能透過 delta 修改 */
   stats: {
-    mood: number;        // 心情
-    stress: number;      // 壓力
-    hygiene: number;     // 個人整潔習慣(影響房間 cleanliness 變化速度)
-    affinity: number;    // 對房東好感度
+    mood: number;        // 心情(短期情緒;每小時朝性格基準回歸 = homeostasis)
+    stress: number;      // 壓力(短期;同上)
+    wellbeing: number;   // 身心健康(中期慢變:運動/衛生/睡眠↑、高壓/沒精力↓;過低→生病、心情基準下修)
+    energy: number;      // 精力(資源:睡覺充、活動耗;過低→壓力基準上修)
+    affinity: number;    // 對房東好感度(關係累積,不回歸)
   };
 
   /** 入住偏好:與 RoomState.attributes 匹配計算吸引力 */
@@ -235,6 +236,8 @@ export interface StatDeltas {
   stress?: number;
   affinity?: number;
   cleanliness?: number; // 作用於房間
+  energy?: number;      // 精力(睡覺+、工作/直播-)
+  wellbeing?: number;   // 身心健康(洗澡/打掃/運動+)
 }
 
 /** 標籤變更 */

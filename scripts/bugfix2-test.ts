@@ -62,14 +62,14 @@ const t = {
     { id: "m2", label: "[養貓]", behaviorHint: "", acquiredAt: "", source: "ai_event" },
     { id: "m3", label: "[對房東起疑]", behaviorHint: "", acquiredAt: "", source: "ai_event" },
   ],
-  stats: { mood: 100, stress: 30, hygiene: 50, affinity: 90 },
+  stats: { mood: 100, stress: 30, wellbeing: 50, energy: 60, affinity: 90 },
 } as unknown as Tenant;
 const removed = pruneContradictedMemories(t);
 check("心情 100 → [情緒低落] 被移除", removed.includes("[情緒低落]"));
 check("好感 90 → [對房東起疑] 被移除(和解)", removed.includes("[對房東起疑]"));
 check("無矛盾的 [養貓] 保留", t.memoryTags.some((m) => m.label === "[養貓]"));
 
-const t2 = { memoryTags: [{ id: "m1", label: "[失戀]", behaviorHint: "", acquiredAt: "", source: "ai_event" }], stats: { mood: 40, stress: 60, hygiene: 50, affinity: 50 } } as unknown as Tenant;
+const t2 = { memoryTags: [{ id: "m1", label: "[失戀]", behaviorHint: "", acquiredAt: "", source: "ai_event" }], stats: { mood: 40, stress: 60, wellbeing: 50, energy: 60, affinity: 50 } } as unknown as Tenant;
 check("心情不高時 [失戀] 不會被移除", pruneContradictedMemories(t2).length === 0);
 
 // ---------- Bug 1:退租清掉別人身上的記憶 ----------

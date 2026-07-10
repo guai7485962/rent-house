@@ -95,9 +95,10 @@ function findFreeSlotByRegion(roomId: string, w: number, h: number): { c: number
   return null;
 }
 
-function occupiedSet(): Set<string> {
+function occupiedSet(exclude?: { c: number; r: number }): Set<string> {
   const occ = new Set<string>();
   for (const p of placements.list) {
+    if (exclude && p.c === exclude.c && p.r === exclude.r) continue; // 移動判定:自己的舊佔位不算擋路
     const d = getDef(p.defId);
     for (let dr = 0; dr < d.footprint.h; dr++)
       for (let dc = 0; dc < d.footprint.w; dc++) occ.add(`${p.c + dc},${p.r + dr}`);
@@ -110,12 +111,13 @@ const FLOOR_REGIONS = new Set(["r301", "r302", "r303", "r304", "lounge", "bathro
 /**
  * 自由擺放判定:footprint 是否能放在 (c,r)(全部落在同一個房間地板、不壓牆、不重疊)。
  * 可放回傳該區房間 id(供記錄家具屬於哪間);不可放回傳 null。
+ * exclude:移動既有家具時傳原位左上角,判定時跳過它自己的佔位。
  */
-export function canPlaceFree(c: number, r: number, w: number, h: number): string | null {
+export function canPlaceFree(c: number, r: number, w: number, h: number, exclude?: { c: number; r: number }): string | null {
   const grid = buildGrid();
   const region = grid[r]?.[c];
   if (!region || !FLOOR_REGIONS.has(region)) return null;
-  const occ = occupiedSet();
+  const occ = occupiedSet(exclude);
   if (!fits(c, r, w, h, region, grid, occ)) return null;
   return region;
 }

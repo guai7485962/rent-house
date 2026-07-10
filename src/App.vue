@@ -10,6 +10,8 @@ import FurnitureInfo from "./components/FurnitureInfo.vue";
 import RelationshipsPanel from "./components/RelationshipsPanel.vue";
 import CohabitModal from "./components/CohabitModal.vue";
 import FinancePanel from "./components/FinancePanel.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
+import RentPanel from "./components/RentPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -21,7 +23,7 @@ import {
   clockLabel,
   unreadCount,
   markSeen,
-  fastForward,
+  startFastForward,
   decide,
   initGame,
   stopGame,
@@ -33,6 +35,7 @@ import {
   startMoving,
   cancelMoving,
   moveFurnitureTo,
+  canDropAt,
 } from "./store";
 
 type View = "floor" | "room";
@@ -42,6 +45,10 @@ const showShop = ref(false);
 const showRels = ref(false);
 const showFinance = ref(false);
 const showNotices = ref(false);
+const showSettings = ref(false);
+const showRent = ref(false);
+/** 只有「承租人」能談房租(同居者不付租) */
+const isLeaseHolder = computed(() => Object.values(state.occupancy).includes(state.activeId));
 function fmtMs(ms: number) {
   const d = new Date(ms);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -143,16 +150,48 @@ const partnerLine = computed(() => {
   return "";
 });
 
+// --- 擺放/移動預覽(8-2):第一次點格只畫半透明 footprint,再點「確認」才成交 ---
+const previewTile = ref<{ c: number; r: number } | null>(null);
+const previewOk = computed(() => (previewTile.value ? canDropAt(previewTile.value.c, previewTile.value.r) : false));
+const preview = computed(() => {
+  const t = previewTile.value;
+  const defId = state.pendingMove?.defId ?? state.pendingPlace;
+  if (!t || !defId) return null;
+  const def = getDef(defId);
+  return { c: t.c, r: t.r, w: def.footprint.w, h: def.footprint.h, ok: previewOk.value };
+});
+// 進入/離開擺放與移動模式時,清掉殘留的預覽
+watch(
+  () => [state.pendingPlace, state.pendingMove] as const,
+  () => (previewTile.value = null),
+);
+
+/** 點地圖 → 更新預覽位置(點另一格 = 換位置預覽) */
 function onPlace(tile: { c: number; r: number }) {
+  previewTile.value = tile;
+}
+
+/** 按下確認 → 真正成交(此時才扣款/搬動) */
+function confirmPlace() {
+  const t = previewTile.value;
+  if (!t) return;
   if (state.pendingMove) {
     const name = movingName.value;
-    const res = moveFurnitureTo(tile.c, tile.r);
+    const res = moveFurnitureTo(t.c, t.r);
     toast(res.ok ? `已搬好:${name}` : `搬不了:${res.reason}`);
-    return;
+  } else {
+    const name = pendingName.value;
+    const res = placeAt(t.c, t.r);
+    toast(res.ok ? `已擺放:${name}` : `放不了:${res.reason}`);
   }
-  const name = pendingName.value;
-  const res = placeAt(tile.c, tile.r);
-  toast(res.ok ? `已擺放:${name}` : `放不了:${res.reason}`);
+  previewTile.value = null;
+}
+
+/** 取消擺放/移動模式(未確認前不會有任何扣款或搬動) */
+function cancelMode() {
+  previewTile.value = null;
+  if (state.pendingMove) cancelMoving();
+  else cancelPlacing();
 }
 
 function onSell() {
@@ -196,11 +235,13 @@ const roomAttrs = computed(() => {
 
 /** 點數值名稱 → 一句話說明(8-5) */
 const STAT_HELP: Record<string, string> = {
-  心情: "心情:短期情緒,受作息/事件/社交影響;太低會影響滿意度。",
-  壓力: "壓力:太高會失眠、崩潰,還會觸發突發事件;放鬆活動能降。",
+  心情: "心情:短期情緒,會自然回到這個人的性格基準;戀愛/朋友會墊高基準。",
+  壓力: "壓力:太高會失眠、崩潰、觸發事件,還會慢慢蛀掉健康;放鬆能降。",
+  精力: "精力:睡覺充電、工作直播消耗;太低會累到壓力上升、健康變差。",
+  健康: "健康:身心狀態,慢慢變化;長期高壓/透支會生病(要花錢處理!)。",
   好感: "好感:對你(房東)的信任,影響繳租意願;你的抉擇會改變它。",
   整潔: "整潔:房間狀態,反映租客的生活習慣。",
-  滿意: "滿意:綜合心情/好感/壓力/房間裝潢;長期過低租客會退租!",
+  滿意: "滿意:綜合心情/好感/壓力/健康/精力/房間裝潢;長期過低會退租!",
 };
 function explainStat(key: string) {
   toast(STAT_HELP[key] ?? "", 4200);
@@ -224,24 +265,34 @@ function onDecide(choiceId: string, label: string) {
       <span>🕐 {{ clockLabel }}</span>
       <span>💰 {{ state.money.toLocaleString() }}</span>
       <button class="bell" @click="showNotices = true">🔔</button>
+      <button class="bell" @click="showSettings = true">⚙️</button>
     </div>
   </header>
 
   <!-- ============ 樓層總覽 ============ -->
   <main v-if="view === 'floor'" class="floor-main">
     <div v-if="state.pendingPlace" class="place-bar">
-      🪑 擺放中:<b>{{ pendingName }}</b> — 點地圖任一格放置
-      <button class="cancel" @click="cancelPlacing()">取消</button>
+      🪑 擺放:<b>{{ pendingName }}</b>
+      <span v-if="!previewTile" class="pb-hint">點地圖選位置</span>
+      <button v-else class="confirm" :disabled="!previewOk" @click="confirmPlace()">
+        {{ previewOk ? "✓ 確認放這裡" : "✕ 這裡放不下" }}
+      </button>
+      <button class="cancel" @click="cancelMode()">取消</button>
     </div>
     <div v-else-if="state.pendingMove" class="place-bar">
-      📦 移動中:<b>{{ movingName }}</b> — 點地圖選新位置
-      <button class="cancel" @click="cancelMoving()">取消</button>
+      📦 移動:<b>{{ movingName }}</b>
+      <span v-if="!previewTile" class="pb-hint">點地圖選新位置</span>
+      <button v-else class="confirm" :disabled="!previewOk" @click="confirmPlace()">
+        {{ previewOk ? "✓ 確認搬這裡" : "✕ 這裡放不下" }}
+      </button>
+      <button class="cancel" @click="cancelMode()">取消</button>
     </div>
     <p v-else class="hint">點房間看觀察 · 點家具查看/移動/賣掉 · 現實 1 天 = 遊戲 7 天</p>
     <div class="map-viewport">
       <FloorMap
         :pending-rooms="pendingRooms"
         :unread="unreadRooms"
+        :preview="preview"
         @enter="onEnterRoom"
         @place="onPlace"
         @inspect="inspectItem = $event"
@@ -252,7 +303,10 @@ function onDecide(choiceId: string, label: string) {
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
       <button class="rel-btn" @click="showRels = true">💞 關係</button>
       <button class="rel-btn" @click="showFinance = true">💰 收支</button>
-      <button class="advance" @click="fastForward(6)">⏩ 快轉 6 小時</button>
+      <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(6)">
+        {{ state.ffRemaining > 0 ? "⏳ 快轉中…" : "⏩ 6 小時" }}
+      </button>
+      <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(24)">⏩ 1 天</button>
     </div>
     <p v-if="hasAnyPending" class="pending-hint">🔴 有房間出現突發事件,點進去做決定。</p>
     <transition name="fade">
@@ -269,6 +323,11 @@ function onDecide(choiceId: string, label: string) {
       <span class="rname">{{ rt.tenant.name }}</span>
       <span class="rjob">{{ rt.tenant.occupation }}</span>
       <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
+    </div>
+    <div class="room-tools">
+      <span class="rent-now">月租 ${{ rt.tenant.finance.monthlyRent.toLocaleString() }}</span>
+      <button v-if="isLeaseHolder" class="rent-btn" @click="showRent = true">💲 談房租</button>
+      <span v-else class="rent-note">同居中(不另收租)</span>
     </div>
     <div v-if="roomMates.length" class="mates">
       <button v-for="m in roomMates" :key="m.id" class="mate" @click="switchTenant(m.id)">
@@ -288,22 +347,32 @@ function onDecide(choiceId: string, label: string) {
       <div class="stat">
         <label @click="explainStat('心情')">心情</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.mood + '%', background: statColor(rt.tenant.stats.mood) }"></div></div>
-        <span>{{ rt.tenant.stats.mood }}</span>
+        <span>{{ Math.round(rt.tenant.stats.mood) }}</span>
       </div>
       <div class="stat">
         <label @click="explainStat('壓力')">壓力</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.stress + '%', background: statColor(rt.tenant.stats.stress, true) }"></div></div>
-        <span>{{ rt.tenant.stats.stress }}</span>
+        <span>{{ Math.round(rt.tenant.stats.stress) }}</span>
+      </div>
+      <div class="stat">
+        <label @click="explainStat('精力')">精力</label>
+        <div class="bar"><div :style="{ width: rt.tenant.stats.energy + '%', background: statColor(rt.tenant.stats.energy) }"></div></div>
+        <span>{{ Math.round(rt.tenant.stats.energy) }}</span>
+      </div>
+      <div class="stat">
+        <label @click="explainStat('健康')">健康</label>
+        <div class="bar"><div :style="{ width: rt.tenant.stats.wellbeing + '%', background: statColor(rt.tenant.stats.wellbeing) }"></div></div>
+        <span>{{ Math.round(rt.tenant.stats.wellbeing) }}</span>
       </div>
       <div class="stat">
         <label @click="explainStat('好感')">好感</label>
         <div class="bar"><div :style="{ width: rt.tenant.stats.affinity + '%', background: statColor(rt.tenant.stats.affinity) }"></div></div>
-        <span>{{ rt.tenant.stats.affinity }}</span>
+        <span>{{ Math.round(rt.tenant.stats.affinity) }}</span>
       </div>
       <div class="stat">
         <label @click="explainStat('整潔')">整潔</label>
         <div class="bar"><div :style="{ width: rt.cleanliness + '%', background: statColor(rt.cleanliness) }"></div></div>
-        <span>{{ rt.cleanliness }}</span>
+        <span>{{ Math.round(rt.cleanliness) }}</span>
       </div>
       <div class="stat span2">
         <label @click="explainStat('滿意')">滿意</label>
@@ -359,6 +428,8 @@ function onDecide(choiceId: string, label: string) {
     </div>
   </div>
 
+  <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+  <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" />
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
@@ -416,11 +487,18 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
   border: 1px solid var(--accent-2); border-radius: 10px; padding: 8px 12px;
 }
 .place-bar .cancel { margin-left: auto; background: var(--panel); border: 1px solid var(--line); color: var(--text-dim); border-radius: 8px; padding: 3px 10px; font-size: 12px; }
+.place-bar .pb-hint { color: var(--text-dim); }
+.place-bar .confirm { background: rgba(90,208,106,0.16); border: 1px solid var(--good); color: #b6ffbe; font-weight: 700; border-radius: 8px; padding: 3px 12px; font-size: 12px; }
+.place-bar .confirm:disabled { background: rgba(232,101,122,0.12); border-color: var(--bad); color: #ff9aa8; opacity: 0.9; }
 
 .back { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 13px; }
 .back:hover { border-color: var(--accent-2); }
 
 .room-head { display: flex; align-items: baseline; gap: 8px; }
+.room-tools { display: flex; align-items: center; gap: 8px; }
+.rent-now { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.rent-btn { background: var(--panel); border: 1px solid var(--accent); color: #ffd6a3; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.rent-note { font-size: 11.5px; color: var(--text-dim); }
 .mates { display: flex; gap: 6px; }
 .mate { background: var(--panel); border: 1px solid #d9548a; color: #f0a8c6; border-radius: 999px; padding: 4px 12px; font-size: 12px; }
 .rno { font-weight: 700; color: var(--accent); font-size: 15px; }
@@ -457,6 +535,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
 .advance:hover { transform: translateY(-1px); }
+.advance:disabled { opacity: 0.55; transform: none; cursor: wait; }
 
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(13,12,18,0.92); border: 1px solid var(--line); color: var(--text); padding: 8px 16px; border-radius: 999px; font-size: 12.5px; z-index: 50; max-width: 90%; text-align: center; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }

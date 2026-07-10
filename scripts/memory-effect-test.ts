@@ -11,7 +11,7 @@ console.log("=== 記憶 → 漂移對照(每小時)===");
 const cases = ["[熱戀中]", "[失戀]", "[偷養浪貓]", "[開始晨跑]", "[熬夜成癮]", "[對房東起疑]", "[房東的溫情]", "[接案順利]", "[未知的隨機標籤]"];
 for (const c of cases) {
   const d = memoryDrift(tagged([c]));
-  console.log(`  ${c.padEnd(12)} → mood ${d.mood} / stress ${d.stress} / hygiene ${d.hygiene} / affinity ${d.affinity}`);
+  console.log(`  ${c.padEnd(12)} → mood ${d.mood} / stress ${d.stress} / wellbeing ${d.wellbeing} / energy ${d.energy} / affinity ${d.affinity}`);
 }
 
 console.log("\n=== 多標籤疊加 + 夾上限(±1.5)===");

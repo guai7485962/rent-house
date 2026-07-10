@@ -9,6 +9,8 @@ export interface EventEffect {
   stress?: number;
   mood?: number;
   satisfaction?: number;
+  wellbeing?: number;
+  energy?: number;
   money?: number;
   evict?: boolean;
   /** 選項可留下一個新記憶標籤(讓抉擇有長期延續) */
@@ -43,14 +45,31 @@ export interface EventCtx {
   stress: number;
   satisfaction: number;
   affinity: number;
+  /** 身心健康(過低會觸發生病事件) */
+  wellbeing: number;
 }
 
 /** 依狀態決定要不要觸發事件(呼叫端負責冷卻,避免連發) */
 export function rollEvent(ctx: EventCtx): EventDef | null {
   if (ctx.stress >= 90) return breakdown(ctx.name);
+  if (ctx.wellbeing <= 28) return sick(ctx.name);
   if (ctx.satisfaction < 30) return dissatisfied(ctx.name);
   if (ctx.affinity <= 20) return grievance(ctx.name);
   return null;
+}
+
+/** 身心健康過低 → 生病(wellbeing 的「後果」:讓這個數值真的有牙齒) */
+function sick(name: string): EventDef {
+  return {
+    id: "sick",
+    title: `${name} 生病了`,
+    description: `${name} 這陣子把自己操過頭了——臉色蒼白、咳個不停,連垃圾都沒力氣拿出去丟。要幫他一把嗎?`,
+    choices: [
+      { id: "doctor", label: "帶他去看醫生", hint: "花錢,恢復最快", effect: { money: -800, wellbeing: 25, stress: -8, affinity: 8 } },
+      { id: "soup", label: "燉鍋湯送上去", hint: "暖心小成本", effect: { money: -200, wellbeing: 10, mood: 5, affinity: 5 } },
+      { id: "rest", label: "讓他自己休養", hint: "不花錢,好得慢", effect: { wellbeing: 4, satisfaction: -4 } },
+    ],
+  };
 }
 
 function breakdown(name: string): EventDef {
@@ -104,6 +123,8 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
     stress: clampNum(e.stress, -25, 25),
     affinity: clampNum(e.affinity, -25, 25),
     satisfaction: clampNum(e.satisfaction, -25, 25),
+    wellbeing: clampNum(e.wellbeing, -25, 25),
+    energy: clampNum(e.energy, -25, 25),
     money: clampNum(e.money, -5000, 2000),
     // evict 一律不開放給 AI(忽略)
   };

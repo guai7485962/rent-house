@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { composeFloor, FLOOR_W, FLOOR_H } from "../floor/floorScene";
+import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { state } from "../store";
 import { furnitureAt } from "../sim/placements";
 
-const props = defineProps<{ pendingRooms: string[]; unread: Record<string, number> }>();
+const props = defineProps<{
+  pendingRooms: string[];
+  unread: Record<string, number>;
+  /** 擺放/移動預覽 footprint(App 在玩家點格後傳入;null = 無預覽) */
+  preview?: { c: number; r: number; w: number; h: number; ok: boolean } | null;
+}>();
 const emit = defineEmits<{
   enter: [room: RoomInfo];
   place: [tile: { c: number; r: number }];
@@ -27,7 +32,12 @@ function loop(t: number) {
   if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
   tickAgents(agents, dt);
   const el = canvas.value;
-  if (el) composeFloor(el.getContext("2d")!, Math.floor(t / 500), agents);
+  if (el) {
+    const ctx = el.getContext("2d")!;
+    composeFloor(ctx, Math.floor(t / 500), agents);
+    const pv = props.preview;
+    if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
+  }
   raf = requestAnimationFrame(loop);
 }
 

@@ -7,7 +7,7 @@ function mk(id: string, name: string, gender: Gender, attractedTo: Gender[], tag
     coreTags: tags.map((t) => ({ id: t, label: t, behaviorHint: "" })),
     memoryTags: [],
     finance: { monthlyRent: 0, paymentReliability: 80, monthsOverdue: 0 },
-    stats: { mood: 70, stress: 30, hygiene: 70, affinity: 50 },
+    stats: { mood: 70, stress: 30, wellbeing: 70, energy: 60, affinity: 50 },
     preferences: {}, visualState: "idle", recentSummary: "",
   } as Tenant;
 }

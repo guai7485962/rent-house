@@ -54,7 +54,8 @@
     "stats": {
       "mood": 32,
       "stress": 88,
-      "hygiene": 40,
+      "wellbeing": 40,
+      "energy": 30,
       "affinity": 55
     },
     "preferences": {
@@ -106,7 +107,8 @@
     "stats": {
       "mood": 78,
       "stress": 35,
-      "hygiene": 92,
+      "wellbeing": 85,
+      "energy": 70,
       "affinity": 70
     },
     "preferences": {

@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
 
 const props = defineProps<{ c: number; r: number; defId: string }>();
-const emit = defineEmits<{ close: []; sell: [] }>();
+const emit = defineEmits<{ close: []; sell: []; move: [] }>();
 
 const def = computed(() => getDef(props.defId));
 const refund = computed(() => Math.round(def.value.price / 2));
@@ -37,6 +37,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 
       <div class="actions">
         <button class="cancel" @click="emit('close')">關閉</button>
+        <button class="move" @click="emit('move')">📦 移動</button>
         <button class="sell" @click="emit('sell')">賣掉(退 ${{ refund.toLocaleString() }})</button>
       </div>
     </div>
@@ -60,6 +61,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 .hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; margin-bottom: 12px; }
 
 .actions { display: flex; gap: 8px; }
-.cancel { flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
+.cancel { flex: 0.7; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
+.move { flex: 1; background: rgba(143,123,255,0.14); border: 1px solid var(--accent-2); color: #cdbcff; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 .sell { flex: 1; background: rgba(232,101,122,0.14); border: 1px solid var(--bad); color: #ff9aa8; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 </style>

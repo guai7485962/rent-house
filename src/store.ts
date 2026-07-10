@@ -33,7 +33,7 @@ import { memoryDrift, pruneContradictedMemories } from "./sim/memoryEffects";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE } from "./pixel/scene";
-import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements } from "./sim/placements";
+import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, roomRect, placements, furnitureAt } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
 import { generateApplicants, rescoreApplicants, type Applicant } from "./sim/recruit";
 import type { Tile } from "./floor/pathfind";
@@ -124,6 +124,8 @@ export const state = reactive({
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
+  /** 移動模式:待搬動的既有家具(原位座標;點地圖選新位置,免費) */
+  pendingMove: null as { c: number; r: number; defId: string } | null,
   /** 收支帳:每筆金錢進出(綠進紅出),供財務面板檢視 */
   ledger: [] as Txn[],
   /** 房間 → 租客 id(動態,招租入住會新增) */
@@ -744,6 +746,44 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
   addPlacement({ defId, room, c, r });
   addMoney(-def.price, `擺放 ${def.name}`, "furniture");
   state.pendingPlace = null;
+  save();
+  return { ok: true };
+}
+
+/** 進入家具移動模式:記下這件家具的原位,等玩家點地圖選新位置(免費,家具已是玩家資產) */
+export function startMoving(c: number, r: number): { ok: boolean } {
+  const p = furnitureAt(c, r);
+  if (!p) return { ok: false };
+  state.pendingMove = { c: p.c, r: p.r, defId: p.defId };
+  state.pendingPlace = null; // 移動與擺放互斥
+  return { ok: true };
+}
+
+export function cancelMoving() {
+  state.pendingMove = null;
+}
+
+/** 把待移動的家具搬到 (c,r):先拿起 → 判定新位置 → 失敗原封不動放回 */
+export function moveFurnitureTo(c: number, r: number): { ok: boolean; reason?: string } {
+  const mv = state.pendingMove;
+  if (!mv) return { ok: false, reason: "沒有待移動的家具" };
+  const def = getDef(mv.defId);
+  // 關鍵:先把自己拿起來,否則 canPlaceFree 會把自己的舊佔位算成「被擋」
+  const original = removePlacementAt(mv.c, mv.r);
+  if (!original) {
+    state.pendingMove = null;
+    return { ok: false, reason: "找不到這件家具" };
+  }
+  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h);
+  if (!room) {
+    addPlacement(original); // 放回原位,等於沒動
+    return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
+  }
+  addPlacement({ defId: mv.defId, room, c, r });
+  state.pendingMove = null;
+  // 全員重新定位:有租客正走向這件家具時,下一步改走新位置
+  const hour = new Date(state.gameMs).getHours();
+  for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
   save();
   return { ok: true };
 }

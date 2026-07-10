@@ -13,7 +13,7 @@ const emit = defineEmits<{
   inspect: [item: { c: number; r: number; defId: string }];
 }>();
 
-const placing = computed(() => state.pendingPlace !== null);
+const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];

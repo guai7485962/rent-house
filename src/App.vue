@@ -30,6 +30,9 @@ import {
   cancelPlacing,
   sellFurnitureAt,
   roomOfTenant,
+  startMoving,
+  cancelMoving,
+  moveFurnitureTo,
 } from "./store";
 
 type View = "floor" | "room";
@@ -112,6 +115,14 @@ function toast(msg: string) {
 }
 
 const pendingName = computed(() => (state.pendingPlace ? getDef(state.pendingPlace).name : ""));
+const movingName = computed(() => (state.pendingMove ? getDef(state.pendingMove.defId).name : ""));
+
+function onStartMove() {
+  const item = inspectItem.value;
+  if (!item) return;
+  inspectItem.value = null;
+  if (startMoving(item.c, item.r).ok) toast("📦 點地圖任一格,把家具搬過去");
+}
 
 // 目前這位租客的感情狀態(顯示在房間細看抬頭)
 const partnerLine = computed(() => {
@@ -128,6 +139,12 @@ const partnerLine = computed(() => {
 });
 
 function onPlace(tile: { c: number; r: number }) {
+  if (state.pendingMove) {
+    const name = movingName.value;
+    const res = moveFurnitureTo(tile.c, tile.r);
+    toast(res.ok ? `已搬好:${name}` : `搬不了:${res.reason}`);
+    return;
+  }
   const name = pendingName.value;
   const res = placeAt(tile.c, tile.r);
   toast(res.ok ? `已擺放:${name}` : `放不了:${res.reason}`);
@@ -194,11 +211,15 @@ function onDecide(choiceId: string, label: string) {
 
   <!-- ============ 樓層總覽 ============ -->
   <main v-if="view === 'floor'" class="floor-main">
-    <p v-if="!state.pendingPlace" class="hint">點房間看觀察 · 點家具查看/賣掉 · 現實 1 天 = 遊戲 7 天</p>
-    <div v-else class="place-bar">
+    <div v-if="state.pendingPlace" class="place-bar">
       🪑 擺放中:<b>{{ pendingName }}</b> — 點地圖任一格放置
       <button class="cancel" @click="cancelPlacing()">取消</button>
     </div>
+    <div v-else-if="state.pendingMove" class="place-bar">
+      📦 移動中:<b>{{ movingName }}</b> — 點地圖選新位置
+      <button class="cancel" @click="cancelMoving()">取消</button>
+    </div>
+    <p v-else class="hint">點房間看觀察 · 點家具查看/移動/賣掉 · 現實 1 天 = 遊戲 7 天</p>
     <div class="map-viewport">
       <FloorMap
         :pending-rooms="pendingRooms"
@@ -319,6 +340,7 @@ function onDecide(choiceId: string, label: string) {
     :def-id="inspectItem.defId"
     @close="inspectItem = null"
     @sell="onSell"
+    @move="onStartMove"
   />
 </template>
 

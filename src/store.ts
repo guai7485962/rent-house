@@ -29,6 +29,7 @@ import {
   type SocialEffect,
 } from "./sim/social";
 import { narrateDay, templateDiary, type NarrateCtx } from "./sim/narrate";
+import { memoryDrift } from "./sim/memoryEffects";
 import { generateHourly } from "./sim/generate";
 import { TENANT_SPOTS } from "./floor/map";
 import { setAppearance, hasFixedTheme } from "./pixel/scene";
@@ -238,6 +239,16 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   rt.cleanliness = clamp(rt.cleanliness + clampDelta(d.cleanliness), 0, 100);
 }
 
+/** 記憶標籤造成的每小時微幅數值漂移(已在 memoryEffects 夾上限) */
+function applyMemoryDrift(rt: TenantRuntime) {
+  const d = memoryDrift(rt.tenant);
+  const s = rt.tenant.stats;
+  if (d.mood) s.mood = clamp(s.mood + d.mood, 0, 100);
+  if (d.stress) s.stress = clamp(s.stress + d.stress, 0, 100);
+  if (d.hygiene) s.hygiene = clamp(s.hygiene + d.hygiene, 0, 100);
+  if (d.affinity) s.affinity = clamp(s.affinity + d.affinity, 0, 100);
+}
+
 /** 單調遞增的遊戲日序號 */
 const gameDayIndex = () => Math.floor((state.gameMs - GAME_START.getTime()) / (24 * 3600 * 1000));
 
@@ -298,6 +309,7 @@ function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     recentSummary: rt.tenant.recentSummary,
   });
   applyStat(rt, gen.statDeltas);
+  applyMemoryDrift(rt); // 記憶標籤造成的長期數值漂移
   updateSatisfaction(rt, roomId2);
   rt.log.push({
     gameMs: state.gameMs,

@@ -22,6 +22,7 @@ export {
   markSeen,
   isVacant,
   roomOfTenant,
+  gameDayIndex,
 } from "./sim/gameState";
 export type { Txn, TxnCategory, LogEntry, TenantRuntime } from "./sim/gameState";
 

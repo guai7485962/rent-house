@@ -3,6 +3,7 @@
  * 依租客當前狀態(壓力/滿意度)觸發事件,房東抉擇後套用後果。
  * 點亮既有的 DecisionModal + decide() UI(之前做好但沒東西觸發)。
  */
+import { sanitizeDirective, type DirectiveId } from "./directives";
 
 export interface EventEffect {
   affinity?: number;
@@ -15,6 +16,8 @@ export interface EventEffect {
   evict?: boolean;
   /** 選項可留下一個新記憶標籤(讓抉擇有長期延續) */
   memory?: { label: string; hint: string };
+  /** 行為指令(白名單):讓租客接下來 N 遊戲日的行為在畫面上看得見地改變 */
+  directive?: { id: DirectiveId; days: number };
   /** 對事件牽涉的第二位鄰居的數值影響 */
   other?: { mood?: number; stress?: number; affinity?: number; satisfaction?: number };
   /** 兩人關係變化:delta 正=拉近/戀情加速、負=吵架疏遠;couple/breakup 直接成/斷情侶 */
@@ -67,7 +70,7 @@ function sick(name: string): EventDef {
     choices: [
       { id: "doctor", label: "帶他去看醫生", hint: "花錢,恢復最快", effect: { money: -800, wellbeing: 25, stress: -8, affinity: 8 } },
       { id: "soup", label: "燉鍋湯送上去", hint: "暖心小成本", effect: { money: -200, wellbeing: 10, mood: 5, affinity: 5 } },
-      { id: "rest", label: "讓他自己休養", hint: "不花錢,好得慢", effect: { wellbeing: 4, satisfaction: -4 } },
+      { id: "rest", label: "讓他自己休養", hint: "不花錢,好得慢;會閉門不出幾天", effect: { wellbeing: 4, satisfaction: -4, directive: { id: "hermit", days: 2 } } },
     ],
   };
 }
@@ -130,6 +133,9 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
   };
   const mem = cleanMemory(e.memory);
   if (mem) eff.memory = mem;
+  // 行為指令:白名單驗證,不合格直接丟棄(AI 不能發明機制)
+  const dir = sanitizeDirective(e.directive);
+  if (dir) eff.directive = dir;
 
   // 跨租客欄位:只有事件確實牽涉第二位鄰居(hasOther)才保留
   if (hasOther) {

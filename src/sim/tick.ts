@@ -9,6 +9,7 @@ import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships } from "./social";
 import { memoryDrift, pruneContradictedMemories } from "./memoryEffects";
+import { DIRECTIVES } from "./directives";
 import { generateHourly } from "./generate";
 import { TENANT_SPOTS } from "../floor/map";
 import { roomRect } from "./placements";
@@ -46,9 +47,23 @@ export const homeTile = (tenantId: string): Tile => {
   return { c: 7, r: 10 };
 };
 
-/** 作息 + 偏離 → 最終 { state, role, isDeviation } */
+/** 目前生效中的行為指令 id(過期回 null;過期清理與日誌在 hourlyTick 做) */
+function activeDirective(rt: TenantRuntime): string | null {
+  return rt.directive && gameDayIndex() <= rt.directive.untilDay ? rt.directive.id : null;
+}
+
+/** 作息 + 行為指令 + 偏離 → 最終 { state, role, isDeviation } */
 function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualState; role: Role; isDeviation: boolean } {
-  const slot = routineSlot(rt.tenant.id, hour);
+  const dir = activeDirective(rt);
+  // 作息位移型指令:熬夜=整段往後 3 小時、早鳥=提前 2 小時(查表時反向偏移)
+  const slotHour = dir === "night_owl" ? (hour - 3 + 24) % 24 : dir === "early_bird" ? (hour + 2) % 24 : hour;
+  let slot = routineSlot(rt.tenant.id, slotHour);
+  // 活動插入型指令:在特定時段覆蓋原作息(不動睡眠/外出)
+  if (dir === "adopt_cat" && hour === 20 && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
+    slot = { role: "sofa", state: "playing_with_cat" };
+  } else if (dir === "binge_watch" && (hour === 22 || hour === 23) && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
+    slot = { role: "tv", state: "watching_tv" };
+  }
   const stress = rt.tenant.stats.stress;
   // 壓力偏離:睡不著 / 崩潰
   if (stress >= 95 && slot.state !== "away") {
@@ -61,13 +76,18 @@ function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualStat
 }
 
 /** 依狀態衍生房間小物件(給房間細看畫面氛圍) */
-function deriveProps(tenantId: string, st: TenantVisualState, hour: number): RoomPropState[] {
+function deriveProps(rt: TenantRuntime, st: TenantVisualState, hour: number): RoomPropState[] {
+  const tenantId = rt.tenant.id;
   const props: RoomPropState[] = [];
   if (["working_at_desk", "gaming", "streaming"].includes(st)) props.push("screen_glow");
   if (st === "streaming") props.push("mic_setup_active");
   if (st === "sleeping_on_bed" && (hour < 6 || hour >= 22)) props.push("lights_off");
   if (tenantId === "tenant_lin_asmr") props.push("curtains_closed");
   if (tenantId === "tenant_chen_engineer" && st === "playing_with_cat") props.push("cat_on_table");
+  // 行為指令 adopt_cat:房裡常駐一隻貓(逗貓時在桌上,其他時候睡沙發)
+  if (activeDirective(rt) === "adopt_cat" && !props.includes("cat_on_table")) {
+    props.push(st === "playing_with_cat" ? "cat_on_table" : "cat_sleeping_on_couch");
+  }
   return props;
 }
 
@@ -174,18 +194,29 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   } else if (isDeviation) {
     rt.targetTile = homeTile(rt.tenant.id);
   } else {
-    const tgt = resolveTarget(decided.role, roomId);
+    const dir = activeDirective(rt);
+    let tgt = resolveTarget(decided.role, roomId);
+    // 指令 social:傍晚主動泡交誼廳——把自房的休閒活動改成去交誼廳看電視
+    if (dir === "social" && hour >= 19 && hour <= 21 && ["idle", "reading", "watching_tv", "gaming"].includes(st)) {
+      const loungeTgt = resolveTarget("sofa", null) ?? resolveTarget("tv", null);
+      if (loungeTgt && loungeTgt.placement.room === "lounge") {
+        tgt = loungeTgt;
+        st = "watching_tv";
+      }
+    }
+    // 指令 hermit:迴避交誼廳——目標落在交誼廳就改回自己房間發呆
+    if (dir === "hermit" && tgt && tgt.placement.room === "lounge") tgt = null;
     if (tgt) {
       rt.targetTile = tgt.tile;
       rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
     } else {
-      // 房裡缺對應家具、共用區也沒有 → 在自己房間發呆(不闖別人房)
+      // 房裡缺對應家具、共用區也沒有(或 hermit 拒去)→ 在自己房間發呆(不闖別人房)
       st = "idle";
       rt.targetTile = homeTile(rt.tenant.id);
     }
   }
   rt.tenant.visualState = st;
-  rt.roomProps = deriveProps(rt.tenant.id, st, hour);
+  rt.roomProps = deriveProps(rt, st, hour);
 
   if (!addLog) return;
   const gen = generateHourly({
@@ -220,6 +251,12 @@ export function hourlyTick(live = false) {
   const moveOuts: string[] = [];
 
   for (const rt of Object.values(state.runtimes)) {
+    // 行為指令到期 → 恢復往常 + 留一筆日誌(在暫停檢查之前,免得掛著過期指令)
+    if (rt.directive && day > rt.directive.untilDay) {
+      const def = DIRECTIVES[rt.directive.id];
+      rt.directive = null;
+      pushSocialLog(rt, def.endText, "notable");
+    }
     if (rt.pendingEvent) continue; // 有待決事件則暫停該租客,等房東抉擇
     applyHour(rt, hour, true);
 

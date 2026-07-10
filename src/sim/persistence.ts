@@ -70,6 +70,7 @@ export function save() {
         unhappyHours: rt.unhappyHours,
         lastEventDay: rt.lastEventDay,
         rentChangeDay: rt.rentChangeDay,
+        directive: rt.directive,
       };
     }
     localStorage.setItem(
@@ -143,6 +144,7 @@ export function load(): boolean {
         unhappyHours: saved.unhappyHours ?? 0,
         lastEventDay: saved.lastEventDay ?? -99,
         rentChangeDay: saved.rentChangeDay ?? -99,
+        directive: saved.directive ?? null,
         inLounge: false,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);

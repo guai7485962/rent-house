@@ -10,6 +10,7 @@ import { computed, reactive } from "vue";
 import type { RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
+import type { ActiveDirective } from "./directives";
 import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
 import type { Tile } from "../floor/pathfind";
@@ -61,6 +62,8 @@ export interface TenantRuntime {
   lastEventDay: number;
   /** 上次調租談判的遊戲日(冷卻用;-99 = 沒談過) */
   rentChangeDay: number;
+  /** 進行中的行為指令(AI 事件選項/規則事件授予;到期自動恢復) */
+  directive: ActiveDirective | null;
   /** 本小時是否在交誼廳(社交相遇判定用,不需存檔) */
   inLounge: boolean;
 }
@@ -84,6 +87,7 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     unhappyHours: 0,
     lastEventDay: -99,
     rentChangeDay: -99,
+    directive: null as ActiveDirective | null,
     inLounge: false,
   });
 }

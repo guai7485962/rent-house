@@ -14,6 +14,7 @@ import {
   canRomance,
 } from "./social";
 import type { EventEffect } from "./events";
+import { DIRECTIVES } from "./directives";
 import {
   state,
   clamp,
@@ -268,6 +269,13 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.satisfaction) rt.satisfaction = clamp(rt.satisfaction + eff.satisfaction, 0, 100);
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
   if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
+  // 行為指令(已在 events 消毒過白名單):接下來 N 遊戲日的行為看得見地改變
+  if (eff.directive) {
+    const def = DIRECTIVES[eff.directive.id];
+    rt.directive = { id: eff.directive.id, untilDay: gameDayIndex() + eff.directive.days };
+    pushSocialLog(rt, def.startText, "major");
+    applyHour(rt, new Date(state.gameMs).getHours(), false); // 立即依新行為重新定位
+  }
 }
 
 /** 套用 AI 跨租客事件對「第二位鄰居」與兩人關係的影響(夾值 + 取向把關) */

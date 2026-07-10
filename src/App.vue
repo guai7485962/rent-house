@@ -16,6 +16,7 @@ import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
+import { DIRECTIVES } from "./sim/directives";
 import {
   state,
   activeRuntime,
@@ -25,6 +26,7 @@ import {
   markSeen,
   startFastForward,
   decide,
+  gameDayIndex,
   initGame,
   stopGame,
   resume,
@@ -208,6 +210,15 @@ const allTags = computed(() => [
   ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false })),
 ]);
 
+/** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
+const directiveChip = computed(() => {
+  const d = rt.value?.directive;
+  if (!d) return null;
+  const left = d.untilDay - gameDayIndex() + 1;
+  if (left <= 0) return null;
+  return `${DIRECTIVES[d.id].label} · 剩 ${left} 天`;
+});
+
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
@@ -383,6 +394,7 @@ function onDecide(choiceId: string, label: string) {
     <p v-if="rt.unhappyHours >= 24" class="warn">⚠ {{ rt.tenant.name }} 住得不開心,再不改善可能會退租。</p>
 
     <section class="tags">
+      <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }">{{ t.label }}</span>
     </section>
 
@@ -452,12 +464,17 @@ function onDecide(choiceId: string, label: string) {
 
 <style scoped>
 header {
-  display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 10px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 14px 12px 10px; flex-wrap: nowrap;
 }
-.title { font-weight: 700; font-size: 16px; }
+.title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ver { font-size: 10px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; vertical-align: 2px; }
-.meta { display: flex; gap: 12px; align-items: center; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.bell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-size: 13px; }
+.meta { display: flex; gap: 7px; align-items: center; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.bell { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; font-size: 12.5px; }
+/* 窄螢幕:藏 prototype 徽章,保住一行 */
+@media (max-width: 430px) {
+  .ver { display: none; }
+}
 
 .notice-overlay { position: fixed; inset: 0; z-index: 125; background: rgba(8,7,12,0.7); backdrop-filter: blur(3px); display: flex; align-items: flex-end; justify-content: center; }
 .notice-panel { width: 100%; max-width: 430px; max-height: 70vh; background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px 16px 0 0; display: flex; flex-direction: column; }
@@ -522,6 +539,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 24px; display: flex; flex-directi
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent-2); color: #c9befc; background: rgba(143, 123, 255, 0.08); }
 .chip.mem { border-color: var(--accent); color: #ffd6a3; background: rgba(255, 180, 94, 0.08); }
+.chip.dir { border-color: #5ad06a; color: #b6ffbe; background: rgba(90, 208, 106, 0.08); }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

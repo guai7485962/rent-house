@@ -12,6 +12,7 @@
 import type { Tenant } from "../types";
 import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
 import { feudActive } from "./conflicts";
+import { maybeWitness } from "./drama";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
 import { roomRect } from "./placements";
 import { spawnFx, type FxKind } from "../floor/fx";
@@ -293,6 +294,8 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
       }
       state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
+      // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬
+      if (def.privacy) maybeWitness(A, B);
     }
   }
 }

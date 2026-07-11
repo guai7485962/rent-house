@@ -30,6 +30,7 @@ import {
 import { collectRent } from "./economy";
 import { maintenancePass } from "./maintenance";
 import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } from "./conflicts";
+import { dramaPass } from "./drama";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
 import { spawnFx } from "../floor/fx";
@@ -300,6 +301,7 @@ export function hourlyTick(live = false) {
 
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
+  dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)

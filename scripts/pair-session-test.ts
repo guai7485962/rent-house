@@ -91,9 +91,17 @@ startPairSession(A.tenant.id, B.tenant.id, anchor, "hidden", now());
 tickAgents(agents, 0.05);
 check("hidden pose(🔞 遮蔽式):兩人 sprite 都隱藏", agA.hidden && agB.hidden);
 
+// 坐/躺圖式(§10-6):不隱藏、pose 帶到 agent 給渲染層
+startPairSession(A.tenant.id, B.tenant.id, anchor, "sit", now());
+tickAgents(agents, 0.05);
+check("sit pose:兩人不隱藏且 agent.pose=sit", !agA.hidden && !agB.hidden && agA.pose === "sit" && agB.pose === "sit");
+startPairSession(A.tenant.id, B.tenant.id, anchor, "lie", now());
+tickAgents(agents, 0.05);
+check("lie pose:agent.pose=lie", agA.pose === "lie" && agB.pose === "lie");
+
 clearPairSessions();
 tickAgents(agents, 0.05);
-check("session 結束:兩人重新現身", !agA.hidden && !agB.hidden);
+check("session 結束:兩人重新現身、pose 清空", !agA.hidden && !agB.hidden && agA.pose === null && agB.pose === null);
 
 // --- 整合:互動觸發 → 這一對有 session ---
 A.tenant.gender = "male"; A.tenant.attractedTo = ["female"];

@@ -59,7 +59,7 @@ state.gameMs = new Date("2026-07-06T03:30:00+08:00").getTime(); // 凌晨 3 時(
 relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 20, romantic: false, cohabitOffered: false };
 check("未知 id → 擋", !forceInteraction(A.tenant.id, B.tenant.id, "no_such_thing"));
 check("一般互動:放寬階層/時段 → 低關係+時段外照樣演", forceInteraction(A.tenant.id, B.tenant.id, "cuddle_tv"));
-check("互動有落地:雙方日誌", A.log.some((e) => e.text.includes("看劇")) && B.log.some((e) => e.text.includes("看劇")));
+check("互動有落地:雙方日誌", A.log.some((e) => e.text.includes("劇")) && B.log.some((e) => e.text.includes("劇"))); // cuddle_tv 兩句台詞都含「劇」
 check("互動有落地:冷卻記錄", Object.keys(state.interactionCooldowns).some((k) => k.endsWith("|cuddle_tv")));
 check("互動有落地:關係加分", (getRel(A.tenant.id, B.tenant.id)?.value ?? 0) > 20);
 

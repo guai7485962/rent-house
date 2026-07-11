@@ -7,7 +7,7 @@
  */
 import { TILE } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
-import { sessionFor } from "./pairSession";
+import { sessionFor, type PairPose } from "./pairSession";
 import { state } from "../store";
 import type { TenantVisualState } from "../types";
 
@@ -24,6 +24,8 @@ export interface Agent {
   walkPhase: number;
   /** 當前 visual_state(環境演出用:睡覺 Zzz、直播音符、洗澡蒸氣) */
   vs: TenantVisualState;
+  /** 進行中互動 session 的圖式(§10-6:sit 坐/lie 躺;null = 無 session) */
+  pose: PairPose | null;
 }
 
 const SPEED = 44; // px / 秒
@@ -49,6 +51,7 @@ export function createAgents(): Agent[] {
       hidden: rt.tenant.visualState === "away" || !t,
       walkPhase: 0,
       vs: rt.tenant.visualState,
+      pose: null,
     };
   });
 }
@@ -60,6 +63,7 @@ export function tickAgents(agents: Agent[], dt: number) {
     const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
     const target = ses?.tile ?? rt?.targetTile ?? null;
     a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
+    a.pose = ses?.pose ?? null;
     a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {
       a.moving = false;

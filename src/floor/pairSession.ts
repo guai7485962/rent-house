@@ -10,8 +10,8 @@ import { currentBlocked } from "./pathfind";
 import { GRID_W, GRID_H } from "./map";
 import { MS_PER_GAME_HOUR } from "../sim/clock";
 
-/** pair = 兩人相鄰站在一起 + fx;hidden = 兩人隱藏(🔞 遮蔽式) */
-export type PairPose = "pair" | "hidden";
+/** pair = 相鄰站一起;sit = 並肩坐(沙發/談心/開黑);lie = 並排躺(賴床);hidden = 隱藏(🔞 遮蔽式) */
+export type PairPose = "pair" | "sit" | "lie" | "hidden";
 
 export interface PairSession {
   aId: string;

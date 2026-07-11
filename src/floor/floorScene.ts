@@ -16,6 +16,7 @@ import {
   CHAR_STAND,
   CHAR_WALK_A,
   CHAR_WALK_B,
+  CHAR_SIT,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
 import { activeFx, type Fx } from "./fx";
@@ -258,7 +259,20 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
 }
 
 function drawAgent(ctx: Ctx, a: Agent) {
+  const pal = charPalette(a.tenantId);
+  // §10-6 雙人圖式:互動 session 抵達定點後坐下/躺下(還在走路時照常走)
+  if (!a.moving && a.pose === "lie") {
+    drawLying(ctx, a, pal);
+    return;
+  }
   groundShadow(ctx, a.px + TILE / 2, a.py + TILE - 1, 11);
+  if (!a.moving && a.pose === "sit") {
+    // 坐姿 14 行(站姿 19):底邊貼齊同一地面線 → 頭自然比站著矮一截
+    drawSprite(ctx, CHAR_SIT, a.px + 3, a.py + 1, pal);
+    const apSit = getCustomAppearance(a.tenantId);
+    if (apSit) drawAppearanceOverlay(ctx, apSit, a.px + 3, a.py + 1);
+    return;
+  }
   let sprite = CHAR_STAND;
   let yoff = 0;
   if (a.moving) {
@@ -266,10 +280,23 @@ function drawAgent(ctx: Ctx, a: Agent) {
     sprite = step ? CHAR_WALK_A : CHAR_WALK_B;
     yoff = step ? 0 : -1; // 走路上下彈跳
   }
-  drawSprite(ctx, sprite, a.px + 3, a.py - 4 + yoff, charPalette(a.tenantId));
+  drawSprite(ctx, sprite, a.px + 3, a.py - 4 + yoff, pal);
   // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件
   const ap = getCustomAppearance(a.tenantId);
   if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff);
+}
+
+/** 躺姿(§10-6 lie:賴床)——頭枕左側 + 蓋著被子的身體(被子用衣服色,一眼認得出是誰) */
+function drawLying(ctx: Ctx, a: Agent, pal: Palette) {
+  const x = a.px;
+  const y = a.py;
+  rect(ctx, x + 7, y + 3, 8, 10, shade(pal.t, -22)); // 被子滾邊
+  rect(ctx, x + 8, y + 4, 7, 8, pal.t); // 被子
+  rect(ctx, x + 8, y + 7, 7, 1, shade(pal.t, 22)); // 摺線高光
+  rect(ctx, x + 2, y + 4, 5, 3, pal.h); // 頭髮
+  rect(ctx, x + 2, y + 7, 5, 3, pal.F); // 臉
+  rect(ctx, x + 3, y + 8, 1, 1, shade(pal.F, -40)); // 閉眼
+  rect(ctx, x + 5, y + 8, 1, 1, shade(pal.F, -40));
 }
 
 // ---------------------------------------------------------------------------

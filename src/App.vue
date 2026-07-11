@@ -276,6 +276,19 @@ const roomMates = computed(() => {
     .filter((r) => r.tenant.id !== state.activeId && roomOfTenant(r.tenant.id) === roomId)
     .map((r) => ({ id: r.tenant.id, name: r.tenant.name }));
 });
+// 房間細看的滑動退出手勢(往左滑退出;水平位移夠大、垂直很小才算,避免和捲動打架)
+let swipeX = 0;
+let swipeY = 0;
+function onRoomTouchStart(e: TouchEvent) {
+  swipeX = e.touches[0].clientX;
+  swipeY = e.touches[0].clientY;
+}
+function onRoomTouchEnd(e: TouchEvent) {
+  const dx = e.changedTouches[0].clientX - swipeX;
+  const dy = e.changedTouches[0].clientY - swipeY;
+  if (dx < -70 && Math.abs(dy) < 50) view.value = roomFrom.value;
+}
+
 function switchTenant(id: string) {
   state.activeId = id;
   sinceMs.value = state.runtimes[id].lastSeenMs;
@@ -376,7 +389,7 @@ function onDecide(choiceId: string, label: string) {
   </main>
 
   <!-- ============ 房間細看 ============ -->
-  <main v-else class="room-main">
+  <main v-else class="room-main" @touchstart.passive="onRoomTouchStart" @touchend.passive="onRoomTouchEnd">
     <button class="back" @click="view = roomFrom">{{ roomFrom === "feed" ? "← 回動態" : "← 回樓層" }}</button>
 
     <div class="room-head">

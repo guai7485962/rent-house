@@ -10,6 +10,19 @@ const name = (id: string) => state.runtimes[id]?.tenant.name ?? "已搬走";
 const rels = computed(() =>
   listRelationships().filter((r) => state.runtimes[r.aId] && state.runtimes[r.bId]),
 );
+
+/** 這對是否同居中(其中一方登記在 cohabits) */
+const isCohabit = (r: { aId: string; bId: string }) => !!(state.cohabits[r.aId] || state.cohabits[r.bId]);
+
+/** 分組:情侶(置頂)/ 朋友以上 / 認識中 */
+const groups = computed(() => {
+  const all = rels.value;
+  return [
+    { title: "❤️ 情侶", rows: all.filter((r) => r.romantic) },
+    { title: "🤝 朋友", rows: all.filter((r) => !r.romantic && r.value >= 35) },
+    { title: "👋 認識中", rows: all.filter((r) => !r.romantic && r.value < 35) },
+  ].filter((g) => g.rows.length > 0);
+});
 </script>
 
 <template>
@@ -25,14 +38,20 @@ const rels = computed(() =>
       </div>
 
       <div v-else class="list">
-        <div v-for="r in rels" :key="r.aId + r.bId" class="row" :class="{ love: r.romantic }">
-          <span class="pair">{{ name(r.aId) }} <span class="amp">×</span> {{ name(r.bId) }}</span>
-          <span class="tier">{{ r.romantic ? "❤️ " : "" }}{{ r.label }}</span>
-          <div class="bar"><div :style="{ width: r.value + '%' }"></div></div>
-        </div>
+        <template v-for="g in groups" :key="g.title">
+          <div class="grp">{{ g.title }}</div>
+          <div v-for="r in g.rows" :key="r.aId + r.bId" class="row" :class="{ love: r.romantic }">
+            <span class="pair">
+              {{ name(r.aId) }} <span class="amp">×</span> {{ name(r.bId) }}
+              <span v-if="isCohabit(r)" class="cohab">🏠 同居中</span>
+            </span>
+            <span class="tier">{{ r.label }} <b class="val">{{ r.value }}</b></span>
+            <div class="bar"><div :style="{ width: r.value + '%' }"></div></div>
+          </div>
+        </template>
       </div>
 
-      <p class="foot">關係由個性是否合拍決定;夠熟且互有好感(依性別/取向)才會發展成情侶。</p>
+      <p class="foot">關係由個性是否合拍決定;夠熟且互有好感(依性別/取向)才會發展成情侶,關係極高會想同居。</p>
     </div>
   </div>
 </template>
@@ -46,6 +65,9 @@ const rels = computed(() =>
 .x { margin-left: auto; background: none; color: var(--text-dim); font-size: 16px; }
 .empty { padding: 24px 18px; color: var(--text-dim); font-size: 13px; line-height: 1.7; text-align: center; }
 .list { overflow-y: auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+.grp { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; letter-spacing: 1px; }
+.cohab { font-size: 10.5px; color: #f0a8c6; border: 1px solid #d9548a; border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+.val { font-size: 11px; color: var(--text-dim); font-weight: 600; margin-left: 3px; font-variant-numeric: tabular-nums; }
 .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .row.love { border-color: #d9548a; background: rgba(217,84,138,0.08); }
 .pair { font-size: 13.5px; font-weight: 600; }

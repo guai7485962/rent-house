@@ -8,8 +8,34 @@ const CAT_LABEL: Record<TxnCategory, string> = {
   rent: "租金收入", furniture: "家具", upgrade: "房間改建", event: "事件", upkeep: "管理費", other: "其他",
 };
 
-const income = computed(() => state.ledger.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
-const expense = computed(() => state.ledger.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
+const DAY = 24 * 3600 * 1000;
+/** 視窗損益:近 n 遊戲日的 {收入, 支出, 淨額} */
+function window(nDays: number) {
+  const from = state.gameMs - nDays * DAY;
+  let inc = 0;
+  let exp = 0;
+  for (const t of state.ledger) {
+    if (t.gameMs < from) continue;
+    if (t.amount > 0) inc += t.amount;
+    else exp -= t.amount;
+  }
+  return { inc, exp, net: inc - exp };
+}
+const today = computed(() => window(1));
+const week = computed(() => window(7));
+
+/** 近 7 遊戲日,每日淨額(長條圖用;由舊到新) */
+const dailyBars = computed(() => {
+  const nets = Array(7).fill(0) as number[];
+  const from = state.gameMs - 7 * DAY;
+  for (const t of state.ledger) {
+    if (t.gameMs < from) continue;
+    const idx = Math.min(6, Math.floor((t.gameMs - from) / DAY));
+    nets[idx] += t.amount;
+  }
+  const max = Math.max(1, ...nets.map((n) => Math.abs(n)));
+  return nets.map((n) => ({ net: n, h: Math.round((Math.abs(n) / max) * 30) }));
+});
 
 const byCat = computed(() => {
   const m: Record<string, number> = {};
@@ -42,8 +68,23 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
       </div>
 
       <div class="io">
-        <div class="io-cell in"><span>總收入</span><b>+${{ income.toLocaleString() }}</b></div>
-        <div class="io-cell out"><span>總支出</span><b>−${{ expense.toLocaleString() }}</b></div>
+        <div class="io-cell" :class="today.net >= 0 ? 'in' : 'out'">
+          <span>近 1 天損益</span><b>{{ money(today.net) }}</b>
+          <i>收 ${{ today.inc.toLocaleString() }} / 支 ${{ today.exp.toLocaleString() }}</i>
+        </div>
+        <div class="io-cell" :class="week.net >= 0 ? 'in' : 'out'">
+          <span>近 7 天損益</span><b>{{ money(week.net) }}</b>
+          <i>收 ${{ week.inc.toLocaleString() }} / 支 ${{ week.exp.toLocaleString() }}</i>
+        </div>
+      </div>
+
+      <div class="chart">
+        <span class="chart-lbl">近 7 日每日淨額</span>
+        <div class="bars">
+          <div v-for="(b, i) in dailyBars" :key="i" class="bar-wrap">
+            <div class="vbar" :class="b.net >= 0 ? 'pos' : 'neg'" :style="{ height: Math.max(2, b.h) + 'px' }"></div>
+          </div>
+        </div>
       </div>
 
       <div class="cats" v-if="byCat.length">
@@ -82,8 +123,17 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 .io-cell { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }
 .io-cell span { font-size: 11px; color: var(--text-dim); }
 .io-cell b { font-size: 15px; }
+.io-cell i { font-size: 10px; color: var(--text-dim); font-style: normal; }
 .io-cell.in b { color: var(--good); }
 .io-cell.out b { color: var(--bad); }
+
+.chart { padding: 0 16px 10px; }
+.chart-lbl { font-size: 11px; color: var(--text-dim); }
+.bars { display: flex; gap: 5px; align-items: flex-end; height: 34px; margin-top: 4px; }
+.bar-wrap { flex: 1; display: flex; align-items: flex-end; justify-content: center; background: #17151f; border-radius: 4px; height: 100%; }
+.vbar { width: 70%; border-radius: 3px 3px 0 0; }
+.vbar.pos { background: var(--good); }
+.vbar.neg { background: var(--bad); }
 
 .cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 16px 12px; }
 .cat { display: flex; gap: 6px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; }

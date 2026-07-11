@@ -10,6 +10,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { TenantVisualState } from "../types";
 import { composeFloor, FLOOR_W, FLOOR_H } from "../floor/floorScene";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
+import { createPetAgents, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { TILE } from "../floor/map";
 import { roomRect } from "../sim/placements";
 import { state, roomOfTenant } from "../store";
@@ -55,6 +56,7 @@ const isAway = computed(() => props.visualState === "away");
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
+let petAgents: PetAgent[] = [];
 let raf = 0;
 let last = 0;
 let camX = -1; // 相機左上(px);-1 = 尚未定位,首幀直接跳到位
@@ -77,6 +79,8 @@ function loop(t: number) {
     last = t;
     if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
     tickAgents(agents, dt);
+    if (petAgents.length !== Object.keys(state.pets).length) petAgents = createPetAgents();
+    tickPetAgents(petAgents, dt); // 貓也會晃進房間鏡頭裡
 
     const el = canvas.value;
     if (el) {
@@ -96,7 +100,7 @@ function loop(t: number) {
       ctx.imageSmoothingEnabled = false;
       // 把整張樓層以 3 倍縮放、平移到相機角落畫進來;canvas 只露出相機窗格
       ctx.setTransform(SCALE, 0, 0, SCALE, -Math.round(camX * SCALE), -Math.round(camY * SCALE));
-      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours());
+      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours(), petAgents);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
   } finally {

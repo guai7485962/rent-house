@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
+import { createPetAgents, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
@@ -23,6 +24,7 @@ const placing = computed(() => state.pendingPlace !== null || state.pendingMove 
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
+let petAgents: PetAgent[] = [];
 let raf = 0;
 let last = 0;
 
@@ -37,6 +39,9 @@ function loop(t: number) {
     // 有新租客入住(runtime 數量改變)→ 重建 agents
     if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
     tickAgents(agents, dt);
+    // 寵物貓(領養/退租時數量會變 → 重建)
+    if (petAgents.length !== Object.keys(state.pets).length) petAgents = createPetAgents();
+    tickPetAgents(petAgents, dt);
     const el = canvas.value;
     if (el) {
       const ctx = el.getContext("2d")!;
@@ -46,21 +51,30 @@ function loop(t: number) {
         const rect = roomRect(roomId);
         if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
       }
-      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours());
+      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents);
       const pv = props.preview;
       if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
     }
     if (t - lastTagMs > 150) {
       lastTagMs = t;
-      agentTags.value = agents
-        .filter((a) => !a.hidden)
-        .map((a) => ({
-          id: a.tenantId,
-          name: state.runtimes[a.tenantId]?.tenant.name ?? "",
-          left: `${((a.px + TILE / 2) / FLOOR_W) * 100}%`,
-          top: `${((a.py - 8) / FLOOR_H) * 100}%`,
-          color: getTheme(a.tenantId).shirt,
-        }));
+      agentTags.value = [
+        ...agents
+          .filter((a) => !a.hidden)
+          .map((a) => ({
+            id: a.tenantId,
+            name: state.runtimes[a.tenantId]?.tenant.name ?? "",
+            left: `${((a.px + TILE / 2) / FLOOR_W) * 100}%`,
+            top: `${((a.py - 8) / FLOOR_H) * 100}%`,
+            color: getTheme(a.tenantId).shirt,
+          })),
+        ...petAgents.map((p) => ({
+          id: `pet_${p.ownerId}`,
+          name: `🐈${p.name}`,
+          left: `${((p.px + TILE / 2) / FLOOR_W) * 100}%`,
+          top: `${((p.py + 2) / FLOOR_H) * 100}%`,
+          color: "#e0913f",
+        })),
+      ];
     }
   } finally {
     // 單幀出錯也不讓渲染迴圈死掉(否則畫面會永久停格/消失)

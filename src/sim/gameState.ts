@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -72,6 +72,11 @@ export interface TenantRuntime {
   flags: string[];
   /** 本小時是否在交誼廳(社交相遇判定用,不需存檔) */
   inLounge: boolean;
+  /** 每日 AI 日記的專屬時段(遊戲小時 0~23;-1 = 未指派,由 ensureDiaryHours 補)。
+   *  每位租客錯開在一天中不同時間生成,避免全擠在 0 點撞 AI 限流 */
+  diaryHour: number;
+  /** 上次生成日記的遊戲日(防同日重複) */
+  lastDiaryDay: number;
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -97,6 +102,8 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     arc: null as StoryArc | null,
     flags: [] as string[],
     inLounge: false,
+    diaryHour: -1,
+    lastDiaryDay: -99,
   });
 }
 
@@ -144,6 +151,8 @@ export const state = reactive({
   breakdowns: {} as Record<string, { defId: string; cost: number; sinceMs: number }>,
   /** 冷戰(§10-2 衝突):pairKey → 期限(期間互相迴避、關係每日小扣;入存檔) */
   feuds: {} as Record<string, { untilMs: number }>,
+  /** 寵物:飼主租客 id → 貓(一人一隻;會在樓層遊走並引發事件;入存檔) */
+  pets: {} as Record<string, Pet>,
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {

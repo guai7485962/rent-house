@@ -1,8 +1,9 @@
 /**
  * 每日 AI 敘事(store 拆分:narration 模組)。
- * 換日時為每位租客產生一篇日記(live 走 /api/narrate、否則模板),
- * 並把 AI 回傳的新記憶/抉擇事件消毒後接進遊戲。
- * (設計檢討 §1 的連續性摘要、narrate 佇列/節流之後也放這裡。)
+ * 每位租客有自己的「日記時段」(diaryHour):不再全擠在 0 點,而是錯開在
+ * 一天中不同的遊戲小時各生成一篇(1 遊戲小時 ≈ 8.6 現實分鐘 → API 呼叫
+ * 自然拉開幾十分鐘,幾乎不會撞 Gemini 免費層限流)。
+ * live 走 /api/narrate、否則模板;AI 回傳的新記憶/抉擇事件消毒後接進遊戲。
  */
 import { narrateDay, templateDiary, type NarrateCtx, type NarrateResult } from "./narrate";
 import { sanitizeAiEvent } from "./events";
@@ -34,41 +35,78 @@ interface DiaryJob {
   live: boolean;
 }
 const diaryQueue: DiaryJob[] = [];
-let diaryRunning = false;
+let diaryRun: Promise<void> | null = null;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 換日時,為每位租客產生一篇「當日日記」。
- *  live=false(離線/快轉補敘)→ 模板「同步」落地,行為與時序都和排程前一致;
- *  live=true → 進錯開佇列,一次一篇、拉開間隔(避免撞免費層每分鐘限流)。 */
-export function produceDailyDiaries(live: boolean): Promise<void> {
-  const dayLabel = `第 ${gameDayIndex() + 1} 天`;
-  quotaHold = false; // 新的一天:重新嘗試 AI(額度每日重置)
-  for (const id of Object.keys(state.runtimes)) {
-    const rt = state.runtimes[id];
-    if (!rt) continue;
-    const job: DiaryJob = { id, gameMs: state.gameMs, ctx: buildNarrateCtx(rt, dayLabel), live };
-    if (live) diaryQueue.push(job);
-    else applyDiaryResult(job, { diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false });
+/** 日記時段候選(彼此拉開;依序發給租客,4 人時為 22/9/14/18 點) */
+const DIARY_SLOTS = [22, 9, 14, 18, 7, 12, 16, 20, 11, 15, 21, 8];
+
+/** 幫還沒有日記時段的租客指派一個(避開其他人已占用的時段;存檔載入/新入住都會補) */
+export function ensureDiaryHours() {
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.diaryHour >= 0 && rt.diaryHour <= 23) continue;
+    const used = new Set(Object.values(state.runtimes).map((o) => o.diaryHour));
+    rt.diaryHour = DIARY_SLOTS.find((h) => !used.has(h)) ?? DIARY_SLOTS[Math.floor(Math.random() * DIARY_SLOTS.length)];
   }
+}
+
+/** 換日重置:額度每日重置,新的一天重新嘗試 AI(tick 在跨日時呼叫) */
+export function resetDiaryQuota() {
+  quotaHold = false;
+}
+
+/** 為單一租客產生「這一天」的日記:live 進錯開佇列、否則模板同步落地 */
+function produceDiaryFor(rt: TenantRuntime, live: boolean): void {
+  const job: DiaryJob = { id: rt.tenant.id, gameMs: state.gameMs, ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天`), live };
+  if (live) {
+    diaryQueue.push(job);
+    void processDiaryQueue();
+  } else {
+    applyDiaryResult(job, { diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false });
+  }
+}
+
+/** 每小時檢查:輪到誰的日記時段就生成(每人每日一篇;tick 每小時呼叫)。
+ *  這就是「AI 事件分散」的核心——四個人不再同時打 API,而是各自的時段到了才打。 */
+export function diaryPass(hour: number, live: boolean) {
+  ensureDiaryHours();
+  const day = gameDayIndex();
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.diaryHour !== hour || rt.lastDiaryDay === day) continue;
+    rt.lastDiaryDay = day;
+    produceDiaryFor(rt, live);
+  }
+}
+
+/** 一次為全員產生日記(整批;測試與舊呼叫點用。正常遊戲流程走 diaryPass 錯開)。
+ *  live=false(離線/快轉補敘)→ 模板「同步」落地;live=true → 進佇列一次一篇。 */
+export function produceDailyDiaries(live: boolean): Promise<void> {
+  quotaHold = false; // 整批重來:重新嘗試 AI
+  for (const rt of Object.values(state.runtimes)) produceDiaryFor(rt, live);
   return processDiaryQueue();
 }
 
-/** 佇列處理器:一次一篇、間隔 gapMs;429 先當限流等 retryMs 重試,重試仍 429 才判定額度用盡 */
-async function processDiaryQueue(): Promise<void> {
-  if (diaryRunning) return;
-  diaryRunning = true;
-  try {
-    let first = true;
-    while (diaryQueue.length > 0) {
-      if (!first && !quotaHold) await sleep(diaryTiming.gapMs);
-      first = false;
-      const job = diaryQueue.shift()!;
-      if (!state.runtimes[job.id]) continue; // 期間可能已退租
-      applyDiaryResult(job, await generateDiary(job));
-    }
-  } finally {
-    diaryRunning = false;
+/** 佇列處理器:一次一篇、間隔 gapMs;429 先當限流等 retryMs 重試,重試仍 429 才判定額度用盡。
+ *  已在跑就回傳同一個進行中的 promise(await 它 = 等整批清完) */
+function processDiaryQueue(): Promise<void> {
+  if (!diaryRun) {
+    diaryRun = drainDiaryQueue().finally(() => {
+      diaryRun = null;
+      if (diaryQueue.length > 0) void processDiaryQueue(); // 收尾瞬間又有新篇入列 → 重啟
+    });
+  }
+  return diaryRun;
+}
+
+async function drainDiaryQueue(): Promise<void> {
+  let first = true;
+  while (diaryQueue.length > 0) {
+    if (!first && !quotaHold) await sleep(diaryTiming.gapMs);
+    first = false;
+    const job = diaryQueue.shift()!;
+    if (!state.runtimes[job.id]) continue; // 期間可能已退租
+    applyDiaryResult(job, await generateDiary(job));
   }
 }
 
@@ -172,6 +210,6 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     neighbors,
     summary: rt.tenant.recentSummary,
     arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
-    flags: [...rt.flags],
+    flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
   };
 }

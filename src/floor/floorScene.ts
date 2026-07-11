@@ -19,6 +19,7 @@ import {
   CHAR_SIT,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
+import type { PetAgent } from "./petAgents";
 import { activeFx, type Fx } from "./fx";
 import { getTheme, getCustomAppearance } from "../pixel/scene";
 import { drawAppearanceOverlay } from "../pixel/parts";
@@ -80,7 +81,7 @@ export function dayNightTint(hour: number): { color: string; alpha: number } | n
   return { color: "#141840", alpha: 0.24 }; // 入夜
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number) {
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[]) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -92,14 +93,15 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   const sorted = [...getPlacements()].sort((a, b) => a.r - b.r);
   for (const p of sorted) drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE);
 
-  if (agents) {
-    // 依 y 排序,讓靠下(近鏡頭)的人蓋住上方;外出者不畫
-    for (const a of [...agents].sort((x, y) => x.py - y.py)) {
-      if (!a.hidden) {
-        drawAgent(ctx, a);
-        drawAmbient(ctx, a, frame); // 隨狀態的環境演出(Zzz/音符/蒸氣)
-      }
+  if (agents || pets) {
+    // 人與貓依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
+    const items: { y: number; draw: () => void }[] = [];
+    for (const a of agents ?? []) {
+      if (a.hidden) continue;
+      items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
     }
+    for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => drawCat(ctx, p, frame) });
+    for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
     // 離線預覽:靜態站立
@@ -284,6 +286,80 @@ function drawAgent(ctx: Ctx, a: Agent) {
   // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件
   const ap = getCustomAppearance(a.tenantId);
   if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff);
+}
+
+// ---------------------------------------------------------------------------
+// 寵物貓(寵物系統):走路/坐/捲成一團睡,四種花色
+// ---------------------------------------------------------------------------
+
+const CAT_PALS = [
+  { body: "#e0913f", dark: "#b46c22", belly: "#f6cb9e", eye: "#26232f", patch: false }, // 橘貓
+  { body: "#413e4e", dark: "#2b2937", belly: "#8d89a0", eye: "#ffd23e", patch: false }, // 黑貓
+  { body: "#eae5da", dark: "#c6bfb0", belly: "#faf7f0", eye: "#26232f", patch: false }, // 白貓
+  { body: "#eae5da", dark: "#c6bfb0", belly: "#faf7f0", eye: "#26232f", patch: true }, // 三花
+];
+
+function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
+  const pal = CAT_PALS[a.color] ?? CAT_PALS[0];
+  const x = a.px + 1; // 貓佔位 14px 寬,置中於 16px tile
+  const y = a.py;
+  const f = a.facing;
+  /** 依面向鏡射的水平座標(off = 面向右時的偏移) */
+  const fx = (off: number, w = 1) => x + (f > 0 ? off : 14 - off - w);
+
+  groundShadow(ctx, x + 7, y + TILE - 2, 8);
+
+  if (a.sleeping) {
+    // 捲成一團睡:橢圓身體 + 貼著的頭 + 圍上來的尾巴 + Zzz
+    rect(ctx, x + 3, y + 8, 8, 1, pal.body);
+    rect(ctx, x + 2, y + 9, 10, 4, pal.body);
+    rect(ctx, x + 3, y + 12, 8, 1, pal.dark);
+    rect(ctx, x + 8, y + 7, 4, 2, pal.body); // 頭靠在身上
+    rect(ctx, x + 8, y + 6, 1, 1, pal.dark); // 耳
+    rect(ctx, x + 11, y + 6, 1, 1, pal.dark);
+    rect(ctx, x + 2, y + 11, 3, 1, pal.dark); // 尾巴圍到身前
+    if (pal.patch) {
+      rect(ctx, x + 4, y + 9, 3, 2, "#cd7f32");
+      rect(ctx, x + 8, y + 10, 2, 2, "#413e4e");
+    }
+    pxPat(ctx, PAT_Z, x + 12, y + 1 - (frame % 2), "#cfd6ff", 0.8);
+    return;
+  }
+
+  if (!a.moving) {
+    // 端坐:直立身體 + 頭 + 收在腳邊的尾巴
+    rect(ctx, x + 4, y + 8, 5, 5, pal.body);
+    rect(ctx, x + 5, y + 10, 2, 3, pal.belly); // 胸口
+    rect(ctx, x + 4, y + 4, 5, 4, pal.body); // 頭
+    rect(ctx, x + 4, y + 3, 1, 1, pal.dark); // 耳
+    rect(ctx, x + 8, y + 3, 1, 1, pal.dark);
+    rect(ctx, x + 5, y + 5, 1, 1, pal.eye); // 眼(眨眼:偶爾閉上)
+    rect(ctx, x + 7, y + 5, 1, 1, frame % 7 === 3 ? pal.body : pal.eye);
+    rect(ctx, x + 9, y + 12, 3, 1, pal.dark); // 尾巴
+    rect(ctx, x + 11, y + 11, 1, 1, pal.dark);
+    if (pal.patch) {
+      rect(ctx, x + 4, y + 4, 2, 2, "#cd7f32");
+      rect(ctx, x + 7, y + 9, 2, 2, "#413e4e");
+    }
+    return;
+  }
+
+  // 走路:水平身體 + 前方的頭 + 交替的四肢 + 翹起的尾巴
+  rect(ctx, fx(2, 8), y + 8, 8, 3, pal.body);
+  rect(ctx, fx(3, 6), y + 10, 6, 1, pal.belly);
+  rect(ctx, fx(9, 4), y + 5, 4, 4, pal.body); // 頭
+  rect(ctx, fx(9, 1), y + 4, 1, 1, pal.dark); // 耳
+  rect(ctx, fx(12, 1), y + 4, 1, 1, pal.dark);
+  rect(ctx, fx(12, 1), y + 6, 1, 1, pal.eye); // 眼
+  const stepA = Math.floor(a.walkPhase) % 2 === 0;
+  const legs = stepA ? [3, 8] : [4, 7];
+  for (const off of legs) rect(ctx, fx(off, 1), y + 11, 1, 2, pal.body);
+  rect(ctx, fx(1, 1), y + 5, 1, 2, pal.dark); // 尾巴翹起
+  rect(ctx, fx(2, 1), y + 7, 1, 1, pal.dark);
+  if (pal.patch) {
+    rect(ctx, fx(4, 3), y + 8, 3, 2, "#cd7f32");
+    rect(ctx, fx(10, 2), y + 5, 2, 2, "#413e4e");
+  }
 }
 
 /** 躺姿(§10-6 lie:賴床)——頭枕左側 + 蓋著被子的身體(被子用衣服色,一眼認得出是誰) */

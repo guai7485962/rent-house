@@ -72,7 +72,7 @@ check("推到 maxStage 未明說 done=false → 收束", sanitizeArcUpdate({ sta
 // --- 2. mock AI 全流程:開弧 → 推進 → 收束 ---
 const lin = state.runtimes["tenant_lin_asmr"];
 scriptedArcUpdate = { theme: "神秘的深夜包裹", maxStage: 3, stage: 1, summary: "門口出現不明包裹", done: false };
-fastForward(3); // 開局 22:00 → 跨午夜觸發 live 日記
+fastForward(24); // 日記時段制:快轉一整天,讓每位租客的 diaryHour 都輪到
 await waitNarrate();
 check("第 1 天:AI 開了新弧", lin.arc?.theme === "神秘的深夜包裹" && lin.arc?.stage === 1);
 check("開弧留下 notable 日誌(進 Feed)", lin.log.some((e) => e.importance === "notable" && e.text.includes("新篇章")));

@@ -17,6 +17,7 @@ import type { EventEffect } from "./events";
 import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
+import { adoptCat } from "./pets";
 import {
   state,
   clamp,
@@ -299,6 +300,7 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
     const def = DIRECTIVES[eff.directive.id];
     rt.directive = { id: eff.directive.id, untilDay: gameDayIndex() + eff.directive.days };
     pushSocialLog(rt, def.startText, "major");
+    if (eff.directive.id === "adopt_cat") adoptCat(rt.tenant.id); // 貓不只是指令:留下來成為永久寵物
     applyHour(rt, new Date(state.gameMs).getHours(), false); // 立即依新行為重新定位
   }
 }

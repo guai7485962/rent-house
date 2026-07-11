@@ -42,8 +42,8 @@ function check(name: string, ok: boolean) {
 const lin = state.runtimes["tenant_lin_asmr"];
 const summaryBefore = lin.tenant.recentSummary;
 
-// 開局 22:00 → 快轉 3 小時跨午夜,觸發 live AI 日記(fire-and-forget)
-fastForward(3);
+// 日記時段制:每位租客在自己的 diaryHour 生成 → 快轉一整天讓兩位的時段都輪到
+fastForward(24);
 // 等 fire-and-forget 完成(2 位租客 × (fetch + 4s 節流間隔))
 await new Promise((r) => setTimeout(r, 7000));
 

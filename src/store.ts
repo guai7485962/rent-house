@@ -47,8 +47,18 @@ export { getApplicants, moveIn, moveOut, resolveCohabit, decide, previewRent, pr
 
 export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 
+export { adoptCat, catAttitude, petsPass, ensurePets } from "./sim/pets";
+export { diaryPass, ensureDiaryHours, produceDailyDiaries } from "./sim/narration";
+
 export type { StoryArc } from "./sim/arcs";
 
 export { SAVE_KEY, SAVE_VERSION, exportSave, importSave, clearSave } from "./sim/persistence";
 
 export { initGame, stopGame, resume, debugInit, debugStepHour, debugClock } from "./sim/lifecycle";
+
+// 新開局的種子補登(貓、日記時段)。放在 façade 底部:此時所有 sim 模組都初始化完,
+// 不會踩到 gameState ↔ persistence ↔ pets 的循環載入順序;load() 之後會再各自補一次。
+import { ensurePets as _ensurePets } from "./sim/pets";
+import { ensureDiaryHours as _ensureDiaryHours } from "./sim/narration";
+_ensurePets();
+_ensureDiaryHours();

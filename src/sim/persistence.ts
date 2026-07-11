@@ -14,6 +14,8 @@ import { serializeRelationships, loadRelationships } from "./social";
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
 import { state, tenants, refreshAppearances, type Txn } from "./gameState";
+import { ensureDiaryHours } from "./narration";
+import { ensurePets } from "./pets";
 import { stopTicker } from "./lifecycle";
 
 export const SAVE_KEY = "rent_house_save_v1";
@@ -76,6 +78,8 @@ export function save() {
         directive: rt.directive,
         arc: rt.arc,
         flags: rt.flags,
+        diaryHour: rt.diaryHour,
+        lastDiaryDay: rt.lastDiaryDay,
       };
     }
     localStorage.setItem(
@@ -99,6 +103,7 @@ export function save() {
         interactionCooldowns: state.interactionCooldowns,
         breakdowns: state.breakdowns,
         feuds: state.feuds,
+        pets: state.pets,
         runtimes,
       }),
     );
@@ -151,6 +156,8 @@ export function load(): boolean {
     Object.assign(state.breakdowns, s.breakdowns ?? {}); // 舊檔沒有 → 沒故障,無害
     for (const k of Object.keys(state.feuds)) delete state.feuds[k];
     Object.assign(state.feuds, s.feuds ?? {}); // 舊檔沒有 → 沒冷戰,無害
+    for (const k of Object.keys(state.pets)) delete state.pets[k];
+    Object.assign(state.pets, s.pets ?? {}); // 舊檔沒有 → ensurePets 會補種子貓
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];
@@ -174,6 +181,8 @@ export function load(): boolean {
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],
         inLounge: false,
+        diaryHour: saved.diaryHour ?? -1, // 舊檔沒有 → ensureDiaryHours 指派
+        lastDiaryDay: saved.lastDiaryDay ?? -99,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
       // 部件化外觀(§9-1):存檔帶有外觀者,重新登錄到渲染層
@@ -191,6 +200,8 @@ export function load(): boolean {
       }
     }
     refreshAppearances(); // 依房間指派配色,修正舊存檔可能的撞色
+    ensureDiaryHours(); // 舊檔沒有日記時段 → 指派(每人錯開)
+    ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     return true;
   } catch {

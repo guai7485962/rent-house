@@ -32,7 +32,8 @@ import { maintenancePass } from "./maintenance";
 import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } from "./conflicts";
 import { dramaPass } from "./drama";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
-import { produceDailyDiaries } from "./narration";
+import { diaryPass, resetDiaryQuota } from "./narration";
+import { petsPass } from "./pets";
 import { spawnFx } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { interactionsPass } from "./interactions";
@@ -302,12 +303,14 @@ export function hourlyTick(live = false) {
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
   dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
+  petsPass(); // 寵物貓:換去處 + 闖房/搗蛋/大小便事件
+  diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     collectRent();
-    void produceDailyDiaries(live); // 換日 → 每位租客一篇當日 AI 日記(fire-and-forget)
+    resetDiaryQuota(); // AI 額度每日重置 → 新的一天重新嘗試
   }
 }
 

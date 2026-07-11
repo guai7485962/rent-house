@@ -311,3 +311,18 @@ export interface LandlordDecision {
   choiceId: string;
   decidedAt: string; // ISO 8601 遊戲內時間
 }
+
+// ---------------------------------------------------------------------------
+// 寵物(貓咪系統):租客養的貓,會在樓層遊走、引發事件
+// ---------------------------------------------------------------------------
+
+export interface Pet {
+  name: string;
+  kind: "cat";
+  /** 花色索引:0 橘貓、1 黑貓、2 白貓、3 三花 */
+  color: number;
+  ownerId: string;
+  /** 這個遊戲小時貓待的區域(r301/lounge…;渲染層讓貓走過去遊蕩) */
+  hangout: string;
+  sinceMs: number;
+}

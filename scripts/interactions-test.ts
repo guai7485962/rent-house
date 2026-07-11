@@ -31,6 +31,7 @@ const TF = (id: string, isAdult = true): Tenant =>
 const intimacy = INTERACTIONS.find((d) => d.id === "night_intimacy")!;
 const cuddle = INTERACTIONS.find((d) => d.id === "cuddle_tv")!;
 const lazy = INTERACTIONS.find((d) => d.id === "lazy_morning")!;
+const earbuds = INTERACTIONS.find((d) => d.id === "share_earbuds")!;
 
 const baseCtx: InteractCtx = { hour: 23, thirdPresent: false, adultMode: true, cohabiting: true };
 const a = T("ia");
@@ -55,6 +56,15 @@ check("未成年連 couple 級普通互動也到不了(canRomance 擋在成為�
 
 check("賴床需同居:非同居擋", !canInteract(lazy, a, b, { ...baseCtx, hour: 8, cohabiting: false }));
 check("賴床:同居+早上可行", canInteract(lazy, a, b, { ...baseCtx, hour: 8 }));
+
+// crush(曖昧)門檻
+relationships[pairKey("ia", "ib")] = { value: 80, romantic: false, cohabitOffered: false };
+check("曖昧(80+互有好感、非情侶)→ 共用耳機可行", canInteract(earbuds, a, b, { ...baseCtx, hour: 20 }));
+relationships[pairKey("ia", "ib")] = { value: 60, romantic: false, cohabitOffered: false };
+check("關係 60 → 曖昧互動擋", !canInteract(earbuds, a, b, { ...baseCtx, hour: 20 }));
+const bIncompatible = { ...TF("ib"), attractedTo: ["female"] } as unknown as Tenant;
+relationships[pairKey("ia", "ib")] = { value: 90, romantic: false, cohabitOffered: false };
+check("取向不合 → 曖昧互動擋(90 也不行)", !canInteract(earbuds, a, bIncompatible, { ...baseCtx, hour: 20 }));
 
 // --- 整合:陳家豪 × 林小婕 同居於 r301 ---
 const A = state.runtimes["tenant_chen_engineer"];
@@ -102,6 +112,23 @@ A.log.splice(0); B.log.splice(0);
 B.tenant.isAdult = false;
 for (let i = 0; i < 100; i++) interactionsPass();
 check("整合:一方 isAdult=false → 🔞開著也全擋", !hasAdultTrace());
+
+// --- 整合:交誼廳朋友互動(深夜談心 / 開黑)---
+B.tenant.isAdult = true;
+delete state.cohabits[B.tenant.id];
+state.occupancy.r302 = B.tenant.id;
+relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 60, romantic: false, cohabitOffered: false };
+for (const k of Object.keys(state.interactionCooldowns)) delete state.interactionCooldowns[k];
+A.log.splice(0); B.log.splice(0);
+A.inLounge = true; B.inLounge = true;
+state.gameMs = new Date("2026-07-06T22:30:00+08:00").getTime(); // 22 時(談心/開黑時段)
+let loungeHit = false;
+for (let i = 0; i < 200 && !loungeHit; i++) {
+  interactionsPass();
+  loungeHit = A.log.some((e) => e.text.includes("聊到深夜") || e.text.includes("還好嗎") || e.text.includes("開黑"));
+}
+check("整合:交誼廳朋友(60)觸發談心/開黑", loungeHit);
+check("整合:朋友階段不會出現曖昧/親密內容", !A.log.some((e) => e.text.includes("耳機") || e.text.includes("請勿打擾") || e.text.includes("水聲")));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

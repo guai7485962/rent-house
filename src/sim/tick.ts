@@ -7,7 +7,7 @@ import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
-import { encounter, listRelationships } from "./social";
+import { encounter, listRelationships, pairKey } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
 import { DIRECTIVES } from "./directives";
 import { generateHourly } from "./generate";
@@ -293,8 +293,8 @@ export function hourlyTick(live = false) {
 
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
-  socialPass(); // 鄰居在交誼廳相遇 → 聊天/衝突/戀愛
-  interactionsPass(); // 同房的情侶/同居互動(§10-1 目錄 + canInteract 把關)
+  const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)
+  socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     collectRent();
@@ -317,14 +317,15 @@ function pruneStaleMemories() {
   }
 }
 
-/** 鄰居社交:找出同在交誼廳的租客,兩兩相遇互動 */
-function socialPass() {
+/** 鄰居社交:找出同在交誼廳的租客,兩兩相遇互動(skip = 這小時已由互動目錄處理過的配對) */
+function socialPass(skip: Set<string> = new Set()) {
   const inLounge = Object.values(state.runtimes).filter((rt) => rt.inLounge && !rt.pendingEvent);
   for (let i = 0; i < inLounge.length; i++) {
     for (let j = i + 1; j < inLounge.length; j++) {
       if (Math.random() > 0.55) continue; // 不是每小時都會互動
       const A = inLounge[i];
       const B = inLounge[j];
+      if (skip.has(pairKey(A.tenant.id, B.tenant.id))) continue;
       const res = encounter(A.tenant, B.tenant);
       pushSocialLog(A, res.textA, res.importance);
       pushSocialLog(B, res.textB, res.importance);

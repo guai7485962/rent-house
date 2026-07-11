@@ -34,24 +34,32 @@ function prune(gameNow: number) {
   }
 }
 
-/** 登記一場雙人互動:A 站錨點,B 站錨點旁第一個可走的相鄰格(找不到就同格疊站) */
-export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = 15000) {
+/** 登記一場雙人互動:A 站錨點,B 站錨點旁第一個可走的相鄰格(找不到就同格疊站)。
+ *  tiles = 明確指定兩人的格(§10-6 家具座位錨點:沙發並肩兩格、雙人床左右兩側——可為家具佔用格,
+ *  agent 層會走到旁邊再「跨上去」)。 */
+export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = 15000, tiles?: { a: Tile; b: Tile }) {
   // 一人同時只演一場:清掉牽涉任一方的舊 session
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i];
     if (s.aId === aId || s.bId === aId || s.aId === bId || s.bId === bId) sessions.splice(i, 1);
   }
-  const blocked = currentBlocked();
+  let tileA: Tile = { ...anchor };
   let tileB: Tile = anchor;
-  for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-    const c = anchor.c + dc;
-    const r = anchor.r + dr;
-    if (c >= 0 && c < GRID_W && r >= 0 && r < GRID_H && !blocked[r][c]) {
-      tileB = { c, r };
-      break;
+  if (tiles) {
+    tileA = { ...tiles.a };
+    tileB = { ...tiles.b };
+  } else {
+    const blocked = currentBlocked();
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const c = anchor.c + dc;
+      const r = anchor.r + dr;
+      if (c >= 0 && c < GRID_W && r >= 0 && r < GRID_H && !blocked[r][c]) {
+        tileB = { c, r };
+        break;
+      }
     }
   }
-  sessions.push({ aId, bId, tileA: { ...anchor }, tileB, pose, until: Date.now() + durationMs, gameUntil: gameNow + MS_PER_GAME_HOUR });
+  sessions.push({ aId, bId, tileA, tileB, pose, until: Date.now() + durationMs, gameUntil: gameNow + MS_PER_GAME_HOUR });
 }
 
 /** 此人進行中的 session 走位(agent 層以此覆寫 targetTile);沒有則 null */

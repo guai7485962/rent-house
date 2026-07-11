@@ -103,6 +103,27 @@ clearPairSessions();
 tickAgents(agents, 0.05);
 check("session 結束:兩人重新現身、pose 清空", !agA.hidden && !agB.hidden && agA.pose === null && agB.pose === null);
 
+// --- 家具座位錨點(§10-6):session 指定沙發佔用格 → 走到旁邊「跨上去」坐 ---
+const { furnitureSeats } = await import("../src/sim/interactions");
+const seats = furnitureSeats("lounge", ["shared_sofa"]);
+check("furnitureSeats 找到共用沙發並肩兩格", !!seats && Math.abs(seats!.a.c - seats!.b.c) === 1 && seats!.a.r === seats!.b.r);
+check("寬 1 家具坐不下兩人 → null", furnitureSeats("lounge", ["coffee_machine"]) === null);
+check("地點沒這件家具 → null", furnitureSeats("r301", ["shared_sofa"]) === null);
+if (seats) {
+  A.targetTile = { c: seats.a.c, r: seats.a.r + 1 }; // 從沙發正前方出發
+  B.targetTile = { c: seats.b.c - 2, r: seats.b.r + 2 }; // 稍遠處出發(要走幾步)
+  const ag2 = createAgents();
+  const a2 = ag2.find((x) => x.tenantId === A.tenant.id)!;
+  const b2 = ag2.find((x) => x.tenantId === B.tenant.id)!;
+  startPairSession(A.tenant.id, B.tenant.id, seats.a, "sit", now(), 15000, seats);
+  for (let i = 0; i < 600; i++) tickAgents(ag2, 0.1);
+  check("兩人各自坐上沙發格(跨上家具)", a2.c === seats.a.c && a2.r === seats.a.r && b2.c === seats.b.c && b2.r === seats.b.r, `a=(${a2.c},${a2.r}) b=(${b2.c},${b2.r})`);
+  check("坐定後不再移動、pose=sit", !a2.moving && !b2.moving && a2.pose === "sit" && b2.pose === "sit");
+  clearPairSessions();
+  tickAgents(ag2, 0.05);
+  check("session 結束:能從家具格走回原目標", !a2.moving || a2.path.length > 0);
+}
+
 // --- 整合:互動觸發 → 這一對有 session ---
 A.tenant.gender = "male"; A.tenant.attractedTo = ["female"];
 B.tenant.gender = "female"; B.tenant.attractedTo = ["male"];

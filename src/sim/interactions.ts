@@ -15,6 +15,7 @@ import { feudActive } from "./conflicts";
 import { maybeWitness } from "./drama";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
 import { roomRect, getPlacements } from "./placements";
+import { getDef } from "../furniture/catalog";
 import { spawnFx, type FxKind } from "../floor/fx";
 import { startPairSession, type PairPose } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR } from "./clock";
@@ -46,6 +47,8 @@ export interface InteractionDef {
   fx: FxKind;
   /** 雙人圖式(§10-6):pair=兩人走到一起站著演(預設);hidden=遮蔽式,兩人隱藏只留 fx(🔞 一律用這個) */
   pose?: PairPose;
+  /** 家具座位錨點(§10-6):兩人「坐/躺到」這件家具上(反查地點的第一件;沒有就退回站位演出) */
+  seatOn?: string[];
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
 }
 
@@ -82,6 +85,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "cohabit",
     location: "room",
     pose: "lie",
+    seatOn: ["double_bed"],
     timeWindow: [7, 9],
     requiresFurniture: ["double_bed"],
     weight: 2,
@@ -145,6 +149,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "lounge",
     pose: "sit",
+    seatOn: ["shared_sofa"],
     timeWindow: [21, 1],
     weight: 2,
     cooldownHours: 24,
@@ -158,6 +163,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "lounge",
     pose: "sit",
+    seatOn: ["shared_sofa"],
     timeWindow: [19, 23],
     requiresFurniture: ["lounge_console", "lounge_tv"],
     weight: 2,
@@ -172,6 +178,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "lounge",
     pose: "sit",
+    seatOn: ["shared_sofa"],
     timeWindow: [11, 20],
     weight: 2,
     cooldownHours: 16,
@@ -186,6 +193,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "crush",
     location: "lounge",
     pose: "sit",
+    seatOn: ["shared_sofa"],
     timeWindow: [19, 23],
     requiresFurniture: ["shared_sofa"],
     weight: 2,
@@ -202,6 +210,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "crush",
     location: "lounge",
     pose: "sit",
+    seatOn: ["shared_sofa"],
     timeWindow: [21, 23],
     weight: 2,
     cooldownHours: 20,
@@ -230,6 +239,20 @@ export function furnitureSetOf(roomId: string | null): Set<string> {
   if (!roomId) return s;
   for (const p of getPlacements()) if (p.room === roomId) s.add(p.defId);
   return s;
+}
+
+/** 家具座位反查(§10-6):在地點找 seatOn 的第一件家具,回傳「並肩兩格」(取橫向中間相鄰兩格)。
+ *  寬 1 的家具坐不下兩人 → null(退回站位)。 */
+export function furnitureSeats(roomId: string | null, seatOn?: string[]): { a: { c: number; r: number }; b: { c: number; r: number } } | null {
+  if (!seatOn || !roomId) return null;
+  for (const p of getPlacements()) {
+    if (p.room !== roomId || !seatOn.includes(p.defId)) continue;
+    const w = getDef(p.defId).footprint.w;
+    if (w < 2) continue;
+    const mid = Math.floor(w / 2);
+    return { a: { c: p.c + mid - 1, r: p.r }, b: { c: p.c + mid, r: p.r } };
+  }
+  return null;
 }
 
 const inWindow = (hour: number, w?: [number, number]): boolean => {
@@ -320,13 +343,15 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
     pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
     pushMemory(B.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
   }
-  // 演出錨點:優先兩人所在的家具格,其次房間中心
+  // 演出錨點:家具座位(坐上沙發/躺上床)優先,其次兩人所在的家具格,再退房間中心
+  const loc = def.location === "lounge" ? "lounge" : roomId;
+  const seats = furnitureSeats(loc, def.seatOn);
   const rect = roomId ? roomRect(roomId) : null;
-  const anchor = A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
+  const anchor = seats?.a ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
   if (anchor) {
     spawnFx(def.fx, anchor.c, anchor.r, 15000);
-    // §10-6:登記雙人 session——兩人走到錨點旁站在一起;🔞 遮蔽式則整段隱藏
-    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000);
+    // §10-6:登記雙人 session——有座位就坐/躺上去,否則走到錨點旁站一起;🔞 遮蔽式則整段隱藏
+    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000, seats ?? undefined);
   }
   state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
   // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬

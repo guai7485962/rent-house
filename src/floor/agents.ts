@@ -61,7 +61,7 @@ export function tickAgents(agents: Agent[], dt: number) {
     const rt = state.runtimes[a.tenantId];
     // 互動 session(§10-6)覆寫走位:走到互動錨點;🔞 遮蔽式 pose 直接隱藏 sprite
     const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
-    const target = ses?.tile ?? rt?.targetTile ?? null;
+    let target = ses?.tile ?? rt?.targetTile ?? null;
     a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
     a.pose = ses?.pose ?? null;
     a.vs = rt?.tenant.visualState ?? "idle";
@@ -70,19 +70,29 @@ export function tickAgents(agents: Agent[], dt: number) {
       continue;
     }
 
+    // 家具座位錨點(§10-6):session 目標若是家具佔用格(沙發/床),先走到最近可走鄰格,
+    // 抵達後再「跨上去」坐/躺(不用尋路穿越家具、也絕不瞬移)。
+    const blocked = currentBlocked();
+    let snapTile: Tile | null = null;
+    if (ses && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
+      snapTile = target;
+      target = nearestWalkableNeighbor(target, a, blocked);
+      if (!target) snapTile = null; // 四鄰全被擋:留在原地照常演
+    }
+    if (snapTile && target && a.c === target.c && a.r === target.r && !a.moving) {
+      stepOnto(a, snapTile); // 已站在家具旁 → 直接跨上去
+      continue;
+    }
+
     // 目標改變 → 重新尋路
     if (!sameTile(target, a.goal)) {
       a.goal = target;
-      const path = findPath({ c: a.c, r: a.r }, target!, currentBlocked());
+      const path = target && blocked[target.r]?.[target.c] === false ? findPath({ c: a.c, r: a.r }, target, blocked) : null;
       if (path && path.length > 1) {
         a.path = path.slice(1);
         a.moving = true;
-      } else if (path && path.length === 1) {
-        // 已在目標格
-        a.path = [];
-        a.moving = false;
       } else {
-        // 走不到(目標被擋):留在原地,絕不瞬移進牆
+        // 已在目標格,或走不到(目標被擋):留在原地,絕不瞬移進牆
         a.path = [];
         a.moving = false;
       }
@@ -106,7 +116,10 @@ export function tickAgents(agents: Agent[], dt: number) {
         a.c = next.c;
         a.r = next.r;
         a.path.shift();
-        if (a.path.length === 0) a.moving = false;
+        if (a.path.length === 0) {
+          a.moving = false;
+          if (snapTile) stepOnto(a, snapTile); // 走到家具旁的同一刻跨上去(無頭模擬也同步)
+        }
       } else {
         a.px += (dx / dist) * step;
         a.py += (dy / dist) * step;
@@ -114,4 +127,32 @@ export function tickAgents(agents: Agent[], dt: number) {
       a.walkPhase += dt * 7;
     }
   }
+}
+
+/** 跨上家具格(坐上沙發/躺上床):位置直接落格,goal 設為該格避免下一幀重新尋路 */
+function stepOnto(a: Agent, t: Tile) {
+  a.c = t.c;
+  a.r = t.r;
+  a.px = t.c * TILE;
+  a.py = t.r * TILE;
+  a.goal = { ...t };
+  a.path = [];
+  a.moving = false;
+}
+
+/** 目標格四鄰中可走、且離 agent 最近的一格 */
+function nearestWalkableNeighbor(t: Tile, a: Agent, blocked: boolean[][]): Tile | null {
+  let best: Tile | null = null;
+  let bestDist = Infinity;
+  for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+    const c = t.c + dc;
+    const r = t.r + dr;
+    if (blocked[r]?.[c] !== false) continue;
+    const d = Math.abs(c - a.c) + Math.abs(r - a.r);
+    if (d < bestDist) {
+      bestDist = d;
+      best = { c, r };
+    }
+  }
+  return best;
 }

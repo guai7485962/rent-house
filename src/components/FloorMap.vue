@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H } from "../floor/floorScene";
+import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { state } from "../store";
-import { furnitureAt } from "../sim/placements";
+import { furnitureAt, roomRect } from "../sim/placements";
 
 const props = defineProps<{
   pendingRooms: string[];
@@ -34,7 +34,13 @@ function loop(t: number) {
   const el = canvas.value;
   if (el) {
     const ctx = el.getContext("2d")!;
-    composeFloor(ctx, Math.floor(t / 500), agents);
+    // 設備故障(§7-1)→ 房間中上方掛閃爍警示三角
+    const marks: FloorMark[] = [];
+    for (const roomId of Object.keys(state.breakdowns)) {
+      const rect = roomRect(roomId);
+      if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
+    }
+    composeFloor(ctx, Math.floor(t / 500), agents, marks);
     const pv = props.preview;
     if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
   }

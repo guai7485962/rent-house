@@ -28,6 +28,7 @@ import {
   type TenantRuntime,
 } from "./gameState";
 import { collectRent } from "./economy";
+import { maintenancePass } from "./maintenance";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
 import { spawnFx } from "../floor/fx";
@@ -298,6 +299,7 @@ export function hourlyTick(live = false) {
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
+    maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
     collectRent();
     void produceDailyDiaries(live); // 換日 → 每位租客一篇當日 AI 日記(fire-and-forget)
   }
@@ -341,7 +343,7 @@ function socialPass(skip: Set<string> = new Set()) {
         else if (res.tone === "conflict") { spawnFx("anger", at.c, at.r, 10000); dur = 10000; }
         else if (res.tone === "romantic") { spawnFx("hearts", at.c, at.r, 10000); dur = 10000; }
         else spawnFx("chat", at.c, at.r, 8000);
-        startPairSession(A.tenant.id, B.tenant.id, at, "pair", dur);
+        startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs, dur);
       }
       if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
       if (res.milestone === "broke_up") {

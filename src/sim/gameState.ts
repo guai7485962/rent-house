@@ -139,6 +139,8 @@ export const state = reactive({
   adultMode: false,
   /** 互動冷卻:`pairKey|defId` → 上次觸發的 gameMs(入存檔,避免重載後洗冷卻) */
   interactionCooldowns: {} as Record<string, number>,
+  /** 設備故障(§7-1 維修系統):房間 id → 進行中的故障(一房最多一件;入存檔) */
+  breakdowns: {} as Record<string, { defId: string; cost: number; sinceMs: number }>,
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {

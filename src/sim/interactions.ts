@@ -287,7 +287,7 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
       if (anchor) {
         spawnFx(def.fx, anchor.c, anchor.r, 15000);
         // §10-6:登記雙人 session——兩人走到錨點旁站在一起;🔞 遮蔽式則整段隱藏
-        startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", 15000);
+        startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000);
       }
       state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
       triggered.add(pairKey(A.tenant.id, B.tenant.id));

@@ -9,6 +9,7 @@
  */
 import { state, debugInit, debugStepHour, debugClock, unreadCount } from "../src/store";
 import { createAgents, tickAgents } from "../src/floor/agents";
+import { sessionFor } from "../src/floor/pairSession";
 
 const HOURS = Number(process.argv[2] ?? 24);
 const DT = 0.1;
@@ -56,9 +57,12 @@ for (let h = 0; h < HOURS; h++) {
     const from = before.get(rt.tenant.id)!;
     const target = rt.targetTile!;
     const moved = from.c !== a.c || from.r !== a.r;
-    const arrived = a.c === target.c && a.r === target.r;
+    // 互動 session(§10-6)會覆寫走位:人在互動錨點上 = 正常(在跟人互動,不是卡住)
+    const ses = sessionFor(rt.tenant.id, state.gameMs);
+    const atSession = !!ses && a.c === ses.tile.c && a.r === ses.tile.r;
+    const arrived = (a.c === target.c && a.r === target.r) || atSession;
     const route = moved ? `(${from.c},${from.r})→(${a.c},${a.r})` : `原地(${a.c},${a.r})`;
-    const mark = arrived ? "✓抵達" : "✗未達";
+    const mark = atSession ? "✓互動中" : arrived ? "✓抵達" : "✗未達";
     if (moved) totalMoves++;
     console.log(`  ${rt.tenant.name}  ${st.padEnd(16)} ${route}  目標(${target.c},${target.r}) ${mark}${dev}`);
 

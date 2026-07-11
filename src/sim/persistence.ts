@@ -96,6 +96,7 @@ export function save() {
         feedSeenMs: state.feedSeenMs,
         adultMode: state.adultMode,
         interactionCooldowns: state.interactionCooldowns,
+        breakdowns: state.breakdowns,
         runtimes,
       }),
     );
@@ -139,6 +140,8 @@ export function load(): boolean {
     state.adultMode = s.adultMode === true; // 預設關
     for (const k of Object.keys(state.interactionCooldowns)) delete state.interactionCooldowns[k];
     Object.assign(state.interactionCooldowns, s.interactionCooldowns ?? {});
+    for (const k of Object.keys(state.breakdowns)) delete state.breakdowns[k];
+    Object.assign(state.breakdowns, s.breakdowns ?? {}); // 舊檔沒有 → 沒故障,無害
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

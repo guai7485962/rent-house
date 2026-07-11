@@ -1,6 +1,6 @@
 /**
  * 雙人互動圖式(§10-6 第一階段)驗證:
- * - session 登記/查詢/替換/過期/清空
+ * - session 登記/查詢/替換/過期(現實時間+遊戲時間雙重)/清空
  * - tileB 會挑錨點旁可走的相鄰格
  * - agent 層:pair pose 走位被錨點覆寫;hidden pose(🔞 遮蔽式)sprite 隱藏
  * - 整合:互動觸發後這一對確實有 session;交誼廳相遇也會湊到一起演
@@ -17,6 +17,7 @@ const { currentBlocked } = await import("../src/floor/pathfind");
 const { createAgents, tickAgents } = await import("../src/floor/agents");
 const { interactionsPass } = await import("../src/sim/interactions");
 const { relationships, pairKey } = await import("../src/sim/social");
+const { MS_PER_GAME_HOUR } = await import("../src/sim/clock");
 const { state, debugStepHour } = await import("../src/store");
 
 let pass = 0;
@@ -25,6 +26,8 @@ const check = (name: string, ok: boolean, detail = "") => {
   if (ok) { pass++; console.log(`✅ ${name}`); }
   else { fail++; console.log(`❌ ${name} ${detail}`); }
 };
+
+const now = () => state.gameMs;
 
 // --- 單元:session 生命週期 ---
 // 找一個「可走且旁邊有可走鄰格」的錨點
@@ -40,27 +43,32 @@ outer: for (let r = 1; r < blocked.length - 1; r++) {
 }
 
 clearPairSessions();
-startPairSession("pa", "pb", anchor, "pair");
-check("登記後有 1 場 session", activeSessions().length === 1);
-const sa = sessionFor("pa");
-const sb = sessionFor("pb");
+startPairSession("pa", "pb", anchor, "pair", now());
+check("登記後有 1 場 session", activeSessions(now()).length === 1);
+const sa = sessionFor("pa", now());
+const sb = sessionFor("pb", now());
 check("A 分到錨點", !!sa && sa.tile.c === anchor.c && sa.tile.r === anchor.r);
 check("B 分到相鄰格(非同格)", !!sb && Math.abs(sb.tile.c - anchor.c) + Math.abs(sb.tile.r - anchor.r) === 1);
 check("B 的格可走", !!sb && !blocked[sb.tile.r][sb.tile.c]);
-check("局外人查不到 session", sessionFor("px") === null);
+check("局外人查不到 session", sessionFor("px", now()) === null);
 
 // 替換:同一人再登記 → 舊的被清掉,一人同時只演一場
-startPairSession("pa", "pc", anchor, "hidden");
-check("同一人新 session 取代舊的", activeSessions().length === 1);
-check("pb 的舊 session 已失效", sessionFor("pb") === null);
-check("hidden pose 帶得出來", sessionFor("pa")?.pose === "hidden");
+startPairSession("pa", "pc", anchor, "hidden", now());
+check("同一人新 session 取代舊的", activeSessions(now()).length === 1);
+check("pb 的舊 session 已失效", sessionFor("pb", now()) === null);
+check("hidden pose 帶得出來", sessionFor("pa", now())?.pose === "hidden");
 
-// 過期自清
-startPairSession("pd", "pe", anchor, "pair", 0);
-check("到期的 session 查不到", sessionFor("pd") === null);
+// 現實時間過期自清
+startPairSession("pd", "pe", anchor, "pair", now(), 0);
+check("現實時間到期的 session 查不到", sessionFor("pd", now()) === null);
+
+// 遊戲時間過期(快轉/無頭模擬):現實時間還沒到,但遊戲已過 1 小時 → 失效,不釘住作息
+startPairSession("pf", "pg", anchor, "pair", now(), 60000);
+check("遊戲時間未過:查得到", sessionFor("pf", now()) !== null);
+check("遊戲時間過 1 小時:失效", sessionFor("pf", now() + MS_PER_GAME_HOUR) === null);
 
 clearPairSessions();
-check("clearPairSessions 清空", activeSessions().length === 0);
+check("clearPairSessions 清空", activeSessions(now()).length === 0);
 
 // --- agent 層:走位覆寫 + 遮蔽式隱藏 ---
 debugStepHour(); // 讓 targetTile 就緒
@@ -74,12 +82,12 @@ const agents = createAgents();
 const agA = agents.find((x) => x.tenantId === A.tenant.id)!;
 const agB = agents.find((x) => x.tenantId === B.tenant.id)!;
 
-startPairSession(A.tenant.id, B.tenant.id, anchor, "pair");
+startPairSession(A.tenant.id, B.tenant.id, anchor, "pair", now());
 tickAgents(agents, 0.05);
 check("pair pose:A 目標被覆寫為錨點", !agA.hidden && !!agA.goal && agA.goal.c === anchor.c && agA.goal.r === anchor.r);
 check("pair pose:B 目標被覆寫為相鄰格", !agB.hidden && !!agB.goal && (agB.goal.c !== anchor.c || agB.goal.r !== anchor.r));
 
-startPairSession(A.tenant.id, B.tenant.id, anchor, "hidden");
+startPairSession(A.tenant.id, B.tenant.id, anchor, "hidden", now());
 tickAgents(agents, 0.05);
 check("hidden pose(🔞 遮蔽式):兩人 sprite 都隱藏", agA.hidden && agB.hidden);
 
@@ -102,11 +110,11 @@ let triggered = false;
 for (let i = 0; i < 300 && !triggered; i++) {
   clearPairSessions();
   interactionsPass();
-  triggered = activeSessions().length > 0;
+  triggered = activeSessions(now()).length > 0;
 }
 check("整合:同房互動觸發後登記了 session", triggered);
 if (triggered) {
-  check("整合:session 屬於這一對", sessionFor(A.tenant.id) !== null && sessionFor(B.tenant.id) !== null);
+  check("整合:session 屬於這一對", sessionFor(A.tenant.id, now()) !== null && sessionFor(B.tenant.id, now()) !== null);
 }
 
 // 🔞 互動一定是 hidden(遮蔽式):清冷卻反覆觸發,收集出現過的 pose
@@ -121,7 +129,7 @@ for (let i = 0; i < 400; i++) {
   const adultHit = A.log.some((e) => e.text.includes("請勿打擾") || e.text.includes("水聲"));
   if (adultHit) {
     sawAdult = true;
-    if (sessionFor(A.tenant.id)?.pose !== "hidden") adultAlwaysHidden = false;
+    if (sessionFor(A.tenant.id, now())?.pose !== "hidden") adultAlwaysHidden = false;
   }
 }
 check("整合:🔞 互動有觸發到(抽樣)", sawAdult);
@@ -139,7 +147,7 @@ for (let i = 0; i < 100 && !loungeSession; i++) {
   debugStepHour();
   A.inLounge = true; B.inLounge = true;
   A.pendingEvent = null; B.pendingEvent = null;
-  loungeSession = sessionFor(A.tenant.id) !== null || sessionFor(B.tenant.id) !== null;
+  loungeSession = sessionFor(A.tenant.id, now()) !== null || sessionFor(B.tenant.id, now()) !== null;
 }
 check("整合:交誼廳相遇會湊到一起演(session 登記)", loungeSession);
 

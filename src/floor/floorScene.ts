@@ -63,7 +63,13 @@ function charPalette(tenantId: string): Palette {
   };
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[]) {
+/** 樓層警示標記(維修系統等):在某格上方畫閃爍的警告小圖示 */
+export interface FloorMark {
+  c: number;
+  r: number;
+}
+
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[]) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -84,6 +90,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[]) {
       }
     }
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
+    if (marks) for (const m of marks) drawWarnMark(ctx, m, frame); // 設備故障等警示(§7-1)
   } else {
     // 離線預覽:靜態站立
     for (const spot of TENANT_SPOTS) {
@@ -125,6 +132,26 @@ function pxPat(ctx: Ctx, pattern: string[], x: number, y: number, color: string,
 }
 
 const PAT_HEART = [".X.X.", "XXXXX", ".XXX.", "..X.."];
+const PAT_BANG = ["X", "X", "X", ".", "X"]; // 驚嘆號
+
+/** 設備故障警示:黃色三角 + 驚嘆號,慢閃(§7-1 讓「壞掉」在樓層一眼看到) */
+function drawWarnMark(ctx: Ctx, m: { c: number; r: number }, frame: number) {
+  if (frame % 3 === 2) return; // 閃爍:亮兩拍、暗一拍
+  const x = m.c * TILE + 2; // 三角頂點的中心欄
+  const y = m.r * TILE - 10;
+  // 深色底三角(當描邊)+ 黃色內三角
+  ctx.fillStyle = "#5c4300";
+  for (let row = 0; row < 9; row++) {
+    const half = Math.ceil(((row + 1) / 9) * 6);
+    ctx.fillRect(x + 6 - half, y + row, half * 2 - 1, 1);
+  }
+  ctx.fillStyle = "#ffd23e";
+  for (let row = 2; row < 8; row++) {
+    const half = Math.max(1, Math.ceil(((row + 1) / 9) * 6) - 1);
+    ctx.fillRect(x + 6 - half, y + row, half * 2 - 1, 1);
+  }
+  pxPat(ctx, PAT_BANG, x + 6, y + 3, "#5c4300");
+}
 const PAT_CRACK = ["..X..", ".X...", "..X..", ".X..."];
 const PAT_ANGER = ["X...X", ".X.X.", ".....", ".X.X.", "X...X"];
 const PAT_Z = ["XXX", ".X.", "XXX"];

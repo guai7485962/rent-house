@@ -19,6 +19,7 @@ import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
 import { DIRECTIVES } from "./sim/directives";
+import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
   state,
   activeRuntime,
@@ -268,6 +269,20 @@ const ATTR_LABEL: Record<string, string> = {
 };
 const activeRoomId = computed(() => roomOfTenant(state.activeId) ?? "");
 
+// 設備故障(§7-1):這間房待修的故障 → 房間細看顯示警示 + 修理按鈕
+const roomBreakdown = computed(() => {
+  const bd = state.breakdowns[activeRoomId.value];
+  if (!bd) return null;
+  const def = getBreakdownDef(bd.defId);
+  if (!def) return null;
+  const days = Math.floor((state.gameMs - bd.sinceMs) / 86_400_000);
+  return { icon: def.icon, label: def.label, cost: bd.cost, days };
+});
+function doRepair() {
+  const res = repairBreakdown(activeRoomId.value);
+  toast(res.ok ? "🔧 修好了!住戶鬆了一口氣。" : `無法修理:${res.reason}`, 3000);
+}
+
 // 同房的另一位租客(同居中)→ 房間細看可切換查看
 const roomMates = computed(() => {
   const roomId = activeRoomId.value;
@@ -403,6 +418,14 @@ function onDecide(choiceId: string, label: string) {
       <button v-if="isLeaseHolder" class="rent-btn" @click="showRent = true">💲 談房租</button>
       <span v-else class="rent-note">同居中(不另收租)</span>
       <button class="rent-btn" @click="upgradeRoom = activeRoomId">🔨 改建</button>
+    </div>
+    <div v-if="roomBreakdown" class="breakdown-bar">
+      <span class="bd-text">
+        {{ roomBreakdown.icon }} {{ roomBreakdown.label }}<template v-if="roomBreakdown.days >= 1">(已拖 {{ roomBreakdown.days }} 天,住戶越來越不滿)</template>
+      </span>
+      <button class="bd-btn" :disabled="state.money < roomBreakdown.cost" @click="doRepair">
+        🔧 修理 ${{ roomBreakdown.cost.toLocaleString() }}
+      </button>
     </div>
     <div v-if="roomMates.length" class="mates">
       <button v-for="m in roomMates" :key="m.id" class="mate" @click="switchTenant(m.id)">
@@ -621,6 +644,10 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .rent-now { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .rent-btn { background: var(--panel); border: 1px solid var(--accent); color: #ffd6a3; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
 .rent-note { font-size: 11.5px; color: var(--text-dim); }
+.breakdown-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #2a2013; border: 1px solid #b5872e; border-radius: var(--radius); padding: 8px 12px; }
+.bd-text { font-size: 12px; color: #ffd98a; }
+.bd-btn { background: #b5872e; border: none; color: #241a08; font-weight: 700; border-radius: 999px; padding: 5px 12px; font-size: 12px; white-space: nowrap; }
+.bd-btn:disabled { opacity: 0.45; }
 .mates { display: flex; gap: 6px; }
 .mate { background: var(--panel); border: 1px solid #d9548a; color: #f0a8c6; border-radius: 999px; padding: 4px 12px; font-size: 12px; }
 .rno { font-weight: 700; color: var(--accent); font-size: 15px; }

@@ -8,6 +8,7 @@
 import type { Tile } from "./pathfind";
 import { currentBlocked } from "./pathfind";
 import { GRID_W, GRID_H } from "./map";
+import { MS_PER_GAME_HOUR } from "../sim/clock";
 
 /** pair = 兩人相鄰站在一起 + fx;hidden = 兩人隱藏(🔞 遮蔽式) */
 export type PairPose = "pair" | "hidden";
@@ -19,19 +20,22 @@ export interface PairSession {
   tileB: Tile;
   pose: PairPose;
   until: number; // 現實毫秒(Date.now 基準)
+  /** 遊戲時間到期(登記 +1 遊戲小時):快轉/無頭模擬下不能讓 session 釘住走位好幾個遊戲小時 */
+  gameUntil: number;
 }
 
 const sessions: PairSession[] = [];
 
-function prune() {
+/** 雙重到期:現實 15 秒(正常速度看得完演出)或 1 遊戲小時(快轉時跟著作息換場) */
+function prune(gameNow: number) {
   const now = Date.now();
   for (let i = sessions.length - 1; i >= 0; i--) {
-    if (sessions[i].until <= now) sessions.splice(i, 1);
+    if (sessions[i].until <= now || sessions[i].gameUntil <= gameNow) sessions.splice(i, 1);
   }
 }
 
 /** 登記一場雙人互動:A 站錨點,B 站錨點旁第一個可走的相鄰格(找不到就同格疊站) */
-export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, durationMs = 15000) {
+export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = 15000) {
   // 一人同時只演一場:清掉牽涉任一方的舊 session
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i];
@@ -47,12 +51,12 @@ export function startPairSession(aId: string, bId: string, anchor: Tile, pose: P
       break;
     }
   }
-  sessions.push({ aId, bId, tileA: { ...anchor }, tileB, pose, until: Date.now() + durationMs });
+  sessions.push({ aId, bId, tileA: { ...anchor }, tileB, pose, until: Date.now() + durationMs, gameUntil: gameNow + MS_PER_GAME_HOUR });
 }
 
 /** 此人進行中的 session 走位(agent 層以此覆寫 targetTile);沒有則 null */
-export function sessionFor(tenantId: string): { tile: Tile; pose: PairPose } | null {
-  prune();
+export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pose: PairPose } | null {
+  prune(gameNow);
   for (const s of sessions) {
     if (s.aId === tenantId) return { tile: s.tileA, pose: s.pose };
     if (s.bId === tenantId) return { tile: s.tileB, pose: s.pose };
@@ -60,8 +64,8 @@ export function sessionFor(tenantId: string): { tile: Tile; pose: PairPose } | n
   return null;
 }
 
-export function activeSessions(): PairSession[] {
-  prune();
+export function activeSessions(gameNow: number): PairSession[] {
+  prune(gameNow);
   return sessions;
 }
 

@@ -273,31 +273,67 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
       }
       if (Math.random() > def.chance) continue;
 
-      // 觸發:雙方日誌 + 數值 + 關係 + 記憶 + 現場演出 + 冷卻
-      const line = def.lines[Math.floor(Math.random() * def.lines.length)];
-      pushSocialLog(A, line.replace(/\{o\}/g, B.tenant.name), "notable");
-      pushSocialLog(B, line.replace(/\{o\}/g, A.tenant.name), "notable");
-      applyPairEffect(A, def.effects);
-      applyPairEffect(B, def.effects);
-      if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);
-      if (def.memoryLabel) {
-        pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
-        pushMemory(B.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
-      }
-      // 演出錨點:優先兩人所在的家具格,其次房間中心
-      const rect = roomId ? roomRect(roomId) : null;
-      const anchor = A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
-      if (anchor) {
-        spawnFx(def.fx, anchor.c, anchor.r, 15000);
-        // §10-6:登記雙人 session——兩人走到錨點旁站在一起;🔞 遮蔽式則整段隱藏
-        startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000);
-      }
-      state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
+      performInteraction(A, B, def, roomId);
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
-      // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬
-      if (def.privacy) maybeWitness(A, B);
     }
   }
+}
+
+/** 實際執行一次互動:雙方日誌 + 數值 + 關係 + 記憶 + 現場演出 + 冷卻 + 撞見判定 */
+function performInteraction(A: TenantRuntime, B: TenantRuntime, def: InteractionDef, roomId: string | null) {
+  const line = def.lines[Math.floor(Math.random() * def.lines.length)];
+  pushSocialLog(A, line.replace(/\{o\}/g, B.tenant.name), "notable");
+  pushSocialLog(B, line.replace(/\{o\}/g, A.tenant.name), "notable");
+  applyPairEffect(A, def.effects);
+  applyPairEffect(B, def.effects);
+  if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);
+  if (def.memoryLabel) {
+    pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
+    pushMemory(B.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
+  }
+  // 演出錨點:優先兩人所在的家具格,其次房間中心
+  const rect = roomId ? roomRect(roomId) : null;
+  const anchor = A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
+  if (anchor) {
+    spawnFx(def.fx, anchor.c, anchor.r, 15000);
+    // §10-6:登記雙人 session——兩人走到錨點旁站在一起;🔞 遮蔽式則整段隱藏
+    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000);
+  }
+  state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
+  // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬
+  if (def.privacy) maybeWitness(A, B);
+}
+
+/**
+ * AI 提議互動(§10-3):玩家在 AI 事件裡拍板後觸發。
+ * 白名單 + 門檻把關:未知 id / 外出 / 冷戰一律擋;🔞 互動走完整 canInteract(三條硬規則
+ * + 情侶門檻 + 時段,AI 不可越權);一般互動放寬關係階層/時段/冷卻(劇情已由 AI 鋪陳、玩家已同意)。
+ */
+export function forceInteraction(aId: string, bId: string, defId: string): boolean {
+  const def = INTERACTIONS.find((d) => d.id === defId);
+  const A = state.runtimes[aId];
+  const B = state.runtimes[bId];
+  if (!def || !A || !B) return false;
+  if (A.tenant.visualState === "away" || B.tenant.visualState === "away") return false;
+  if (feudActive(aId, bId)) return false;
+
+  const roomId = roomOfTenant(aId) ?? roomOfTenant(bId);
+  const thirdPresent = Object.values(state.runtimes).some(
+    (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
+  );
+  if (def.adult) {
+    const ctx: InteractCtx = {
+      hour: new Date(state.gameMs).getHours(),
+      thirdPresent,
+      adultMode: state.adultMode,
+      cohabiting: roomId != null && (state.cohabits[aId] === roomId || state.cohabits[bId] === roomId),
+    };
+    if (!canInteract(def, A.tenant, B.tenant, ctx)) return false;
+  } else if (def.privacy && thirdPresent) {
+    return false;
+  }
+  performInteraction(A, B, def, roomId);
+  return true;
 }
 
 /** 每小時互動 pass(由 tick 呼叫):同房(情侶/同居)+ 交誼廳(朋友/曖昧)。

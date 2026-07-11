@@ -24,6 +24,8 @@ export interface EventEffect {
   flag?: string;
   /** 對事件牽涉的第二位鄰居的數值影響 */
   other?: { mood?: number; stress?: number; affinity?: number; satisfaction?: number };
+  /** AI 提議互動(§10-3):InteractionDef id,玩家拍板後由 forceInteraction 白名單+門檻把關觸發 */
+  interaction?: string;
   /** 兩人關係變化:delta 正=拉近/戀情加速、負=吵架疏遠;couple/breakup 直接成/斷情侶 */
   rel?: { delta?: number; couple?: boolean; breakup?: boolean };
 }
@@ -163,6 +165,9 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
 
   // 跨租客欄位:只有事件確實牽涉第二位鄰居(hasOther)才保留
   if (hasOther) {
+    // AI 提議互動:此處只截斷字串;白名單與門檻在 forceInteraction 統一把關(未知 id 靜默略過)
+    const it = str(e.interaction, 24);
+    if (it) eff.interaction = it;
     const o = (e.other && typeof e.other === "object" ? e.other : {}) as Record<string, unknown>;
     eff.other = {
       mood: clampNum(o.mood, -25, 25),

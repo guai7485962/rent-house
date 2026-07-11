@@ -16,6 +16,7 @@ import {
 import type { EventEffect } from "./events";
 import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
+import { forceInteraction } from "./interactions";
 import {
   state,
   clamp,
@@ -332,6 +333,8 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
     if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
     // 打架事件(§10-2):房東出面調解成功 → 冷戰直接解除
     if (eventId === "fight_decision" && choiceId === "mediate" && withId) endFeud(tenantId, withId, "mediated");
+    // AI 提議互動(§10-3):玩家拍板 → 白名單+門檻把關後在畫面上演出來;不放行就靜默略過
+    if (withId && choice.effect.interaction) forceInteraction(tenantId, withId, choice.effect.interaction);
   }
   save();
 }

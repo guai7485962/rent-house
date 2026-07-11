@@ -4,6 +4,8 @@ import { rescoreApplicants, type Applicant } from "../sim/recruit";
 import { roomAttributes } from "../sim/placements";
 import { requestInvite, sanitizeInvited, looksMinor } from "../sim/invite";
 import { moveIn, getApplicants } from "../store";
+import { relistApplicants, RELIST_COST } from "../sim/tenancy";
+import { state } from "../sim/gameState";
 
 const props = defineProps<{ roomId: string }>();
 const emit = defineEmits<{ close: []; upgrade: [roomId: string] }>();
@@ -60,6 +62,16 @@ function accept(a: Applicant) {
   moveIn(props.roomId, a);
   emit("close");
 }
+
+// 重新刊登(§7-1 招租費用):不想等明天,花小錢立刻換一批應徵者
+const relistNote = ref("");
+function relist() {
+  const res = relistApplicants(props.roomId);
+  if (!res.ok) {
+    relistNote.value = `無法重新刊登:${res.reason}`;
+    window.setTimeout(() => (relistNote.value = ""), 2000);
+  }
+}
 function stars(n: number) {
   return "★".repeat(n) + "☆".repeat(5 - n);
 }
@@ -82,7 +94,11 @@ function stars(n: number) {
         <span v-else class="empty">尚未裝潢(先去家具商店佈置,能吸引更契合的租客)</span>
       </div>
 
-      <div class="hint">契合度越高的租客,越滿意這個房間、越準時交租。每個遊戲日會換一批應徵者。</div>
+      <div class="hint">
+        契合度越高的租客,越滿意這個房間、越準時交租。每個遊戲日會換一批應徵者。
+        <button class="relist" :disabled="state.money < RELIST_COST" @click="relist">🔁 重新刊登 ${{ RELIST_COST }}</button>
+      </div>
+      <p v-if="relistNote" class="inv-err" style="padding: 0 16px">{{ relistNote }}</p>
 
       <div class="list">
         <div v-for="a in applicants" :key="a.id" class="app">
@@ -139,7 +155,9 @@ function stars(n: number) {
 .room-attrs .lbl { color: var(--text-dim); }
 .room-attrs .a { color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
 .room-attrs .empty { color: var(--text-dim); }
-.hint { font-size: 11.5px; color: var(--text-dim); padding: 2px 16px 6px; }
+.hint { font-size: 11.5px; color: var(--text-dim); padding: 2px 16px 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.relist { background: var(--panel); border: 1px solid var(--accent); color: #ffd6a3; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
+.relist:disabled { opacity: 0.45; }
 
 .list { overflow-y: auto; padding: 4px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
 .app { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }

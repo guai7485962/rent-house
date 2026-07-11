@@ -52,6 +52,19 @@ export function getApplicants(roomId: string): Applicant[] {
   return rescoreApplicants(state.applicantPools[roomId].applicants, roomId);
 }
 
+/** 重新刊登費用(§7-1 招租費用):不想等明天,花錢立刻換一批應徵者 */
+export const RELIST_COST = 800;
+
+/** 重新刊登:扣費 → 立刻重抽這間房的應徵者池(當日批次直接替換) */
+export function relistApplicants(roomId: string): { ok: boolean; reason?: string } {
+  if (state.money < RELIST_COST) return { ok: false, reason: "金錢不足" };
+  addMoney(-RELIST_COST, `重新刊登 ${roomId.replace(/^r/, "")} 房招租`, "other");
+  const excludeNames = Object.values(state.runtimes).map((rt) => rt.tenant.name);
+  state.applicantPools[roomId] = { day: gameDayIndex(), applicants: generateApplicants(roomId, excludeNames) };
+  save();
+  return { ok: true };
+}
+
 /** 招租入住:把一位應徵者變成正式租客 */
 export function moveIn(roomId: string, ap: Applicant) {
   if (!isVacant(roomId)) return;

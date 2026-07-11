@@ -1,0 +1,77 @@
+{
+  "$comment": "作息資料目錄(設計檢討 §5:加作息/改作息 = 改這份資料)。hours 為 'from-to'(含)或單一小時;role ∈ bed/desk/kitchen/bathroom/sofa/tv/out;state 必須是 types.ts TENANT_VISUAL_STATES 之一。載入時驗證:非法 role/state 會被略過並警告,缺漏小時以 bed/idle 補。",
+  "tenants": {
+    "tenant_chen_engineer": [
+      { "hours": "0-1", "role": "desk", "state": "working_at_desk" },
+      { "hours": "2", "role": "desk", "state": "gaming" },
+      { "hours": "3", "role": "desk", "state": "working_at_desk" },
+      { "hours": "4", "role": "kitchen", "state": "eating" },
+      { "hours": "5", "role": "bathroom", "state": "showering" },
+      { "hours": "6-12", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "13", "role": "sofa", "state": "playing_with_cat" },
+      { "hours": "14", "role": "kitchen", "state": "cooking" },
+      { "hours": "15-18", "role": "out", "state": "away" },
+      { "hours": "19", "role": "kitchen", "state": "eating" },
+      { "hours": "20-21", "role": "desk", "state": "working_at_desk" },
+      { "hours": "22", "role": "tv", "state": "watching_tv" },
+      { "hours": "23", "role": "desk", "state": "gaming" }
+    ],
+    "tenant_lin_asmr": [
+      { "hours": "0-5", "role": "desk", "state": "streaming" },
+      { "hours": "6", "role": "bathroom", "state": "showering" },
+      { "hours": "7-13", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "14", "role": "sofa", "state": "reading" },
+      { "hours": "15", "role": "kitchen", "state": "eating" },
+      { "hours": "16", "role": "sofa", "state": "reading" },
+      { "hours": "17", "role": "tv", "state": "watching_tv" },
+      { "hours": "18", "role": "kitchen", "state": "cooking" },
+      { "hours": "19", "role": "bathroom", "state": "showering" },
+      { "hours": "20-21", "role": "desk", "state": "idle" },
+      { "hours": "22-23", "role": "desk", "state": "streaming" }
+    ]
+  },
+  "archetypes": {
+    "office": [
+      { "hours": "0-5", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "6", "role": "bathroom", "state": "showering" },
+      { "hours": "7", "role": "kitchen", "state": "eating" },
+      { "hours": "8-17", "role": "out", "state": "away" },
+      { "hours": "18", "role": "kitchen", "state": "cooking" },
+      { "hours": "19", "role": "kitchen", "state": "eating" },
+      { "hours": "20", "role": "tv", "state": "watching_tv" },
+      { "hours": "21", "role": "sofa", "state": "reading" },
+      { "hours": "22", "role": "bathroom", "state": "showering" },
+      { "hours": "23", "role": "bed", "state": "sleeping_on_bed" }
+    ],
+    "student": [
+      { "hours": "0-1", "role": "desk", "state": "gaming" },
+      { "hours": "2", "role": "tv", "state": "watching_tv" },
+      { "hours": "3-10", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "11", "role": "bathroom", "state": "showering" },
+      { "hours": "12", "role": "kitchen", "state": "eating" },
+      { "hours": "13-14", "role": "desk", "state": "working_at_desk" },
+      { "hours": "15-16", "role": "out", "state": "away" },
+      { "hours": "17", "role": "kitchen", "state": "cooking" },
+      { "hours": "18", "role": "kitchen", "state": "eating" },
+      { "hours": "19", "role": "sofa", "state": "watching_tv" },
+      { "hours": "20-22", "role": "desk", "state": "gaming" },
+      { "hours": "23", "role": "tv", "state": "watching_tv" }
+    ],
+    "freelancer": [
+      { "hours": "0-1", "role": "desk", "state": "working_at_desk" },
+      { "hours": "2-8", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "9", "role": "bathroom", "state": "showering" },
+      { "hours": "10", "role": "kitchen", "state": "eating" },
+      { "hours": "11-12", "role": "desk", "state": "working_at_desk" },
+      { "hours": "13", "role": "sofa", "state": "reading" },
+      { "hours": "14", "role": "kitchen", "state": "cooking" },
+      { "hours": "15", "role": "kitchen", "state": "eating" },
+      { "hours": "16-17", "role": "desk", "state": "working_at_desk" },
+      { "hours": "18", "role": "tv", "state": "watching_tv" },
+      { "hours": "19", "role": "sofa", "state": "idle" },
+      { "hours": "20-21", "role": "desk", "state": "working_at_desk" },
+      { "hours": "22", "role": "kitchen", "state": "eating" },
+      { "hours": "23", "role": "desk", "state": "working_at_desk" }
+    ]
+  }
+}

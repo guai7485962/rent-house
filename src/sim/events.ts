@@ -1,9 +1,11 @@
 /**
  * 突發事件 + 抉擇系統。
- * 依租客當前狀態(壓力/滿意度)觸發事件,房東抉擇後套用後果。
- * 點亮既有的 DecisionModal + decide() UI(之前做好但沒東西觸發)。
+ * 規則事件已資料化(設計檢討 §5):目錄在 data/events.json,「加事件 = 改資料」;
+ * 載入時驗證(條件 stat/op 白名單、directive 白名單、choices 數量),壞資料略過並警告。
+ * 支援事件連鎖:requiresFlag(要有伏筆旗標才觸發)+ consumesFlag(觸發即消耗)。
  */
 import { sanitizeDirective, type DirectiveId } from "./directives";
+import eventsJson from "../../data/events.json";
 
 export interface EventEffect {
   affinity?: number;
@@ -43,6 +45,8 @@ export interface EventDef {
   /** 事件牽涉的第二位鄰居(AI 跨租客事件) */
   withId?: string;
   withName?: string;
+  /** 這個事件觸發時要消耗的伏筆旗標(事件連鎖;呼叫端設 pendingEvent 後移除) */
+  consumeFlag?: string;
 }
 
 export interface EventCtx {
@@ -52,55 +56,70 @@ export interface EventCtx {
   affinity: number;
   /** 身心健康(過低會觸發生病事件) */
   wellbeing: number;
+  /** 事件連鎖伏筆旗標(requiresFlag 解鎖用;省略視為無) */
+  flags?: string[];
 }
 
-/** 依狀態決定要不要觸發事件(呼叫端負責冷卻,避免連發) */
+// ---------------------------------------------------------------------------
+// 規則事件目錄(data/events.json):載入時驗證,rollEvent 依序比對條件
+// ---------------------------------------------------------------------------
+
+type RuleStat = "stress" | "satisfaction" | "affinity" | "wellbeing";
+const RULE_STATS = new Set<RuleStat>(["stress", "satisfaction", "affinity", "wellbeing"]);
+const OPS: Record<string, (a: number, b: number) => boolean> = {
+  ">=": (a, b) => a >= b,
+  "<=": (a, b) => a <= b,
+  ">": (a, b) => a > b,
+  "<": (a, b) => a < b,
+};
+
+interface RuleEventDef {
+  id: string;
+  when: { stat: RuleStat; op: string; value: number }[];
+  requiresFlag?: string;
+  consumesFlag?: boolean;
+  title: string;
+  description: string;
+  choices: EventChoiceDef[];
+}
+
+/** 載入 + 驗證事件目錄:條件 stat/op 白名單、directive 白名單、choices 2~3;壞資料略過並警告 */
+function loadRuleEvents(): RuleEventDef[] {
+  const out: RuleEventDef[] = [];
+  for (const raw of (eventsJson as { events: unknown[] }).events) {
+    const e = raw as RuleEventDef;
+    const badWhen =
+      !Array.isArray(e.when) ||
+      e.when.length === 0 ||
+      e.when.some((c) => !RULE_STATS.has(c.stat) || !OPS[c.op] || typeof c.value !== "number");
+    const badChoices = !Array.isArray(e.choices) || e.choices.length < 2 || e.choices.length > 3;
+    const badDirective = (e.choices ?? []).some((c) => c.effect?.directive && !sanitizeDirective(c.effect.directive));
+    if (!e.id || !e.title || badWhen || badChoices || badDirective) {
+      console.warn(`[events] 目錄資料不合法,略過事件:${(e as { id?: string }).id ?? "?"}`);
+      continue;
+    }
+    out.push(e);
+  }
+  return out;
+}
+const RULE_EVENTS = loadRuleEvents();
+
+/** 依狀態決定要不要觸發事件:目錄順序 = 優先序,第一個條件全中(且旗標符合)的觸發。呼叫端負責冷卻 */
 export function rollEvent(ctx: EventCtx): EventDef | null {
-  if (ctx.stress >= 90) return breakdown(ctx.name);
-  if (ctx.wellbeing <= 28) return sick(ctx.name);
-  if (ctx.satisfaction < 30) return dissatisfied(ctx.name);
-  if (ctx.affinity <= 20) return grievance(ctx.name);
+  for (const re of RULE_EVENTS) {
+    if (re.requiresFlag && !(ctx.flags ?? []).includes(re.requiresFlag)) continue;
+    if (!re.when.every((c) => OPS[c.op](ctx[c.stat], c.value))) continue;
+    const fill = (s: string) => s.replace(/\{name\}/g, ctx.name);
+    const ev: EventDef = {
+      id: re.id,
+      title: fill(re.title),
+      description: fill(re.description),
+      choices: JSON.parse(JSON.stringify(re.choices)), // 深拷貝,避免改到共用目錄
+    };
+    if (re.requiresFlag && re.consumesFlag) ev.consumeFlag = re.requiresFlag;
+    return ev;
+  }
   return null;
-}
-
-/** 身心健康過低 → 生病(wellbeing 的「後果」:讓這個數值真的有牙齒) */
-function sick(name: string): EventDef {
-  return {
-    id: "sick",
-    title: `${name} 生病了`,
-    description: `${name} 這陣子把自己操過頭了——臉色蒼白、咳個不停,連垃圾都沒力氣拿出去丟。要幫他一把嗎?`,
-    choices: [
-      { id: "doctor", label: "帶他去看醫生", hint: "花錢,恢復最快", effect: { money: -800, wellbeing: 25, stress: -8, affinity: 8 } },
-      { id: "soup", label: "燉鍋湯送上去", hint: "暖心小成本", effect: { money: -200, wellbeing: 10, mood: 5, affinity: 5 } },
-      { id: "rest", label: "讓他自己休養", hint: "不花錢,好得慢;會閉門不出幾天", effect: { wellbeing: 4, satisfaction: -4, directive: { id: "hermit", days: 2 } } },
-    ],
-  };
-}
-
-function breakdown(name: string): EventDef {
-  return {
-    id: "breakdown",
-    title: `${name} 快撐不住了`,
-    description: `監視器拍到 ${name} 在房間中央來回踱步、掐著手臂——壓力似乎到了臨界點。你要介入嗎?`,
-    choices: [
-      { id: "care", label: "主動關心", hint: "拉近距離,但可能被嫌多管閒事", effect: { affinity: 8, stress: -18, satisfaction: 5 } },
-      { id: "treat", label: "送宵夜慰勞", hint: "花點小錢", effect: { money: -300, stress: -12, affinity: 5 } },
-      { id: "space", label: "給他空間", hint: "不打擾,讓他自己消化", effect: { stress: -5 } },
-    ],
-  };
-}
-
-function dissatisfied(name: string): EventDef {
-  return {
-    id: "dissatisfied",
-    title: `${name} 對房間不太滿意`,
-    description: `${name} 私下抱怨房間少了他需要的東西,住得不太順心。再放著不管,可能會考慮搬走。`,
-    choices: [
-      { id: "renovate", label: "撥預算改善", hint: "花錢讓他真的滿意", effect: { money: -2000, satisfaction: 22, affinity: 6 } },
-      { id: "promise", label: "口頭承諾改善", hint: "先安撫,治標", effect: { satisfaction: 9 } },
-      { id: "ignore", label: "不理會", hint: "省事,但他會更不爽", effect: { satisfaction: -10, affinity: -6 } },
-    ],
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -192,17 +211,4 @@ export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>): 
     ev.withName = withName;
   }
   return ev;
-}
-
-function grievance(name: string): EventDef {
-  return {
-    id: "grievance",
-    title: `${name} 對你有意見`,
-    description: `${name} 最近對房東的態度明顯變冷淡。要修補關係嗎?`,
-    choices: [
-      { id: "gift", label: "送個小禮物", hint: "破費修補", effect: { money: -500, affinity: 12, satisfaction: 4 } },
-      { id: "talk", label: "找他聊聊", hint: "誠意溝通", effect: { affinity: 7 } },
-      { id: "evict", label: "乾脆請他搬走", hint: "眼不見為淨,但空房會沒收入", effect: { evict: true } },
-    ],
-  };
 }

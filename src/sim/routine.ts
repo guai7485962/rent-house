@@ -7,8 +7,13 @@
  *
  * 這是「固定作息」的底;偏離(壓力/事件)在 store.hourlyTick 疊加。
  * 之後可由 AI 動態產生 role/state,routine 只是保底。
+ *
+ * 作息已資料化(設計檢討 §5):目錄在 data/routines.json(hours 區段式),
+ * 「加作息/改作息 = 改資料」;載入時驗證 role/state 白名單 + 24 小時覆蓋,
+ * 壞資料略過並警告、缺漏小時以 bed/idle 補(fail-soft,遊戲照跑)。
  */
-import type { TenantVisualState } from "../types";
+import { TENANT_VISUAL_STATES, type TenantVisualState } from "../types";
+import routinesJson from "../../data/routines.json";
 import { GRID_W, GRID_H, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
 import { getPlacements } from "./placements";
@@ -33,97 +38,49 @@ const ROLE_KINDS: Record<Exclude<Role, "out">, string[]> = {
 
 const D = (role: Role, state: TenantVisualState): Slot => ({ role, state });
 
-const ROUTINES: Record<string, Slot[]> = {
-  // 陳家豪:工作狂夜貓,凌晨活躍、白天補眠、傍晚進公司
-  tenant_chen_engineer: [
-    D("desk", "working_at_desk"), // 00
-    D("desk", "working_at_desk"), // 01
-    D("desk", "gaming"), // 02
-    D("desk", "working_at_desk"), // 03
-    D("kitchen", "eating"), // 04 泡麵
-    D("bathroom", "showering"), // 05
-    D("bed", "sleeping_on_bed"), // 06
-    D("bed", "sleeping_on_bed"), // 07
-    D("bed", "sleeping_on_bed"), // 08
-    D("bed", "sleeping_on_bed"), // 09
-    D("bed", "sleeping_on_bed"), // 10
-    D("bed", "sleeping_on_bed"), // 11
-    D("bed", "sleeping_on_bed"), // 12
-    D("sofa", "playing_with_cat"), // 13 起床逗貓
-    D("kitchen", "cooking"), // 14
-    D("out", "away"), // 15 進公司
-    D("out", "away"), // 16
-    D("out", "away"), // 17
-    D("out", "away"), // 18
-    D("kitchen", "eating"), // 19 回家吃飯
-    D("desk", "working_at_desk"), // 20 加班
-    D("desk", "working_at_desk"), // 21
-    D("tv", "watching_tv"), // 22 追劇喘口氣
-    D("desk", "gaming"), // 23
-  ],
-  // 林小婕:ASMR 實況主,深夜直播、白天睡、作息儀式感強
-  tenant_lin_asmr: [
-    D("desk", "streaming"), // 00 開播
-    D("desk", "streaming"), // 01
-    D("desk", "streaming"), // 02
-    D("desk", "streaming"), // 03
-    D("desk", "streaming"), // 04
-    D("desk", "streaming"), // 05 下播
-    D("bathroom", "showering"), // 06
-    D("bed", "sleeping_on_bed"), // 07
-    D("bed", "sleeping_on_bed"), // 08
-    D("bed", "sleeping_on_bed"), // 09
-    D("bed", "sleeping_on_bed"), // 10
-    D("bed", "sleeping_on_bed"), // 11
-    D("bed", "sleeping_on_bed"), // 12
-    D("bed", "sleeping_on_bed"), // 13
-    D("sofa", "reading"), // 14 起床看書
-    D("kitchen", "eating"), // 15
-    D("sofa", "reading"), // 16
-    D("tv", "watching_tv"), // 17
-    D("kitchen", "cooking"), // 18
-    D("bathroom", "showering"), // 19
-    D("desk", "idle"), // 20 直播前準備
-    D("desk", "idle"), // 21 熱身
-    D("desk", "streaming"), // 22 開播
-    D("desk", "streaming"), // 23
-  ],
-};
+// ---------------------------------------------------------------------------
+// 作息目錄載入(data/routines.json,hours 區段式)+ 驗證
+// ---------------------------------------------------------------------------
+
+interface RoutineSpan {
+  hours: string; // "0-5" 或 "13"
+  role: string;
+  state: string;
+}
+
+const VALID_ROLES = new Set<string>(["bed", "desk", "kitchen", "bathroom", "sofa", "tv", "out"]);
+const VALID_STATES = new Set<string>(TENANT_VISUAL_STATES);
+
+/** 區段展開成 24 小時 Slot 表;非法 role/state 或格式略過並警告,缺漏小時以 bed/idle 補 */
+function expandSpans(spans: RoutineSpan[], label: string): Slot[] {
+  const out: (Slot | null)[] = Array(24).fill(null);
+  for (const s of spans) {
+    const m = /^(\d{1,2})(?:-(\d{1,2}))?$/.exec(String(s.hours).trim());
+    if (!m || !VALID_ROLES.has(s.role) || !VALID_STATES.has(s.state)) {
+      console.warn(`[routine] ${label} 的作息資料不合法,略過:${JSON.stringify(s)}`);
+      continue;
+    }
+    const from = Number(m[1]);
+    const to = m[2] !== undefined ? Number(m[2]) : from;
+    for (let h = from; h <= to && h < 24; h++) out[h] = { role: s.role as Role, state: s.state as TenantVisualState };
+  }
+  return out.map((slot, h) => {
+    if (slot) return slot;
+    console.warn(`[routine] ${label} 缺 ${h} 點的作息,以 bed/idle 補`);
+    return D("bed", "idle");
+  });
+}
+
+const ROUTINES: Record<string, Slot[]> = {};
+for (const [id, spans] of Object.entries(routinesJson.tenants as Record<string, RoutineSpan[]>)) {
+  ROUTINES[id] = expandSpans(spans, id);
+}
 
 /** 招募新租客用的原型作息表(依 archetype 指派給新入住者) */
-export const ARCHETYPE_ROUTINES: Record<string, Slot[]> = {
-  // 上班族:日出而作、日落而息
-  office: [
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bathroom", "showering"), D("kitchen", "eating"), D("out", "away"), D("out", "away"),
-    D("out", "away"), D("out", "away"), D("out", "away"), D("out", "away"), D("out", "away"),
-    D("out", "away"), D("out", "away"), D("out", "away"), D("kitchen", "cooking"),
-    D("kitchen", "eating"), D("tv", "watching_tv"), D("sofa", "reading"), D("bathroom", "showering"),
-    D("bed", "sleeping_on_bed"),
-  ],
-  // 學生/宅:白天賴床、晚上打電動
-  student: [
-    D("desk", "gaming"), D("desk", "gaming"), D("tv", "watching_tv"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bathroom", "showering"), D("kitchen", "eating"),
-    D("desk", "working_at_desk"), D("desk", "working_at_desk"), D("out", "away"), D("out", "away"),
-    D("kitchen", "cooking"), D("kitchen", "eating"), D("sofa", "watching_tv"), D("desk", "gaming"),
-    D("desk", "gaming"), D("desk", "gaming"), D("tv", "watching_tv"),
-  ],
-  // 自由接案:在家工作、作息浮動
-  freelancer: [
-    D("desk", "working_at_desk"), D("desk", "working_at_desk"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"), D("bed", "sleeping_on_bed"),
-    D("bathroom", "showering"), D("kitchen", "eating"), D("desk", "working_at_desk"),
-    D("desk", "working_at_desk"), D("sofa", "reading"), D("kitchen", "cooking"), D("kitchen", "eating"),
-    D("desk", "working_at_desk"), D("desk", "working_at_desk"), D("tv", "watching_tv"),
-    D("sofa", "idle"), D("desk", "working_at_desk"), D("desk", "working_at_desk"),
-    D("kitchen", "eating"), D("desk", "working_at_desk"),
-  ],
-};
+export const ARCHETYPE_ROUTINES: Record<string, Slot[]> = {};
+for (const [key, spans] of Object.entries(routinesJson.archetypes as Record<string, RoutineSpan[]>)) {
+  ARCHETYPE_ROUTINES[key] = expandSpans(spans, `archetype:${key}`);
+}
 
 /** 入住時登記該租客要用哪套作息 */
 export function registerRoutine(tenantId: string, archetypeKey: string) {

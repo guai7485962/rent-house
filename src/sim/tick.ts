@@ -272,10 +272,16 @@ export function hourlyTick(live = false) {
         satisfaction: rt.satisfaction,
         affinity: rt.tenant.stats.affinity,
         wellbeing: rt.tenant.stats.wellbeing,
+        flags: rt.flags,
       });
       if (ev) {
         rt.pendingEvent = ev;
         rt.lastEventDay = day;
+        if (ev.consumeFlag) {
+          // 事件連鎖:旗標觸發即消耗,不重複觸發
+          const i = rt.flags.indexOf(ev.consumeFlag);
+          if (i >= 0) rt.flags.splice(i, 1);
+        }
       }
     }
 

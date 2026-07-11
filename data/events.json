@@ -1,0 +1,61 @@
+{
+  "$comment": "規則事件資料目錄(設計檢討 §5:加事件 = 改這份資料)。陣列順序 = 優先序(第一個條件全中的事件觸發)。when:全部條件成立才觸發,stat ∈ stress/satisfaction/affinity/wellbeing、op ∈ >=/<=/>/<。requiresFlag:租客身上要有該伏筆旗標才可能觸發(事件連鎖);consumesFlag=true 觸發時消耗旗標(不重複觸發)。title/description 的 {name} 會代換成租客名。effect 欄位同 EventEffect(directive 需為白名單 id)。",
+  "events": [
+    {
+      "id": "breakdown",
+      "when": [{ "stat": "stress", "op": ">=", "value": 90 }],
+      "title": "{name} 快撐不住了",
+      "description": "監視器拍到 {name} 在房間中央來回踱步、掐著手臂——壓力似乎到了臨界點。你要介入嗎?",
+      "choices": [
+        { "id": "care", "label": "主動關心", "hint": "拉近距離,但可能被嫌多管閒事", "effect": { "affinity": 8, "stress": -18, "satisfaction": 5 } },
+        { "id": "treat", "label": "送宵夜慰勞", "hint": "花點小錢", "effect": { "money": -300, "stress": -12, "affinity": 5 } },
+        { "id": "space", "label": "給他空間", "hint": "不打擾,讓他自己消化", "effect": { "stress": -5 } }
+      ]
+    },
+    {
+      "id": "sick",
+      "when": [{ "stat": "wellbeing", "op": "<=", "value": 28 }],
+      "title": "{name} 生病了",
+      "description": "{name} 這陣子把自己操過頭了——臉色蒼白、咳個不停,連垃圾都沒力氣拿出去丟。要幫他一把嗎?",
+      "choices": [
+        { "id": "doctor", "label": "帶他去看醫生", "hint": "花錢,恢復最快", "effect": { "money": -800, "wellbeing": 25, "stress": -8, "affinity": 8 } },
+        { "id": "soup", "label": "燉鍋湯送上去", "hint": "暖心小成本", "effect": { "money": -200, "wellbeing": 10, "mood": 5, "affinity": 5 } },
+        { "id": "rest", "label": "讓他自己休養", "hint": "不花錢,好得慢;會閉門不出幾天", "effect": { "wellbeing": 4, "satisfaction": -4, "directive": { "id": "hermit", "days": 2 }, "flag": "病中沒人管" } }
+      ]
+    },
+    {
+      "id": "sick_aftermath",
+      "requiresFlag": "病中沒人管",
+      "consumesFlag": true,
+      "when": [{ "stat": "wellbeing", "op": ">=", "value": 60 }],
+      "title": "{name} 康復了,但…",
+      "description": "{name} 靠自己撐過了那場病。他沒說什麼,但倒垃圾時經過你身邊的眼神有點淡——生病那幾天,房東連一碗湯都沒送。",
+      "choices": [
+        { "id": "makeup", "label": "請他吃頓好料補償", "hint": "遲來的關心,總比沒有好", "effect": { "money": -600, "affinity": 10, "mood": 6, "memory": { "label": "[房東的補償飯]", "hint": "病後房東請的那頓飯,他記得" } } },
+        { "id": "pretend", "label": "當作沒這回事", "hint": "省錢,但他心裡有數", "effect": { "affinity": -6, "memory": { "label": "[生病時沒人管]", "hint": "那場自己撐過的病,他不會忘" } } }
+      ]
+    },
+    {
+      "id": "dissatisfied",
+      "when": [{ "stat": "satisfaction", "op": "<", "value": 30 }],
+      "title": "{name} 對房間不太滿意",
+      "description": "{name} 私下抱怨房間少了他需要的東西,住得不太順心。再放著不管,可能會考慮搬走。",
+      "choices": [
+        { "id": "renovate", "label": "撥預算改善", "hint": "花錢讓他真的滿意", "effect": { "money": -2000, "satisfaction": 22, "affinity": 6 } },
+        { "id": "promise", "label": "口頭承諾改善", "hint": "先安撫,治標", "effect": { "satisfaction": 9 } },
+        { "id": "ignore", "label": "不理會", "hint": "省事,但他會更不爽", "effect": { "satisfaction": -10, "affinity": -6 } }
+      ]
+    },
+    {
+      "id": "grievance",
+      "when": [{ "stat": "affinity", "op": "<=", "value": 20 }],
+      "title": "{name} 對你有意見",
+      "description": "{name} 最近對房東的態度明顯變冷淡。要修補關係嗎?",
+      "choices": [
+        { "id": "gift", "label": "送個小禮物", "hint": "破費修補", "effect": { "money": -500, "affinity": 12, "satisfaction": 4 } },
+        { "id": "talk", "label": "找他聊聊", "hint": "誠意溝通", "effect": { "affinity": 7 } },
+        { "id": "evict", "label": "乾脆請他搬走", "hint": "眼不見為淨,但空房會沒收入", "effect": { "evict": true } }
+      ]
+    }
+  ]
+}

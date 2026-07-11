@@ -8,26 +8,39 @@ import { narrateDay, templateDiary, type NarrateCtx, type NarrateResult } from "
 import { sanitizeAiEvent } from "./events";
 import { sanitizeArcUpdate } from "./arcs";
 import { listRelationships } from "./social";
-import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, LOG_CAP, type TenantRuntime } from "./gameState";
+import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 
 /** narrate 節流:多位租客串行、每次間隔 ≥4 秒(Gemini 免費層 RPM 低,快轉跨多日尤其容易連發) */
 const NARRATE_GAP_MS = 4000;
 
+/** 額度提示只彈一次(下次 AI 成功時重置,額度恢復又能提示) */
+let quotaNoticeShown = false;
+
 /** 換日時,為每位租客產生一篇「當日日記」(live 才呼叫 AI,否則模板) */
 export async function produceDailyDiaries(live: boolean) {
   const dayLabel = `第 ${gameDayIndex() + 1} 天`;
   const ids = Object.keys(state.runtimes);
+  let liveNow = live;
   let first = true;
   for (const id of ids) {
     const rt = state.runtimes[id];
     if (!rt) continue;
-    if (live && !first) await new Promise((r) => setTimeout(r, NARRATE_GAP_MS));
+    if (liveNow && !first) await new Promise((r) => setTimeout(r, NARRATE_GAP_MS));
     first = false;
     const ctx = buildNarrateCtx(rt, dayLabel);
-    const result: NarrateResult = live
+    const result: NarrateResult = liveNow
       ? await narrateDay(ctx)
       : { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false };
+    if (result.ai) {
+      quotaNoticeShown = false; // AI 恢復正常 → 之後再用盡可以重新提示
+    } else if (result.quota) {
+      liveNow = false; // 額度已盡:這批剩下的直接走模板,不再白打 API
+      if (!quotaNoticeShown) {
+        quotaNoticeShown = true;
+        notify("⚠️ 今日 AI 額度已用完,觀察日記暫用內建模板(每日重置後自動恢復)");
+      }
+    }
     const cur = state.runtimes[id];
     if (!cur) continue; // 期間可能已退租
     cur.log.push({

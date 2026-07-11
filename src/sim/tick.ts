@@ -30,6 +30,7 @@ import {
 import { collectRent } from "./economy";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
+import { spawnFx } from "../floor/fx";
 import { save } from "./persistence";
 
 export const homeTile = (tenantId: string): Tile => {
@@ -327,6 +328,15 @@ function socialPass() {
       pushSocialLog(B, res.textB, res.importance);
       applySocialEffect(A, res.effectA);
       applySocialEffect(B, res.effectB);
+      // 演出層:在兩人所在的交誼廳位置掛特效(里程碑優先,其次依互動基調)
+      const at = A.targetTile ?? B.targetTile;
+      if (at) {
+        if (res.milestone === "became_couple") spawnFx("hearts", at.c, at.r, 15000);
+        else if (res.milestone === "broke_up") spawnFx("heartbreak", at.c, at.r, 15000);
+        else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
+        else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
+        else spawnFx("chat", at.c, at.r, 8000);
+      }
       if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
       if (res.milestone === "broke_up") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`);

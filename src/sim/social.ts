@@ -28,6 +28,8 @@ export interface EncounterResult {
   effectB?: SocialEffect;
   milestone?: "became_friends" | "became_couple" | "broke_up";
   cohabit?: boolean;
+  /** 互動基調(演出層選特效用):聊天/戀愛氛圍/起衝突 */
+  tone: "friendly" | "romantic" | "conflict";
 }
 
 /** 全部關係(pairKey → Relationship),reactive 供 UI 讀 */
@@ -133,7 +135,7 @@ function fill(line: string, other: string): string {
 export function encounter(a: Tenant, b: Tenant): EncounterResult {
   const rel = ensureRel(a.id, b.id);
   const comp = compatibility(a, b);
-  const res: EncounterResult = { a: a.id, b: b.id, textA: "", textB: "", importance: "minor" };
+  const res: EncounterResult = { a: a.id, b: b.id, textA: "", textB: "", importance: "minor", tone: rel.romantic ? "romantic" : "friendly" };
 
   const conflictChance = comp < 0 ? 0.2 + -comp * 0.08 : 0.03;
   if (Math.random() < conflictChance) {
@@ -142,6 +144,7 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     res.textA = `和 ${b.name} ${reason}`;
     res.textB = `和 ${a.name} ${reason}`;
     res.importance = "notable";
+    res.tone = "conflict";
     res.effectA = { stress: 4 };
     res.effectB = { stress: 4 };
   } else {
@@ -168,6 +171,7 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     rel.romantic = false;
     res.milestone = "broke_up";
     res.importance = "major";
+    res.tone = "conflict";
     res.textA = `💔 和 ${b.name} 分手了`;
     res.textB = `💔 和 ${a.name} 分手了`;
     res.effectA = { mood: -18, satisfaction: -12, stress: 12 };

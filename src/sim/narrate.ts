@@ -37,15 +37,25 @@ export interface NarrateResult {
   /** AI 回的原始劇情弧更新(由 sim/arcs 消毒後才採用);null = 不動 */
   arcUpdate: unknown;
   ai: boolean; // 是否真的由 AI 生成(false=模板 fallback)
+  /** true = 這次 fallback 是因為 AI 每日額度用盡(前端可提示玩家) */
+  quota?: boolean;
 }
 
 export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
+  let quota = false;
   try {
     const res = await fetch("/api/narrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(ctx),
     });
+    if (!res.ok) {
+      try {
+        quota = ((await res.json()) as { error?: string }).error === "quota";
+      } catch {
+        /* body 非 JSON 就當一般失敗 */
+      }
+    }
     if (res.ok) {
       const data = (await res.json()) as {
         diary?: string;
@@ -67,7 +77,7 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
   } catch {
     /* 離線 / 無後端 → 走 fallback */
   }
-  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false };
+  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false, quota };
 }
 
 /** 無 AI 時的模板日記:從多樣模板庫隨機挑一句 + 補上當天重點 */

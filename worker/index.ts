@@ -171,7 +171,12 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
     if (!result) return Response.json({ error: "parse_failed", raw: text }, { status: 502 });
     return Response.json(result);
   } catch (e) {
-    return Response.json({ error: "upstream", detail: String(e) }, { status: 502 });
+    const msg = String(e);
+    // 免費層額度用盡(每分鐘重試已失敗 → 多半是每日配額):回明確的 quota 訊號讓前端提示玩家
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+      return Response.json({ error: "quota" }, { status: 429 });
+    }
+    return Response.json({ error: "upstream", detail: msg }, { status: 502 });
   }
 }
 

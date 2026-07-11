@@ -8,6 +8,7 @@
 import { TILE } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
+import type { TenantVisualState } from "../types";
 
 export interface Agent {
   tenantId: string;
@@ -20,6 +21,8 @@ export interface Agent {
   moving: boolean;
   hidden: boolean; // away 時隱藏
   walkPhase: number;
+  /** 當前 visual_state(環境演出用:睡覺 Zzz、直播音符、洗澡蒸氣) */
+  vs: TenantVisualState;
 }
 
 const SPEED = 44; // px / 秒
@@ -44,6 +47,7 @@ export function createAgents(): Agent[] {
       moving: false,
       hidden: rt.tenant.visualState === "away" || !t,
       walkPhase: 0,
+      vs: rt.tenant.visualState,
     };
   });
 }
@@ -53,6 +57,7 @@ export function tickAgents(agents: Agent[], dt: number) {
     const rt = state.runtimes[a.tenantId];
     const target = rt?.targetTile ?? null;
     a.hidden = !rt || rt.tenant.visualState === "away" || !target;
+    a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {
       a.moving = false;
       continue;

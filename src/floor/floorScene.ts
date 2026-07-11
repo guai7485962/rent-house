@@ -18,6 +18,7 @@ import {
   CHAR_WALK_B,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
+import { activeFx, type Fx } from "./fx";
 import { getTheme } from "../pixel/scene";
 import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS } from "./map";
 import { getDef } from "../furniture/catalog";
@@ -76,8 +77,12 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[]) {
   if (agents) {
     // 依 y 排序,讓靠下(近鏡頭)的人蓋住上方;外出者不畫
     for (const a of [...agents].sort((x, y) => x.py - y.py)) {
-      if (!a.hidden) drawAgent(ctx, a);
+      if (!a.hidden) {
+        drawAgent(ctx, a);
+        drawAmbient(ctx, a, frame); // 隨狀態的環境演出(Zzz/音符/蒸氣)
+      }
     }
+    for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
     // 離線預覽:靜態站立
     for (const spot of TENANT_SPOTS) {
@@ -101,6 +106,74 @@ export function drawFootprintPreview(ctx: Ctx, c: number, r: number, w: number, 
   ctx.strokeStyle = ok ? "#b6ffbe" : "#ffb3c1";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, w * TILE - 1, h * TILE - 1);
+}
+
+// ---------------------------------------------------------------------------
+// 演出層(設計檢討 §10-4):互動特效 + 隨狀態的環境演出
+// ---------------------------------------------------------------------------
+
+/** 依 pattern 畫 1px 像素圖("X" = 上色) */
+function pxPat(ctx: Ctx, pattern: string[], x: number, y: number, color: string, alpha = 1) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  for (let r = 0; r < pattern.length; r++)
+    for (let c = 0; c < pattern[r].length; c++)
+      if (pattern[r][c] === "X") ctx.fillRect(x + c, y + r, 1, 1);
+  ctx.restore();
+}
+
+const PAT_HEART = [".X.X.", "XXXXX", ".XXX.", "..X.."];
+const PAT_CRACK = ["..X..", ".X...", "..X..", ".X..."];
+const PAT_ANGER = ["X...X", ".X.X.", ".....", ".X.X.", "X...X"];
+const PAT_Z = ["XXX", ".X.", "XXX"];
+const PAT_NOTE = [".XX", ".X.", ".X.", "XX."];
+
+/** 互動/事件演出:掛在格子上方,輕微上下漂 */
+function drawFx(ctx: Ctx, f: Fx, frame: number) {
+  const x = f.c * TILE;
+  const y = f.r * TILE;
+  const bob = frame % 3;
+  if (f.kind === "hearts") {
+    pxPat(ctx, PAT_HEART, x + 2, y - 9 - bob, "#ff6b9d");
+    pxPat(ctx, PAT_HEART, x + 9, y - 13 - ((frame + 1) % 3), "#ff9ec2", 0.9);
+  } else if (f.kind === "heartbreak") {
+    pxPat(ctx, PAT_HEART, x + 5, y - 11 - (frame % 2), "#9aa0aa");
+    pxPat(ctx, PAT_CRACK, x + 5, y - 11 - (frame % 2), "#3a3d46");
+  } else if (f.kind === "anger") {
+    pxPat(ctx, PAT_ANGER, x + 5, y - 11, frame % 2 ? "#ff5a5a" : "#ff9a7a");
+  } else if (f.kind === "chat") {
+    // 小對話泡泡 + 閃爍的點點
+    ctx.fillStyle = "#f5f2ea";
+    ctx.fillRect(x + 3, y - 10, 9, 6);
+    ctx.fillRect(x + 5, y - 4, 2, 1); // 泡泡尾巴
+    ctx.fillStyle = "#6a6456";
+    const dots = frame % 2 ? 3 : 2;
+    for (let i = 0; i < dots; i++) ctx.fillRect(x + 5 + i * 2, y - 8, 1, 1);
+  }
+}
+
+/** 隨狀態的環境演出:睡覺 Zzz、直播音符、洗澡蒸氣、崩潰淚滴 */
+function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
+  const bob = frame % 2;
+  if (a.vs === "sleeping_on_bed") {
+    pxPat(ctx, PAT_Z, a.px + 9, a.py - 7 - bob, "#cfd6ff", 0.9);
+    pxPat(ctx, PAT_Z, a.px + 13, a.py - 12 - bob, "#aab4e8", 0.7);
+  } else if (a.vs === "streaming") {
+    pxPat(ctx, PAT_NOTE, a.px + 10, a.py - 9 - bob, "#cfe0ff", 0.9);
+  } else if (a.vs === "showering") {
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = "#dfe9ee";
+    ctx.fillRect(a.px + 1, a.py - 6 - bob, 2, 2);
+    ctx.fillRect(a.px + 6, a.py - 10 - ((frame + 1) % 3), 2, 2);
+    ctx.fillRect(a.px + 11, a.py - 5 - ((frame + 2) % 3), 2, 2);
+    ctx.restore();
+  } else if (a.vs === "crying") {
+    ctx.fillStyle = "#7fb4ff";
+    ctx.fillRect(a.px + 2, a.py - 2 + bob, 1, 2);
+    ctx.fillRect(a.px + 13, a.py - 3 + ((frame + 1) % 2), 1, 2);
+  }
 }
 
 function drawAgent(ctx: Ctx, a: Agent) {

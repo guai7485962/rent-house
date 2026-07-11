@@ -29,6 +29,7 @@ import {
 } from "./gameState";
 import { collectRent } from "./economy";
 import { maintenancePass } from "./maintenance";
+import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } from "./conflicts";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
 import { spawnFx } from "../floor/fx";
@@ -210,6 +211,8 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     }
     // 指令 hermit:迴避交誼廳——目標落在交誼廳就改回自己房間發呆
     if (dir === "hermit" && tgt && tgt.placement.room === "lounge") tgt = null;
+    // 冷戰(§10-2):交誼廳裡有冷戰對象 → 迴避不去,「看得見的不和」
+    if (tgt && tgt.placement.room === "lounge" && avoidLounge(rt.tenant.id)) tgt = null;
     if (tgt) {
       rt.targetTile = tgt.tile;
       rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
@@ -300,6 +303,7 @@ export function hourlyTick(live = false) {
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
+    feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     collectRent();
     void produceDailyDiaries(live); // 換日 → 每位租客一篇當日 AI 日記(fire-and-forget)
   }
@@ -329,6 +333,10 @@ function socialPass(skip: Set<string> = new Set()) {
       const A = inLounge[i];
       const B = inLounge[j];
       if (skip.has(pairKey(A.tenant.id, B.tenant.id))) continue;
+      // 冷戰中 → 互相當作看不見,不相遇(§10-2)
+      if (feudActive(A.tenant.id, B.tenant.id)) continue;
+      // 積怨已深 + 雙方都緊繃 → 可能直接打起來(打鬥雲 + 家具損壞 + 房東抉擇)
+      if (tryFight(A, B)) continue;
       const res = encounter(A.tenant, B.tenant);
       pushSocialLog(A, res.textA, res.importance);
       pushSocialLog(B, res.textB, res.importance);
@@ -345,6 +353,7 @@ function socialPass(skip: Set<string> = new Set()) {
         else spawnFx("chat", at.c, at.r, 8000);
         startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs, dur);
       }
+      if (res.tone === "conflict") maybeFeudAfterConflict(A, B); // 大吵可能升級成冷戰
       if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
       if (res.milestone === "broke_up") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`);

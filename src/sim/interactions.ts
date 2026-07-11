@@ -11,6 +11,7 @@
  */
 import type { Tenant } from "../types";
 import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
+import { feudActive } from "./conflicts";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
 import { roomRect } from "./placements";
 import { spawnFx, type FxKind } from "../floor/fx";
@@ -213,6 +214,7 @@ const inWindow = (hour: number, w?: [number, number]): boolean => {
 
 /** 唯一的互動資格把關:關係門檻 → 成人(開關+雙方成年+可戀愛)→ 私密 → 時段 */
 export function canInteract(def: InteractionDef, a: Tenant, b: Tenant, ctx: InteractCtx): boolean {
+  if (feudActive(a.id, b.id)) return false; // 冷戰中互相當作看不見(§10-2)
   const rel = getRel(a.id, b.id);
   if (def.tier === "close" && !(rel && (rel.value >= 50 || rel.romantic))) return false;
   if (def.tier === "crush" && !(rel && (rel.romantic || (rel.value >= 75 && canRomance(a, b))))) return false;

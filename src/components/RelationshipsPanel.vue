@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { listRelationships } from "../sim/social";
+import { feudActive } from "../sim/conflicts";
 import { state } from "../store";
 
 const emit = defineEmits<{ close: [] }>();
@@ -44,6 +45,7 @@ const groups = computed(() => {
             <span class="pair">
               {{ name(r.aId) }} <span class="amp">×</span> {{ name(r.bId) }}
               <span v-if="isCohabit(r)" class="cohab">🏠 同居中</span>
+              <span v-if="feudActive(r.aId, r.bId)" class="feud">❄️ 冷戰中</span>
             </span>
             <span class="tier">{{ r.label }} <b class="val">{{ r.value }}</b></span>
             <div class="bar"><div :style="{ width: r.value + '%' }"></div></div>
@@ -67,6 +69,7 @@ const groups = computed(() => {
 .list { overflow-y: auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 10px; }
 .grp { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; letter-spacing: 1px; }
 .cohab { font-size: 10.5px; color: #f0a8c6; border: 1px solid #d9548a; border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+.feud { font-size: 10.5px; color: #9fc4e8; border: 1px solid #4a7aa8; border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
 .val { font-size: 11px; color: var(--text-dim); font-weight: 600; margin-left: 3px; font-variant-numeric: tabular-nums; }
 .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .row.love { border-color: #d9548a; background: rgba(217,84,138,0.08); }

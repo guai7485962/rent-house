@@ -141,6 +141,8 @@ export const state = reactive({
   interactionCooldowns: {} as Record<string, number>,
   /** 設備故障(§7-1 維修系統):房間 id → 進行中的故障(一房最多一件;入存檔) */
   breakdowns: {} as Record<string, { defId: string; cost: number; sinceMs: number }>,
+  /** 冷戰(§10-2 衝突):pairKey → 期限(期間互相迴避、關係每日小扣;入存檔) */
+  feuds: {} as Record<string, { untilMs: number }>,
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {

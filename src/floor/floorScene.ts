@@ -155,6 +155,7 @@ function drawWarnMark(ctx: Ctx, m: { c: number; r: number }, frame: number) {
 const PAT_CRACK = ["..X..", ".X...", "..X..", ".X..."];
 const PAT_ANGER = ["X...X", ".X.X.", ".....", ".X.X.", "X...X"];
 const PAT_Z = ["XXX", ".X.", "XXX"];
+const PAT_STAR = ["..X..", ".XXX.", "XX.XX", ".XXX.", "..X.."];
 const PAT_NOTE = [".XX", ".X.", ".X.", "XX."];
 
 /** 互動/事件演出:掛在格子上方,輕微上下漂 */
@@ -196,6 +197,20 @@ function drawFx(ctx: Ctx, f: Fx, frame: number) {
     ctx.fillRect(x - TILE, y - TILE, TILE * 3, TILE * 2.5);
     ctx.restore();
     pxPat(ctx, PAT_HEART, x + 5, y - 4 - bob, "#ff9ec2", 0.85);
+  } else if (f.kind === "fight") {
+    // 打鬥雲(遮蔽式演出:卡通打鬥雲 + 飛出的星星,不見血)
+    ctx.fillStyle = frame % 2 ? "#c9c4bd" : "#b7b1a8";
+    ctx.fillRect(x - 2, y - 8 - bob, 8, 6);
+    ctx.fillRect(x + 4, y - 11 - bob, 8, 6);
+    ctx.fillRect(x + 9, y - 6 - bob, 7, 5);
+    ctx.fillRect(x + 2, y - 4 - bob, 10, 5);
+    ctx.fillStyle = "#8f887d";
+    ctx.fillRect(x + 3, y - 7 - bob, 4, 3); // 雲內陰影
+    ctx.fillRect(x + 9, y - 9 - bob, 3, 2);
+    const star = frame % 2 ? "#ffd23e" : "#fff3b0";
+    pxPat(ctx, PAT_STAR, x - 5, y - 13 - ((frame + 1) % 3), star);
+    pxPat(ctx, PAT_STAR, x + 14, y - 15 - bob, star);
+    pxPat(ctx, PAT_STAR, x + 16, y - 2 - ((frame + 2) % 3), star);
   }
 }
 

@@ -13,6 +13,8 @@ export interface BreakdownDef {
   id: string;
   label: string;
   icon: string;
+  /** true = 只由事件觸發(打架/AI 事件),每日隨機擲骰不會抽到 */
+  eventOnly?: boolean;
   /** 修理費區間(觸發時擲定、記在 ActiveBreakdown 上) */
   cost: [number, number];
   /** 拖延一天,該房住戶的懲罰 */
@@ -60,6 +62,16 @@ export const BREAKDOWNS: BreakdownDef[] = [
     breakLine: "插座一插吹風機就跳電,整間房斷斷續續停電。",
     sufferLines: ["工作到一半又跳電,檔案差點沒存到。", "手機只能拿去交誼廳充電,超不方便。"],
   },
+  {
+    id: "damage",
+    label: "家具毀損",
+    icon: "🪑",
+    eventOnly: true, // 只由事件觸發(打架 §10-2 / AI 事件),不進每日擲骰
+    cost: [800, 1600],
+    perDay: { satisfaction: -6, mood: -3 },
+    breakLine: "房裡的家具在混亂中被撞壞了,缺角的缺角、散架的散架。",
+    sufferLines: ["椅子少了一隻腳,只能墊書硬撐著用。", "看著壞掉的家具就想起那天的事,心情很差。"],
+  },
 ];
 
 export interface ActiveBreakdown {
@@ -85,7 +97,8 @@ function occupantsOf(roomId: string): TenantRuntime[] {
 /** 觸發一件故障(每日擲骰或之後的事件/打架都走這裡);該房已有故障則不疊加 */
 export function triggerBreakdown(roomId: string, defId?: string, rng: () => number = Math.random): boolean {
   if (state.breakdowns[roomId]) return false;
-  const def = defId ? getBreakdownDef(defId) : BREAKDOWNS[Math.floor(rng() * BREAKDOWNS.length)];
+  const pool = BREAKDOWNS.filter((b) => !b.eventOnly);
+  const def = defId ? getBreakdownDef(defId) : pool[Math.floor(rng() * pool.length)];
   if (!def) return false;
   const [lo, hi] = def.cost;
   const cost = Math.round((lo + rng() * (hi - lo)) / 100) * 100;

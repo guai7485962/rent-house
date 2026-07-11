@@ -97,6 +97,7 @@ export function save() {
         adultMode: state.adultMode,
         interactionCooldowns: state.interactionCooldowns,
         breakdowns: state.breakdowns,
+        feuds: state.feuds,
         runtimes,
       }),
     );
@@ -142,6 +143,8 @@ export function load(): boolean {
     Object.assign(state.interactionCooldowns, s.interactionCooldowns ?? {});
     for (const k of Object.keys(state.breakdowns)) delete state.breakdowns[k];
     Object.assign(state.breakdowns, s.breakdowns ?? {}); // 舊檔沒有 → 沒故障,無害
+    for (const k of Object.keys(state.feuds)) delete state.feuds[k];
+    Object.assign(state.feuds, s.feuds ?? {}); // 舊檔沒有 → 沒冷戰,無害
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

@@ -19,7 +19,8 @@ import {
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
 import { activeFx, type Fx } from "./fx";
-import { getTheme } from "../pixel/scene";
+import { getTheme, getCustomAppearance } from "../pixel/scene";
+import { drawAppearanceOverlay } from "../pixel/parts";
 import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
@@ -186,6 +187,9 @@ function drawAgent(ctx: Ctx, a: Agent) {
     yoff = step ? 0 : -1; // 走路上下彈跳
   }
   drawSprite(ctx, sprite, a.px + 3, a.py - 4 + yoff, charPalette(a.tenantId));
+  // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件
+  const ap = getCustomAppearance(a.tenantId);
+  if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff);
 }
 
 // ---------------------------------------------------------------------------

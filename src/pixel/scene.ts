@@ -4,7 +4,7 @@
  * 佈局:上方是背牆(正面),下方是俯視木地板;家具正面站立、釘在格線上。
  * 純函式:PixelDollhouse.vue 在 canvas 呼叫,scripts/render-preview.ts 離線呼叫。
  */
-import type { RoomPropState, TenantVisualState } from "../types";
+import type { Appearance, RoomPropState, TenantVisualState } from "../types";
 import {
   type Ctx,
   type Palette,
@@ -97,18 +97,34 @@ export function hasFixedTheme(tenantId: string): boolean {
   return !!THEMES[tenantId];
 }
 
-/** 取得租客外觀主題:固定兩位用專屬,動態入住者用 store 指派的索引(不同房間必不同色) */
-export function getTheme(tenantId: string): Theme {
+/** 部件化外觀登錄(§9-1):有登錄者角色配色/髮型/配件全走 Appearance */
+const customAppearances = new Map<string, Appearance>();
+export function setCustomAppearance(tenantId: string, ap: Appearance) {
+  customAppearances.set(tenantId, ap);
+}
+export function getCustomAppearance(tenantId: string): Appearance | null {
+  return customAppearances.get(tenantId) ?? null;
+}
+
+/** 底色主題(牆/地板/海報用):固定兩位專屬 → 指派索引 → 雜湊退路 */
+function baseTheme(tenantId: string): Theme {
   if (THEMES[tenantId]) return THEMES[tenantId];
   const idx = appearanceReg.get(tenantId);
   if (idx != null) return THEME_POOL[idx % THEME_POOL.length];
-  // 未登記(舊存檔/尚未指派)→ 退回雜湊
   let t = generatedThemes.get(tenantId);
   if (!t) {
     t = THEME_POOL[hashStr(tenantId) % THEME_POOL.length];
     generatedThemes.set(tenantId, t);
   }
   return t;
+}
+
+/** 取得租客外觀主題:有部件化外觀者,角色色(髮/衣/褲/膚)以 Appearance 覆蓋;牆/地板沿用底色主題 */
+export function getTheme(tenantId: string): Theme {
+  const base = baseTheme(tenantId);
+  const ap = customAppearances.get(tenantId);
+  if (!ap) return base;
+  return { ...base, hair: ap.hairColor, shirt: ap.shirt, pants: ap.pants, skin: ap.skin };
 }
 
 export interface SceneState {

@@ -125,12 +125,33 @@ export interface RoomState {
 
 export type Gender = "male" | "female" | "nonbinary";
 
+/** 髮型部件(§9-1 部件化外觀) */
+export type HairStyle = "short" | "long" | "ponytail" | "spiky" | "bob";
+/** 配件部件 */
+export type AccessoryKind = "none" | "glasses" | "round_glasses" | "cap" | "bow" | "headphones";
+
+/**
+ * 部件化外觀(§9-1):髮型 × 髮色 × 衣著 × 膚色 × 配件的可組合圖層。
+ * 動態入住的租客隨機生成;沒有此欄位的舊角色退回原本的配色池(存檔相容)。
+ */
+export interface Appearance {
+  hairStyle: HairStyle;
+  hairColor: string;
+  shirt: string;
+  pants: string;
+  skin: string;
+  accessory: AccessoryKind;
+}
+
 export interface Tenant {
   id: string;
   name: string;
   occupation: string;
   /** 一句話人物側寫,注入 prompt 用 */
   bio: string;
+
+  /** 部件化外觀(動態租客隨機生成;種子租客用固定主題,無此欄位) */
+  appearance?: Appearance;
 
   /** 性別與戀愛取向(決定鄰居間能否發展戀情) */
   gender?: Gender;

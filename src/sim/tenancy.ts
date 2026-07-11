@@ -34,6 +34,8 @@ import {
 import { applyHour } from "./tick";
 import { addMoney } from "./economy";
 import { upgradeTolBonus } from "./upgrades";
+import { setCustomAppearance } from "../pixel/scene";
+import { randomAppearance } from "../pixel/parts";
 import { save } from "./persistence";
 
 /** 取得某空房的應徵者(每遊戲日換一批;重開面板/重整頁面不重抽,星等隨當前裝潢即時更新) */
@@ -59,6 +61,7 @@ export function moveIn(roomId: string, ap: Applicant) {
     bio: ap.bio,
     gender: ap.gender,
     attractedTo: ap.attractedTo,
+    appearance: ap.appearance ?? randomAppearance(), // 舊池子的應徵者沒有外觀 → 入住時補抽
     coreTags: ap.coreTags,
     memoryTags: [],
     finance: { monthlyRent: ap.monthlyRent, paymentReliability: 80, monthsOverdue: 0 },
@@ -74,7 +77,8 @@ export function moveIn(roomId: string, ap: Applicant) {
   delete state.applicantPools[roomId]; // 房間租出去,該池作廢
   for (const p of Object.values(state.applicantPools)) p.applicants = p.applicants.filter((x) => x.name !== ap.name); // 別的房不能再出現同名應徵者
   registerRoutine(ap.id, ap.archetypeKey);
-  refreshAppearances(); // 指派配色(依房間,確保彼此不同)
+  if (tenant.appearance) setCustomAppearance(tenant.id, tenant.appearance); // 部件化外觀登錄(髮型/配件/衣色)
+  refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
   save();
 }

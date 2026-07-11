@@ -11,6 +11,7 @@ import { placements } from "./placements";
 import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships } from "./social";
 import { registerRoutine } from "./routine";
+import { setCustomAppearance } from "../pixel/scene";
 import { state, tenants, refreshAppearances, type Txn } from "./gameState";
 import { stopTicker } from "./lifecycle";
 
@@ -158,6 +159,9 @@ export function load(): boolean {
         inLounge: false,
       });
       if (saved.archetypeKey) registerRoutine(id, saved.archetypeKey);
+      // 部件化外觀(§9-1):存檔帶有外觀者,重新登錄到渲染層
+      const ap = (saved.tenant as Tenant).appearance;
+      if (ap) setCustomAppearance(id, ap);
     }
     // 舊存檔的種子租客沒有性別/取向 → 從種子資料補回
     for (const rt of Object.values(state.runtimes)) {

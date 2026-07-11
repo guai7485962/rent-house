@@ -2,9 +2,10 @@
  * 招租系統:依房間屬性產生「應徵租客」,並算出契合度。
  * 房東裝潢空房 → 屬性上升 → 吸引偏好相符的租客 → 選一位入住(store.moveIn)。
  */
-import type { CoreTag, Gender, RoomAttribute } from "../types";
+import type { Appearance, CoreTag, Gender, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 import { upgradeRentBonus } from "./upgrades";
+import { randomAppearance } from "../pixel/parts";
 
 interface Archetype {
   key: string; // 對應 ARCHETYPE_ROUTINES 的作息
@@ -78,6 +79,8 @@ export interface Applicant {
   stars: number; // 1~5 契合度
   gender: Gender;
   attractedTo: Gender[];
+  /** 部件化外觀(§9-1);舊池子裡的應徵者可能沒有 → 入住時再補抽 */
+  appearance?: Appearance;
 }
 
 /** 應徵者實際開的月租:基礎租金 × 房間升級行情加成,取整到百位 */
@@ -149,5 +152,6 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       baseRent: a.monthlyRent,
       stars: matchStars(a.preferences, attrs),
       ...randomIdentity(),
+      appearance: randomAppearance(),
     }));
 }

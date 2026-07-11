@@ -52,9 +52,9 @@ export function getRel(a: string, b: string): Relationship | undefined {
   return relationships[pairKey(a, b)];
 }
 
-/** 兩人是否可能發展戀情(性別/取向相容)—— 供 store 端 AI 事件把關 */
+/** 兩人是否可能發展戀情(雙方皆成年 + 性別/取向相容)—— 戀愛線唯一把關點 */
 export function canRomance(a: Tenant, b: Tenant): boolean {
-  return attractedMutual(a, b);
+  return (a.isAdult ?? true) && (b.isAdult ?? true) && attractedMutual(a, b);
 }
 
 /** 夾值調整兩人關係值(AI 事件用:拉近/疏遠) */
@@ -70,7 +70,7 @@ export function setCouple(aId: string, bId: string, value: boolean, aT?: Tenant,
     rel.romantic = false;
     return;
   }
-  if (aT && bT && attractedMutual(aT, bT)) {
+  if (aT && bT && canRomance(aT, bT)) {
     rel.romantic = true;
     rel.value = Math.max(rel.value, 75); // 在一起至少拉到曖昧線以上
   }
@@ -156,8 +156,8 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     if (before < 35 && rel.value >= 35) res.milestone = "became_friends";
   }
 
-  // 在一起
-  if (!rel.romantic && rel.value >= 75 && attractedMutual(a, b) && comp >= 0) {
+  // 在一起(canRomance = 雙方成年 + 取向相容)
+  if (!rel.romantic && rel.value >= 75 && canRomance(a, b) && comp >= 0) {
     rel.romantic = true;
     res.milestone = "became_couple";
     res.importance = "major";

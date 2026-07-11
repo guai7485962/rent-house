@@ -81,6 +81,8 @@ export interface Applicant {
   attractedTo: Gender[];
   /** 部件化外觀(§9-1);舊池子裡的應徵者可能沒有 → 入住時再補抽 */
   appearance?: Appearance;
+  /** 是否成年(undefined = 是;特邀租客一律經 isAdult 檢查才會生成) */
+  isAdult?: boolean;
 }
 
 /** 應徵者實際開的月租:基礎租金 × 房間升級行情加成,取整到百位 */

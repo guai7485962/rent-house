@@ -153,6 +153,9 @@ export interface Tenant {
   /** 部件化外觀(動態租客隨機生成;種子租客用固定主題,無此欄位) */
   appearance?: Appearance;
 
+  /** 是否為成年人(undefined = 是;內建角色皆成年)。未成年角色排除整條戀愛線(§10-0) */
+  isAdult?: boolean;
+
   /** 性別與戀愛取向(決定鄰居間能否發展戀情) */
   gender?: Gender;
   /** 會被哪些性別吸引;空陣列=不對任何人動心 */

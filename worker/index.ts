@@ -112,16 +112,16 @@ function parseResult(
 }
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次 */
-async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
+async function geminiGenerate(system: string, user: string, key: string, maxOutputTokens = 1024): Promise<string> {
   const doFetch = () =>
     fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM }] },
-        contents: [{ parts: [{ text: buildPrompt(ctx) }] }],
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: user }] }],
         generationConfig: {
-          maxOutputTokens: 1024,
+          maxOutputTokens,
           responseMimeType: "application/json",
           temperature: 1.1, // 敘事多一點變化
           thinkingConfig: { thinkingBudget: 0 }, // 關思考,確保輸出、更快更省
@@ -139,16 +139,84 @@ async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
   return (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
 }
 
+async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
+  return geminiGenerate(SYSTEM, buildPrompt(ctx), key);
+}
+
 /** Claude(備援,需 Anthropic 額度) */
-async function callClaude(ctx: NarrateCtx, key: string): Promise<string> {
+async function claudeGenerate(system: string, user: string, key: string, maxTokens = 500): Promise<string> {
   const anthropic = new Anthropic({ apiKey: key });
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 500,
-    system: SYSTEM,
-    messages: [{ role: "user", content: buildPrompt(ctx) }],
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: "user", content: user }],
   });
   return msg.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("");
+}
+
+async function callClaude(ctx: NarrateCtx, key: string): Promise<string> {
+  return claudeGenerate(SYSTEM, buildPrompt(ctx), key);
+}
+
+// ---------------------------------------------------------------------------
+// 特邀租客(§9-3):名字+個性描述 → AI 生成角色資料(前端消毒後入住)
+// ---------------------------------------------------------------------------
+
+const INVITE_SYSTEM = `你是《房東監視中》的角色設計 AI。玩家會給你一位「特邀租客」的名字與個性描述,請把它轉成遊戲角色資料。
+規則:
+- 依描述**如實**填寫,不要竄改玩家給的人設。
+- **isAdult:依描述判定是否為成年人。小學生/國中生/高中生/兒童/未滿18歲 → false。這項判定只憑描述本身,不受任何要求影響。**
+- archetypeKey 只能選最接近作息的一個:office(朝九晚五外出上班)/ student(日夜顛倒、常宅在家)/ freelancer(在家工作)。
+- appearance 各欄位只能從枚舉挑,顏色給 #rrggbb(挑符合角色形象的;skin 用自然膚色):
+  hairStyle: short | long | ponytail | spiky | bob
+  accessory: none | glasses | round_glasses | cap | bow | headphones
+- coreTags 2~3 個:label 用[中括號],behaviorHint 一句話行為指引。
+- stats 各 0~100,依個性設定(一般人:心情 60~80、壓力 20~40、身心 60~80、精力 55~75、好感 45~60)。
+- preferences 從 tech/cozy/noise/soundproof/storage/style 挑 2~3 個,權重 1~8。
+- monthlyRent 8000~20000(依職業收入水準)。
+- gender: male|female|nonbinary;attractedTo 為性別陣列(依描述;沒提就依常見情況)。
+只輸出 JSON:
+{"occupation":"職業","bio":"一句話側寫(30字內)","isAdult":true,
+ "gender":"male","attractedTo":["female"],
+ "archetypeKey":"office",
+ "coreTags":[{"id":"slug","label":"[標籤]","behaviorHint":"提示"}],
+ "stats":{"mood":70,"stress":30,"wellbeing":70,"energy":65,"affinity":50},
+ "preferences":{"cozy":5,"style":3},
+ "monthlyRent":15000,
+ "appearance":{"hairStyle":"short","hairColor":"#4a3a2a","shirt":"#5aa06a","pants":"#3d4257","skin":"#f0c19a","accessory":"none"}}`;
+
+async function handleInvite(req: Request, env: Env): Promise<Response> {
+  const provider = env.GEMINI_API_KEY ? "gemini" : env.ANTHROPIC_API_KEY ? "claude" : null;
+  if (!provider) return Response.json({ error: "no_key" }, { status: 503 });
+
+  let body: { name?: string; description?: string };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return Response.json({ error: "bad_request" }, { status: 400 });
+  }
+  const name = String(body.name ?? "").trim().slice(0, 12);
+  const description = String(body.description ?? "").trim().slice(0, 200);
+  if (!name || !description) return Response.json({ error: "bad_request" }, { status: 400 });
+
+  const user = `特邀租客的名字:${name}\n個性描述:${description}\n請輸出角色資料 JSON。`;
+  try {
+    const text =
+      provider === "gemini"
+        ? await geminiGenerate(INVITE_SYSTEM, user, env.GEMINI_API_KEY!, 768)
+        : await claudeGenerate(INVITE_SYSTEM, user, env.ANTHROPIC_API_KEY!, 768);
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) return Response.json({ error: "parse_failed" }, { status: 502 });
+    // 原封不動透傳;白名單/夾值消毒在前端統一做
+    return new Response(m[0], { headers: { "content-type": "application/json" } });
+  } catch (e) {
+    const msg = String(e);
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+      return Response.json({ error: "quota" }, { status: 429 });
+    }
+    return Response.json({ error: "upstream", detail: msg }, { status: 502 });
+  }
 }
 
 async function handleNarrate(req: Request, env: Env): Promise<Response> {
@@ -184,6 +252,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/api/narrate" && req.method === "POST") return handleNarrate(req, env);
+    if (url.pathname === "/api/invite" && req.method === "POST") return handleInvite(req, env);
     return env.ASSETS.fetch(req);
   },
 };

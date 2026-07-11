@@ -62,6 +62,7 @@ export function moveIn(roomId: string, ap: Applicant) {
     gender: ap.gender,
     attractedTo: ap.attractedTo,
     appearance: ap.appearance ?? randomAppearance(), // 舊池子的應徵者沒有外觀 → 入住時補抽
+    isAdult: ap.isAdult ?? true,
     coreTags: ap.coreTags,
     memoryTags: [],
     finance: { monthlyRent: ap.monthlyRent, paymentReliability: 80, monthsOverdue: 0 },

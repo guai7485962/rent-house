@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import type { Applicant } from "../sim/recruit";
+import { computed, ref } from "vue";
+import { rescoreApplicants, type Applicant } from "../sim/recruit";
 import { roomAttributes } from "../sim/placements";
+import { requestInvite, sanitizeInvited, looksMinor } from "../sim/invite";
 import { moveIn, getApplicants } from "../store";
 
 const props = defineProps<{ roomId: string }>();
@@ -9,6 +10,43 @@ const emit = defineEmits<{ close: []; upgrade: [roomId: string] }>();
 
 // 每遊戲日換一批(存在 store,開關面板/重整頁面不重抽;星等隨當前裝潢即時更新)
 const applicants = computed<Applicant[]>(() => getApplicants(props.roomId));
+
+// ---- 特邀租客(§9-3):名字+個性描述 → AI 生成角色 → 消毒 → 入住 ----
+const showInvite = ref(false);
+const invName = ref("");
+const invDesc = ref("");
+const invBusy = ref(false);
+const invError = ref("");
+
+async function submitInvite() {
+  const name = invName.value.trim();
+  const desc = invDesc.value.trim();
+  invError.value = "";
+  if (!name || !desc) {
+    invError.value = "請填寫名字與個性描述。";
+    return;
+  }
+  if (looksMinor(desc) || looksMinor(name)) {
+    invError.value = "特邀租客僅接受成年角色,未成年角色不會被生成。";
+    return;
+  }
+  invBusy.value = true;
+  const res = await requestInvite(name, desc);
+  invBusy.value = false;
+  if (!res.ok) {
+    invError.value =
+      res.reason === "quota" ? "今日 AI 額度已用完,明天再試。" : res.reason === "offline" ? "連不上伺服器,稍後再試。" : "AI 生成失敗,換個描述再試一次。";
+    return;
+  }
+  const s = sanitizeInvited(name, res.raw);
+  if (!s.ok || !s.applicant) {
+    invError.value = s.reason ?? "生成的角色資料不完整。";
+    return;
+  }
+  rescoreApplicants([s.applicant], props.roomId); // 依當前裝潢算契合星等
+  moveIn(props.roomId, s.applicant);
+  emit("close");
+}
 
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
@@ -60,6 +98,28 @@ function stars(n: number) {
           </div>
           <button class="accept" @click="accept(a)">讓 {{ a.name }} 入住</button>
         </div>
+
+        <!-- 特邀租客 -->
+        <div class="invite">
+          <button v-if="!showInvite" class="inv-toggle" @click="showInvite = true">✉️ 特邀租客(AI 依你的描述生成角色)</button>
+          <div v-else class="inv-form">
+            <div class="inv-ttl">✉️ 特邀租客</div>
+            <input v-model="invName" class="inv-name" maxlength="12" placeholder="名字(例:赤井秀一)" />
+            <textarea
+              v-model="invDesc"
+              class="inv-desc"
+              maxlength="200"
+              rows="3"
+              placeholder="個性描述(例:沉默寡言的狙擊手,觀察力極強,愛喝黑咖啡,晝伏夜出)"
+            ></textarea>
+            <p class="inv-note">僅接受成年角色;AI 會依描述生成職業/性格/作息/外觀,消毒後直接入住本房。</p>
+            <p v-if="invError" class="inv-err">{{ invError }}</p>
+            <div class="inv-actions">
+              <button class="inv-cancel" :disabled="invBusy" @click="showInvite = false">取消</button>
+              <button class="inv-go" :disabled="invBusy" @click="submitInvite">{{ invBusy ? "生成中…" : "邀請入住" }}</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -92,4 +152,17 @@ function stars(n: number) {
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent-2); color: #c9befc; }
 .rent { margin-left: auto; font-size: 12px; color: var(--accent); }
 .accept { width: 100%; background: linear-gradient(135deg, var(--accent-2), #7059d6); color: #fff; font-weight: 700; font-size: 13.5px; border-radius: 8px; padding: 9px 0; }
+
+.invite { margin-top: 2px; }
+.inv-toggle { width: 100%; background: var(--panel); border: 1px dashed var(--accent-2); color: #cdbcff; font-size: 12.5px; border-radius: 12px; padding: 10px 0; }
+.inv-form { background: var(--panel); border: 1px solid var(--accent-2); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.inv-ttl { font-weight: 700; font-size: 13.5px; color: #cdbcff; }
+.inv-name, .inv-desc { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 13px; padding: 8px 10px; width: 100%; }
+.inv-desc { resize: none; line-height: 1.5; }
+.inv-note { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+.inv-err { font-size: 12px; color: var(--bad); }
+.inv-actions { display: flex; gap: 8px; }
+.inv-cancel { flex: 0.6; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim); border-radius: 8px; padding: 8px 0; font-size: 12.5px; }
+.inv-go { flex: 1; background: linear-gradient(135deg, var(--accent-2), #7059d6); color: #fff; font-weight: 700; font-size: 13px; border-radius: 8px; padding: 8px 0; }
+.inv-go:disabled { opacity: 0.6; }
 </style>

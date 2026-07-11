@@ -69,7 +69,17 @@ export interface FloorMark {
   r: number;
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[]) {
+/** 日夜色調(工作項 9):依遊戲小時回傳疊在整個樓層上的色調;白天 null = 不疊 */
+export function dayNightTint(hour: number): { color: string; alpha: number } | null {
+  if (hour >= 21 || hour <= 4) return { color: "#141840", alpha: 0.32 }; // 深夜:靛藍
+  if (hour <= 6) return { color: "#5a3c6e", alpha: 0.18 }; // 拂曉:紫粉
+  if (hour <= 15) return null; // 白天
+  if (hour <= 17) return { color: "#ff9a4d", alpha: 0.1 }; // 傍晚:斜陽
+  if (hour <= 19) return { color: "#7c4630", alpha: 0.16 }; // 黃昏:暖褐
+  return { color: "#141840", alpha: 0.24 }; // 入夜
+}
+
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -90,7 +100,6 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       }
     }
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
-    if (marks) for (const m of marks) drawWarnMark(ctx, m, frame); // 設備故障等警示(§7-1)
   } else {
     // 離線預覽:靜態站立
     for (const spot of TENANT_SPOTS) {
@@ -100,6 +109,17 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       drawSprite(ctx, CHAR_STAND, px + 3, py - 4 - (frame % 2), charPalette(spot.tenantId));
     }
   }
+
+  // 日夜色調(工作項 9;疊在場景之上、警示之下——警示要保持醒目)
+  const tint = hour != null ? dayNightTint(hour) : null;
+  if (tint) {
+    ctx.save();
+    ctx.globalAlpha = tint.alpha;
+    ctx.fillStyle = tint.color;
+    ctx.fillRect(0, 0, FLOOR_W, FLOOR_H);
+    ctx.restore();
+  }
+  if (marks) for (const m of marks) drawWarnMark(ctx, m, frame); // 設備故障等警示(§7-1)
 }
 
 /** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */

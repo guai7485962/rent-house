@@ -1,6 +1,6 @@
 /**
  * 離線渲染樓層地圖 → PNG(開發檢視用)
- * 用法: npx tsx scripts/render-floor.ts <輸出.png>
+ * 用法: npx tsx scripts/render-floor.ts <輸出.png> [遊戲小時 0-23(疊日夜色調)]
  */
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
@@ -26,8 +26,13 @@ function parseColor(c: string): [number, number, number, number] {
 class FakeCtx {
   buf: Uint8ClampedArray;
   fillStyle = "#000000";
+  globalAlpha = 1;
   constructor(public w: number, public h: number) {
     this.buf = new Uint8ClampedArray(w * h * 4);
+  }
+  save() {}
+  restore() {
+    this.globalAlpha = 1; // 本渲染器只在 save/restore 區塊內動 alpha,還原成 1 即可
   }
   clearRect(x: number, y: number, w: number, h: number) {
     for (let j = y; j < y + h; j++)
@@ -37,7 +42,8 @@ class FakeCtx {
       }
   }
   fillRect(x: number, y: number, w: number, h: number) {
-    const [r, g, b, a] = parseColor(this.fillStyle);
+    const [r, g, b, a0] = parseColor(this.fillStyle);
+    const a = a0 * this.globalAlpha;
     for (let j = Math.max(0, y); j < Math.min(this.h, y + h); j++)
       for (let i = Math.max(0, x); i < Math.min(this.w, x + w); i++) {
         const o = (j * this.w + i) * 4;
@@ -92,7 +98,8 @@ function encodePNG(rgba: Uint8ClampedArray, w: number, h: number) {
 
 const SCALE = 3;
 const ctx = new FakeCtx(FLOOR_W, FLOOR_H);
-composeFloor(ctx as any, 0);
+const hourArg = process.argv[3] != null ? Number(process.argv[3]) : undefined;
+composeFloor(ctx as any, 0, undefined, undefined, hourArg);
 
 const outW = FLOOR_W * SCALE;
 const outH = FLOOR_H * SCALE;

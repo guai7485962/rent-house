@@ -433,13 +433,7 @@ function onDecide(choiceId: string, label: string) {
       </button>
     </div>
 
-    <PixelDollhouse
-      :tenant-id="rt.tenant.id"
-      :visual-state="rt.tenant.visualState"
-      :room-props="rt.roomProps"
-      :cleanliness="rt.cleanliness"
-      :room-no="rt.roomNo"
-    />
+    <PixelDollhouse :tenant-id="rt.tenant.id" :visual-state="rt.tenant.visualState" :room-no="rt.roomNo" />
 
     <section class="stats">
       <div class="stat">

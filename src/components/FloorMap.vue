@@ -40,7 +40,7 @@ function loop(t: number) {
       const rect = roomRect(roomId);
       if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
     }
-    composeFloor(ctx, Math.floor(t / 500), agents, marks);
+    composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours());
     const pv = props.preview;
     if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
   }

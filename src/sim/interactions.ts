@@ -14,6 +14,7 @@ import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
 import { roomRect } from "./placements";
 import { spawnFx, type FxKind } from "../floor/fx";
+import { startPairSession, type PairPose } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR } from "./clock";
 
 export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
@@ -39,6 +40,8 @@ export interface InteractionDef {
   memoryLabel?: string;
   memoryHint?: string;
   fx: FxKind;
+  /** 雙人圖式(§10-6):pair=兩人走到一起站著演(預設);hidden=遮蔽式,兩人隱藏只留 fx(🔞 一律用這個) */
+  pose?: PairPose;
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
 }
 
@@ -103,6 +106,7 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 40,
     chance: 0.3,
     fx: "steam",
+    pose: "hidden",
     lines: ["和{o}一起進了浴室,水聲響了很久很久…"],
     memoryLabel: "[臉紅的祕密]",
     memoryHint: "和戀人共浴的悄悄話,兩人都不會說出去。",
@@ -119,6 +123,7 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 36,
     chance: 0.35,
     fx: "lights",
+    pose: "hidden",
     lines: ["房裡的燈早早就關了,門把上掛著「請勿打擾」…"],
     memoryLabel: "[甜蜜的夜晚]",
     memoryHint: "昨晚之後,看對方的眼神都是軟的。",
@@ -279,7 +284,11 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
       // 演出錨點:優先兩人所在的家具格,其次房間中心
       const rect = roomId ? roomRect(roomId) : null;
       const anchor = A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
-      if (anchor) spawnFx(def.fx, anchor.c, anchor.r, 15000);
+      if (anchor) {
+        spawnFx(def.fx, anchor.c, anchor.r, 15000);
+        // §10-6:登記雙人 session——兩人走到錨點旁站在一起;🔞 遮蔽式則整段隱藏
+        startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", 15000);
+      }
       state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
     }

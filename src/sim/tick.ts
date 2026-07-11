@@ -31,6 +31,7 @@ import { collectRent } from "./economy";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
 import { spawnFx } from "../floor/fx";
+import { startPairSession } from "../floor/pairSession";
 import { interactionsPass } from "./interactions";
 import { save } from "./persistence";
 
@@ -331,14 +332,16 @@ function socialPass(skip: Set<string> = new Set()) {
       pushSocialLog(B, res.textB, res.importance);
       applySocialEffect(A, res.effectA);
       applySocialEffect(B, res.effectB);
-      // 演出層:在兩人所在的交誼廳位置掛特效(里程碑優先,其次依互動基調)
+      // 演出層:在兩人所在的交誼廳位置掛特效(里程碑優先,其次依互動基調),並讓兩人走到一起演(§10-6)
       const at = A.targetTile ?? B.targetTile;
       if (at) {
-        if (res.milestone === "became_couple") spawnFx("hearts", at.c, at.r, 15000);
-        else if (res.milestone === "broke_up") spawnFx("heartbreak", at.c, at.r, 15000);
-        else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
-        else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
+        let dur = 8000;
+        if (res.milestone === "became_couple") { spawnFx("hearts", at.c, at.r, 15000); dur = 15000; }
+        else if (res.milestone === "broke_up") { spawnFx("heartbreak", at.c, at.r, 15000); dur = 15000; }
+        else if (res.tone === "conflict") { spawnFx("anger", at.c, at.r, 10000); dur = 10000; }
+        else if (res.tone === "romantic") { spawnFx("hearts", at.c, at.r, 10000); dur = 10000; }
         else spawnFx("chat", at.c, at.r, 8000);
+        startPairSession(A.tenant.id, B.tenant.id, at, "pair", dur);
       }
       if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
       if (res.milestone === "broke_up") {

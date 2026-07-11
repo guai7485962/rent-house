@@ -7,6 +7,7 @@
  */
 import { TILE } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
+import { sessionFor } from "./pairSession";
 import { state } from "../store";
 import type { TenantVisualState } from "../types";
 
@@ -55,8 +56,10 @@ export function createAgents(): Agent[] {
 export function tickAgents(agents: Agent[], dt: number) {
   for (const a of agents) {
     const rt = state.runtimes[a.tenantId];
-    const target = rt?.targetTile ?? null;
-    a.hidden = !rt || rt.tenant.visualState === "away" || !target;
+    // 互動 session(§10-6)覆寫走位:走到互動錨點;🔞 遮蔽式 pose 直接隱藏 sprite
+    const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId) : null;
+    const target = ses?.tile ?? rt?.targetTile ?? null;
+    a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
     a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {
       a.moving = false;

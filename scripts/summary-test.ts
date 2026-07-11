@@ -24,6 +24,8 @@ const callTimes: number[] = [];
 };
 
 const { state, fastForward } = await import("../src/store");
+const { diaryTiming } = await import("../src/sim/narration");
+diaryTiming.gapMs = 4000; // 測試用:縮短錯開間隔(正式版 25s),節流斷言(≥3.5s)照驗
 
 let pass = 0;
 let fail = 0;

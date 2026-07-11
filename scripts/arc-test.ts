@@ -35,6 +35,8 @@ let scriptedArcUpdate: unknown = null;
 };
 
 const { state, fastForward, decide, exportSave, initGame, stopGame } = await import("../src/store");
+const { diaryTiming } = await import("../src/sim/narration");
+diaryTiming.gapMs = 4000; // 測試用:縮短錯開間隔(正式版 25s)
 const { sanitizeArcUpdate } = await import("../src/sim/arcs");
 const { sanitizeAiEvent } = await import("../src/sim/events");
 const { addFlag } = await import("../src/sim/gameState");

@@ -301,7 +301,8 @@ function onRoomTouchStart(e: TouchEvent) {
 function onRoomTouchEnd(e: TouchEvent) {
   const dx = e.changedTouches[0].clientX - swipeX;
   const dy = e.changedTouches[0].clientY - swipeY;
-  if (dx < -70 && Math.abs(dy) < 50) view.value = roomFrom.value;
+  // 明顯的水平滑動(左或右皆可,iOS 習慣右滑返回)且水平為主 → 退出房間
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.4) view.value = roomFrom.value;
 }
 
 function switchTenant(id: string) {

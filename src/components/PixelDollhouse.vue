@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 房間細看(工作項 9 重畫):不再用獨立的舊 3/4 場景,而是「跟著租客的實景鏡頭」——
- * 直接渲染樓層實景(與 FloorMap 同一套 composeFloor:真實家具擺設、部件化外觀、
- * 互動/事件特效、日夜色調),裁切租客所在位置放大 3 倍。租客走到交誼廳/浴室,鏡頭跟過去;
- * 外出時鏡頭停在他的房間。
+ * 房間細看(工作項 9 重做):「跟著租客的實景鏡頭」。
+ * 直接把可見 canvas 以 scale+translate 對準相機窗格,呼叫同一套 composeFloor
+ * (真實家具擺設、部件化外觀、互動/事件特效、日夜色調)——沒有離屏畫布、沒有 drawImage 裁切,
+ * 也沒有 aspect-ratio 撐高:canvas 自帶尺寸、CSS height:auto,和樓層地圖一樣穩。
+ * 租客走到交誼廳/浴室,鏡頭跟過去;外出時鏡頭停在他的房間。
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import type { TenantVisualState } from "../types";
@@ -19,7 +20,7 @@ const props = defineProps<{
   roomNo: string;
 }>();
 
-// 相機視窗:8×7 格,放大 3 倍(手機面板寬度下每格 48px,看得清部件外觀)
+// 相機視窗:8×7 格,放大 3 倍(canvas 自帶 384×336,CSS 再等比縮到面板寬)
 const VIEW_W = 8 * TILE;
 const VIEW_H = 7 * TILE;
 const SCALE = 3;
@@ -56,10 +57,6 @@ const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
 let raf = 0;
 let last = 0;
-// 離屏:整張樓層先畫好,再裁鏡頭範圍放大(imageSmoothing 關 = 保持像素感)
-const off = document.createElement("canvas");
-off.width = FLOOR_W;
-off.height = FLOOR_H;
 let camX = -1; // 相機左上(px);-1 = 尚未定位,首幀直接跳到位
 let camY = -1;
 
@@ -83,9 +80,6 @@ function loop(t: number) {
 
     const el = canvas.value;
     if (el) {
-      const offCtx = off.getContext("2d")!;
-      composeFloor(offCtx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours());
-
       // 鏡頭緩動跟隨(首幀直接就位)
       const tgt = cameraTarget();
       const wantX = clampCam(tgt.x - VIEW_W / 2, FLOOR_W - VIEW_W);
@@ -100,8 +94,10 @@ function loop(t: number) {
 
       const ctx = el.getContext("2d")!;
       ctx.imageSmoothingEnabled = false;
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-      ctx.drawImage(off, Math.round(camX), Math.round(camY), VIEW_W, VIEW_H, 0, 0, CANVAS_W, CANVAS_H);
+      // 把整張樓層以 3 倍縮放、平移到相機角落畫進來;canvas 只露出相機窗格
+      ctx.setTransform(SCALE, 0, 0, SCALE, -Math.round(camX * SCALE), -Math.round(camY * SCALE));
+      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours());
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
   } finally {
     // 單幀出錯也不讓渲染迴圈死掉(否則房間圖會永久消失/停格)
@@ -135,15 +131,12 @@ onUnmounted(() => cancelAnimationFrame(raf));
   border: 1px solid var(--line);
   background: #241f33;
   line-height: 0;
-  /* 由容器鎖定長寬比:即使 canvas 出狀況也保留完整框(不會縮成一條線) */
-  aspect-ratio: 384 / 336;
 }
 
 canvas {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto; /* canvas 自帶 384×336,等比縮放,絕不塌成一條線 */
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

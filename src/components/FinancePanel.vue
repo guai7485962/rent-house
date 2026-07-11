@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { state, type TxnCategory } from "../store";
+import { netWorth, monthlyFlow, monthReport } from "../sim/finance";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -23,6 +24,11 @@ function window(nDays: number) {
 }
 const today = computed(() => window(1));
 const week = computed(() => window(7));
+
+// 月報表 + 資產淨值(§7-1:投資的成長曲線)
+const worth = computed(() => netWorth());
+const flow = computed(() => monthlyFlow());
+const month = computed(() => monthReport());
 
 /** 近 7 遊戲日,每日淨額(長條圖用;由舊到新) */
 const dailyBars = computed(() => {
@@ -65,6 +71,23 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
       <div class="balance">
         <span class="lbl">目前餘額</span>
         <span class="amt">${{ state.money.toLocaleString() }}</span>
+      </div>
+
+      <!-- 資產淨值 + 月報表(§7-1:投資的成長曲線) -->
+      <div class="worth">
+        <div class="worth-head">
+          <span class="lbl">🏦 資產淨值</span>
+          <b class="worth-total">${{ worth.total.toLocaleString() }}</b>
+        </div>
+        <div class="worth-parts">
+          <span>現金 ${{ worth.cash.toLocaleString() }}</span>
+          <span>家具 ${{ worth.furniture.toLocaleString() }}<i>(轉售值)</i></span>
+          <span v-if="worth.upgrades">改建 ${{ worth.upgrades.toLocaleString() }}</span>
+        </div>
+        <div class="worth-flow">
+          <span>{{ month.month }} 月實際損益 <b :class="month.net >= 0 ? 'pos' : 'neg'">{{ money(month.net) }}</b></span>
+          <span>月租金流 <b :class="flow.net >= 0 ? 'pos' : 'neg'">{{ money(flow.net) }}</b><i>(租金 ${{ flow.rentIn.toLocaleString() }} − 管理費 ${{ flow.upkeepOut.toLocaleString() }})</i></span>
+        </div>
       </div>
 
       <div class="io">
@@ -118,6 +141,15 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 .balance { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 6px; }
 .balance .lbl { font-size: 12px; color: var(--text-dim); }
 .balance .amt { font-size: 26px; font-weight: 800; color: var(--accent); }
+
+.worth { margin: 0 16px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.worth-head { display: flex; align-items: baseline; justify-content: space-between; }
+.worth-head .lbl { font-size: 12px; color: var(--text-dim); }
+.worth-total { font-size: 18px; font-weight: 800; color: var(--accent-2); }
+.worth-parts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--text-dim); }
+.worth-parts i, .worth-flow i { font-style: normal; opacity: 0.75; font-size: 10px; }
+.worth-flow { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--text-dim); border-top: 1px solid var(--line); padding-top: 6px; }
+.worth-flow b { font-weight: 700; margin-left: 2px; }
 
 .io { display: flex; gap: 10px; padding: 6px 16px 10px; }
 .io-cell { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; }

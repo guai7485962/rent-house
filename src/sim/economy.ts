@@ -10,9 +10,9 @@ import { state, clamp, fmt, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_C
 import { applyHour } from "./tick";
 import { save } from "./persistence";
 
-// 每日管理費(讓「支出」有意義;小額、可調)
-const BASE_UPKEEP = 300;
-const PER_ROOM_UPKEEP = 150;
+// 每日管理費(讓「支出」有意義;小額、可調;finance.ts 月租金流也引用)
+export const BASE_UPKEEP = 300;
+export const PER_ROOM_UPKEEP = 150;
 
 /** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
 export function addMoney(amount: number, label: string, category: TxnCategory) {

@@ -106,6 +106,12 @@ export function compatibility(a: Tenant, b: Tenant): number {
   if (noisyA && noisyB) c += 1;
   if (hasA("gamer") && hasB("gamer")) c += 2; // 電競同好
 
+  // 角色庫擴充(§9-2)的新標籤
+  if (hasA("fitness") && hasB("fitness")) c += 2; // 運動同好,相約晨跑
+  if (hasA("caring") || hasB("caring")) c += 1; // 會照顧人的,跟誰都處得來
+  if (hasA("foodie") || hasB("foodie")) c += 1; // 會分食物的,人緣好
+  if ((hasA("busybody") && (quietB || nightB)) || (hasB("busybody") && (quietA || nightA))) c -= 2; // 愛管閒事 vs 想清靜/在補眠的
+
   return clamp(c, -5, 5);
 }
 

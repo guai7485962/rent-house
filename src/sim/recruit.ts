@@ -16,7 +16,7 @@ interface Archetype {
   monthlyRent: number;
 }
 
-const ARCHETYPES: Archetype[] = [
+export const ARCHETYPES: Archetype[] = [
   {
     key: "office",
     occupation: "上班族",
@@ -61,9 +61,134 @@ const ARCHETYPES: Archetype[] = [
     preferences: { noise: 8, style: 4 },
     monthlyRent: 13000,
   },
+  {
+    key: "night_shift",
+    occupation: "夜班護理師",
+    bio: "醫院夜班的護理師,日夜輪替,最需要一個白天安靜好睡的房間。",
+    coreTags: [
+      { id: "late_return", label: "[日夜輪班]", behaviorHint: "晚上出門上班,清晨回家補眠。" },
+      { id: "caring", label: "[溫柔照護]", behaviorHint: "習慣照顧別人,鄰居生病第一個發現。" },
+    ],
+    preferences: { soundproof: 7, cozy: 5 },
+    monthlyRent: 14000,
+  },
+  {
+    key: "night_shift",
+    occupation: "大樓保全",
+    bio: "夜班保全,話不多但可靠,整棟樓最早發現異狀的人。",
+    coreTags: [
+      { id: "late_return", label: "[夜班駐守]", behaviorHint: "夜裡上班,白天沉睡。" },
+      { id: "punctual", label: "[一絲不苟]", behaviorHint: "交租、巡邏、作息都分秒不差。" },
+    ],
+    preferences: { soundproof: 6, storage: 3 },
+    monthlyRent: 10000,
+  },
+  {
+    key: "night_shift",
+    occupation: "調酒師",
+    bio: "酒吧的調酒師,聽過上千個客人的心事,深夜才回家。",
+    coreTags: [
+      { id: "late_return", label: "[深夜歸人]", behaviorHint: "凌晨帶著酒氣與故事回家。" },
+      { id: "caring", label: "[善於傾聽]", behaviorHint: "誰有煩惱都想找他聊。" },
+    ],
+    preferences: { style: 6, cozy: 4 },
+    monthlyRent: 13000,
+  },
+  {
+    key: "early_riser",
+    occupation: "甜點師",
+    bio: "凌晨四點就出門備料的甜點師,回家時常帶著沒賣完的蛋糕。",
+    coreTags: [
+      { id: "early_bird", label: "[凌晨備料]", behaviorHint: "天沒亮就出門,晚上九點前睡死。" },
+      { id: "foodie", label: "[烘焙香氣]", behaviorHint: "房間總是飄著奶油香,偶爾分鄰居甜點。" },
+    ],
+    preferences: { storage: 6, cozy: 5 },
+    monthlyRent: 12000,
+  },
+  {
+    key: "early_riser",
+    occupation: "咖啡師",
+    bio: "自家烘豆的咖啡師,對睡眠品質和豆子一樣講究。",
+    coreTags: [
+      { id: "early_bird", label: "[清晨開店]", behaviorHint: "五點半出門開店,作息如鐘錶。" },
+      { id: "punctual", label: "[守時成癮]", behaviorHint: "遲到會焦慮,交租永遠提前。" },
+    ],
+    preferences: { style: 5, cozy: 4 },
+    monthlyRent: 11000,
+  },
+  {
+    key: "early_riser",
+    occupation: "健身教練",
+    bio: "清晨帶課的健身教練,把自律當信仰,冰箱塞滿雞胸肉。",
+    coreTags: [
+      { id: "early_bird", label: "[晨型人]", behaviorHint: "五點起床,晨跑後才出門帶課。" },
+      { id: "fitness", label: "[健身狂]", behaviorHint: "在家也要拉彈力帶,體態極好。" },
+    ],
+    preferences: { cozy: 3, storage: 5, noise: 3 },
+    monthlyRent: 13000,
+  },
+  {
+    key: "homebody",
+    occupation: "退休教師",
+    bio: "剛退休的國文老師,白天在家泡茶讀書,對整棟樓的動靜瞭若指掌。",
+    coreTags: [
+      { id: "early_bird", label: "[早睡早起]", behaviorHint: "晚上十點就寢,清晨聽廣播。" },
+      { id: "busybody", label: "[愛管閒事]", behaviorHint: "鄰居的大小事都想關心一下。" },
+    ],
+    preferences: { cozy: 7, storage: 4 },
+    monthlyRent: 12000,
+  },
+  {
+    key: "homebody",
+    occupation: "瑜伽老師",
+    bio: "在家開線上課的瑜伽老師,生活極簡,講究安靜與氣味。",
+    coreTags: [
+      { id: "sound_sensitive", label: "[靜謐主義]", behaviorHint: "對噪音極敏感,house 要靜。" },
+      { id: "fitness", label: "[身心平衡]", behaviorHint: "清晨冥想、傍晚拉筋,情緒穩定。" },
+    ],
+    preferences: { cozy: 6, soundproof: 5 },
+    monthlyRent: 12000,
+  },
+  {
+    key: "night_creator",
+    occupation: "漫畫家",
+    bio: "連載中的漫畫家,截稿前一週會人間蒸發,只剩房裡的燈還亮著。",
+    coreTags: [
+      { id: "night_owl", label: "[截稿地獄]", behaviorHint: "深夜趕稿,月底特別憔悴。" },
+      { id: "wfh", label: "[足不出戶]", behaviorHint: "可以一週不出門,外送是生命線。" },
+    ],
+    preferences: { tech: 5, soundproof: 5 },
+    monthlyRent: 12000,
+  },
+  {
+    key: "night_creator",
+    occupation: "研究生",
+    bio: "寫論文寫到懷疑人生的研究生,咖啡因是血液的一部分。",
+    coreTags: [
+      { id: "night_owl", label: "[爆肝論文]", behaviorHint: "凌晨三點還在改第七版。" },
+      { id: "wfh", label: "[宅居寫作]", behaviorHint: "除了進實驗室,其他時間都窩在房裡。" },
+    ],
+    preferences: { tech: 4, storage: 4, soundproof: 4 },
+    monthlyRent: 9000,
+  },
+  {
+    key: "night_creator",
+    occupation: "推理小說家",
+    bio: "小有名氣的推理小說家,靈感只在深夜出現,對細節吹毛求疵。",
+    coreTags: [
+      { id: "night_owl", label: "[靈感夜行]", behaviorHint: "夜深人靜才動筆,白天像貓一樣睡。" },
+      { id: "perfectionist", label: "[吹毛求疵]", behaviorHint: "書桌上的東西有固定的角度。" },
+    ],
+    preferences: { style: 5, soundproof: 6 },
+    monthlyRent: 15000,
+  },
 ];
 
-const NAMES = ["王大明", "李佳蓉", "張偉", "陳思妤", "林俊傑", "黃美玲", "吳承恩", "周曉涵"];
+const NAMES = [
+  "王大明", "李佳蓉", "張偉", "陳思妤", "林俊傑", "黃美玲", "吳承恩", "周曉涵",
+  "蔡明軒", "許雅婷", "鄭浩宇", "謝欣妤", "洪偉哲", "郭品妍", "曾冠廷", "賴思穎",
+  "潘建宏", "簡莉雯", "邱柏翰", "溫若晴",
+];
 
 export interface Applicant {
   id: string;

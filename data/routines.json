@@ -72,6 +72,66 @@
       { "hours": "20-21", "role": "desk", "state": "working_at_desk" },
       { "hours": "22", "role": "kitchen", "state": "eating" },
       { "hours": "23", "role": "desk", "state": "working_at_desk" }
+    ],
+    "night_shift": [
+      { "hours": "0-4", "role": "out", "state": "away" },
+      { "hours": "5", "role": "kitchen", "state": "eating" },
+      { "hours": "6", "role": "bathroom", "state": "showering" },
+      { "hours": "7-14", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "15", "role": "kitchen", "state": "eating" },
+      { "hours": "16", "role": "sofa", "state": "reading" },
+      { "hours": "17", "role": "tv", "state": "watching_tv" },
+      { "hours": "18", "role": "kitchen", "state": "cooking" },
+      { "hours": "19", "role": "kitchen", "state": "eating" },
+      { "hours": "20", "role": "bathroom", "state": "showering" },
+      { "hours": "21-23", "role": "out", "state": "away" }
+    ],
+    "early_riser": [
+      { "hours": "0-3", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "4", "role": "bathroom", "state": "showering" },
+      { "hours": "5", "role": "kitchen", "state": "eating" },
+      { "hours": "6-13", "role": "out", "state": "away" },
+      { "hours": "14", "role": "kitchen", "state": "eating" },
+      { "hours": "15", "role": "sofa", "state": "reading" },
+      { "hours": "16", "role": "tv", "state": "watching_tv" },
+      { "hours": "17", "role": "kitchen", "state": "cooking" },
+      { "hours": "18", "role": "kitchen", "state": "eating" },
+      { "hours": "19", "role": "sofa", "state": "idle" },
+      { "hours": "20", "role": "bathroom", "state": "showering" },
+      { "hours": "21-23", "role": "bed", "state": "sleeping_on_bed" }
+    ],
+    "homebody": [
+      { "hours": "0-5", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "6", "role": "bathroom", "state": "showering" },
+      { "hours": "7", "role": "kitchen", "state": "eating" },
+      { "hours": "8", "role": "sofa", "state": "reading" },
+      { "hours": "9", "role": "kitchen", "state": "cleaning" },
+      { "hours": "10", "role": "sofa", "state": "reading" },
+      { "hours": "11", "role": "kitchen", "state": "cooking" },
+      { "hours": "12", "role": "kitchen", "state": "eating" },
+      { "hours": "13-14", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "15", "role": "tv", "state": "watching_tv" },
+      { "hours": "16-17", "role": "out", "state": "away" },
+      { "hours": "18", "role": "kitchen", "state": "cooking" },
+      { "hours": "19", "role": "kitchen", "state": "eating" },
+      { "hours": "20", "role": "tv", "state": "watching_tv" },
+      { "hours": "21", "role": "sofa", "state": "reading" },
+      { "hours": "22", "role": "bathroom", "state": "showering" },
+      { "hours": "23", "role": "bed", "state": "sleeping_on_bed" }
+    ],
+    "night_creator": [
+      { "hours": "0-3", "role": "desk", "state": "working_at_desk" },
+      { "hours": "4", "role": "kitchen", "state": "eating" },
+      { "hours": "5-11", "role": "bed", "state": "sleeping_on_bed" },
+      { "hours": "12", "role": "bathroom", "state": "showering" },
+      { "hours": "13", "role": "kitchen", "state": "eating" },
+      { "hours": "14-15", "role": "desk", "state": "working_at_desk" },
+      { "hours": "16", "role": "sofa", "state": "reading" },
+      { "hours": "17", "role": "kitchen", "state": "cooking" },
+      { "hours": "18", "role": "kitchen", "state": "eating" },
+      { "hours": "19-20", "role": "desk", "state": "working_at_desk" },
+      { "hours": "21", "role": "tv", "state": "watching_tv" },
+      { "hours": "22-23", "role": "desk", "state": "working_at_desk" }
     ]
   }
 }

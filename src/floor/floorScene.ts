@@ -151,6 +151,24 @@ function drawFx(ctx: Ctx, f: Fx, frame: number) {
     ctx.fillStyle = "#6a6456";
     const dots = frame % 2 ? 3 : 2;
     for (let i = 0; i < dots; i++) ctx.fillRect(x + 5 + i * 2, y - 8, 1, 1);
+  } else if (f.kind === "steam") {
+    // 霧氣(遮蔽式演出:一起洗澡等)
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = "#dfe9ee";
+    ctx.fillRect(x + 1, y - 6 - bob, 3, 3);
+    ctx.fillRect(x + 7, y - 11 - ((frame + 1) % 3), 3, 3);
+    ctx.fillRect(x + 12, y - 5 - ((frame + 2) % 3), 3, 3);
+    ctx.fillRect(x + 5, y - 15 - bob, 2, 2);
+    ctx.restore();
+  } else if (f.kind === "lights") {
+    // 關燈(遮蔽式演出:房間局部變暗 + 一顆小愛心)
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = "#0a0912";
+    ctx.fillRect(x - TILE, y - TILE, TILE * 3, TILE * 2.5);
+    ctx.restore();
+    pxPat(ctx, PAT_HEART, x + 5, y - 4 - bob, "#ff9ec2", 0.85);
   }
 }
 

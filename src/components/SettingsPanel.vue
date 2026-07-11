@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { exportSave, importSave, clearSave } from "../store";
+import { state, exportSave, importSave, clearSave } from "../store";
+
+function toggleAdult() {
+  state.adultMode = !state.adultMode;
+}
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -80,6 +84,17 @@ function onImport() {
         </section>
 
         <section class="sec">
+          <div class="sec-ttl">🔞 成人內容(18+)</div>
+          <p class="desc">
+            開啟後,<b>成年情侶</b>之間會出現含蓄的親密互動(一起洗澡、共度夜晚等,畫面僅以霧氣/關燈暗示)。
+            未成年角色無論此開關狀態,都不會有任何戀愛與親密內容。
+          </p>
+          <button class="btn full" :class="{ adulton: state.adultMode }" @click="toggleAdult">
+            {{ state.adultMode ? "✅ 已開啟(點擊關閉)" : "🔒 已關閉(我已滿 18 歲,點擊開啟)" }}
+          </button>
+        </section>
+
+        <section class="sec">
           <div class="sec-ttl">危險區</div>
           <p class="desc">刪除存檔、回到全新開局:家具、租客、關係、帳目全部歸零。</p>
           <button class="btn danger full" :class="{ armed: confirmReset }" @click="onReset">
@@ -110,6 +125,7 @@ function onImport() {
 .btn:hover { border-color: var(--accent-2); }
 .btn.full { width: 100%; }
 .btn.danger { border-color: var(--bad); color: #ff9aa8; }
+.btn.adulton { border-color: #d9548a; color: #f0a8c6; background: rgba(217,84,138,0.12); }
 .btn.danger.armed { background: rgba(232,101,122,0.2); font-weight: 700; }
 .ta { width: 100%; min-height: 90px; background: #0d0c12; border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 11px; padding: 8px; resize: vertical; font-family: monospace; }
 .note { font-size: 12.5px; color: var(--accent); line-height: 1.6; text-align: center; }

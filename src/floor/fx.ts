@@ -5,7 +5,7 @@
  * 純資料模組,繪製在 floorScene.drawFx。
  */
 
-export type FxKind = "hearts" | "heartbreak" | "anger" | "chat";
+export type FxKind = "hearts" | "heartbreak" | "anger" | "chat" | "steam" | "lights";
 
 export interface Fx {
   kind: FxKind;

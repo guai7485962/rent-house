@@ -31,6 +31,7 @@ import { collectRent } from "./economy";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { produceDailyDiaries } from "./narration";
 import { spawnFx } from "../floor/fx";
+import { interactionsPass } from "./interactions";
 import { save } from "./persistence";
 
 export const homeTile = (tenantId: string): Tile => {
@@ -293,6 +294,7 @@ export function hourlyTick(live = false) {
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
   socialPass(); // 鄰居在交誼廳相遇 → 聊天/衝突/戀愛
+  interactionsPass(); // 同房的情侶/同居互動(§10-1 目錄 + canInteract 把關)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     collectRent();

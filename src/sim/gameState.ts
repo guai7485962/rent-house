@@ -135,6 +135,10 @@ export const state = reactive({
   } as Record<string, string>,
   /** 同居者:租客 id → 同居的房間 id(住在伴侶房裡、不佔 occupancy、不另收租) */
   cohabits: {} as Record<string, string>,
+  /** 🔞 成人內容開關(預設關;僅影響「成年情侶」的含蓄親密互動,入存檔) */
+  adultMode: false,
+  /** 互動冷卻:`pairKey|defId` → 上次觸發的 gameMs(入存檔,避免重載後洗冷卻) */
+  interactionCooldowns: {} as Record<string, number>,
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {

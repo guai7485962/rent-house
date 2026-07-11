@@ -1,0 +1,226 @@
+/**
+ * 互動框架(設計檢討 §10-1 + §10-5):資料驅動的雙人互動目錄 + 單一資格把關 canInteract()。
+ *
+ * 本階段涵蓋「同房互動」——情侶/同居的兩人同處一室時的互動(交誼廳的聊天/衝突仍由 social.encounter 處理,
+ * §10-2 目錄擴充時再統一)。三道硬規則(§10-0):
+ *   1. adult 互動 ⇒ 🔞 成人模式開啟(預設關)
+ *   2. adult 互動 ⇒ 雙方 isAdult(canRomance 已含此檢查;undefined = 內建成年角色)
+ *   3. privacy 互動 ⇒ 房內無第三人
+ * 所有資格檢查收斂在 canInteract(),任何入口都不得繞過。
+ * 🔞 內容一律遮蔽式:文字含蓄、畫面只有霧氣(steam)/關燈(lights)演出,無露骨圖像。
+ */
+import type { Tenant } from "../types";
+import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
+import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
+import { roomRect } from "./placements";
+import { spawnFx, type FxKind } from "../floor/fx";
+import { MS_PER_GAME_HOUR } from "./clock";
+
+export type InteractionTier = "close" | "couple" | "cohabit";
+
+export interface InteractionDef {
+  id: string;
+  /** 關係門檻:close=好友以上(50+)、couple=情侶、cohabit=同居中的情侶 */
+  tier: InteractionTier;
+  /** true = 需 🔞 成人模式 + 雙方成年(遮蔽式演出) */
+  adult?: boolean;
+  /** true = 需房內無第三人 */
+  privacy?: boolean;
+  /** 觸發時段(含首尾;首>尾表示跨夜,如 [23,1]) */
+  timeWindow?: [number, number];
+  weight: number;
+  cooldownHours: number;
+  /** 通過所有條件後,每小時實際觸發的機率 */
+  chance: number;
+  /** 雙方日誌文字({o}=對方名字);隨機挑一句 */
+  lines: string[];
+  memoryLabel?: string;
+  memoryHint?: string;
+  fx: FxKind;
+  effects: { rel: number; mood?: number; stress?: number; energy?: number };
+}
+
+export const INTERACTIONS: InteractionDef[] = [
+  {
+    id: "cuddle_tv",
+    tier: "couple",
+    timeWindow: [19, 22],
+    weight: 3,
+    cooldownHours: 10,
+    chance: 0.4,
+    fx: "hearts",
+    lines: ["和{o}窩在房裡靠著看劇,誰也沒說話,但很安心。", "和{o}擠在一起追劇,搶著吐槽劇情。"],
+    effects: { rel: 2, mood: 5, stress: -4 },
+  },
+  {
+    id: "midnight_snack",
+    tier: "couple",
+    timeWindow: [22, 23],
+    weight: 2,
+    cooldownHours: 12,
+    chance: 0.3,
+    fx: "chat",
+    lines: ["和{o}分食深夜的泡麵,湯都涼了還在聊。"],
+    effects: { rel: 2, mood: 4 },
+  },
+  {
+    id: "lazy_morning",
+    tier: "cohabit",
+    timeWindow: [7, 9],
+    weight: 2,
+    cooldownHours: 20,
+    chance: 0.3,
+    fx: "hearts",
+    lines: ["和{o}賴在床上不肯起來,鬧鐘響了三次都當沒聽到。"],
+    effects: { rel: 1, mood: 4, energy: 3, stress: -3 },
+  },
+  {
+    id: "cook_dinner",
+    tier: "cohabit",
+    timeWindow: [18, 19],
+    weight: 2,
+    cooldownHours: 16,
+    chance: 0.3,
+    fx: "chat",
+    lines: ["和{o}擠在小流理台前做晚餐,差點打翻鍋子,笑成一團。"],
+    effects: { rel: 2, mood: 4 },
+  },
+  // ——— 🔞 成人模式(遮蔽式:文字含蓄、畫面只有霧氣/關燈)———
+  {
+    id: "bath_together",
+    tier: "couple",
+    adult: true,
+    privacy: true,
+    timeWindow: [21, 23],
+    weight: 2,
+    cooldownHours: 40,
+    chance: 0.3,
+    fx: "steam",
+    lines: ["和{o}一起進了浴室,水聲響了很久很久…"],
+    memoryLabel: "[臉紅的祕密]",
+    memoryHint: "和戀人共浴的悄悄話,兩人都不會說出去。",
+    effects: { rel: 3, mood: 8, stress: -6 },
+  },
+  {
+    id: "night_intimacy",
+    tier: "couple",
+    adult: true,
+    privacy: true,
+    timeWindow: [23, 1],
+    weight: 3,
+    cooldownHours: 36,
+    chance: 0.35,
+    fx: "lights",
+    lines: ["房裡的燈早早就關了,門把上掛著「請勿打擾」…"],
+    memoryLabel: "[甜蜜的夜晚]",
+    memoryHint: "昨晚之後,看對方的眼神都是軟的。",
+    effects: { rel: 4, mood: 10, stress: -8, energy: -4 },
+  },
+];
+
+export interface InteractCtx {
+  hour: number;
+  /** 房內是否有第三人 */
+  thirdPresent: boolean;
+  /** 🔞 成人模式是否開啟 */
+  adultMode: boolean;
+  /** 這對是否同居中 */
+  cohabiting: boolean;
+}
+
+const inWindow = (hour: number, w?: [number, number]): boolean => {
+  if (!w) return true;
+  const [s, e] = w;
+  return s <= e ? hour >= s && hour <= e : hour >= s || hour <= e; // 跨夜
+};
+
+/** 唯一的互動資格把關:關係門檻 → 成人(開關+雙方成年+可戀愛)→ 私密 → 時段 */
+export function canInteract(def: InteractionDef, a: Tenant, b: Tenant, ctx: InteractCtx): boolean {
+  const rel = getRel(a.id, b.id);
+  if (def.tier === "close" && !(rel && (rel.value >= 50 || rel.romantic))) return false;
+  if (def.tier === "couple" && !rel?.romantic) return false;
+  if (def.tier === "cohabit" && !(rel?.romantic && ctx.cohabiting)) return false;
+  if (def.adult) {
+    if (!ctx.adultMode) return false;
+    if (!(a.isAdult ?? true) || !(b.isAdult ?? true)) return false;
+    if (!canRomance(a, b)) return false; // 成年 + 取向雙重把關
+  }
+  if (def.privacy && ctx.thirdPresent) return false;
+  if (!inWindow(ctx.hour, def.timeWindow)) return false;
+  return true;
+}
+
+const cdKey = (aId: string, bId: string, defId: string) => `${pairKey(aId, bId)}|${defId}`;
+
+function offCooldown(aId: string, bId: string, def: InteractionDef): boolean {
+  const last = state.interactionCooldowns[cdKey(aId, bId, def.id)];
+  return last == null || state.gameMs - last >= def.cooldownHours * MS_PER_GAME_HOUR;
+}
+
+function applyPairEffect(rt: TenantRuntime, eff: InteractionDef["effects"]) {
+  applySocialEffect(rt, { mood: eff.mood, stress: eff.stress });
+  if (eff.energy) rt.tenant.stats.energy = clamp(rt.tenant.stats.energy + eff.energy, 0, 100);
+}
+
+/** 每小時:同房的兩人(情侶/同居)依目錄互動(由 tick 呼叫) */
+export function interactionsPass() {
+  // 房間 → 在場租客(在這間房、沒外出、沒待決事件)
+  const byRoom = new Map<string, TenantRuntime[]>();
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.tenant.visualState === "away" || rt.pendingEvent) continue;
+    const roomId = roomOfTenant(rt.tenant.id);
+    if (!roomId) continue;
+    if (!byRoom.has(roomId)) byRoom.set(roomId, []);
+    byRoom.get(roomId)!.push(rt);
+  }
+
+  const hour = new Date(state.gameMs).getHours();
+  for (const [roomId, present] of byRoom) {
+    if (present.length < 2) continue;
+    for (let i = 0; i < present.length; i++) {
+      for (let j = i + 1; j < present.length; j++) {
+        const A = present[i];
+        const B = present[j];
+        const ctx: InteractCtx = {
+          hour,
+          thirdPresent: present.length > 2,
+          adultMode: state.adultMode,
+          cohabiting: state.cohabits[A.tenant.id] === roomId || state.cohabits[B.tenant.id] === roomId,
+        };
+        const eligible = INTERACTIONS.filter(
+          (def) => canInteract(def, A.tenant, B.tenant, ctx) && offCooldown(A.tenant.id, B.tenant.id, def),
+        );
+        if (eligible.length === 0) continue;
+        // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
+        const total = eligible.reduce((s, d) => s + d.weight, 0);
+        let roll = Math.random() * total;
+        let def = eligible[0];
+        for (const d of eligible) {
+          roll -= d.weight;
+          if (roll <= 0) {
+            def = d;
+            break;
+          }
+        }
+        if (Math.random() > def.chance) continue;
+
+        // 觸發:雙方日誌 + 數值 + 關係 + 記憶 + 房間演出 + 冷卻
+        const line = def.lines[Math.floor(Math.random() * def.lines.length)];
+        pushSocialLog(A, line.replace(/\{o\}/g, B.tenant.name), "notable");
+        pushSocialLog(B, line.replace(/\{o\}/g, A.tenant.name), "notable");
+        applyPairEffect(A, def.effects);
+        applyPairEffect(B, def.effects);
+        if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);
+        if (def.memoryLabel) {
+          pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
+          pushMemory(B.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
+        }
+        const rect = roomRect(roomId);
+        if (rect) {
+          spawnFx(def.fx, Math.floor((rect.c0 + rect.c1) / 2), Math.floor((rect.r0 + rect.r1) / 2), 15000);
+        }
+        state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
+import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
 
@@ -25,26 +26,46 @@ let agents: Agent[] = [];
 let raf = 0;
 let last = 0;
 
+/** 跟著人走的名字標籤(誰是誰一眼可辨);節流更新 + CSS 過渡補間 */
+const agentTags = ref<{ id: string; name: string; left: string; top: string; color: string }[]>([]);
+let lastTagMs = 0;
+
 function loop(t: number) {
-  const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
-  last = t;
-  // 有新租客入住(runtime 數量改變)→ 重建 agents
-  if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
-  tickAgents(agents, dt);
-  const el = canvas.value;
-  if (el) {
-    const ctx = el.getContext("2d")!;
-    // 設備故障(§7-1)→ 房間中上方掛閃爍警示三角
-    const marks: FloorMark[] = [];
-    for (const roomId of Object.keys(state.breakdowns)) {
-      const rect = roomRect(roomId);
-      if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
+  try {
+    const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
+    last = t;
+    // 有新租客入住(runtime 數量改變)→ 重建 agents
+    if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
+    tickAgents(agents, dt);
+    const el = canvas.value;
+    if (el) {
+      const ctx = el.getContext("2d")!;
+      // 設備故障(§7-1)→ 房間中上方掛閃爍警示三角
+      const marks: FloorMark[] = [];
+      for (const roomId of Object.keys(state.breakdowns)) {
+        const rect = roomRect(roomId);
+        if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
+      }
+      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours());
+      const pv = props.preview;
+      if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
     }
-    composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours());
-    const pv = props.preview;
-    if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
+    if (t - lastTagMs > 150) {
+      lastTagMs = t;
+      agentTags.value = agents
+        .filter((a) => !a.hidden)
+        .map((a) => ({
+          id: a.tenantId,
+          name: state.runtimes[a.tenantId]?.tenant.name ?? "",
+          left: `${((a.px + TILE / 2) / FLOOR_W) * 100}%`,
+          top: `${((a.py - 8) / FLOOR_H) * 100}%`,
+          color: getTheme(a.tenantId).shirt,
+        }));
+    }
+  } finally {
+    // 單幀出錯也不讓渲染迴圈死掉(否則畫面會永久停格/消失)
+    raf = requestAnimationFrame(loop);
   }
-  raf = requestAnimationFrame(loop);
 }
 
 onMounted(() => {
@@ -119,6 +140,10 @@ function onClick(e: MouseEvent) {
     </button>
     <div class="lounge-tag">交誼廳</div>
     <div class="entrance-tag">🚪 大門</div>
+    <!-- 跟著人走的名字標籤 -->
+    <div v-for="tag in agentTags" :key="tag.id" class="agent-tag" :style="{ left: tag.left, top: tag.top, borderColor: tag.color }">
+      {{ tag.name }}
+    </div>
   </div>
 </template>
 
@@ -201,6 +226,22 @@ canvas {
 }
 @keyframes pulse {
   50% { transform: scale(1.25); }
+}
+
+.agent-tag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  transition: left 0.15s linear, top 0.15s linear;
+  pointer-events: none;
+  font-size: 9.5px;
+  line-height: 1.2;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(13, 12, 18, 0.72);
+  border: 1px solid;
+  color: #f2ecf7;
+  white-space: nowrap;
+  z-index: 2;
 }
 
 .lounge-tag {

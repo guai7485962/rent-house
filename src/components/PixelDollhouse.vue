@@ -75,34 +75,38 @@ function cameraTarget(): { x: number; y: number } {
 const clampCam = (v: number, max: number) => Math.min(Math.max(v, 0), max);
 
 function loop(t: number) {
-  const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
-  last = t;
-  if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
-  tickAgents(agents, dt);
+  try {
+    const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
+    last = t;
+    if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
+    tickAgents(agents, dt);
 
-  const el = canvas.value;
-  if (el) {
-    const offCtx = off.getContext("2d")!;
-    composeFloor(offCtx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours());
+    const el = canvas.value;
+    if (el) {
+      const offCtx = off.getContext("2d")!;
+      composeFloor(offCtx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours());
 
-    // 鏡頭緩動跟隨(首幀直接就位)
-    const tgt = cameraTarget();
-    const wantX = clampCam(tgt.x - VIEW_W / 2, FLOOR_W - VIEW_W);
-    const wantY = clampCam(tgt.y - VIEW_H / 2, FLOOR_H - VIEW_H);
-    if (camX < 0) {
-      camX = wantX;
-      camY = wantY;
-    } else {
-      camX += (wantX - camX) * Math.min(1, dt * 5);
-      camY += (wantY - camY) * Math.min(1, dt * 5);
+      // 鏡頭緩動跟隨(首幀直接就位)
+      const tgt = cameraTarget();
+      const wantX = clampCam(tgt.x - VIEW_W / 2, FLOOR_W - VIEW_W);
+      const wantY = clampCam(tgt.y - VIEW_H / 2, FLOOR_H - VIEW_H);
+      if (camX < 0) {
+        camX = wantX;
+        camY = wantY;
+      } else {
+        camX += (wantX - camX) * Math.min(1, dt * 5);
+        camY += (wantY - camY) * Math.min(1, dt * 5);
+      }
+
+      const ctx = el.getContext("2d")!;
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.drawImage(off, Math.round(camX), Math.round(camY), VIEW_W, VIEW_H, 0, 0, CANVAS_W, CANVAS_H);
     }
-
-    const ctx = el.getContext("2d")!;
-    ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-    ctx.drawImage(off, Math.round(camX), Math.round(camY), VIEW_W, VIEW_H, 0, 0, CANVAS_W, CANVAS_H);
+  } finally {
+    // 單幀出錯也不讓渲染迴圈死掉(否則房間圖會永久消失/停格)
+    raf = requestAnimationFrame(loop);
   }
-  raf = requestAnimationFrame(loop);
 }
 
 onMounted(() => {

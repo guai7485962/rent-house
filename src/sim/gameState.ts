@@ -15,7 +15,8 @@ import type { StoryArc } from "./arcs";
 import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
 import type { Tile } from "../floor/pathfind";
-import { setAppearance, hasFixedTheme, THEME_POOL_SIZE } from "../pixel/scene";
+import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
+import type { Appearance, HairStyle, AccessoryKind } from "../types";
 import { save } from "./persistence";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
@@ -163,6 +164,16 @@ export function roomOfTenant(tenantId: string): string | null {
 
 /** 依房間指派動態租客的外觀索引,確保同時在住者配色彼此不同(種子租客用專屬色不佔用) */
 export const ROOM_APPEARANCE: Record<string, number> = { r301: 0, r302: 1, r303: 2, r304: 3 };
+
+/** 種子租客的固定部件外觀(配色沿用其專屬 Theme,只加辨識度高的髮型/配件) */
+const SEED_APPEARANCES: Record<string, Appearance> = {
+  tenant_chen_engineer: { hairStyle: "spiky", hairColor: "#3a3346", shirt: "#5f86b0", pants: "#464b63", skin: "#f0c19a", accessory: "glasses" },
+  tenant_lin_asmr: { hairStyle: "long", hairColor: "#8a5540", shirt: "#df90ae", pants: "#6f5d80", skin: "#f4c9a6", accessory: "headphones" },
+};
+
+const HAIR_STYLES: HairStyle[] = ["short", "long", "ponytail", "spiky", "bob"];
+const ACCESSORIES: AccessoryKind[] = ["none", "glasses", "round_glasses", "cap", "bow", "headphones"];
+
 export function refreshAppearances() {
   const used = new Set<number>();
   for (const [roomId, tid] of Object.entries(state.occupancy)) {
@@ -180,7 +191,36 @@ export function refreshAppearances() {
     setAppearance(tid, idx);
     used.add(idx);
   }
+
+  // 種子租客補上固定部件外觀(舊存檔沒有 → 就地補齊;髮型/配件讓兩位主角一眼可辨)
+  for (const [tid, ap] of Object.entries(SEED_APPEARANCES)) {
+    const rt = state.runtimes[tid];
+    if (!rt) continue;
+    rt.tenant.appearance ??= { ...ap };
+    setCustomAppearance(tid, rt.tenant.appearance);
+  }
+
+  // 同住者「部件去重」:髮型/配件盡量彼此不同(配色已去重,輪廓也要能分)。
+  // 依房號序穩定迭代:先到先得,後來的撞款才換,避免每次刷新反覆換造型。
+  const residents = [...Object.entries(state.occupancy).sort(([a], [b]) => a.localeCompare(b)).map(([, tid]) => tid), ...Object.keys(state.cohabits).sort()];
+  const usedHair = new Set<HairStyle>();
+  const usedAcc = new Set<AccessoryKind>();
+  for (const tid of residents) {
+    const ap = state.runtimes[tid]?.tenant.appearance;
+    if (!ap) continue;
+    if (usedHair.has(ap.hairStyle)) {
+      const alt = HAIR_STYLES.find((h) => !usedHair.has(h));
+      if (alt) ap.hairStyle = alt;
+    }
+    usedHair.add(ap.hairStyle);
+    if (ap.accessory !== "none" && usedAcc.has(ap.accessory)) {
+      ap.accessory = ACCESSORIES.find((a) => a !== "none" && !usedAcc.has(a)) ?? "none";
+    }
+    if (ap.accessory !== "none") usedAcc.add(ap.accessory);
+    setCustomAppearance(tid, ap);
+  }
 }
+refreshAppearances(); // 新開局也要有部件外觀(load 會再各自刷新一次)
 
 /** 新增記憶標籤:不重複、有上限(超過丟最舊);intensity=1 起跳,每日依語意衰減(memoryEffects) */
 export function pushMemory(t: Tenant, label: string, hint: string, source: "ai_event" | "landlord_decision") {

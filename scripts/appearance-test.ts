@@ -75,7 +75,8 @@ moveIn("r303", cand);
 const rt = state.runtimes[cand.id];
 check("入住後租客帶外觀", !!rt?.tenant.appearance);
 check("渲染層已登錄外觀", getCustomAppearance(cand.id) !== null);
-check("種子租客(陳家豪)不受影響", getCustomAppearance("tenant_chen_engineer") === null);
+// 辨識度補強(見 distinct-test):種子租客現在也有固定部件外觀(刺蝟頭+眼鏡),配色沿用原 Theme
+check("種子租客(陳家豪)有固定部件外觀", getCustomAppearance("tenant_chen_engineer")?.hairStyle === "spiky");
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

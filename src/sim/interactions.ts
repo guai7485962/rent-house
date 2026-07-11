@@ -14,7 +14,7 @@ import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
 import { feudActive } from "./conflicts";
 import { maybeWitness } from "./drama";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
-import { roomRect } from "./placements";
+import { roomRect, getPlacements } from "./placements";
 import { spawnFx, type FxKind } from "../floor/fx";
 import { startPairSession, type PairPose } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR } from "./clock";
@@ -33,6 +33,8 @@ export interface InteractionDef {
   privacy?: boolean;
   /** 觸發時段(含首尾;首>尾表示跨夜,如 [23,1]) */
   timeWindow?: [number, number];
+  /** 地點需有其中一件家具才解鎖(§10-6 地點條件即玩法:買雙人床才有親熱——家具投資接回互動) */
+  requiresFurniture?: string[];
   weight: number;
   cooldownHours: number;
   /** 通過所有條件後,每小時實際觸發的機率 */
@@ -53,6 +55,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "couple",
     location: "room",
     timeWindow: [19, 22],
+    requiresFurniture: ["tv_console"],
     weight: 3,
     cooldownHours: 10,
     chance: 0.4,
@@ -77,6 +80,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "cohabit",
     location: "room",
     timeWindow: [7, 9],
+    requiresFurniture: ["double_bed"],
     weight: 2,
     cooldownHours: 20,
     chance: 0.3,
@@ -121,6 +125,7 @@ export const INTERACTIONS: InteractionDef[] = [
     adult: true,
     privacy: true,
     timeWindow: [23, 1],
+    requiresFurniture: ["double_bed"],
     weight: 3,
     cooldownHours: 36,
     chance: 0.35,
@@ -149,6 +154,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "lounge",
     timeWindow: [19, 23],
+    requiresFurniture: ["lounge_console", "lounge_tv"],
     weight: 2,
     cooldownHours: 16,
     chance: 0.25,
@@ -174,6 +180,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "crush",
     location: "lounge",
     timeWindow: [19, 23],
+    requiresFurniture: ["shared_sofa"],
     weight: 2,
     cooldownHours: 20,
     chance: 0.25,
@@ -205,6 +212,16 @@ export interface InteractCtx {
   adultMode: boolean;
   /** 這對是否同居中 */
   cohabiting: boolean;
+  /** 互動地點現有的家具 defId 集合(requiresFurniture 判定用) */
+  furniture: Set<string>;
+}
+
+/** 某地點(房間 id 或 "lounge")現有的家具 defId 集合 */
+export function furnitureSetOf(roomId: string | null): Set<string> {
+  const s = new Set<string>();
+  if (!roomId) return s;
+  for (const p of getPlacements()) if (p.room === roomId) s.add(p.defId);
+  return s;
 }
 
 const inWindow = (hour: number, w?: [number, number]): boolean => {
@@ -228,6 +245,8 @@ export function canInteract(def: InteractionDef, a: Tenant, b: Tenant, ctx: Inte
   }
   if (def.privacy && ctx.thirdPresent) return false;
   if (!inWindow(ctx.hour, def.timeWindow)) return false;
+  // 地點條件即玩法(§10-6):要有對應家具才解鎖(如親熱要雙人床)——家具投資接回互動
+  if (def.requiresFurniture && !def.requiresFurniture.some((id) => ctx.furniture.has(id))) return false;
   return true;
 }
 
@@ -246,6 +265,7 @@ function applyPairEffect(rt: TenantRuntime, eff: InteractionDef["effects"]) {
 /** 對一組同地點的租客跑兩兩互動;把觸發的 pairKey 收進 triggered(給 socialPass 去重) */
 function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId: string | null, hour: number, triggered: Set<string>) {
   if (present.length < 2) return;
+  const furniture = furnitureSetOf(location === "lounge" ? "lounge" : roomId);
   for (let i = 0; i < present.length; i++) {
     for (let j = i + 1; j < present.length; j++) {
       const A = present[i];
@@ -255,6 +275,7 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
         thirdPresent: present.length > 2,
         adultMode: state.adultMode,
         cohabiting: roomId != null && (state.cohabits[A.tenant.id] === roomId || state.cohabits[B.tenant.id] === roomId),
+        furniture,
       };
       const eligible = INTERACTIONS.filter(
         (def) => def.location === location && canInteract(def, A.tenant, B.tenant, ctx) && offCooldown(A.tenant.id, B.tenant.id, def),
@@ -321,16 +342,20 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
   const thirdPresent = Object.values(state.runtimes).some(
     (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );
+  const furniture = furnitureSetOf(def.location === "lounge" ? "lounge" : roomId);
   if (def.adult) {
     const ctx: InteractCtx = {
       hour: new Date(state.gameMs).getHours(),
       thirdPresent,
       adultMode: state.adultMode,
       cohabiting: roomId != null && (state.cohabits[aId] === roomId || state.cohabits[bId] === roomId),
+      furniture,
     };
     if (!canInteract(def, A.tenant, B.tenant, ctx)) return false;
   } else if (def.privacy && thirdPresent) {
     return false;
+  } else if (def.requiresFurniture && !def.requiresFurniture.some((id) => furniture.has(id))) {
+    return false; // AI 提議也一樣:場地沒有對應家具就演不了(如沒電視怎麼窩著看劇)
   }
   performInteraction(A, B, def, roomId);
   return true;

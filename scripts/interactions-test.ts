@@ -33,7 +33,8 @@ const cuddle = INTERACTIONS.find((d) => d.id === "cuddle_tv")!;
 const lazy = INTERACTIONS.find((d) => d.id === "lazy_morning")!;
 const earbuds = INTERACTIONS.find((d) => d.id === "share_earbuds")!;
 
-const baseCtx: InteractCtx = { hour: 23, thirdPresent: false, adultMode: true, cohabiting: true };
+// furniture = 地點家具解鎖(§10-6):預設把會用到的都放進來,個別案例再拿掉驗門檻
+const baseCtx: InteractCtx = { hour: 23, thirdPresent: false, adultMode: true, cohabiting: true, furniture: new Set(["double_bed", "tv_console", "shared_sofa", "lounge_tv"]) };
 const a = T("ia");
 const b = TF("ib");
 
@@ -44,6 +45,7 @@ check("非情侶 → 依偎看劇也擋(couple 級)", !canInteract(cuddle, a, b,
 
 relationships[pairKey("ia", "ib")] = { value: 90, romantic: true, cohabitOffered: true };
 check("情侶+🔞開+深夜 → 親密互動可行", canInteract(intimacy, a, b, baseCtx));
+check("沒雙人床 → 親熱擋(家具投資解鎖)", !canInteract(intimacy, a, b, { ...baseCtx, furniture: new Set() }));
 check("🔞關 → 擋", !canInteract(intimacy, a, b, { ...baseCtx, adultMode: false }));
 check("有第三人 → 私密互動擋", !canInteract(intimacy, a, b, { ...baseCtx, thirdPresent: true }));
 check("白天(14 時)→ 時段擋", !canInteract(intimacy, a, b, { ...baseCtx, hour: 14 }));
@@ -60,6 +62,7 @@ check("賴床:同居+早上可行", canInteract(lazy, a, b, { ...baseCtx, hour: 
 // crush(曖昧)門檻
 relationships[pairKey("ia", "ib")] = { value: 80, romantic: false, cohabitOffered: false };
 check("曖昧(80+互有好感、非情侶)→ 共用耳機可行", canInteract(earbuds, a, b, { ...baseCtx, hour: 20 }));
+check("交誼廳沒沙發 → 共用耳機擋(家具投資解鎖)", !canInteract(earbuds, a, b, { ...baseCtx, hour: 20, furniture: new Set() }));
 relationships[pairKey("ia", "ib")] = { value: 60, romantic: false, cohabitOffered: false };
 check("關係 60 → 曖昧互動擋", !canInteract(earbuds, a, b, { ...baseCtx, hour: 20 }));
 const bIncompatible = { ...TF("ib"), attractedTo: ["female"] } as unknown as Tenant;

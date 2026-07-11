@@ -104,7 +104,7 @@ check("警告:另一方好感↑", B.tenant.stats.affinity > affB);
 check("警告:冷戰仍在", feudActive(A.tenant.id, B.tenant.id));
 
 // --- 冷戰行為 ---
-check("冷戰中互動全擋(canInteract)", INTERACTIONS.every((d) => !canInteract(d, A.tenant, B.tenant, { hour: 22, thirdPresent: false, adultMode: true, cohabiting: true })));
+check("冷戰中互動全擋(canInteract)", INTERACTIONS.every((d) => !canInteract(d, A.tenant, B.tenant, { hour: 22, thirdPresent: false, adultMode: true, cohabiting: true, furniture: new Set(["double_bed", "tv_console", "shared_sofa", "lounge_tv"]) })));
 B.inLounge = true;
 check("交誼廳有冷戰對象 → 迴避", avoidLounge(A.tenant.id));
 B.inLounge = false;

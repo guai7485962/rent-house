@@ -16,6 +16,7 @@ const { sanitizeAiEvent } = await import("../src/sim/events");
 const { relationships, pairKey, getRel } = await import("../src/sim/social");
 const { startFeud, endFeud } = await import("../src/sim/conflicts");
 const { decide } = await import("../src/sim/tenancy");
+const { addPlacement } = await import("../src/sim/placements");
 const { state } = await import("../src/store");
 
 let pass = 0;
@@ -85,7 +86,9 @@ B.tenant.isAdult = false;
 check("🔞:一方未成年 → 擋", !forceInteraction(A.tenant.id, B.tenant.id, "night_intimacy"));
 B.tenant.isAdult = true;
 for (const k of Object.keys(state.interactionCooldowns)) delete state.interactionCooldowns[k];
-check("🔞:門檻全過 → 可演(遮蔽式)", forceInteraction(A.tenant.id, B.tenant.id, "night_intimacy"));
+check("🔞:房裡只有單人床 → 擋(要買雙人床)", !forceInteraction(A.tenant.id, B.tenant.id, "night_intimacy"));
+addPlacement({ defId: "double_bed", room: "r301", c: 4, r: 1 });
+check("🔞:門檻全過(含雙人床)→ 可演(遮蔽式)", forceInteraction(A.tenant.id, B.tenant.id, "night_intimacy"));
 relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 80, romantic: false, cohabitOffered: false };
 check("🔞:非情侶 → 擋(情侶門檻不放寬)", !forceInteraction(A.tenant.id, B.tenant.id, "bath_together"));
 

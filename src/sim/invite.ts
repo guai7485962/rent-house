@@ -13,8 +13,8 @@ import { ALL_HAIR_STYLES, ALL_ACCESSORIES, HAIR_COLORS, SHIRT_COLORS, PANTS_COLO
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** 描述若明顯指向未成年,前端直接擋(不打 API) */
-const MINOR_WORDS = ["小學", "國小", "國中", "初中", "高中", "中學生", "兒童", "小孩", "孩童", "未成年", "幼稚園", "幼兒", "少年偵探"];
+/** 描述若明顯指向未成年(含知名兒童角色名),前端直接擋(不打 API);後端 AI 依「原作年齡」再判一次 */
+const MINOR_WORDS = ["小學", "國小", "國中", "初中", "高中", "中學生", "兒童", "小孩", "孩童", "未成年", "幼稚園", "幼兒", "少年偵探", "大雄", "野比", "柯南", "哆啦"];
 export function looksMinor(text: string): boolean {
   return MINOR_WORDS.some((w) => text.includes(w));
 }

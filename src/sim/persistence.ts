@@ -7,6 +7,7 @@
  */
 import { reactive } from "vue";
 import type { Tenant } from "../types";
+import { hasDef } from "../furniture/catalog";
 import { placements } from "./placements";
 import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships } from "./social";
@@ -117,8 +118,13 @@ export function load(): boolean {
     state.gameMs = s.gameMs;
     state.money = s.money;
 
-    // 家具擺放 + 房間升級
-    placements.list.splice(0, placements.list.length, ...s.placements.map((p: unknown) => ({ ...(p as object) })));
+    // 家具擺放 + 房間升級(過濾掉目錄已查無的家具,一筆壞資料不能毀掉整個畫面)
+    const loadedPlacements = (s.placements as { defId: string }[]).filter((p) => {
+      if (hasDef(p.defId)) return true;
+      console.warn(`[load] 存檔內有已下架的家具「${p.defId}」,略過`);
+      return false;
+    });
+    placements.list.splice(0, placements.list.length, ...loadedPlacements.map((p) => ({ ...p }) as (typeof placements.list)[number]));
     placements.version++;
     for (const k of Object.keys(upgradeState.byRoom)) delete upgradeState.byRoom[k];
     Object.assign(upgradeState.byRoom, s.upgrades ?? {});

@@ -49,7 +49,7 @@ const STATE_LABEL: Record<TenantVisualState, string> = {
   using_appliance: "使用家電",
 };
 
-const label = computed(() => STATE_LABEL[props.visualState]);
+const label = computed(() => STATE_LABEL[props.visualState] ?? "生活中");
 const isAway = computed(() => props.visualState === "away");
 
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -135,11 +135,15 @@ onUnmounted(() => cancelAnimationFrame(raf));
   border: 1px solid var(--line);
   background: #241f33;
   line-height: 0;
+  /* 由容器鎖定長寬比:即使 canvas 出狀況也保留完整框(不會縮成一條線) */
+  aspect-ratio: 384 / 336;
 }
 
 canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

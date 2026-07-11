@@ -449,8 +449,37 @@ export const CATALOG: FurnitureDef[] = [
 
 const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
 
+/** 未知 id 的替身家具(舊存檔可能帶到已改名/移除的家具):不擋路、不值錢、畫成小紙箱。
+ *  getDef 絕不 throw——渲染與尋路每幀都會呼叫,一筆壞資料不能毀掉整個畫面。 */
+const UNKNOWN_DEF: FurnitureDef = {
+  id: "unknown",
+  name: "不明雜物",
+  category: "utility",
+  placement: "room",
+  price: 0,
+  footprint: { w: 1, h: 1 },
+  interact: { dc: 0, dr: 1 },
+  attributes: {},
+  fitsTags: [],
+  unlocksStates: [],
+  social: false,
+  promptHints: [],
+  sprite: { recipe: [{ shape: "block", x: 3, y: 6, w: 10, h: 8, color: "#8a7a5e", top: 2 }] },
+};
+
+const warned = new Set<string>();
 export function getDef(id: string): FurnitureDef {
   const d = BY_ID.get(id);
-  if (!d) throw new Error(`家具目錄查無此 id: ${id}`);
+  if (!d) {
+    if (!warned.has(id)) {
+      warned.add(id);
+      console.warn(`[catalog] 查無家具 id「${id}」,以「不明雜物」替代(可能來自舊存檔)`);
+    }
+    return UNKNOWN_DEF;
+  }
   return d;
+}
+
+export function hasDef(id: string): boolean {
+  return BY_ID.has(id);
 }

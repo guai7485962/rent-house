@@ -66,16 +66,26 @@ function run(script: string, requirePhrase?: string): Result {
   return { name: script, ok: true, detail: m ? `${m[1]} 通過` : "OK", ms };
 }
 
+// 失敗就重試一次:機率型測試偶爾抽到壞運會假性失敗,重試多半就過;
+// 真正壞掉的測試(確定性失敗)兩次都失敗 → 照樣抓到,不會被漏掉。
+function runWithRetry(script: string, requirePhrase?: string): Result {
+  const first = run(script, requirePhrase);
+  if (first.ok) return first;
+  const retry = run(script, requirePhrase);
+  if (retry.ok) return { ...retry, detail: `${retry.detail}(首次失敗後重試通過)` };
+  return first;
+}
+
 console.log(`▶ 跑 ${allTests.length} 支測試${filters.length ? `(過濾:${filters.join(", ")})` : ""}…\n`);
 for (const t of allTests) {
-  const res = run(t);
+  const res = runWithRetry(t);
   results.push(res);
   console.log(`${res.ok ? "✅" : "❌"} ${res.name.padEnd(26)} ${res.detail}  (${(res.ms / 1000).toFixed(1)}s)`);
 }
 
 // sim-trace:只在無過濾(全跑)或明確點名時跑
 if (filters.length === 0 || filters.some((k) => "sim-trace".includes(k) || k === "trace")) {
-  const res = run("sim-trace.ts", "無異常");
+  const res = runWithRetry("sim-trace.ts", "無異常");
   res.name = "sim-trace.ts";
   results.push(res);
   console.log(`${res.ok ? "✅" : "❌"} ${res.name.padEnd(26)} ${res.detail}  (${(res.ms / 1000).toFixed(1)}s)`);

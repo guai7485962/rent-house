@@ -10,6 +10,15 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
+// 固定亂數種子(mulberry32),讓機率型整合測試在任何環境(含 CI)可重現
+let __seed = 20260710;
+Math.random = () => {
+  __seed |= 0; __seed = (__seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(__seed ^ (__seed >>> 15), 1 | __seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 const { canInteract, interactionsPass, INTERACTIONS } = await import("../src/sim/interactions");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { state } = await import("../src/store");

@@ -21,10 +21,11 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { COMMUNITY_EVENTS, communityPass } = await import("../src/sim/community");
+const { COMMUNITY_EVENTS, communityPass, rollGroupEvent, resolveGroupEvent } = await import("../src/sim/community");
 const { relationships, pairKey, getRel } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
 const { moveIn } = await import("../src/sim/tenancy");
+const { save, load } = await import("../src/sim/persistence");
 const { state } = await import("../src/store");
 
 let pass = 0;
@@ -62,6 +63,27 @@ const relBeforeBond = relVal();
 ev("laundry").fire([A, B], Math.random);
 check("洗衣房(關係好):兩人關係上升", relVal() > relBeforeBond);
 check("洗衣房(關係好):出現邊洗邊聊日誌", A.log.some((e) => e.text.includes("聊")) || B.log.some((e) => e.text.includes("聊")));
+
+// --- 浴室:關係差 → 搶浴室口角;關係好 → 排隊聊天 ---
+relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 20, romantic: false, cohabitOffered: false };
+A.log.splice(0); B.log.splice(0);
+const relBeforeBath = relVal();
+ev("bathroom").fire([A, B], Math.random);
+check("浴室(關係差):兩人關係下降 + 搶浴室日誌", relVal() < relBeforeBath && (A.log.some((e) => e.text.includes("搶浴室")) || B.log.some((e) => e.text.includes("敲門催"))));
+relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 60, romantic: false, cohabitOffered: false };
+A.log.splice(0); B.log.splice(0);
+const relBeforeBathBond = relVal();
+ev("bathroom").fire([A, B], Math.random);
+check("浴室(關係好):兩人關係上升 + 排隊聊天日誌", relVal() > relBeforeBathBond && (A.log.some((e) => e.text.includes("排隊")) || B.log.some((e) => e.text.includes("閒聊"))));
+
+// --- 早晨尖峰:3 人壓力↑但同仇敵愾拉近 ---
+const rush = [rts[0], rts[1], rts[2]];
+for (const rt of rush) { rt.tenant.stats.stress = 40; rt.log.splice(0); }
+relationships[pairKey(rush[0].tenant.id, rush[1].tenant.id)] = { value: 40, romantic: false, cohabitOffered: false };
+const rushRelBefore = getRel(rush[0].tenant.id, rush[1].tenant.id)!.value;
+ev("morning_rush").fire(rush, Math.random);
+check("早晨尖峰:全員壓力上升", rush.every((rt) => rt.tenant.stats.stress > 40));
+check("早晨尖峰:同仇敵愾關係反而上升", getRel(rush[0].tenant.id, rush[1].tenant.id)!.value > rushRelBefore);
 
 // --- 揪團:3 人全員心情↑、兩兩關係↑ ---
 const trio = [rts[0], rts[1], rts[2]];
@@ -118,6 +140,52 @@ const eligibleNow = COMMUNITY_EVENTS.filter((e) => {
   return !(last != null && state.gameMs - last < e.cooldownDays * 24 * 3600 * 1000);
 });
 check("冷卻:剛觸發的洗衣房事件不在 eligible 內", !eligibleNow.some((e) => e.id === "laundry"));
+
+// --- 群體事件(有房東抉擇版)---
+const clearGroup = () => { state.pendingGroupEvent = null; delete state.interactionCooldowns["community|group_any"]; };
+
+// rollGroupEvent:掛上待決群體事件
+clearGroup();
+rts[0].tenant.coreTags = [mkTag("night_owl")]; // 保證 noise_verdict 也可能成立
+const rolled = rollGroupEvent(rts, Math.random);
+check("rollGroupEvent:掛上待決群體事件", rolled && !!state.pendingGroupEvent);
+check("群體事件:參與者都是在場租客、有選項", !!state.pendingGroupEvent && state.pendingGroupEvent.participantIds.every((id) => !!state.runtimes[id]) && state.pendingGroupEvent.choices.length >= 2);
+check("群體事件:有待決時不重複掛新的", rollGroupEvent(rts, Math.random) === false);
+
+// resolveGroupEvent:效果擴散(all/first/rest/money/bond)——用手構的事件精確驗證
+clearGroup();
+const p0 = rts[0], p1 = rts[1], p2 = rts[2];
+p0.tenant.stats.stress = 20; p0.tenant.stats.affinity = 40;
+p1.satisfaction = 50; p1.tenant.stats.affinity = 40;
+p2.tenant.stats.affinity = 40;
+relationships[pairKey(p1.tenant.id, p2.tenant.id)] = { value: 40, romantic: false, cohabitOffered: false };
+const relB = getRel(p1.tenant.id, p2.tenant.id)!.value;
+state.money = 50000;
+state.pendingGroupEvent = {
+  id: "test", title: "測試全樓事務", description: "",
+  participantIds: [p0.tenant.id, p1.tenant.id, p2.tenant.id],
+  choices: [{ id: "go", label: "選它", hint: "", money: -2500, all: { affinity: 5 }, first: { stress: 8 }, rest: { satisfaction: 4 }, bond: 3 }],
+};
+const okResolve = resolveGroupEvent("go");
+check("resolveGroupEvent:成功且清掉待決", okResolve && state.pendingGroupEvent === null);
+check("群體事件:房東花費扣款", state.money === 50000 - 2500);
+check("群體事件:all 對全員生效(好感 +5)", p0.tenant.stats.affinity === 45 && p1.tenant.stats.affinity === 45 && p2.tenant.stats.affinity === 45);
+check("群體事件:first 只對當事人(壓力 +8)", p0.tenant.stats.stress === 28);
+check("群體事件:rest 對其餘(滿意 +4)", p1.satisfaction === 54);
+check("群體事件:bond 兩兩關係上升", getRel(p1.tenant.id, p2.tenant.id)!.value > relB);
+check("resolveGroupEvent:無待決時回 false", resolveGroupEvent("go") === false);
+
+// 冷卻:剛解算過 → rollGroupEvent 在 3 日內不再觸發
+check("群體事件:剛解算後 3 日冷卻內不觸發", rollGroupEvent(rts, Math.random) === false);
+
+// 存檔往返:pendingGroupEvent 保留
+clearGroup();
+rollGroupEvent(rts, Math.random);
+const pendingTitle = state.pendingGroupEvent?.title;
+save();
+state.pendingGroupEvent = null;
+load();
+check("群體事件:存檔往返保留待決事件", state.pendingGroupEvent?.title === pendingTitle);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

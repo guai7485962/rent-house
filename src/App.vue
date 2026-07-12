@@ -12,6 +12,7 @@ import CohabitModal from "./components/CohabitModal.vue";
 import FinancePanel from "./components/FinancePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import LegacyPanel from "./components/LegacyPanel.vue";
+import GroupDecisionModal from "./components/GroupDecisionModal.vue";
 import RentPanel from "./components/RentPanel.vue";
 import UpgradePanel from "./components/UpgradePanel.vue";
 import FeedPanel from "./components/FeedPanel.vue";
@@ -30,6 +31,7 @@ import {
   markSeen,
   startFastForward,
   decide,
+  resolveGroupEvent,
   gameDayIndex,
   initGame,
   stopGame,
@@ -342,6 +344,10 @@ function statColor(v: number, invert = false) {
 function onDecide(choiceId: string, label: string) {
   decide(rt.value.tenant.id, choiceId, label);
 }
+
+function onGroupResolve(choiceId: string) {
+  resolveGroupEvent(choiceId);
+}
 </script>
 
 <template>
@@ -557,6 +563,11 @@ function onDecide(choiceId: string, label: string) {
     v-if="state.pendingCohabit"
     :a-name="state.pendingCohabit.aName"
     :b-name="state.pendingCohabit.bName"
+  />
+  <GroupDecisionModal
+    v-if="state.pendingGroupEvent"
+    :event="state.pendingGroupEvent"
+    @resolve="onGroupResolve"
   />
   <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" @upgrade="upgradeRoom = $event" />
   <FurnitureInfo

@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, GroupEvent, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -133,6 +133,8 @@ export const state = reactive({
   lastBackupMs: 0,
   /** 待決的同居抉擇(情侶關係極高時觸發) */
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
+  /** 待決的群體事件(全樓事務,房東抉擇影響整群人;§C-7;入存檔) */
+  pendingGroupEvent: null as GroupEvent | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
   /** 移動模式:待搬動的既有家具(原位座標;點地圖選新位置,免費) */

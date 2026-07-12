@@ -108,6 +108,7 @@ export function save() {
         pets: state.pets,
         achievements: state.achievements,
         alumni: state.alumni,
+        pendingGroupEvent: state.pendingGroupEvent,
         runtimes,
       }),
     );
@@ -165,6 +166,7 @@ export function load(): boolean {
     Object.assign(state.pets, s.pets ?? {}); // 舊檔沒有 → ensurePets 會補種子貓
     state.achievements.splice(0, state.achievements.length, ...((s.achievements ?? []) as string[]));
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
+    state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

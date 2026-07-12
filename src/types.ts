@@ -343,3 +343,39 @@ export interface AlumniEntry {
   /** 一句代表性記憶(滾動摘要或最後的重要日誌) */
   memory: string;
 }
+
+// ---------------------------------------------------------------------------
+// 群體事件(有房東抉擇版,§C-7):一件事牽動 3+ 位租客,房東的選擇一次影響整群人
+// ---------------------------------------------------------------------------
+
+export interface GroupDelta {
+  mood?: number;
+  stress?: number;
+  satisfaction?: number;
+  affinity?: number;
+}
+
+export interface GroupChoice {
+  id: string;
+  label: string;
+  hint: string;
+  /** 房東花費(負)或收入(正) */
+  money?: number;
+  /** 對所有參與者的數值影響 */
+  all?: GroupDelta;
+  /** 只對 participantIds[0](如噪音事件的當事人)的額外影響 */
+  first?: GroupDelta;
+  /** 對其餘參與者的額外影響 */
+  rest?: GroupDelta;
+  /** 兩兩關係變化 */
+  bond?: number;
+}
+
+export interface GroupEvent {
+  id: string;
+  title: string;
+  description: string;
+  /** 參與者 id;[0] 在部分事件是「當事人」(其餘為相關鄰居) */
+  participantIds: string[];
+  choices: GroupChoice[];
+}

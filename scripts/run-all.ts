@@ -24,9 +24,12 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith("--"));
  * scripts/ 下另有一批早期「煙霧腳本」(只印輸出、不斷言、有的還會掛著計時器不結束),
  * 不列入 CI——需要時用 `npx tsx scripts/run-all.ts <關鍵字>` 以檔名過濾即可跑到它們。
  */
+// 註:balance-test 不在 CI 集內——它快照「精確浮點 sim 狀態」,跨 Node 版本(本機 24 / CI 22)
+// 會有 <1 的微抖,是給開發者本機用的「手感回歸」工具,不是正確性測試。
+// 改數值模型後請本機跑 `npx tsx scripts/balance-test.ts`(或 `run-all.ts balance`)並視需要 --update。
 const REGRESSION = [
   "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
-  "balance-test.ts", "bugfix2-test.ts", "conflict-test.ts", "data-catalog-test.ts",
+  "bugfix2-test.ts", "conflict-test.ts", "data-catalog-test.ts",
   "daynight-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "feed-test.ts", "finance-test.ts", "fx-test.ts",
   "interactions-test.ts", "invite-test.ts", "legacy-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",
@@ -53,13 +56,16 @@ function run(script: string, requirePhrase?: string): Result {
   const ms = Date.now() - t0;
   const out = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
   if (r.error) return { name: script, ok: false, detail: `執行錯誤:${r.error.message}`, ms };
-  if (r.status !== 0) {
-    const last = out.trim().split("\n").slice(-3).join(" ⏎ ");
-    return { name: script, ok: false, detail: `exit ${r.status} — ${last}`, ms };
-  }
+  // 失敗時把實際失敗的斷言(❌ 那幾行)帶出來,CI log 直接看得到是哪一條掛了
+  const failDetail = () => {
+    const fails = out.split("\n").filter((l) => l.includes("❌")).slice(0, 6).join(" ⏎ ");
+    const summary = out.match(/\d+\s*通過\s*\/\s*\d+\s*失敗/)?.[0] ?? `exit ${r.status}`;
+    return fails ? `${summary} | ${fails}` : `${summary} — ${out.trim().split("\n").slice(-3).join(" ⏎ ")}`;
+  };
+  if (r.status !== 0) return { name: script, ok: false, detail: failDetail(), ms };
   // 「結果:N 通過 / M 失敗」——M>0 也算失敗(有些舊腳本不 exit 1)
   const m = out.match(/(\d+)\s*通過\s*\/\s*(\d+)\s*失敗/);
-  if (m && Number(m[2]) > 0) return { name: script, ok: false, detail: `${m[1]} 通過 / ${m[2]} 失敗`, ms };
+  if (m && Number(m[2]) > 0) return { name: script, ok: false, detail: failDetail(), ms };
   if (requirePhrase && !out.includes(requirePhrase)) {
     return { name: script, ok: false, detail: `輸出未見「${requirePhrase}」`, ms };
   }

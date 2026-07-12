@@ -129,6 +129,8 @@ export const state = reactive({
   noticeLog: [] as { gameMs: number; text: string }[],
   /** 上次查看動態 Feed 的遊戲時間(未讀徽章基準;入存檔) */
   feedSeenMs: 0,
+  /** 上次「匯出備份」的現實時間(提醒玩家定期備份,避免 iOS 清 localStorage;0=從未;入存檔) */
+  lastBackupMs: 0,
   /** 待決的同居抉擇(情侶關係極高時觸發) */
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */

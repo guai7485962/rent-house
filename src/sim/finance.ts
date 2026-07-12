@@ -3,7 +3,7 @@
  * 純唯讀彙整:現金 + 家具轉售值(半價,和賣出一致)+ 改建投資(成本計,不可退但墊高租金行情)
  * = 資產淨值;月租金流 = 在住承租人月租合計 - 月管理費。全部由現有 state 推導,不入存檔。
  */
-import { state } from "./gameState";
+import { state, clamp } from "./gameState";
 import { getPlacements } from "./placements";
 import { getDef } from "../furniture/catalog";
 import { upgradeState, getUpgradeDef } from "./upgrades";
@@ -45,6 +45,29 @@ export function monthlyFlow(): MonthlyFlow {
   }
   const upkeepOut = (BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP) * 30;
   return { rentIn, upkeepOut, net: rentIn - upkeepOut };
+}
+
+export interface DailyFlow {
+  /** 預估每日實收租金(依當前好感/滿意度打折,與 collectRent 同公式) */
+  rentIn: number;
+  upkeepOut: number;
+  net: number;
+}
+
+/** 預估每日淨現金流:讓玩家一眼看出「現在每個遊戲日大概淨賺多少」,
+ *  好感/滿意提升會即時反映在這裡(和收租邏輯同一條公式)。 */
+export function dailyFlow(): DailyFlow {
+  let rentIn = 0;
+  for (const [, tid] of Object.entries(state.occupancy)) {
+    const rt = state.runtimes[tid];
+    if (!rt) continue;
+    const f = rt.tenant.finance;
+    const daily = f.monthlyRent / 30;
+    const factor = clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3 + (rt.satisfaction - 50) * 0.2, 0, 100) / 100;
+    rentIn += daily * factor;
+  }
+  const upkeepOut = BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP;
+  return { rentIn: Math.round(rentIn), upkeepOut, net: Math.round(rentIn - upkeepOut) };
 }
 
 export interface MonthReport {

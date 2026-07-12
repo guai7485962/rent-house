@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { state, type TxnCategory } from "../store";
-import { netWorth, monthlyFlow, monthReport } from "../sim/finance";
+import { netWorth, monthlyFlow, monthReport, dailyFlow } from "../sim/finance";
 
 const emit = defineEmits<{ close: [] }>();
 
@@ -29,6 +29,7 @@ const week = computed(() => window(7));
 const worth = computed(() => netWorth());
 const flow = computed(() => monthlyFlow());
 const month = computed(() => monthReport());
+const daily = computed(() => dailyFlow());
 
 /** 近 7 遊戲日,每日淨額(長條圖用;由舊到新) */
 const dailyBars = computed(() => {
@@ -71,6 +72,15 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
       <div class="balance">
         <span class="lbl">目前餘額</span>
         <span class="amt">${{ state.money.toLocaleString() }}</span>
+      </div>
+
+      <!-- 預估每日淨現金流(好感/滿意提升會即時反映在這) -->
+      <div class="daily" :class="daily.net >= 0 ? 'pos-bg' : 'neg-bg'">
+        <div class="daily-main">
+          <span class="dl">預估每日淨現金流</span>
+          <b class="dv" :class="daily.net >= 0 ? 'pos' : 'neg'">{{ money(daily.net) }}<span class="per">/ 遊戲日</span></b>
+        </div>
+        <div class="daily-sub">實收租金 約 ${{ daily.rentIn.toLocaleString() }} − 管理費 ${{ daily.upkeepOut.toLocaleString() }}<template v-if="daily.net > 0">;把租客照顧好、好感上升,租金會跟著變多</template></div>
       </div>
 
       <!-- 資產淨值 + 月報表(§7-1:投資的成長曲線) -->
@@ -141,6 +151,15 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 .balance { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 6px; }
 .balance .lbl { font-size: 12px; color: var(--text-dim); }
 .balance .amt { font-size: 26px; font-weight: 800; color: var(--accent); }
+
+.daily { margin: 4px 16px 10px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.daily.pos-bg { background: rgba(90, 208, 106, 0.08); border-color: rgba(90, 208, 106, 0.3); }
+.daily.neg-bg { background: rgba(229, 57, 90, 0.08); border-color: rgba(229, 57, 90, 0.3); }
+.daily-main { display: flex; align-items: baseline; justify-content: space-between; }
+.daily-main .dl { font-size: 12px; color: var(--text-dim); }
+.daily-main .dv { font-size: 19px; font-weight: 800; }
+.daily-main .per { font-size: 11px; font-weight: 500; color: var(--text-dim); margin-left: 3px; }
+.daily-sub { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; line-height: 1.4; }
 
 .worth { margin: 0 16px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .worth-head { display: flex; align-items: baseline; justify-content: space-between; }

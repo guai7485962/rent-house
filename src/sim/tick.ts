@@ -33,7 +33,7 @@ import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } f
 import { dramaPass } from "./drama";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { diaryPass, resetDiaryQuota } from "./narration";
-import { petsPass } from "./pets";
+import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { communityPass } from "./community";
 import { spawnFx } from "../floor/fx";
@@ -315,6 +315,7 @@ export function hourlyTick(live = false) {
     resetDiaryQuota(); // AI 額度每日重置 → 新的一天重新嘗試
     legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
     communityPass(); // 群體事件:洗衣房口角/揪團/噪音公審/頂樓乘涼(牽動 3+ 人,§C-7)
+    catJournalPass(); // 貓咪觀察筆記:每 7 遊戲日一篇,以貓口吻進 Feed(彩蛋)
   }
 }
 

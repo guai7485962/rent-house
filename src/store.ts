@@ -47,7 +47,7 @@ export { getApplicants, moveIn, moveOut, resolveCohabit, decide, previewRent, pr
 
 export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 
-export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatPreset } from "./sim/pets";
+export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatPreset, catJournalPass } from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { communityPass } from "./sim/community";

@@ -11,7 +11,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { netWorth, monthlyFlow, monthReport } = await import("../src/sim/finance");
+const { netWorth, monthlyFlow, monthReport, dailyFlow } = await import("../src/sim/finance");
 const { buyFurniture, addMoney, BASE_UPKEEP, PER_ROOM_UPKEEP } = await import("../src/sim/economy");
 const { getPlacements } = await import("../src/sim/placements");
 const { getDef } = await import("../src/furniture/catalog");
@@ -61,6 +61,17 @@ state.cohabits[bId] = "r301";
 check("同居者月租不計入", monthlyFlow().rentIn === expectRent - state.runtimes[bId].tenant.finance.monthlyRent);
 delete state.cohabits[bId];
 state.occupancy.r302 = bId;
+
+// --- dailyFlow(預估每日淨現金流)---
+const df = dailyFlow();
+check("每日管理費 = 基本 + 每房", df.upkeepOut === BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP);
+check("每日淨 = 實收租 - 管理費", df.net === df.rentIn - df.upkeepOut);
+check("實收租金 > 0 且不超過名目日租合計", df.rentIn > 0 && df.rentIn <= Object.values(state.occupancy).reduce((s, tid) => s + Math.ceil((state.runtimes[tid]?.tenant.finance.monthlyRent ?? 0) / 30), 0) + 4);
+// 好感提升 → 實收租金增加(和收租同公式,正向循環看得見)
+const someId = Object.values(state.occupancy)[0];
+const rentBefore = dailyFlow().rentIn;
+state.runtimes[someId].tenant.stats.affinity = 100;
+check("好感拉滿後預估實收租金上升", dailyFlow().rentIn > rentBefore);
 
 // --- monthReport ---
 state.ledger.splice(0);

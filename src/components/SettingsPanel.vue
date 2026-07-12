@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { state, exportSave, importSave, clearSave } from "../store";
+
+/** 備份狀態提醒:iOS Safari 對 7 天未造訪的網站可能清掉 localStorage → 鼓勵定期匯出 */
+const backup = computed(() => {
+  if (!state.lastBackupMs) return { text: "⚠️ 你還沒備份過存檔。建議匯出保存,以免瀏覽器清資料時進度消失。", tone: "warn" };
+  const days = Math.floor((Date.now() - state.lastBackupMs) / (24 * 3600 * 1000));
+  const ago = days <= 0 ? "今天" : `${days} 天前`;
+  if (days >= 7) return { text: `⚠️ 上次備份是 ${ago},建議再匯出一次(iOS 可能清掉久未造訪網站的存檔)。`, tone: "warn" };
+  return { text: `✅ 上次備份:${ago}。`, tone: "ok" };
+});
 
 function toggleAdult() {
   state.adultMode = !state.adultMode;
@@ -66,6 +75,7 @@ function onImport() {
         <section class="sec">
           <div class="sec-ttl">備份與轉移</div>
           <p class="desc">存檔存在這個瀏覽器裡;換裝置或清瀏覽器資料前,先匯出保存。</p>
+          <div class="backup-status" :class="backup.tone">{{ backup.text }}</div>
           <div class="row">
             <button class="btn" @click="onExport">📋 匯出存檔</button>
             <button class="btn" @click="showImport = !showImport">📥 匯入存檔</button>
@@ -117,6 +127,9 @@ function onImport() {
 .x { margin-left: auto; background: none; color: var(--text-dim); font-size: 16px; }
 
 .body { overflow-y: auto; padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.backup-status { font-size: 11.5px; line-height: 1.5; border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; border: 1px solid var(--line); }
+.backup-status.warn { color: #ffd6a3; background: rgba(255, 180, 90, 0.08); border-color: rgba(255, 180, 90, 0.3); }
+.backup-status.ok { color: var(--text-dim); }
 .sec { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .sec-ttl { font-size: 12px; font-weight: 700; color: var(--text-dim); }
 .desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; }

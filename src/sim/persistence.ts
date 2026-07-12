@@ -100,6 +100,7 @@ export function save() {
         ledger: state.ledger,
         noticeLog: state.noticeLog,
         feedSeenMs: state.feedSeenMs,
+        lastBackupMs: state.lastBackupMs,
         adultMode: state.adultMode,
         interactionCooldowns: state.interactionCooldowns,
         breakdowns: state.breakdowns,
@@ -152,6 +153,7 @@ export function load(): boolean {
     state.ledger.splice(0, state.ledger.length, ...((s.ledger ?? []) as Txn[]));
     state.noticeLog.splice(0, state.noticeLog.length, ...(s.noticeLog ?? []));
     state.feedSeenMs = s.feedSeenMs ?? 0; // 舊檔沒有 → 全部視為未讀,無害
+    state.lastBackupMs = s.lastBackupMs ?? 0; // 舊檔沒有 → 視為從未備份
     state.adultMode = s.adultMode === true; // 預設關
     for (const k of Object.keys(state.interactionCooldowns)) delete state.interactionCooldowns[k];
     Object.assign(state.interactionCooldowns, s.interactionCooldowns ?? {});
@@ -217,8 +219,10 @@ export function load(): boolean {
 
 // --- 存檔管理(8-4:重新開始 / 匯出 / 匯入)---
 
-/** 匯出目前存檔 JSON(先落盤再讀,保證是最新狀態);localStorage 不可用回傳 null */
+/** 匯出目前存檔 JSON(先落盤再讀,保證是最新狀態);localStorage 不可用回傳 null。
+ *  成功匯出即記下備份時間(供設定頁提醒玩家定期備份)。 */
 export function exportSave(): string | null {
+  state.lastBackupMs = Date.now(); // 標記備份時間(要在 save() 之前設,才會一起寫進檔)
   save();
   try {
     return localStorage.getItem(SAVE_KEY);

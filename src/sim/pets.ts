@@ -138,6 +138,44 @@ export function petsPass() {
   }
 }
 
+/** 貓咪觀察筆記(彩蛋):每 7 遊戲日,以貓的口吻寫一篇這週的日常，落進全樓 Feed。
+ *  純模板、零 AI 成本;素材來自現有狀態(貓名、飼主、隨機鄰居)。 */
+const JOURNAL_CD = 7 * 24 * 3600 * 1000;
+
+function randomNeighborName(ownerId: string): string {
+  const others = Object.values(state.runtimes).filter((rt) => rt.tenant.id !== ownerId);
+  return others.length ? others[Math.floor(Math.random() * others.length)].tenant.name : "隔壁";
+}
+
+function catJournalLines(petName: string, ownerName: string, neighbor: string): string[] {
+  return [
+    `這週我巡視了整層樓,確認每個角落都還歸我管。`,
+    `${neighbor} 家的沙發比 ${ownerName} 的好睡,我決定改天再去躺一次。`,
+    `${ownerName} 又對著會發光的板子敲敲打打,無聊,於是我躺上鍵盤主持正義。`,
+    `午後三點陽光會移到窗邊,那是我的專屬時段,誰都不准打擾。`,
+    `今天沒抓到任何東西,但我盡力了,人類應該以我為榮。`,
+    `半夜開了一場只有我知道的運動會,把 ${ownerName} 吵醒是意外的收穫。`,
+    `盯著牆角看了整整一小時,那裡確實有東西,只是你們看不見。`,
+    `把一個小東西推下桌,觀察它墜落,這是嚴謹的科學研究。`,
+  ];
+}
+
+/** 每遊戲日呼叫(自帶 7 日冷卻):輪到的貓發一篇觀察筆記進 Feed */
+export function catJournalPass() {
+  for (const key of Object.keys(state.pets)) {
+    const pet = state.pets[key];
+    const owner = state.runtimes[pet.ownerId];
+    if (!owner) continue;
+    const ck = `pet|${pet.ownerId}|journal`;
+    if (onCooldown(ck, JOURNAL_CD)) continue;
+    markCooldown(ck);
+    const pool = catJournalLines(pet.name, owner.tenant.name, randomNeighborName(pet.ownerId));
+    const i = Math.floor(Math.random() * pool.length);
+    const j = (i + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length; // 另一句、不重複
+    pushSocialLog(owner, `🐾 「${pet.name}」的觀察筆記:${pool[i]}${pool[j]}`, "notable");
+  }
+}
+
 /** 串門子:貓溜進別的房客房裡(對方在家才成立) */
 function rollVisit(pet: Pet, owner: TenantRuntime) {
   const home = roomOfTenant(pet.ownerId);

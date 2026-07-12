@@ -158,11 +158,34 @@ for (let i = 0; i < 120; i++) {
 }
 check("應徵者帶貓:比例落在合理區間(5%~40%)", withPet > 0 && withPet / sampled >= 0.05 && withPet / sampled <= 0.4, `${withPet}/${sampled}`);
 
+// --- 貓咪觀察筆記(彩蛋):7 遊戲日一篇,進 Feed ---
+const { catJournalPass } = await import("../src/sim/pets");
+for (const k of Object.keys(state.interactionCooldowns)) if (k.includes("|journal")) delete state.interactionCooldowns[k];
+state.runtimes[CHEN].log.splice(0);
+catJournalPass();
+check("貓咪筆記:飼主 Feed 出現一篇觀察筆記", state.runtimes[CHEN].log.some((e) => e.text.includes("的觀察筆記") && e.importance === "notable"));
+const journalCount1 = state.runtimes[CHEN].log.filter((e) => e.text.includes("觀察筆記")).length;
+catJournalPass(); // 冷卻內再呼叫不應再發
+check("貓咪筆記:7 日冷卻內不重複發", state.runtimes[CHEN].log.filter((e) => e.text.includes("觀察筆記")).length === journalCount1);
+state.gameMs += 8 * 24 * 3600 * 1000; // 過 8 遊戲日 → 冷卻解除
+catJournalPass();
+check("貓咪筆記:過 7 日後再發一篇", state.runtimes[CHEN].log.filter((e) => e.text.includes("觀察筆記")).length === journalCount1 + 1);
+
 // --- 存檔往返 ---
 save();
 const petCountBefore = Object.keys(state.pets).length;
 state.pets[CHEN].name = "被改壞的名字";
 check("存檔往返:load 還原貓資料", load() && state.pets[CHEN]?.name === "橘子" && Object.keys(state.pets).length === petCountBefore);
+
+// --- 備份提醒:匯出即記下 lastBackupMs,並存檔往返保留 ---
+const { exportSave } = await import("../src/sim/persistence");
+state.lastBackupMs = 0;
+exportSave();
+check("匯出備份 → 記下 lastBackupMs", state.lastBackupMs > 0);
+const bk = state.lastBackupMs;
+state.lastBackupMs = 0;
+load();
+check("lastBackupMs 存檔往返保留", state.lastBackupMs === bk);
 
 // --- 飼主退租 → 貓跟著走 ---
 moveIn("r303", generateApplicants("r303")[0]);

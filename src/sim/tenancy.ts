@@ -18,6 +18,7 @@ import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
 import { adoptCat } from "./pets";
+import { recordAlumnus } from "./legacy";
 import {
   state,
   clamp,
@@ -89,6 +90,7 @@ export function moveIn(roomId: string, ap: Applicant) {
   };
   const rt = makeRuntime(tenant, roomNo, 70, []);
   rt.archetypeKey = ap.archetypeKey;
+  rt.moveInMs = state.gameMs; // 動態入住:從現在起算「住了幾天」
   state.runtimes[ap.id] = rt;
   state.occupancy[roomId] = ap.id;
   delete state.applicantPools[roomId]; // 房間租出去,該池作廢
@@ -105,6 +107,7 @@ export function moveOut(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
   const name = rt.tenant.name;
+  recordAlumnus(rt, reason); // 進歷任房客名冊(趁 runtime 還在;§G-8)
   // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
   const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);

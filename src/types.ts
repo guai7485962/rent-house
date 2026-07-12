@@ -326,3 +326,20 @@ export interface Pet {
   hangout: string;
   sinceMs: number;
 }
+
+// ---------------------------------------------------------------------------
+// 傳承:歷任房客名冊(退租的人留下的一筆紀錄,供懷舊翻閱)
+// ---------------------------------------------------------------------------
+
+export interface AlumniEntry {
+  name: string;
+  occupation: string;
+  /** 住了幾個遊戲日 */
+  daysLived: number;
+  /** 離開原因(退租理由/分手/驅逐…) */
+  reason: string;
+  /** 離開當下的遊戲時間 */
+  leftMs: number;
+  /** 一句代表性記憶(滾動摘要或最後的重要日誌) */
+  memory: string;
+}

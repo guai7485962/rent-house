@@ -11,6 +11,7 @@
 import type { Pet, Tenant } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
 import { adjustRelationship } from "./social";
+import { unlock } from "./legacy";
 import { roomRect } from "./placements";
 import { spawnFx } from "../floor/fx";
 
@@ -151,6 +152,7 @@ function rollMischief(pet: Pet, owner: TenantRuntime) {
   // 打破東西:碎裂聲 + 清潔度掉、在場的人壓力上升
   if (Math.random() < 0.03 && !onCooldown(`pet|${pet.ownerId}|break`, CD.break)) {
     markCooldown(`pet|${pet.ownerId}|break`);
+    unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 8, 0, 100);
     pushSocialLog(owner, `🐈💥 「${pet.name}」在${place}把東西掃下桌,摔得粉碎……只好默默去收拾殘局。`, "notable");
     if (victim && victim.tenant.id !== pet.ownerId) {
@@ -165,6 +167,7 @@ function rollMischief(pet: Pet, owner: TenantRuntime) {
   // 隨地大小便:清潔度大掉,苦主壓力上升
   if (Math.random() < 0.03 && !onCooldown(`pet|${pet.ownerId}|poop`, CD.poop)) {
     markCooldown(`pet|${pet.ownerId}|poop`);
+    unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 10, 0, 100);
     if (victim && victim.tenant.id !== pet.ownerId) {
       victim.tenant.stats.stress = clamp(victim.tenant.stats.stress + 4, 0, 100);

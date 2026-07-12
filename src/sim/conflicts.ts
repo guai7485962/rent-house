@@ -14,6 +14,7 @@ import { triggerBreakdown } from "./maintenance";
 import { spawnFx } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR } from "./clock";
+import { unlock } from "./legacy";
 
 const FEUD_DAYS = 3;
 const FEUD_MEMORY = "[冷戰中]";
@@ -153,6 +154,7 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
   pushMemory(A.tenant, "[大打出手]", `和${B.tenant.name}打了一架,臉上還掛著瘀青。`, "ai_event");
   pushMemory(B.tenant, "[大打出手]", `和${A.tenant.name}打了一架,臉上還掛著瘀青。`, "ai_event");
   notify(`💢 ${A.tenant.name} 和 ${B.tenant.name} 在交誼廳大打出手!`);
+  unlock("brawl"); // 成就:樓要塌了(§G-7)
 
   // 演出:打鬥雲(遮蔽式,不見血)——兩人 sprite 隱藏,只剩一團雲 + 星星
   const at = A.targetTile ?? B.targetTile;

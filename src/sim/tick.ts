@@ -34,6 +34,7 @@ import { dramaPass } from "./drama";
 import { moveOut, endCohabitOnBreakup } from "./tenancy";
 import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass } from "./pets";
+import { legacyPass, unlock } from "./legacy";
 import { spawnFx } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { interactionsPass } from "./interactions";
@@ -311,6 +312,7 @@ export function hourlyTick(live = false) {
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     collectRent();
     resetDiaryQuota(); // AI 額度每日重置 → 新的一天重新嘗試
+    legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
   }
 }
 
@@ -359,9 +361,13 @@ function socialPass(skip: Set<string> = new Set()) {
         startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs, dur);
       }
       if (res.tone === "conflict") maybeFeudAfterConflict(A, B); // 大吵可能升級成冷戰
-      if (res.milestone === "became_couple") notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
+      if (res.milestone === "became_couple") {
+        notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
+        unlock("first_love");
+      }
       if (res.milestone === "broke_up") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`);
+        unlock("heartbreak");
         endCohabitOnBreakup(A.tenant.id, B.tenant.id);
       }
       if (res.cohabit && !state.pendingCohabit) {

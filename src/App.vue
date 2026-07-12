@@ -11,6 +11,7 @@ import RelationshipsPanel from "./components/RelationshipsPanel.vue";
 import CohabitModal from "./components/CohabitModal.vue";
 import FinancePanel from "./components/FinancePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import LegacyPanel from "./components/LegacyPanel.vue";
 import RentPanel from "./components/RentPanel.vue";
 import UpgradePanel from "./components/UpgradePanel.vue";
 import FeedPanel from "./components/FeedPanel.vue";
@@ -57,6 +58,7 @@ const showRels = ref(false);
 const showFinance = ref(false);
 const showNotices = ref(false);
 const showSettings = ref(false);
+const showLegacy = ref(false);
 const showRent = ref(false);
 /** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
 const upgradeRoom = ref<string | null>(null);
@@ -348,6 +350,7 @@ function onDecide(choiceId: string, label: string) {
     <div class="meta">
       <span>🕐 {{ clockLabel }}</span>
       <span>💰 {{ state.money.toLocaleString() }}</span>
+      <button class="bell" @click="showLegacy = true">🏆</button>
       <button class="bell" @click="showNotices = true">🔔</button>
       <button class="bell" @click="showSettings = true">⚙️</button>
     </div>
@@ -543,6 +546,7 @@ function onDecide(choiceId: string, label: string) {
   </div>
 
   <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+  <LegacyPanel v-if="showLegacy" @close="showLegacy = false" />
   <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" />
   <UpgradePanel v-if="upgradeRoom" :room-id="upgradeRoom" @close="upgradeRoom = null" @done="toast($event, 3200)" />
   <FurnitureShop v-if="showShop" @close="showShop = false" />

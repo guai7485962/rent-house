@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -77,6 +77,8 @@ export interface TenantRuntime {
   diaryHour: number;
   /** 上次生成日記的遊戲日(防同日重複) */
   lastDiaryDay: number;
+  /** 入住的遊戲時間(算「住了幾天」用;種子租客 = 開場) */
+  moveInMs: number;
 }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -104,6 +106,7 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     inLounge: false,
     diaryHour: -1,
     lastDiaryDay: -99,
+    moveInMs: GAME_START.getTime(),
   });
 }
 
@@ -153,6 +156,10 @@ export const state = reactive({
   feuds: {} as Record<string, { untilMs: number }>,
   /** 寵物:飼主租客 id → 貓(一人一隻;會在樓層遊走並引發事件;入存檔) */
   pets: {} as Record<string, Pet>,
+  /** 成就冊:已解鎖的成就 id(§G-7;入存檔) */
+  achievements: [] as string[],
+  /** 歷任房客名冊:退租者的紀錄,最新在前(§G-8;入存檔) */
+  alumni: [] as AlumniEntry[],
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
   runtimes: {

@@ -9,6 +9,7 @@ import { relationships, getRel, pairKey, canRomance, setCouple, adjustRelationsh
 import { state, clamp, notify, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { startFeud } from "./conflicts";
 import { endCohabitOnBreakup } from "./tenancy";
+import { unlock } from "./legacy";
 import { spawnFx } from "../floor/fx";
 import { MS_PER_GAME_HOUR } from "./clock";
 
@@ -76,6 +77,7 @@ function scandal(cheater: TenantRuntime, partner: TenantRuntime, third: TenantRu
   startFeud(partner, cheater, true); // 分手後冷戰(修羅場日誌已經夠大聲)
   endCohabitOnBreakup(cId, pId);
   notify(`💔 修羅場!${cheater.tenant.name} 劈腿被 ${partner.tenant.name} 抓包,兩人分手了`);
+  unlock("scandal"); // 成就:修羅場(§G-7)
 }
 
 /** 劈腿抓包 pass:掃所有情侶,任一方與第三人曖昧過界 → 低機率當場抓包 */

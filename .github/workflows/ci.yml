@@ -1,0 +1,23 @@
+name: CI
+
+# push 到 main / 開 PR 時,跑型別檢查(build)+ 全套回歸測試。
+# 綠燈才代表這次改動沒有打壞既有系統——接手的模型改完務必等 CI 通過再收工。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build（等同型別檢查）
+        run: npm run build
+      - name: 回歸測試（scripts/run-all.ts）
+        run: npm test

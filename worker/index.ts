@@ -1,7 +1,11 @@
 /**
  * Cloudflare Worker:同時服務靜態網站(env.ASSETS)與 AI 敘事端點。
- * /api/narrate 由 Claude 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶標籤。
- * API key 存在 Worker secret(ANTHROPIC_API_KEY),前端同源 fetch,金鑰不外洩。
+ * /api/narrate 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶/事件;
+ * /api/invite 由名字+個性描述生成特邀租客資料。
+ * 主力 provider = Gemini(GEMINI_API_KEY 免費層);Claude(ANTHROPIC_API_KEY,haiku)為備援。
+ * API key 存在 Worker secret,前端同源 fetch,金鑰不外洩。
+ * 端點防護:同源檢查 + 請求體上限 + server 端 context 夾值(見 guardRequest / clampCtx),
+ * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
  */
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -109,14 +113,85 @@ function parseResult(
     const event = obj.event && typeof obj.event === "object" ? obj.event : null;
     const arcUpdate = obj.arcUpdate && typeof obj.arcUpdate === "object" ? obj.arcUpdate : null;
     const summaryUpdate = typeof obj.summaryUpdate === "string" ? obj.summaryUpdate.slice(0, 220).trim() || null : null;
-    return { diary: obj.diary.trim(), newMemory, event, summaryUpdate, arcUpdate };
+    return { diary: obj.diary.trim().slice(0, 500), newMemory, event, summaryUpdate, arcUpdate };
   } catch {
     return null;
   }
 }
 
-/** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次 */
-async function geminiGenerate(system: string, user: string, key: string, maxOutputTokens = 1024): Promise<string> {
+// ---------------------------------------------------------------------------
+// 端點防護:公開的 /api/* 沒有帳號,靠同源 + 體積 + server 端夾值擋掉裸 POST 濫用
+// (惡意刷 API = 燒光大家共用的 Gemini 免費額度,或觸發 Claude 備援的真實費用)
+// ---------------------------------------------------------------------------
+
+const MAX_BODY = 16 * 1024; // 16KB:正常一位租客的 narrate context 遠小於此
+
+/** 同源判定:Origin 或 Referer 的 host 要等於本站 host;兩者皆無(裸 curl)→ 擋。
+ *  比對 host 而非寫死網域,換自訂網域也自動適用。 */
+function sameOrigin(req: Request): boolean {
+  const host = new URL(req.url).host;
+  for (const h of [req.headers.get("origin"), req.headers.get("referer")]) {
+    if (!h) continue;
+    try {
+      if (new URL(h).host === host) return true;
+    } catch {
+      /* 壞掉的 header 當作不符 */
+    }
+  }
+  return false;
+}
+
+/** 進入任何 AI 端點前的守門:非同源 → 403、請求體過大 → 413;通過回 null */
+function guardRequest(req: Request): Response | null {
+  if (!sameOrigin(req)) return Response.json({ error: "forbidden" }, { status: 403 });
+  if (Number(req.headers.get("content-length") ?? "0") > MAX_BODY) {
+    return Response.json({ error: "too_large" }, { status: 413 });
+  }
+  return null;
+}
+
+const clampStr = (v: unknown, n: number): string => (typeof v === "string" ? v.slice(0, n) : "");
+const clampArr = (v: unknown, n: number, itemLen: number): string[] =>
+  Array.isArray(v) ? v.slice(0, n).map((x) => String(x).slice(0, itemLen)) : [];
+const clampStat = (v: unknown): number => (Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v as number))) : 50);
+const clampInt = (v: unknown, lo: number, hi: number, dflt: number): number =>
+  Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v as number))) : dflt;
+
+/** server 端把使用者送來的 context 夾到合理上限:防惡意 payload 灌爆 prompt(= 灌爆 token 成本) */
+function clampCtx(raw: unknown): NarrateCtx {
+  const c = (raw ?? {}) as Record<string, any>;
+  const arc = c.arc && typeof c.arc === "object"
+    ? { theme: clampStr(c.arc.theme, 40), stage: clampInt(c.arc.stage, 1, 9, 1), maxStage: clampInt(c.arc.maxStage, 2, 9, 3), summary: clampStr(c.arc.summary, 200) }
+    : null;
+  return {
+    name: clampStr(c.name, 24),
+    occupation: clampStr(c.occupation, 40),
+    bio: clampStr(c.bio, 120),
+    dayLabel: clampStr(c.dayLabel, 20),
+    coreTags: clampArr(c.coreTags, 8, 40),
+    memoryTags: clampArr(c.memoryTags, 12, 40),
+    stats: {
+      mood: clampStat(c.stats?.mood),
+      stress: clampStat(c.stats?.stress),
+      affinity: clampStat(c.stats?.affinity),
+      satisfaction: clampStat(c.stats?.satisfaction),
+    },
+    todayLog: clampArr(c.todayLog, 20, 200),
+    relationships: clampArr(c.relationships, 12, 80),
+    events: clampArr(c.events, 12, 200),
+    neighbors: clampArr(c.neighbors, 8, 24),
+    summary: clampStr(c.summary, 400),
+    arc,
+    flags: clampArr(c.flags, 16, 40),
+  };
+}
+
+// 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
+export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult };
+
+/** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
+ *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */
+async function geminiGenerate(system: string, user: string, key: string, maxOutputTokens = 1024, schema?: unknown): Promise<string> {
   const doFetch = () =>
     fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
       method: "POST",
@@ -127,6 +202,7 @@ async function geminiGenerate(system: string, user: string, key: string, maxOutp
         generationConfig: {
           maxOutputTokens,
           responseMimeType: "application/json",
+          ...(schema ? { responseSchema: schema } : {}),
           temperature: 1.1, // 敘事多一點變化
           thinkingConfig: { thinkingBudget: 0 }, // 關思考,確保輸出、更快更省
         },
@@ -191,7 +267,54 @@ const INVITE_SYSTEM = `你是《房東監視中》的角色設計 AI。玩家會
  "monthlyRent":15000,
  "appearance":{"hairStyle":"short","hairColor":"#4a3a2a","shirt":"#5aa06a","pants":"#3d4257","skin":"#f0c19a","accessory":"none"}}`;
 
+/** invite 的 Gemini responseSchema:欄位固定、含 enum,原生保證結構(格式壞掉的機率幾乎歸零)。
+ *  preferences 六鍵全設選填(AI 只挑 2~3 個);前端仍會再消毒一次,schema 只是第一道防線。 */
+const HAIR_ENUM = ["short", "long", "ponytail", "spiky", "bob"];
+const ACC_ENUM = ["none", "glasses", "round_glasses", "cap", "bow", "headphones"];
+const S = (extra: Record<string, unknown> = {}) => ({ type: "STRING", ...extra });
+const I = { type: "INTEGER" };
+const INVITE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    occupation: S(),
+    bio: S(),
+    isAdult: { type: "BOOLEAN" },
+    gender: S({ enum: ["male", "female", "nonbinary"] }),
+    attractedTo: { type: "ARRAY", items: S({ enum: ["male", "female", "nonbinary"] }) },
+    archetypeKey: S({ enum: ["office", "student", "freelancer"] }),
+    coreTags: {
+      type: "ARRAY",
+      items: { type: "OBJECT", properties: { id: S(), label: S(), behaviorHint: S() }, required: ["id", "label", "behaviorHint"] },
+    },
+    stats: {
+      type: "OBJECT",
+      properties: { mood: I, stress: I, wellbeing: I, energy: I, affinity: I },
+      required: ["mood", "stress", "wellbeing", "energy", "affinity"],
+    },
+    preferences: {
+      type: "OBJECT",
+      properties: { tech: I, cozy: I, noise: I, soundproof: I, storage: I, style: I },
+    },
+    monthlyRent: I,
+    appearance: {
+      type: "OBJECT",
+      properties: {
+        hairStyle: S({ enum: HAIR_ENUM }),
+        hairColor: S(),
+        shirt: S(),
+        pants: S(),
+        skin: S(),
+        accessory: S({ enum: ACC_ENUM }),
+      },
+      required: ["hairStyle", "hairColor", "shirt", "pants", "skin", "accessory"],
+    },
+  },
+  required: ["occupation", "bio", "isAdult", "gender", "attractedTo", "archetypeKey", "coreTags", "stats", "preferences", "monthlyRent", "appearance"],
+};
+
 async function handleInvite(req: Request, env: Env): Promise<Response> {
+  const blocked = guardRequest(req);
+  if (blocked) return blocked;
   const provider = env.GEMINI_API_KEY ? "gemini" : env.ANTHROPIC_API_KEY ? "claude" : null;
   if (!provider) return Response.json({ error: "no_key" }, { status: 503 });
 
@@ -209,7 +332,7 @@ async function handleInvite(req: Request, env: Env): Promise<Response> {
   try {
     const text =
       provider === "gemini"
-        ? await geminiGenerate(INVITE_SYSTEM, user, env.GEMINI_API_KEY!, 768)
+        ? await geminiGenerate(INVITE_SYSTEM, user, env.GEMINI_API_KEY!, 768, INVITE_SCHEMA)
         : await claudeGenerate(INVITE_SYSTEM, user, env.ANTHROPIC_API_KEY!, 768);
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return Response.json({ error: "parse_failed" }, { status: 502 });
@@ -225,12 +348,14 @@ async function handleInvite(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleNarrate(req: Request, env: Env): Promise<Response> {
+  const blocked = guardRequest(req);
+  if (blocked) return blocked;
   const provider = env.GEMINI_API_KEY ? "gemini" : env.ANTHROPIC_API_KEY ? "claude" : null;
   if (!provider) return Response.json({ error: "no_key" }, { status: 503 });
 
   let ctx: NarrateCtx;
   try {
-    ctx = (await req.json()) as NarrateCtx;
+    ctx = clampCtx(await req.json()); // server 端夾值:惡意 payload 灌不爆 prompt
   } catch {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }

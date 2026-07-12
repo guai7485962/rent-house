@@ -1,6 +1,6 @@
 {
   "note": "固定種子 20260710、10 遊戲日、事件選第一項。改動手感後用 --update 重建基準。",
-  "money": 55163,
+  "money": 56663,
   "ledgerCount": 30,
   "decisions": 0,
   "tenantCount": 2,
@@ -21,8 +21,8 @@
       "stress": 11.2,
       "energy": 96,
       "wellbeing": 79.8,
-      "affinity": 70,
-      "satisfaction": 86.5,
+      "affinity": 79.6,
+      "satisfaction": 89.4,
       "rent": 16500,
       "logs": 60,
       "memories": 2

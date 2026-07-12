@@ -11,8 +11,8 @@ import { applyHour } from "./tick";
 import { save } from "./persistence";
 
 // 每日管理費(讓「支出」有意義;小額、可調;finance.ts 月租金流也引用)
-export const BASE_UPKEEP = 300;
-export const PER_ROOM_UPKEEP = 150;
+export const BASE_UPKEEP = 250;
+export const PER_ROOM_UPKEEP = 100;
 
 /** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
 export function addMoney(amount: number, label: string, category: TxnCategory) {
@@ -35,6 +35,12 @@ export function collectRent() {
     const paid = Math.round(daily * factor);
     addMoney(paid, `${rt.tenant.name} 房租`, "rent");
     const full = paid >= daily * 0.95;
+    // 被動好感涓流:住得滿意又準時繳清 → 對房東的好感慢慢累積。
+    // 這是正向循環的起點——好感↑ 會讓收租公式的租金跟著回升(把租客照顧好,錢自然變快)。
+    if (full && rt.satisfaction >= 55) {
+      const gain = rt.satisfaction >= 75 ? 1 : 0.6;
+      rt.tenant.stats.affinity = clamp(rt.tenant.stats.affinity + gain, 0, 100);
+    }
     rt.log.push({
       gameMs: state.gameMs,
       timeLabel: fmt(state.gameMs),
@@ -149,8 +155,9 @@ export function buyUpgrade(roomId: string, upgradeId: string): { ok: boolean; re
   if (rt) {
     rt.satisfaction = clamp(rt.satisfaction + 10, 0, 100);
     rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 8, 0, 100);
+    rt.tenant.stats.affinity = clamp(rt.tenant.stats.affinity + 8, 0, 100); // 花錢改善居住 → 對房東好感直接上升
     rt.unhappyHours = 0;
-    pushMemory(rt.tenant, `[房間${def.name}了]`, `房東花大錢幫房間做了${def.name},住起來明顯升級,心存好感。`, "landlord_decision");
+    pushMemory(rt.tenant, `[房間${def.name}了]`, `房東花大錢幫房間做了${def.name},住起來明顯升級,心存感激。`, "landlord_decision");
     pushSocialLog(rt, `${def.icon} 房東幫房間做了「${def.name}」,整個空間質感都不一樣了!`, "major");
   }
   notify(`${def.icon} ${roomId.replace(/^r/, "")} 房完成「${def.name}」改建`);

@@ -145,6 +145,7 @@ export function repairBreakdown(roomId: string): { ok: boolean; reason?: string 
   for (const rt of occupantsOf(roomId)) {
     rt.satisfaction = clamp(rt.satisfaction + 8, 0, 100);
     rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 5, 0, 100);
+    rt.tenant.stats.affinity = clamp(rt.tenant.stats.affinity + 5, 0, 100); // 房東及時修繕 → 好感上升
     pushSocialLog(rt, `🔧 ${def.label}修好了,房東動作真快,終於能正常生活了。`, "notable");
   }
   notify(`🔧 ${roomId.replace(/^r/, "")} 房「${def.label}」已修復(-$${bd.cost.toLocaleString()})`);

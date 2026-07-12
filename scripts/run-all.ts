@@ -24,12 +24,12 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith("--"));
  * scripts/ 下另有一批早期「煙霧腳本」(只印輸出、不斷言、有的還會掛著計時器不結束),
  * 不列入 CI——需要時用 `npx tsx scripts/run-all.ts <關鍵字>` 以檔名過濾即可跑到它們。
  */
-// 註:balance-test 不在 CI 集內——它快照「精確浮點 sim 狀態」,跨 Node 版本(本機 24 / CI 22)
-// 會有 <1 的微抖,是給開發者本機用的「手感回歸」工具,不是正確性測試。
-// 改數值模型後請本機跑 `npx tsx scripts/balance-test.ts`(或 `run-all.ts balance`)並視需要 --update。
+// 註:CI 必須固定時區(TZ=Asia/Taipei,見 .github/workflows/ci.yml)——遊戲用本地時區的
+// getHours()/getDate() 決定作息,設計基準 +08:00;UTC 下作息位移 8 小時會讓時段型測試假性失敗。
+// balance-test 已在時區一致下可重現,故留在 CI 集;浮點欄位另有 ±0.6 容差兜跨版本微抖。
 const REGRESSION = [
   "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
-  "bugfix2-test.ts", "conflict-test.ts", "data-catalog-test.ts",
+  "balance-test.ts", "bugfix2-test.ts", "conflict-test.ts", "data-catalog-test.ts",
   "daynight-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "feed-test.ts", "finance-test.ts", "fx-test.ts",
   "interactions-test.ts", "invite-test.ts", "legacy-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",

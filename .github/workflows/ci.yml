@@ -10,6 +10,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # 遊戲用本地時區的 getHours()/getDate() 決定作息與換日,設計基準是 +08:00
+    # (GAME_START),開發者也在 UTC+8。CI runner 預設 UTC → 作息整段位移 8 小時、
+    # 時段型互動/換日全歪掉,測試會假性失敗。固定時區讓 CI 與設計基準一致。
+    env:
+      TZ: Asia/Taipei
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

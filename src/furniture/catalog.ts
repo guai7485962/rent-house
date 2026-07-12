@@ -249,6 +249,27 @@ export const CATALOG: FurnitureDef[] = [
     sprite: { kind: "cat_tower" },
   },
   {
+    id: "litter_box",
+    name: "貓砂盆",
+    category: "utility",
+    placement: "room",
+    price: 1200,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: ["偷養浪貓", "光明正大養貓"],
+    unlocksStates: [],
+    social: false,
+    promptHints: ["貓砂盆藏在角落", "剷屎官的日常"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 3, y: 9, w: 10, h: 5, color: "#5f636b" }, // 盆身
+        { shape: "rect", x: 3, y: 8, w: 10, h: 1, color: "#787d86" }, // 盆緣高光
+        { shape: "rect", x: 4, y: 9, w: 8, h: 3, color: "#d8cdb4" }, // 貓砂
+      ],
+    },
+  },
+  {
     id: "plant",
     name: "觀葉盆栽",
     category: "ambiance",

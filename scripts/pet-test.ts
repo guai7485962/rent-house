@@ -14,7 +14,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { petsPass, adoptCat, catAttitude, ensurePets } = await import("../src/sim/pets");
+const { petsPass, adoptCat, catAttitude, ensurePets, mischiefRelief } = await import("../src/sim/pets");
 const { produceDailyDiaries, setNarrateImplForTest, diaryTiming } = await import("../src/sim/narration");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
@@ -119,6 +119,44 @@ const newPet = adoptCat(LIN);
 check("adoptCat:林小姐領到一隻貓", !!newPet && state.pets[LIN]?.name === newPet!.name);
 check("adoptCat:非橘子花色(1~3)", !!newPet && newPet!.color >= 1 && newPet!.color <= 3);
 check("adoptCat:有系統通知", state.noticeLog.some((n) => n.text.includes("養了一隻貓")));
+
+// --- adoptCat preset(應徵者自帶貓:指定名字/花色,§A-1)---
+delete state.pets[LIN];
+adoptCat(LIN, { name: "指定貓", color: 2 });
+check("adoptCat preset:名字/花色照給", state.pets[LIN]?.name === "指定貓" && state.pets[LIN]?.color === 2);
+
+// --- catAttitude 接受應徵者結構子集(§A-1 招租卡用)---
+check("catAttitude:貓奴描述 → like", catAttitude({ coreTags: [{ label: "[貓奴]" }], occupation: "上班族", bio: "" }) === "like");
+check("catAttitude:潔癖 → dislike", catAttitude({ coreTags: [{ label: "[潔癖]" }], occupation: "", bio: "" }) === "dislike");
+check("catAttitude:一般人 → neutral", catAttitude({ coreTags: [{ label: "[樂觀]" }], occupation: "工程師", bio: "平凡" }) === "neutral");
+
+// --- 貓咪家具降低搗蛋(§A-2:貓砂盆/貓跳台)---
+// r301 種子就有貓跳台(橘子的跳台),r302 無任何貓咪家具 → 用兩間對照
+const { addPlacement } = await import("../src/sim/placements");
+const chenPet = state.pets[CHEN]; // r301(有貓跳台)
+const linPet = state.pets[LIN]; // r302(無貓咪家具)
+check("r302 無貓咪家具:兩乘數皆 1", mischiefRelief(linPet).break === 1 && mischiefRelief(linPet).poop === 1);
+check("r301 種子有貓跳台:破壞乘數 = 0.3", mischiefRelief(chenPet).break === 0.3);
+check("r301 無貓砂盆:大小便乘數 = 1", mischiefRelief(chenPet).poop === 1);
+addPlacement({ defId: "litter_box", c: 2, r: 2, room: "r301" } as any);
+check("加貓砂盆後:大小便乘數降到 0.15", mischiefRelief(chenPet).poop === 0.15);
+addPlacement({ defId: "cat_tower", c: 12, r: 2, room: "r302" } as any);
+check("給 r302 加貓跳台:破壞乘數降到 0.3", mischiefRelief(linPet).break === 0.3);
+
+// --- 招租:應徵者約兩成自帶貓(統計)---
+const { generateApplicants: genApp } = await import("../src/sim/recruit");
+let withPet = 0;
+let sampled = 0;
+for (let i = 0; i < 120; i++) {
+  for (const a of genApp("r304")) {
+    sampled++;
+    if (a.pet) {
+      withPet++;
+      if (!(typeof a.pet.name === "string" && a.pet.color >= 1 && a.pet.color <= 3)) { withPet = -999; break; }
+    }
+  }
+}
+check("應徵者帶貓:比例落在合理區間(5%~40%)", withPet > 0 && withPet / sampled >= 0.05 && withPet / sampled <= 0.4, `${withPet}/${sampled}`);
 
 // --- 存檔往返 ---
 save();

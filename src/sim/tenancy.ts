@@ -99,6 +99,7 @@ export function moveIn(roomId: string, ap: Applicant) {
   if (tenant.appearance) setCustomAppearance(tenant.id, tenant.appearance); // 部件化外觀登錄(髮型/配件/衣色)
   refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
+  if (ap.pet) adoptCat(ap.id, ap.pet); // 自帶寵物 → 入住即成為飼主(§A-1)
   save();
 }
 

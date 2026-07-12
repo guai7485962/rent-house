@@ -8,10 +8,11 @@
  * 取得途徑:種子(陳家豪的橘貓「橘子」,他的作息本來就有逗貓時段)、
  * AI/規則事件的 adopt_cat 行為指令(指令到期後貓留下,成為永久寵物)。
  */
-import type { Pet, Tenant } from "../types";
+import type { Pet } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
 import { adjustRelationship } from "./social";
 import { unlock } from "./legacy";
+import { getPlacements } from "./placements";
 import { roomRect } from "./placements";
 import { spawnFx } from "../floor/fx";
 
@@ -48,15 +49,16 @@ export function ensurePets() {
   }
 }
 
-/** 領養一隻貓(adopt_cat 指令生效時呼叫;已有貓則不重複)。回傳新貓或 null */
-export function adoptCat(tenantId: string): Pet | null {
+/** 領養一隻貓(adopt_cat 指令生效 / 帶寵物入住時呼叫;已有貓則不重複)。
+ *  preset:指定名字/花色(應徵者自帶的貓);省略則隨機。回傳新貓或 null。 */
+export function adoptCat(tenantId: string, preset?: { name: string; color: number }): Pet | null {
   if (state.pets[tenantId]) return null;
   const rt = state.runtimes[tenantId];
   if (!rt) return null;
   const pet: Pet = {
-    name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)],
+    name: preset?.name ?? CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)],
     kind: "cat",
-    color: 1 + Math.floor(Math.random() * 3), // 黑/白/三花(橘子是種子專屬)
+    color: preset?.color ?? 1 + Math.floor(Math.random() * 3), // 黑/白/三花(橘子是種子專屬)
     ownerId: tenantId,
     hangout: roomOfTenant(tenantId) ?? "lounge",
     sinceMs: state.gameMs,
@@ -66,9 +68,34 @@ export function adoptCat(tenantId: string): Pet | null {
   return pet;
 }
 
-/** 對貓的態度:標籤/職業裡有貓狗動物 → 喜歡;潔癖/過敏/怕貓 → 排斥;其餘中立 */
-export function catAttitude(t: Tenant): "like" | "dislike" | "neutral" {
-  const text = [...t.coreTags.map((x) => x.label), ...t.memoryTags.map((x) => x.label), t.occupation, t.bio].join(" ");
+/** 隨機挑一組貓名/花色(給應徵者自帶的貓;花色 1~3,橘色是種子專屬) */
+export function randomCatPreset(): { name: string; color: number } {
+  return { name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)], color: 1 + Math.floor(Math.random() * 3) };
+}
+
+/** 飼主房間是否擺了某件貓咪家具(貓砂盆/貓跳台 → 降低對應搗蛋機率) */
+function ownerRoomHas(pet: Pet, defId: string): boolean {
+  const room = roomOfTenant(pet.ownerId);
+  return !!room && getPlacements().some((p) => p.room === room && p.defId === defId);
+}
+
+/** 貓咪家具對搗蛋機率的乘數:貓跳台壓低破壞、貓砂盆壓低隨地大小便(§A-2) */
+export function mischiefRelief(pet: Pet): { break: number; poop: number } {
+  return {
+    break: ownerRoomHas(pet, "cat_tower") ? 0.3 : 1,
+    poop: ownerRoomHas(pet, "litter_box") ? 0.15 : 1,
+  };
+}
+
+/** 對貓的態度:標籤/職業裡有貓狗動物 → 喜歡;潔癖/過敏/怕貓 → 排斥;其餘中立。
+ *  接受結構子集(租客或應徵者都適用;memoryTags 可省略) */
+export function catAttitude(t: {
+  coreTags: { label: string }[];
+  memoryTags?: { label: string }[];
+  occupation: string;
+  bio: string;
+}): "like" | "dislike" | "neutral" {
+  const text = [...t.coreTags.map((x) => x.label), ...(t.memoryTags ?? []).map((x) => x.label), t.occupation, t.bio].join(" ");
   if (/怕貓|過敏|潔癖|討厭動物/.test(text)) return "dislike";
   if (/貓|狗|動物|寵物|療癒/.test(text)) return "like";
   return "neutral";
@@ -143,14 +170,18 @@ function rollVisit(pet: Pet, owner: TenantRuntime) {
   }
 }
 
-/** 搗蛋:打破東西 / 隨地大小便(在貓當下待的區域結算) */
+/** 搗蛋:打破東西 / 隨地大小便(在貓當下待的區域結算)。
+ *  貓咪家具(飼主房)會壓低對應機率:貓跳台 → 有地方磨爪攀爬、少破壞;貓砂盆 → 幾乎不隨地大小便。 */
 function rollMischief(pet: Pet, owner: TenantRuntime) {
   const here = pet.hangout;
   const victim = here === "lounge" ? null : residentOf(here);
   const place = here === "lounge" ? "交誼廳" : victim && victim.tenant.id !== pet.ownerId ? `${victim.tenant.name} 的房間` : "房間";
+  const relief = mischiefRelief(pet);
+  const breakChance = 0.03 * relief.break; // 貓跳台:破壞降到三成
+  const poopChance = 0.03 * relief.poop; // 貓砂盆:隨地大小便降到 15%
 
   // 打破東西:碎裂聲 + 清潔度掉、在場的人壓力上升
-  if (Math.random() < 0.03 && !onCooldown(`pet|${pet.ownerId}|break`, CD.break)) {
+  if (Math.random() < breakChance && !onCooldown(`pet|${pet.ownerId}|break`, CD.break)) {
     markCooldown(`pet|${pet.ownerId}|break`);
     unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 8, 0, 100);
@@ -165,7 +196,7 @@ function rollMischief(pet: Pet, owner: TenantRuntime) {
   }
 
   // 隨地大小便:清潔度大掉,苦主壓力上升
-  if (Math.random() < 0.03 && !onCooldown(`pet|${pet.ownerId}|poop`, CD.poop)) {
+  if (Math.random() < poopChance && !onCooldown(`pet|${pet.ownerId}|poop`, CD.poop)) {
     markCooldown(`pet|${pet.ownerId}|poop`);
     unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 10, 0, 100);

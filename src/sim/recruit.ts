@@ -6,6 +6,7 @@ import type { Appearance, CoreTag, Gender, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 import { upgradeRentBonus } from "./upgrades";
 import { randomAppearance } from "../pixel/parts";
+import { randomCatPreset } from "./pets";
 
 interface Archetype {
   key: string; // 對應 ARCHETYPE_ROUTINES 的作息
@@ -208,6 +209,8 @@ export interface Applicant {
   appearance?: Appearance;
   /** 是否成年(undefined = 是;特邀租客一律經 isAdult 檢查才會生成) */
   isAdult?: boolean;
+  /** 自帶的寵物貓(約兩成應徵者有;入住即成為飼主,§A-1) */
+  pet?: { name: string; color: number };
 }
 
 /** 應徵者實際開的月租:基礎租金 × 房間升級行情加成,取整到百位 */
@@ -280,5 +283,6 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       stars: matchStars(a.preferences, attrs),
       ...randomIdentity(),
       appearance: randomAppearance(),
+      ...(Math.random() < 0.22 ? { pet: randomCatPreset() } : {}), // 約兩成應徵者自帶貓
     }));
 }

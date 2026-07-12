@@ -5,7 +5,17 @@ import { roomAttributes } from "../sim/placements";
 import { requestInvite, sanitizeInvited, looksMinor } from "../sim/invite";
 import { moveIn, getApplicants } from "../store";
 import { relistApplicants, RELIST_COST } from "../sim/tenancy";
+import { catAttitude } from "../sim/pets";
 import { state } from "../sim/gameState";
+
+// 這層樓已經有貓時,才需要提醒應徵者的「貓緣」(方便房東配房,避免把怕貓的人放進有貓的環境)
+const floorHasCat = computed(() => Object.keys(state.pets).length > 0);
+const ATT = { like: "🐈 親貓", dislike: "🙀 怕貓/潔癖", neutral: "" } as const;
+function catNote(a: Applicant): string {
+  if (a.pet) return "🐈 自帶貓";
+  if (!floorHasCat.value) return "";
+  return ATT[catAttitude(a)];
+}
 
 const props = defineProps<{ roomId: string }>();
 const emit = defineEmits<{ close: []; upgrade: [roomId: string] }>();
@@ -105,6 +115,7 @@ function stars(n: number) {
           <div class="row1">
             <span class="name">{{ a.name }}</span>
             <span class="job">{{ a.occupation }}</span>
+            <span v-if="catNote(a)" class="catnote" :class="{ warn: catNote(a).includes('怕貓') }">{{ catNote(a) }}</span>
             <span class="stars">{{ stars(a.stars) }}</span>
           </div>
           <p class="bio">{{ a.bio }}</p>
@@ -164,6 +175,8 @@ function stars(n: number) {
 .row1 { display: flex; align-items: baseline; gap: 8px; }
 .name { font-weight: 700; font-size: 15px; }
 .job { font-size: 12px; color: var(--text-dim); }
+.catnote { font-size: 11px; color: #cdbcff; border: 1px solid var(--accent-2); border-radius: 999px; padding: 1px 7px; }
+.catnote.warn { color: #ffc9a3; border-color: #c78a5a; }
 .stars { margin-left: auto; color: var(--accent); font-size: 13px; letter-spacing: 1px; }
 .bio { font-size: 12.5px; line-height: 1.6; color: var(--text); opacity: 0.9; margin: 6px 0; }
 .row2 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }

@@ -346,7 +346,7 @@ function onDecide(choiceId: string, label: string) {
 
 <template>
   <header>
-    <div class="title">🏠 房東監視中 <span class="ver">prototype</span></div>
+    <div class="title">🏠 房東監視中</div>
     <div class="meta">
       <span>🕐 {{ clockLabel }}</span>
       <span>💰 {{ state.money.toLocaleString() }}</span>
@@ -416,6 +416,7 @@ function onDecide(choiceId: string, label: string) {
       <span class="rname">{{ rt.tenant.name }}</span>
       <span class="rjob">{{ rt.tenant.occupation }}</span>
       <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
+      <span v-if="state.pets[rt.tenant.id]" class="rpet">🐈 {{ state.pets[rt.tenant.id].name }}</span>
     </div>
     <div class="room-tools">
       <span class="rent-now">月租 ${{ rt.tenant.finance.monthlyRent.toLocaleString() }}</span>
@@ -683,6 +684,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
 .shop-btn:hover { background: #322c46; }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
+.rpet { font-size: 11.5px; color: #e0b078; align-self: center; }
 .advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
 .advance:hover { transform: translateY(-1px); }
 .advance:disabled { opacity: 0.55; transform: none; cursor: wait; }

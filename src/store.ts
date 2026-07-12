@@ -50,6 +50,7 @@ export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } fr
 export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatPreset } from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
+export { communityPass } from "./sim/community";
 
 export type { StoryArc } from "./sim/arcs";
 

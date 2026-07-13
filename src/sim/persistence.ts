@@ -192,6 +192,7 @@ export function load(): boolean {
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],
         inLounge: false,
+        visiting: null,
         diaryHour: saved.diaryHour ?? -1, // 舊檔沒有 → ensureDiaryHours 指派
         lastDiaryDay: saved.lastDiaryDay ?? -99,
         moveInMs: saved.moveInMs ?? GAME_START.getTime(), // 舊檔沒有 → 當作開場入住

@@ -7,7 +7,7 @@ import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
-import { encounter, listRelationships, pairKey } from "./social";
+import { encounter, listRelationships, pairKey, getRel } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
 import { DIRECTIVES } from "./directives";
 import { generateHourly } from "./generate";
@@ -43,6 +43,31 @@ import { save } from "./persistence";
 
 /** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
 let showerClaim: { hourMs: number; id: string } | null = null;
+
+/** 適合串門子的休閒狀態 */
+const LEISURE_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "eating"]);
+
+/** 擲骰「到朋友房間串門子」:休閒時低機率,挑一位朋友以上(rel≥35 或情侶)、在家又空閒的鄰居。
+ *  回傳要去拜訪的那位(host),否則 null。 */
+function rollRoomVisit(rt: TenantRuntime): TenantRuntime | null {
+  if (Math.random() > 0.15) return null;
+  const id = rt.tenant.id;
+  const myRoom = roomOfTenant(id);
+  let best: TenantRuntime | null = null;
+  let bestVal = 34; // 朋友門檻:關係值 ≥ 35
+  for (const other of Object.values(state.runtimes)) {
+    if (other.tenant.id === id || other.tenant.visualState === "away" || other.pendingEvent) continue;
+    const hostRoom = roomOfTenant(other.tenant.id);
+    if (!hostRoom || hostRoom === myRoom) continue; // 沒房、或本來就同住一間 → 不算串門子
+    const rel = getRel(id, other.tenant.id);
+    const v = rel?.value ?? 0;
+    if ((rel?.romantic || v >= 35) && v > bestVal) {
+      bestVal = v;
+      best = other;
+    }
+  }
+  return best;
+}
 
 export const homeTile = (tenantId: string): Tile => {
   // 同居者優先回伴侶的房(即使是有固定床位的種子租客)
@@ -201,6 +226,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   // 目標家具格(同居者用伴侶房)
   const roomId = roomOfTenant(rt.tenant.id);
   rt.inLounge = false;
+  rt.visiting = null;
   if (st === "away") {
     rt.targetTile = null;
   } else if (isDeviation) {
@@ -223,13 +249,17 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     if (tgt) {
       rt.targetTile = tgt.tile;
       rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
-      // 共用淋浴間「單人使用」:同一小時已經有人在洗澡 → 這位改回自己房間發呆。
-      // 避免非伴侶在共用浴室「同框洗澡」;伴侶的親密共浴走互動系統(在房間發生),不受此限。
+      // 共用淋浴間:非伴侶「單人使用」——同一小時已有人在洗,其他人改回自房發呆(不同框洗澡);
+      // 但伴侶可以一起洗(同框洗澡就在淋浴間發生),不受此限。
       if (st === "showering" && tgt.placement.room === "bathroom") {
         if (showerClaim && showerClaim.hourMs === state.gameMs && showerClaim.id !== rt.tenant.id) {
-          st = "idle";
-          rt.targetTile = homeTile(rt.tenant.id);
-          rt.inLounge = false;
+          const rel = getRel(showerClaim.id, rt.tenant.id);
+          if (!(rel && rel.romantic)) {
+            st = "idle";
+            rt.targetTile = homeTile(rt.tenant.id);
+            rt.inLounge = false;
+          }
+          // 是伴侶 → 允許一起在淋浴間洗澡(同框),保留 showering + 浴室目標
         } else {
           showerClaim = { hourMs: state.gameMs, id: rt.tenant.id };
         }
@@ -240,6 +270,15 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
       rt.targetTile = homeTile(rt.tenant.id);
     }
   }
+  // 朋友以上互相到房間串門子(遊玩):休閒時段、低機率、朋友在家且空閒、不在交誼廳時
+  if (LEISURE_STATES.has(st) && !isDeviation && !rt.inLounge && st !== "away") {
+    const host = rollRoomVisit(rt);
+    if (host) {
+      rt.visiting = roomOfTenant(host.tenant.id);
+      rt.targetTile = homeTile(host.tenant.id); // 走到朋友房裡
+    }
+  }
+
   rt.tenant.visualState = st;
   rt.roomProps = deriveProps(rt, st, hour);
 

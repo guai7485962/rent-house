@@ -49,6 +49,8 @@ export interface InteractionDef {
   pose?: PairPose;
   /** 家具座位錨點(§10-6):兩人「坐/躺到」這件家具上(反查地點的第一件;沒有就退回站位演出) */
   seatOn?: string[];
+  /** 演出改在指定共用設施發生(如一起洗澡在「bathroom」淋浴間,而不是在自己房間) */
+  venue?: string;
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
 }
 
@@ -112,6 +114,7 @@ export const INTERACTIONS: InteractionDef[] = [
     id: "bath_together",
     tier: "couple",
     location: "room",
+    venue: "bathroom", // 演出在淋浴間發生(而非自己房間)
     adult: true,
     privacy: true,
     timeWindow: [21, 23],
@@ -218,6 +221,34 @@ export const INTERACTIONS: InteractionDef[] = [
     fx: "hearts",
     lines: ["{o}把最後一口宵夜留給了自己,心跳漏了半拍。"],
     effects: { rel: 3, mood: 4 },
+  },
+  // ——— 朋友以上:到彼此房間串門子(§10 friend-visit)———
+  {
+    id: "room_hangout",
+    tier: "close",
+    location: "room",
+    pose: "pair",
+    timeWindow: [15, 23],
+    weight: 3,
+    cooldownHours: 8,
+    chance: 0.5,
+    fx: "chat",
+    lines: ["和{o}窩在房裡聊天鬼混,一聊就忘了時間。", "和{o}在房裡窩了一下午,天南地北地聊。"],
+    effects: { rel: 2, mood: 3, stress: -2 },
+  },
+  {
+    id: "room_coop_game",
+    tier: "close",
+    location: "room",
+    requiresFurniture: ["tv_console"],
+    pose: "sit",
+    timeWindow: [18, 23],
+    weight: 2,
+    cooldownHours: 12,
+    chance: 0.45,
+    fx: "chat",
+    lines: ["和{o}窩在房裡一起打電動,吵吵鬧鬧殺得起勁。"],
+    effects: { rel: 3, mood: 4, stress: -3 },
   },
 ];
 
@@ -343,11 +374,13 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
     pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
     pushMemory(B.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
   }
-  // 演出錨點:家具座位(坐上沙發/躺上床)優先,其次兩人所在的家具格,再退房間中心
-  const loc = def.location === "lounge" ? "lounge" : roomId;
+  // 演出錨點:def.venue(指定共用設施,如一起洗澡在淋浴間)> 家具座位 > 兩人所在格 > 房間中心
+  const venueRect = def.venue ? roomRect(def.venue) : null;
+  const loc = def.venue ?? (def.location === "lounge" ? "lounge" : roomId);
   const seats = furnitureSeats(loc, def.seatOn);
-  const rect = roomId ? roomRect(roomId) : null;
-  const anchor = seats?.a ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
+  const rect = venueRect ?? (roomId ? roomRect(roomId) : null);
+  const venueAnchor = venueRect ? { c: Math.floor((venueRect.c0 + venueRect.c1) / 2), r: Math.floor((venueRect.r0 + venueRect.r1) / 2) } : null;
+  const anchor = seats?.a ?? venueAnchor ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
   if (anchor) {
     // 進行中的互動演出(泡泡/霧氣…)+ 姿勢:持續到下一個動作(1 遊戲小時);快轉時 gameUntil 收掉
     spawnFx(def.fx, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
@@ -410,7 +443,8 @@ export function interactionsPass(): Set<string> {
       loungeGroup.push(rt);
       continue;
     }
-    const roomId = roomOfTenant(rt.tenant.id);
+    // 串門子:拜訪中的租客併入「朋友房」那一組(朋友以上可到彼此房間互動)
+    const roomId = rt.visiting ?? roomOfTenant(rt.tenant.id);
     if (!roomId) continue;
     if (!byRoom.has(roomId)) byRoom.set(roomId, []);
     byRoom.get(roomId)!.push(rt);

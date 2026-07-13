@@ -20,8 +20,9 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { canRomance, pruneInvalidRomance, relationships, pairKey } = await import("../src/sim/social");
+const { canRomance, pruneInvalidRomance, relationships, pairKey, getRel } = await import("../src/sim/social");
 const { clearNoiseMemories } = await import("../src/sim/memoryEffects");
+const { INTERACTIONS } = await import("../src/sim/interactions");
 const { state, debugStepHour } = await import("../src/store");
 import type { Tenant } from "../src/types";
 
@@ -62,16 +63,35 @@ const removed = clearNoiseMemories(t);
 check("清掉噪音/失眠類記憶", removed.length === 2 && removed.includes("[被噪音困擾]") && removed.includes("[失眠]"));
 check("無關記憶保留(頻道破萬)", t.memoryTags.length === 1 && t.memoryTags[0].label === "[頻道破萬]");
 
-// --- #3 共用淋浴間單人使用:48 小時內不會有 2 人同時在浴室洗澡 ---
-let maxSimultaneous = 0;
+// --- #3 共用淋浴間:非伴侶不同框洗澡(伴侶可以)---
+let showerViolation = false;
 for (let i = 0; i < 48; i++) {
   debugStepHour();
-  const showering = Object.values(state.runtimes).filter(
-    (rt) => rt.tenant.visualState === "showering",
-  ).length;
-  maxSimultaneous = Math.max(maxSimultaneous, showering);
+  const shw = Object.values(state.runtimes).filter((rt) => rt.tenant.visualState === "showering");
+  for (let a = 0; a < shw.length; a++)
+    for (let b = a + 1; b < shw.length; b++) {
+      const rel = getRel(shw[a].tenant.id, shw[b].tenant.id);
+      if (!(rel && rel.romantic)) showerViolation = true; // 同時洗澡卻不是伴侶 → 違規
+    }
 }
-check("48 小時內同時洗澡人數 ≤ 1", maxSimultaneous <= 1, `實際最多 ${maxSimultaneous}`);
+check("非伴侶不會同框洗澡(伴侶才可以)", !showerViolation);
+
+// --- #1(本次)一起洗澡演出在淋浴間 ---
+check("bath_together 演出地點 = 淋浴間", INTERACTIONS.find((d) => d.id === "bath_together")?.venue === "bathroom");
+
+// --- #2 朋友以上會到彼此房間串門子 ---
+const chen = state.runtimes["tenant_chen_engineer"];
+const lin = state.runtimes["tenant_lin_asmr"];
+check("有朋友房間互動定義(room_hangout, close/room)", INTERACTIONS.some((d) => d.id === "room_hangout" && d.tier === "close" && d.location === "room"));
+let visited = false;
+for (let i = 0; i < 150 && !visited; i++) {
+  relationships[pairKey(chen.tenant.id, lin.tenant.id)] = { value: 70, romantic: false, cohabitOffered: false }; // 維持朋友
+  chen.pendingEvent = null;
+  lin.pendingEvent = null;
+  debugStepHour();
+  if (chen.visiting || lin.visiting) visited = true;
+}
+check("朋友以上會到彼此房間串門子(visiting 有觸發)", visited);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

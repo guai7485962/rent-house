@@ -9,6 +9,20 @@
  */
 import type { Tenant } from "../types";
 
+/** 噪音困擾類記憶的關鍵字(隔音改善後應清掉,否則租客會一直顯示被噪音困擾) */
+const NOISE_TROUBLE_RE = /噪音|失眠|睡不|吵得|安寧/;
+
+/** 移除某租客身上「被噪音困擾」類的記憶標籤(隔音處理後呼叫);回傳被移除的 label 清單 */
+export function clearNoiseMemories(t: Tenant): string[] {
+  const removed: string[] = [];
+  t.memoryTags = t.memoryTags.filter((m) => {
+    const hit = NOISE_TROUBLE_RE.test(m.label) || NOISE_TROUBLE_RE.test(m.behaviorHint);
+    if (hit) removed.push(m.label);
+    return !hit;
+  });
+  return removed;
+}
+
 /** 每小時的微幅數值漂移 */
 export interface Drift {
   mood?: number;

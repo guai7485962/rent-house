@@ -369,6 +369,8 @@ export interface GroupChoice {
   rest?: GroupDelta;
   /** 兩兩關係變化 */
   bond?: number;
+  /** 選這個 → 清掉參與者的「被噪音困擾」記憶(隔音類選項) */
+  clearsNoise?: boolean;
 }
 
 export interface GroupEvent {

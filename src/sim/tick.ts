@@ -4,7 +4,7 @@
  * 以及補進度(syncToNow)與快轉(同步版給測試、分批版給 UI)。
  */
 import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
-import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, currentGameMs } from "./clock";
+import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships, pairKey } from "./social";
@@ -36,10 +36,13 @@ import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { communityPass } from "./community";
-import { spawnFx } from "../floor/fx";
+import { spawnFx, pruneFxByGame } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { interactionsPass } from "./interactions";
 import { save } from "./persistence";
+
+/** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
+let showerClaim: { hourMs: number; id: string } | null = null;
 
 export const homeTile = (tenantId: string): Tile => {
   // 同居者優先回伴侶的房(即使是有固定床位的種子租客)
@@ -220,6 +223,17 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     if (tgt) {
       rt.targetTile = tgt.tile;
       rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
+      // 共用淋浴間「單人使用」:同一小時已經有人在洗澡 → 這位改回自己房間發呆。
+      // 避免非伴侶在共用浴室「同框洗澡」;伴侶的親密共浴走互動系統(在房間發生),不受此限。
+      if (st === "showering" && tgt.placement.room === "bathroom") {
+        if (showerClaim && showerClaim.hourMs === state.gameMs && showerClaim.id !== rt.tenant.id) {
+          st = "idle";
+          rt.targetTile = homeTile(rt.tenant.id);
+          rt.inLounge = false;
+        } else {
+          showerClaim = { hourMs: state.gameMs, id: rt.tenant.id };
+        }
+      }
     } else {
       // 房裡缺對應家具、共用區也沒有(或 hermit 拒去)→ 在自己房間發呆(不闖別人房)
       st = "idle";
@@ -302,6 +316,7 @@ export function hourlyTick(live = false) {
 
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
+  pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
   dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
@@ -355,13 +370,14 @@ function socialPass(skip: Set<string> = new Set()) {
       // 演出層:在兩人所在的交誼廳位置掛特效(里程碑優先,其次依互動基調),並讓兩人走到一起演(§10-6)
       const at = A.targetTile ?? B.targetTile;
       if (at) {
-        let dur = 8000;
-        if (res.milestone === "became_couple") { spawnFx("hearts", at.c, at.r, 15000); dur = 15000; }
-        else if (res.milestone === "broke_up") { spawnFx("heartbreak", at.c, at.r, 15000); dur = 15000; }
-        else if (res.tone === "conflict") { spawnFx("anger", at.c, at.r, 10000); dur = 10000; }
-        else if (res.tone === "romantic") { spawnFx("hearts", at.c, at.r, 10000); dur = 10000; }
-        else spawnFx("chat", at.c, at.r, 8000);
-        startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs, dur);
+        // 里程碑/衝突是「一瞬間」的演出 → 短;聊天泡泡是「進行中」→ 持續到下一個動作
+        if (res.milestone === "became_couple") spawnFx("hearts", at.c, at.r, 15000);
+        else if (res.milestone === "broke_up") spawnFx("heartbreak", at.c, at.r, 15000);
+        else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
+        else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
+        else spawnFx("chat", at.c, at.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
+        // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉
+        startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs);
       }
       if (res.tone === "conflict") maybeFeudAfterConflict(A, B); // 大吵可能升級成冷戰
       if (res.milestone === "became_couple") {

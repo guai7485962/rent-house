@@ -18,7 +18,7 @@ import { roomRect, getPlacements } from "./placements";
 import { getDef } from "../furniture/catalog";
 import { spawnFx, type FxKind } from "../floor/fx";
 import { startPairSession, type PairPose } from "../floor/pairSession";
-import { MS_PER_GAME_HOUR } from "./clock";
+import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 
 export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
 
@@ -349,9 +349,10 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
   const rect = roomId ? roomRect(roomId) : null;
   const anchor = seats?.a ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
   if (anchor) {
-    spawnFx(def.fx, anchor.c, anchor.r, 15000);
+    // 進行中的互動演出(泡泡/霧氣…)+ 姿勢:持續到下一個動作(1 遊戲小時);快轉時 gameUntil 收掉
+    spawnFx(def.fx, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
     // §10-6:登記雙人 session——有座位就坐/躺上去,否則走到錨點旁站一起;🔞 遮蔽式則整段隱藏
-    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, 15000, seats ?? undefined);
+    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, REAL_MS_PER_GAME_HOUR, seats ?? undefined);
   }
   state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
   // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬

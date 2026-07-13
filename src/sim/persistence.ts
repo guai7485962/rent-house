@@ -10,7 +10,7 @@ import type { Tenant } from "../types";
 import { hasDef } from "../furniture/catalog";
 import { placements } from "./placements";
 import { upgradeState } from "./upgrades";
-import { serializeRelationships, loadRelationships } from "./social";
+import { serializeRelationships, loadRelationships, pruneInvalidRomance } from "./social";
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
 import { state, tenants, refreshAppearances, GAME_START, type Txn } from "./gameState";
@@ -211,6 +211,7 @@ export function load(): boolean {
         }
       }
     }
+    pruneInvalidRomance((id) => state.runtimes[id]?.tenant); // 清掉不再合法的情侶(同性/未成年)
     refreshAppearances(); // 依房間指派配色,修正舊存檔可能的撞色
     ensureDiaryHours(); // 舊檔沒有日記時段 → 指派(每人錯開)
     ensurePets(); // 舊檔沒有寵物資料 → 補種子貓

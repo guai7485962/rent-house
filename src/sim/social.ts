@@ -76,10 +76,23 @@ export function setCouple(aId: string, bId: string, value: boolean, aT?: Tenant,
   }
 }
 
-/** 兩人是否互有戀愛意願(性別 × 取向) */
+/** 兩人是否互有戀愛意願(性別 × 取向)。依設定,伴侶關係只在異性之間發展。 */
 function attractedMutual(a: Tenant, b: Tenant): boolean {
   if (!a.gender || !b.gender || !a.attractedTo || !b.attractedTo) return false;
+  if (a.gender === b.gender) return false; // 只允許異性成為伴侶
   return a.attractedTo.includes(b.gender) && b.attractedTo.includes(a.gender);
+}
+
+/** 清掉不再合法的既有情侶關係(載入舊檔時用:同性/未成年 → 解除 romantic)。
+ *  getTenant:由 id 取回 Tenant(呼叫端注入,避免 social 依賴 store)。 */
+export function pruneInvalidRomance(getTenant: (id: string) => Tenant | undefined) {
+  for (const [key, rel] of Object.entries(relationships)) {
+    if (!rel.romantic) continue;
+    const [aId, bId] = key.split("|");
+    const a = getTenant(aId);
+    const b = getTenant(bId);
+    if (a && b && !canRomance(a, b)) rel.romantic = false;
+  }
 }
 
 /** 個性相容度(-5 排斥 ~ +5 契合),由核心標籤推得 */

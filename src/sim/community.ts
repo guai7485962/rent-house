@@ -11,6 +11,7 @@
 import type { GroupChoice, GroupEvent, GroupDelta } from "../types";
 import { state, clamp, notify, pushSocialLog, type TenantRuntime } from "./gameState";
 import { adjustRelationship, getRel } from "./social";
+import { clearNoiseMemories } from "./memoryEffects";
 import { addMoney } from "./economy";
 import { roomRect } from "./placements";
 import { spawnFx } from "../floor/fx";
@@ -254,7 +255,7 @@ const GROUP_TEMPLATES: GroupTemplate[] = [
         description: `${others.map((p) => p.tenant.name).join("、")} 一起來反映 ${target.tenant.name} 的作息太吵。你怎麼處理?`,
         choices: [
           { id: "warn", label: `警告 ${target.tenant.name}`, hint: "站在鄰居這邊(當事人會不爽)", first: { stress: 8, affinity: -6 }, rest: { satisfaction: 4, affinity: 4 } },
-          { id: "soundproof", label: "花錢做隔音($3,000)", hint: "一勞永逸,大家都滿意", money: -3000, all: { satisfaction: 6, affinity: 5 } },
+          { id: "soundproof", label: "花錢做隔音($3,000)", hint: "一勞永逸,大家都滿意", money: -3000, all: { satisfaction: 6, affinity: 5 }, clearsNoise: true },
           { id: "tolerate", label: "請大家互相包容", hint: "不花錢,但抱怨方會不滿", first: { mood: 3 }, rest: { stress: 4, affinity: -3 } },
         ],
       };
@@ -315,6 +316,7 @@ export function resolveGroupEvent(choiceId: string): boolean {
     rt.unhappyHours = 0;
   });
   if (choice.bond) bondAll(parts, choice.bond);
+  if (choice.clearsNoise) for (const rt of parts) clearNoiseMemories(rt.tenant); // 隔音選項:清掉噪音困擾記憶
   for (const rt of parts) pushSocialLog(rt, `🏢 「${ev.title}」——房東選擇了「${choice.label}」。`, "notable");
   state.interactionCooldowns["community|group_any"] = state.gameMs; // 與 onCooldown("group_any") 同鍵
   state.pendingGroupEvent = null;

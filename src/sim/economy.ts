@@ -7,6 +7,7 @@ import { getDef } from "../furniture/catalog";
 import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements } from "./placements";
 import { getUpgradeDef, roomUpgradeIds, upgradeState } from "./upgrades";
 import { state, clamp, fmt, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
+import { clearNoiseMemories } from "./memoryEffects";
 import { applyHour } from "./tick";
 import { save } from "./persistence";
 
@@ -182,6 +183,11 @@ export function buyUpgrade(roomId: string, upgradeId: string): { ok: boolean; re
     rt.unhappyHours = 0;
     pushMemory(rt.tenant, `[房間${def.name}了]`, `房東花大錢幫房間做了${def.name},住起來明顯升級,心存感激。`, "landlord_decision");
     pushSocialLog(rt, `${def.icon} 房東幫房間做了「${def.name}」,整個空間質感都不一樣了!`, "major");
+    // 隔音類改建:清掉「被噪音困擾」的記憶,否則裝了隔音還一直顯示困擾
+    if ((def.attributes.soundproof ?? 0) > 0 && clearNoiseMemories(rt.tenant).length > 0) {
+      rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 8, 0, 100);
+      pushSocialLog(rt, `🔇 隔音做好之後,終於不再被噪音吵到,睡得安穩多了。`, "notable");
+    }
   }
   notify(`${def.icon} ${roomId.replace(/^r/, "")} 房完成「${def.name}」改建`);
   save();

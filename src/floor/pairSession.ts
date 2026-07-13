@@ -8,7 +8,7 @@
 import type { Tile } from "./pathfind";
 import { currentBlocked } from "./pathfind";
 import { GRID_W, GRID_H } from "./map";
-import { MS_PER_GAME_HOUR } from "../sim/clock";
+import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "../sim/clock";
 
 /** pair = 相鄰站一起;sit = 並肩坐(沙發/談心/開黑);lie = 並排躺(賴床);hidden = 隱藏(🔞 遮蔽式) */
 export type PairPose = "pair" | "sit" | "lie" | "hidden";
@@ -37,7 +37,7 @@ function prune(gameNow: number) {
 /** 登記一場雙人互動:A 站錨點,B 站錨點旁第一個可走的相鄰格(找不到就同格疊站)。
  *  tiles = 明確指定兩人的格(§10-6 家具座位錨點:沙發並肩兩格、雙人床左右兩側——可為家具佔用格,
  *  agent 層會走到旁邊再「跨上去」)。 */
-export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = 15000, tiles?: { a: Tile; b: Tile }) {
+export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = REAL_MS_PER_GAME_HOUR, tiles?: { a: Tile; b: Tile }) {
   // 一人同時只演一場:清掉牽涉任一方的舊 session
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i];

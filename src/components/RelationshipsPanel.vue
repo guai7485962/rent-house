@@ -12,8 +12,13 @@ const rels = computed(() =>
   listRelationships().filter((r) => state.runtimes[r.aId] && state.runtimes[r.bId]),
 );
 
-/** 這對是否同居中(其中一方登記在 cohabits) */
-const isCohabit = (r: { aId: string; bId: string }) => !!(state.cohabits[r.aId] || state.cohabits[r.bId]);
+/** 這一「對」是否真的同居中:一方登記同居到「另一方所承租的房」才算,
+ *  不能只看某一方有沒有同居(否則會外溢到他和別人的關係上)。 */
+const isCohabit = (r: { aId: string; bId: string }) => {
+  const roomA = state.cohabits[r.aId]; // a 同居進去的房(該房承租人應是 b)
+  const roomB = state.cohabits[r.bId];
+  return (!!roomA && state.occupancy[roomA] === r.bId) || (!!roomB && state.occupancy[roomB] === r.aId);
+};
 
 /** 分組:情侶(置頂)/ 朋友以上 / 認識中 */
 const groups = computed(() => {

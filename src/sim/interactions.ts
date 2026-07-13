@@ -319,6 +319,22 @@ function offCooldown(aId: string, bId: string, def: InteractionDef): boolean {
   return last == null || state.gameMs - last >= def.cooldownHours * MS_PER_GAME_HOUR;
 }
 
+/** 串門前先確認至少有一項「好友房內活動」此刻能演，避免進屋後各做各的。 */
+export function canStartRoomVisit(visitor: TenantRuntime, host: TenantRuntime, roomId: string, hour: number): boolean {
+  const ctx: InteractCtx = {
+    hour,
+    thirdPresent: false,
+    adultMode: state.adultMode,
+    cohabiting: false,
+    furniture: furnitureSetOf(roomId),
+  };
+  return INTERACTIONS.some(
+    (def) => def.location === "room" && def.tier === "close"
+      && canInteract(def, visitor.tenant, host.tenant, ctx)
+      && offCooldown(visitor.tenant.id, host.tenant.id, def),
+  );
+}
+
 function applyPairEffect(rt: TenantRuntime, eff: InteractionDef["effects"]) {
   applySocialEffect(rt, { mood: eff.mood, stress: eff.stress });
   if (eff.energy) rt.tenant.stats.energy = clamp(rt.tenant.stats.energy + eff.energy, 0, 100);
@@ -328,10 +344,19 @@ function applyPairEffect(rt: TenantRuntime, eff: InteractionDef["effects"]) {
 function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId: string | null, hour: number, triggered: Set<string>) {
   if (present.length < 2) return;
   const furniture = furnitureSetOf(location === "lounge" ? "lounge" : roomId);
+  const pairs: { A: TenantRuntime; B: TenantRuntime; visitPair: boolean }[] = [];
   for (let i = 0; i < present.length; i++) {
     for (let j = i + 1; j < present.length; j++) {
       const A = present[i];
       const B = present[j];
+      pairs.push({ A, B, visitPair: A.visitHostId === B.tenant.id || B.visitHostId === A.tenant.id });
+    }
+  }
+  // 串門配對先演，避免主人先被同房第三人占用 session；每人每小時只演一場。
+  pairs.sort((a, b) => Number(b.visitPair) - Number(a.visitPair));
+  const busy = new Set<string>();
+  for (const { A, B, visitPair } of pairs) {
+      if (busy.has(A.tenant.id) || busy.has(B.tenant.id)) continue;
       const ctx: InteractCtx = {
         hour,
         thirdPresent: present.length > 2,
@@ -340,7 +365,10 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
         furniture,
       };
       const eligible = INTERACTIONS.filter(
-        (def) => def.location === location && canInteract(def, A.tenant, B.tenant, ctx) && offCooldown(A.tenant.id, B.tenant.id, def),
+        (def) => def.location === location
+          && (!visitPair || def.tier === "close")
+          && canInteract(def, A.tenant, B.tenant, ctx)
+          && offCooldown(A.tenant.id, B.tenant.id, def),
       );
       if (eligible.length === 0) continue;
       // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
@@ -354,11 +382,14 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
           break;
         }
       }
-      if (Math.random() > def.chance) continue;
+      // 保留原本的擲骰次數以穩定其他系統的亂數序列；串門配對不受失敗結果影響。
+      const chanceRoll = Math.random();
+      if (!visitPair && chanceRoll > def.chance) continue;
 
       performInteraction(A, B, def, roomId);
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
-    }
+      busy.add(A.tenant.id);
+      busy.add(B.tenant.id);
   }
 }
 

@@ -3,6 +3,7 @@
  * - 只允許異性成為伴侶(canRomance);pruneInvalidRomance 清掉既有同性情侶
  * - 隔音後清掉「被噪音困擾」記憶(clearNoiseMemories)
  * - 共用淋浴間單人使用(48 小時內不會有 2 人同時在浴室洗澡)
+ * - 好友串門成立時必定與正確主人建立雙人活動,不會一人睡覺一人發呆
  */
 const mem: Record<string, string> = {};
 (globalThis as any).localStorage = {
@@ -23,7 +24,8 @@ Math.random = () => {
 const { canRomance, pruneInvalidRomance, relationships, pairKey, getRel } = await import("../src/sim/social");
 const { clearNoiseMemories } = await import("../src/sim/memoryEffects");
 const { INTERACTIONS } = await import("../src/sim/interactions");
-const { state, debugStepHour } = await import("../src/store");
+const { activeSessions } = await import("../src/floor/pairSession");
+const { state, debugStepHour, roomOfTenant } = await import("../src/store");
 import type { Tenant } from "../src/types";
 
 let pass = 0;
@@ -84,14 +86,29 @@ const chen = state.runtimes["tenant_chen_engineer"];
 const lin = state.runtimes["tenant_lin_asmr"];
 check("有朋友房間互動定義(room_hangout, close/room)", INTERACTIONS.some((d) => d.id === "room_hangout" && d.tier === "close" && d.location === "room"));
 let visited = false;
+let sharedSession = false;
+let invalidVisitState = false;
+let wrongHost = false;
 for (let i = 0; i < 150 && !visited; i++) {
   relationships[pairKey(chen.tenant.id, lin.tenant.id)] = { value: 70, romantic: false, cohabitOffered: false }; // 維持朋友
   chen.pendingEvent = null;
   lin.pendingEvent = null;
   debugStepHour();
-  if (chen.visiting || lin.visiting) visited = true;
+  const visitor = chen.visiting ? chen : lin.visiting ? lin : null;
+  if (visitor) {
+    visited = true;
+    const host = visitor.visitHostId ? state.runtimes[visitor.visitHostId] : null;
+    wrongHost = !host || visitor.visiting !== roomOfTenant(host.tenant.id);
+    invalidVisitState = !host || [visitor.tenant.visualState, host.tenant.visualState].some((s) => s === "away" || s.startsWith("sleeping"));
+    sharedSession = !!host && activeSessions(state.gameMs).some(
+      (s) => (s.aId === visitor.tenant.id && s.bId === host.tenant.id) || (s.bId === visitor.tenant.id && s.aId === host.tenant.id),
+    );
+  }
 }
 check("朋友以上會到彼此房間串門子(visiting 有觸發)", visited);
+check("串門子鎖定正確主人", visited && !wrongHost);
+check("串門時雙方都清醒且有空", visited && !invalidVisitState);
+check("一進屋就必定建立共同活動 session", visited && sharedSession);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

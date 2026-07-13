@@ -86,6 +86,8 @@ export interface TenantRuntime {
   inLounge: boolean;
   /** 本小時正在拜訪的朋友房間 id(朋友以上串門子;null=沒去別人房;不需存檔) */
   visiting: string | null;
+  /** 串門子的主人 id；搭配 visiting 鎖定必須一起活動的正確兩人。 */
+  visitHostId: string | null;
   /** 每日 AI 日記的專屬時段(遊戲小時 0~23;-1 = 未指派,由 ensureDiaryHours 補)。
    *  每位租客錯開在一天中不同時間生成,避免全擠在 0 點撞 AI 限流 */
   diaryHour: number;
@@ -119,6 +121,7 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     flags: [] as string[],
     inLounge: false,
     visiting: null as string | null,
+    visitHostId: null as string | null,
     diaryHour: -1,
     lastDiaryDay: -99,
     moveInMs: GAME_START.getTime(),

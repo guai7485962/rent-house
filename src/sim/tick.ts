@@ -38,7 +38,7 @@ import { legacyPass, unlock } from "./legacy";
 import { communityPass } from "./community";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
-import { interactionsPass } from "./interactions";
+import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 
 /** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
@@ -46,27 +46,47 @@ let showerClaim: { hourMs: number; id: string } | null = null;
 
 /** 適合串門子的休閒狀態 */
 const LEISURE_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "eating"]);
+/** 可以暫停手邊事情接待朋友；睡覺、外出、洗澡或崩潰時不接受拜訪。 */
+const VISIT_UNAVAILABLE_STATES = new Set<TenantVisualState>(["away", "sleeping_on_bed", "sleeping_on_couch", "showering", "crying"]);
+/** 在 applyHour 原時序先擲骰，等全員作息確定後才實際配對。 */
+const visitIntents = new Set<string>();
 
-/** 擲骰「到朋友房間串門子」:休閒時低機率,挑一位朋友以上(rel≥35 或情侶)、在家又空閒的鄰居。
- *  回傳要去拜訪的那位(host),否則 null。 */
-function rollRoomVisit(rt: TenantRuntime): TenantRuntime | null {
-  if (Math.random() > 0.15) return null;
-  const id = rt.tenant.id;
-  const myRoom = roomOfTenant(id);
-  let best: TenantRuntime | null = null;
-  let bestVal = 34; // 朋友門檻:關係值 ≥ 35
-  for (const other of Object.values(state.runtimes)) {
-    if (other.tenant.id === id || other.tenant.visualState === "away" || other.pendingEvent) continue;
-    const hostRoom = roomOfTenant(other.tenant.id);
-    if (!hostRoom || hostRoom === myRoom) continue; // 沒房、或本來就同住一間 → 不算串門子
-    const rel = getRel(id, other.tenant.id);
-    const v = rel?.value ?? 0;
-    if ((rel?.romantic || v >= 35) && v > bestVal) {
-      bestVal = v;
-      best = other;
+/** 所有人作息確定後才安排串門：雙方都休閒、好友以上，且本小時確實有共同活動可演。 */
+function roomVisitPass(hour: number) {
+  if (hour < 15 || hour > 23) return;
+  const engaged = new Set<string>();
+  for (const visitor of Object.values(state.runtimes)) {
+    if (engaged.has(visitor.tenant.id) || visitor.pendingEvent || visitor.inLounge || visitor.visiting) continue;
+    if (!LEISURE_STATES.has(visitor.tenant.visualState) || !visitIntents.has(visitor.tenant.id)) continue;
+    const myRoom = roomOfTenant(visitor.tenant.id);
+    let best: TenantRuntime | null = null;
+    let bestVal = 49; // 好友門檻與 InteractionTier.close 一致:關係值 ≥ 50
+    for (const host of Object.values(state.runtimes)) {
+      if (host === visitor || engaged.has(host.tenant.id) || host.pendingEvent || host.inLounge || host.visiting) continue;
+      if (VISIT_UNAVAILABLE_STATES.has(host.tenant.visualState)) continue;
+      const hostRoom = roomOfTenant(host.tenant.id);
+      if (!hostRoom || hostRoom === myRoom) continue;
+      const rel = getRel(visitor.tenant.id, host.tenant.id);
+      const value = rel?.value ?? 0;
+      if (!(rel?.romantic || value >= 50) || value <= bestVal) continue;
+      if (!canStartRoomVisit(visitor, host, hostRoom, hour)) continue;
+      best = host;
+      bestVal = value;
     }
+    if (!best) continue;
+    const hostRoom = roomOfTenant(best.tenant.id)!;
+    visitor.visiting = hostRoom;
+    visitor.visitHostId = best.tenant.id;
+    visitor.targetTile = homeTile(best.tenant.id);
+    // 拜訪成立後雙方暫停原本的單人活動；下一個 interactionsPass 會立刻建立共同 session。
+    visitor.tenant.visualState = "idle";
+    best.tenant.visualState = "idle";
+    visitor.roomProps = deriveProps(visitor, "idle", hour);
+    best.roomProps = deriveProps(best, "idle", hour);
+    engaged.add(visitor.tenant.id);
+    engaged.add(best.tenant.id);
   }
-  return best;
+  visitIntents.clear();
 }
 
 export const homeTile = (tenantId: string): Tile => {
@@ -227,6 +247,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   const roomId = roomOfTenant(rt.tenant.id);
   rt.inLounge = false;
   rt.visiting = null;
+  rt.visitHostId = null;
   if (st === "away") {
     rt.targetTile = null;
   } else if (isDeviation) {
@@ -270,17 +291,13 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
       rt.targetTile = homeTile(rt.tenant.id);
     }
   }
-  // 朋友以上互相到房間串門子(遊玩):休閒時段、低機率、朋友在家且空閒、不在交誼廳時
-  if (LEISURE_STATES.has(st) && !isDeviation && !rt.inLounge && st !== "away") {
-    const host = rollRoomVisit(rt);
-    if (host) {
-      rt.visiting = roomOfTenant(host.tenant.id);
-      rt.targetTile = homeTile(host.tenant.id); // 走到朋友房裡
-    }
-  }
-
   rt.tenant.visualState = st;
   rt.roomProps = deriveProps(rt, st, hour);
+
+  // 維持既有逐人亂數時序；是否真的拜訪要等所有人的本小時狀態確定後再配對。
+  if (LEISURE_STATES.has(st) && !isDeviation && !rt.inLounge && Math.random() <= 0.15) {
+    visitIntents.add(rt.tenant.id);
+  }
 
   if (!addLog) return;
   const gen = generateHourly({
@@ -313,6 +330,7 @@ export function hourlyTick(live = false) {
   const hour = d.getHours();
   const day = gameDayIndex();
   const moveOuts: string[] = [];
+  visitIntents.clear();
 
   for (const rt of Object.values(state.runtimes)) {
     // 行為指令到期 → 恢復往常 + 留一筆日誌(在暫停檢查之前,免得掛著過期指令)
@@ -321,7 +339,12 @@ export function hourlyTick(live = false) {
       rt.directive = null;
       pushSocialLog(rt, def.endText, "notable");
     }
-    if (rt.pendingEvent) continue; // 有待決事件則暫停該租客,等房東抉擇
+    if (rt.pendingEvent) {
+      rt.inLounge = false;
+      rt.visiting = null;
+      rt.visitHostId = null;
+      continue; // 有待決事件則暫停該租客,等房東抉擇
+    }
     applyHour(rt, hour, true);
 
     // 張力:不滿累積(滿意度過低會逐時累加,回升則消退)
@@ -355,6 +378,7 @@ export function hourlyTick(live = false) {
 
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
+  roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動
   pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)

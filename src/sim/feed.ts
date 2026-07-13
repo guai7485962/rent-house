@@ -6,6 +6,7 @@
  * 想看細節仍然是點房間看完整日誌。
  */
 import { state, fmt } from "./gameState";
+import type { AiFallbackReason, AiProvider } from "./narrate";
 
 export interface FeedEntry {
   gameMs: number;
@@ -19,6 +20,9 @@ export interface FeedEntry {
   tenantName?: string;
   roomNo?: string;
   ai?: boolean;
+  aiPending?: boolean;
+  aiProvider?: AiProvider;
+  aiFallbackReason?: AiFallbackReason;
 }
 
 /** Feed 只顯示最近的 N 則(日誌本身另有 LOG_CAP,這裡再收斂一次) */
@@ -33,7 +37,10 @@ export function buildFeed(): FeedEntry[] {
       if (e.decisionNote) {
         out.push({ gameMs: e.gameMs, timeLabel: e.timeLabel, text: e.decisionNote, kind: "decision", importance: "notable", ...meta });
       } else if (e.daily || e.ai) {
-        out.push({ gameMs: e.gameMs, timeLabel: e.timeLabel, text: e.text, kind: "diary", importance: "notable", ai: e.ai, ...meta });
+        out.push({
+          gameMs: e.gameMs, timeLabel: e.timeLabel, text: e.text, kind: "diary", importance: "notable",
+          ai: e.ai, aiPending: e.aiPending, aiProvider: e.aiProvider, aiFallbackReason: e.aiFallbackReason, ...meta,
+        });
       } else if (e.importance !== "minor") {
         out.push({ gameMs: e.gameMs, timeLabel: e.timeLabel, text: e.text, kind: "event", importance: e.importance, ...meta });
       }

@@ -2,7 +2,7 @@
  * Cloudflare Worker:同時服務靜態網站(env.ASSETS)與 AI 敘事端點。
  * /api/narrate 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶/事件;
  * /api/invite 由名字+個性描述生成特邀租客資料。
- * 主力 provider = Gemini(GEMINI_API_KEY 免費層);Claude(ANTHROPIC_API_KEY,haiku)為備援。
+ * 日記 provider = Gemini 免費層 → Cloudflare Workers AI 免費額度;Claude 僅供特邀租客端點使用。
  * API key 存在 Worker secret,前端同源 fetch,金鑰不外洩。
  * 端點防護:同源檢查 + 請求體上限 + server 端 context 夾值(見 guardRequest / clampCtx),
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
@@ -13,6 +13,7 @@ export interface Env {
   ASSETS: Fetcher;
   GEMINI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
 
 interface NarrateCtx {
@@ -33,6 +34,7 @@ interface NarrateCtx {
   arc?: { theme: string; stage: number; maxStage: number; summary: string } | null;
   /** 事件連鎖伏筆旗標 */
   flags?: string[];
+  eventDue: boolean;
 }
 
 const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎。玩家是房東,透過監視器觀察租客的日常。
@@ -53,6 +55,7 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
 另外:如果今天的處境**值得房東做一個決定**(鄰居衝突、戀情轉折、財務吃緊、崩潰邊緣、養寵物…),可以**額外**產生一個 event(房東抉擇);**平淡的日子就不要給 event(填 null),不要每天都給**。
+若 context 顯示「事件機會已到」,請優先檢查今天的處境能否自然形成一個 event;仍然不適合時才填 null。事件機會冷卻中則必須填 null。
 event 規則:
 - 2~3 個選項,每個選項有 label、hint、effect。
 - effect.mood/stress/affinity/satisfaction 建議 ±15 內、money ±3000 內(正=房東收入,負=房東支出)。
@@ -91,6 +94,7 @@ function buildPrompt(c: NarrateCtx): string {
       ? `進行中的劇情弧(必須推進或收束):「${c.arc.theme}」第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
       : `進行中的劇情弧:無(適合的話可開新弧)`,
     `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
+    `房東抉擇事件機會:${c.eventDue ? "已到(適合就產生 event)" : "冷卻中(event 必須為 null)"}`,
     `今天(${c.dayLabel})的觀察片段:`,
     ...c.todayLog.map((l) => `  - ${l}`),
   ];
@@ -183,17 +187,25 @@ function clampCtx(raw: unknown): NarrateCtx {
     summary: clampStr(c.summary, 400),
     arc,
     flags: clampArr(c.flags, 16, 40),
+    eventDue: c.eventDue === true,
   };
 }
 
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
-export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult };
+export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
  *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */
-async function geminiGenerate(system: string, user: string, key: string, maxOutputTokens = 1024, schema?: unknown): Promise<string> {
+async function geminiGenerate(
+  system: string,
+  user: string,
+  key: string,
+  maxOutputTokens = 1024,
+  schema?: unknown,
+  model = "gemini-2.5-flash",
+): Promise<string> {
   const doFetch = () =>
-    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
@@ -219,8 +231,29 @@ async function geminiGenerate(system: string, user: string, key: string, maxOutp
   return (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
 }
 
+function chooseGeminiModel(ctx: NarrateCtx): "gemini-2.5-flash" | "gemini-2.5-flash-lite" {
+  const important = ctx.eventDue || ctx.events.length > 0 || (ctx.flags?.length ?? 0) > 0 || !!ctx.arc;
+  return important ? "gemini-2.5-flash" : "gemini-2.5-flash-lite";
+}
+
 async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
-  return geminiGenerate(SYSTEM, buildPrompt(ctx), key);
+  return geminiGenerate(SYSTEM, buildPrompt(ctx), key, 1024, undefined, chooseGeminiModel(ctx));
+}
+
+/** Cloudflare Workers AI 免費額度備援。 */
+async function callWorkersAi(ctx: NarrateCtx, ai: NonNullable<Env["AI"]>): Promise<string> {
+  const raw = await ai.run("@cf/qwen/qwen3-30b-a3b-fp8", {
+    messages: [
+      { role: "system", content: SYSTEM },
+      { role: "user", content: buildPrompt(ctx) },
+    ],
+    max_tokens: 1024,
+    temperature: 0.9,
+  });
+  const result = raw as { response?: unknown; result?: { response?: unknown } };
+  const text = result.response ?? result.result?.response;
+  if (typeof text !== "string" || !text.trim()) throw new Error("Workers AI empty response");
+  return text;
 }
 
 /** Claude(備援,需 Anthropic 額度) */
@@ -350,8 +383,7 @@ async function handleInvite(req: Request, env: Env): Promise<Response> {
 async function handleNarrate(req: Request, env: Env): Promise<Response> {
   const blocked = guardRequest(req);
   if (blocked) return blocked;
-  const provider = env.GEMINI_API_KEY ? "gemini" : env.ANTHROPIC_API_KEY ? "claude" : null;
-  if (!provider) return Response.json({ error: "no_key" }, { status: 503 });
+  if (!env.GEMINI_API_KEY && !env.AI) return Response.json({ error: "no_key" }, { status: 503 });
 
   let ctx: NarrateCtx;
   try {
@@ -360,22 +392,27 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
 
-  try {
-    const text =
-      provider === "gemini"
-        ? await callGemini(ctx, env.GEMINI_API_KEY!)
-        : await callClaude(ctx, env.ANTHROPIC_API_KEY!);
-    const result = parseResult(text);
-    if (!result) return Response.json({ error: "parse_failed", raw: text }, { status: 502 });
-    return Response.json(result);
-  } catch (e) {
-    const msg = String(e);
-    // 免費層額度用盡(每分鐘重試已失敗 → 多半是每日配額):回明確的 quota 訊號讓前端提示玩家
-    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-      return Response.json({ error: "quota" }, { status: 429 });
-    }
-    return Response.json({ error: "upstream", detail: msg }, { status: 502 });
+  const attempts: { provider: "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen"; run: () => Promise<string> }[] = [];
+  if (env.GEMINI_API_KEY) {
+    const provider = chooseGeminiModel(ctx) === "gemini-2.5-flash" ? "gemini-flash" : "gemini-flash-lite";
+    attempts.push({ provider, run: () => callGemini(ctx, env.GEMINI_API_KEY!) });
   }
+  if (env.AI) attempts.push({ provider: "workers-ai-qwen", run: () => callWorkersAi(ctx, env.AI!) });
+
+  const errors: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      const result = parseResult(await attempt.run());
+      if (!result) throw new Error("parse_failed");
+      return Response.json({ ...result, provider: attempt.provider });
+    } catch (e) {
+      errors.push(`${attempt.provider}: ${String(e)}`);
+    }
+  }
+  const allQuota = errors.length > 0 && errors.every((msg) => /429|RESOURCE_EXHAUSTED|quota/i.test(msg));
+  if (allQuota) return Response.json({ error: "quota" }, { status: 429 });
+  const parseOnly = errors.length > 0 && errors.every((msg) => msg.includes("parse_failed"));
+  return Response.json({ error: parseOnly ? "parse_failed" : "upstream", detail: errors.join(" | ").slice(0, 500) }, { status: 502 });
 }
 
 export default {

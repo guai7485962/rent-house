@@ -110,6 +110,7 @@ export function save() {
         achievements: state.achievements,
         alumni: state.alumni,
         pendingGroupEvent: state.pendingGroupEvent,
+        pendingDiaries: state.pendingDiaries,
         runtimes,
       }),
     );
@@ -169,6 +170,7 @@ export function load(): boolean {
     state.achievements.splice(0, state.achievements.length, ...((s.achievements ?? []) as string[]));
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
     state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
+    state.pendingDiaries.splice(0, state.pendingDiaries.length, ...(s.pendingDiaries ?? []));
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];
@@ -215,6 +217,11 @@ export function load(): boolean {
     pruneInvalidRomance((id) => state.runtimes[id]?.tenant); // 清掉不再合法的情侶(同性/未成年)
     refreshAppearances(); // 依房間指派配色,修正舊存檔可能的撞色
     ensureDiaryHours(); // 舊檔沒有日記時段 → 指派(每人錯開)
+    state.pendingDiaries.splice(
+      0,
+      state.pendingDiaries.length,
+      ...state.pendingDiaries.filter((job) => state.runtimes[job.tenantId]?.log.some((entry) => entry.diaryId === job.diaryId && entry.aiPending)),
+    );
     ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     return true;

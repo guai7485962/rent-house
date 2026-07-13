@@ -6,7 +6,7 @@
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
  */
 const { _internal } = await import("../worker/index");
-const { sameOrigin, guardRequest, clampCtx, parseResult } = _internal;
+const { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel } = _internal;
 
 let pass = 0;
 let fail = 0;
@@ -47,6 +47,12 @@ check("clampCtx:flags ≤16", c.flags.length <= 16);
 check("clampCtx:arc.stage/maxStage 夾值", (c.arc?.stage ?? 0) <= 9 && (c.arc?.maxStage ?? 0) >= 2);
 check("clampCtx:亂資料不炸", (() => { try { clampCtx(null); clampCtx("x"); clampCtx(123); return true; } catch { return false; } })());
 check("clampCtx:無 arc → null", clampCtx({ name: "a" }).arc === null);
+check("clampCtx:eventDue 僅接受 true", clampCtx({ eventDue: true }).eventDue && !clampCtx({ eventDue: "true" }).eventDue);
+
+// --- 免費模型分流:平淡日常用 Lite,事件/主線日用 Flash ---
+check("模型分流:平淡日常 → Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-2.5-flash-lite");
+check("模型分流:事件機會已到 → Flash", chooseGeminiModel(clampCtx({ name: "a", eventDue: true })) === "gemini-2.5-flash");
+check("模型分流:進行中劇情弧 → Flash", chooseGeminiModel(clampCtx({ name: "a", arc: { theme: "搬家", stage: 1, maxStage: 3, summary: "整理中" } })) === "gemini-2.5-flash");
 
 // --- parseResult ---
 check("parseResult:抽出 JSON + diary", parseResult('前綴 {"diary":"你好","summaryUpdate":"s"} 後綴')?.diary === "你好");

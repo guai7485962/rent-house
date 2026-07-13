@@ -36,6 +36,7 @@ import {
   initGame,
   stopGame,
   resume,
+  resumeDeferredDiaries,
   placeAt,
   cancelPlacing,
   sellFurnitureAt,
@@ -127,13 +128,22 @@ initGame();
 onMounted(() => {
   // 分頁重新可見時補進度(掛機回來)
   document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("online", onOnline);
+  void resumeDeferredDiaries();
 });
 onUnmounted(() => {
   stopGame();
   document.removeEventListener("visibilitychange", onVisible);
+  window.removeEventListener("online", onOnline);
 });
 function onVisible() {
-  if (!document.hidden) resume();
+  if (!document.hidden) {
+    resume();
+    void resumeDeferredDiaries();
+  }
+}
+function onOnline() {
+  void resumeDeferredDiaries();
 }
 
 // 系統通知(如退租)→ 彈 toast

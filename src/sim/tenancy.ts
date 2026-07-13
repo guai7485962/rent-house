@@ -125,6 +125,7 @@ export function moveOut(tenantId: string, reason: string) {
     }
   }
   delete state.cohabits[tenantId];
+  state.pendingDiaries.splice(0, state.pendingDiaries.length, ...state.pendingDiaries.filter((job) => job.tenantId !== tenantId));
   delete state.runtimes[tenantId];
   removeTenantRelations(tenantId);
   // 其他租客身上「提到他」的記憶標籤一併移除(人都走了,AI 不該再寫跟他的互動)

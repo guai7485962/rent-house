@@ -5,7 +5,7 @@
  * 自然拉開幾十分鐘,幾乎不會撞 Gemini 免費層限流)。
  * live 走 /api/narrate、否則模板;AI 回傳的新記憶/抉擇事件消毒後接進遊戲。
  */
-import { narrateDay, templateDiary, type NarrateCtx, type NarrateResult } from "./narrate";
+import { narrateDay, templateDiary, type AiFallbackReason, type NarrateCtx, type NarrateResult } from "./narrate";
 import { sanitizeAiEvent } from "./events";
 import { sanitizeArcUpdate } from "./arcs";
 import { listRelationships } from "./social";
@@ -15,7 +15,7 @@ import { save } from "./persistence";
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
  *  retryMs = 收到 429 後的重試等待(429 常常只是每分鐘限流,不是當日額度用盡——等窗口過再試一次) */
-export const diaryTiming = { gapMs: 25_000, retryMs: 70_000 };
+export const diaryTiming = { gapMs: 25_000, retryMs: 70_000, deferredMinGapMs: 60_000, deferredMaxGapMs: 90_000 };
 
 /** 額度提示只彈一次(下次 AI 成功時重置,額度恢復又能提示) */
 let quotaNoticeShown = false;
@@ -30,12 +30,16 @@ export function setNarrateImplForTest(fn: typeof narrateImpl) {
 
 interface DiaryJob {
   id: string;
+  diaryId: string;
   gameMs: number; // 入列當下的遊戲時間(日記要落在正確的那一天)
   ctx: NarrateCtx; // 入列當下就組好 context(快轉時延後生成也不會拿到隔天的狀態)
   live: boolean;
 }
 const diaryQueue: DiaryJob[] = [];
 let diaryRun: Promise<void> | null = null;
+let deferredRun: Promise<void> | null = null;
+let deferredBudget = 4;
+let diarySerial = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,12 +62,21 @@ export function resetDiaryQuota() {
 
 /** 為單一租客產生「這一天」的日記:live 進錯開佇列、否則模板同步落地 */
 function produceDiaryFor(rt: TenantRuntime, live: boolean): void {
-  const job: DiaryJob = { id: rt.tenant.id, gameMs: state.gameMs, ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天`), live };
+  const job: DiaryJob = {
+    id: rt.tenant.id,
+    diaryId: `diary_${rt.tenant.id}_${state.gameMs}_${++diarySerial}`,
+    gameMs: state.gameMs,
+    ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天`),
+    live,
+  };
   if (live) {
     diaryQueue.push(job);
     void processDiaryQueue();
   } else {
-    applyDiaryResult(job, { diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false });
+    applyDiaryResult(job, {
+      diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null,
+      ai: false, fallbackReason: "catchup",
+    });
   }
 }
 
@@ -131,12 +144,17 @@ async function generateDiary(job: DiaryJob): Promise<NarrateResult> {
       return res; // 離線/解析失敗等:narrateDay 已內建模板 fallback,直接採用
     }
   }
-  return { diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false };
+  return {
+    diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null,
+    ai: false, fallbackReason: quotaHold ? "quota" : "unknown",
+  };
 }
 
 function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
   const cur = state.runtimes[job.id];
   if (!cur) return;
+  const fallbackReason = result.fallbackReason ?? (job.live ? "unknown" : "catchup");
+  if (!result.ai) queuePendingDiary(job, fallbackReason);
   cur.log.push({
     gameMs: job.gameMs,
     timeLabel: fmt(job.gameMs),
@@ -145,8 +163,17 @@ function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
     importance: "major",
     ai: result.ai,
     daily: true,
+    diaryId: job.diaryId,
+    aiPending: !result.ai,
+    aiProvider: result.provider,
+    aiFallbackReason: result.ai ? undefined : fallbackReason,
   });
   if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
+  if (result.ai) applyDiaryEffects(cur, result);
+  save();
+}
+
+function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult) {
   if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
   // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
   if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
@@ -161,7 +188,75 @@ function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
       cur.lastEventDay = gameDayIndex();
     }
   }
-  save();
+}
+
+function queuePendingDiary(job: DiaryJob, reason: AiFallbackReason) {
+  for (let i = state.pendingDiaries.length - 1; i >= 0; i--) {
+    const old = state.pendingDiaries[i];
+    if (old.tenantId !== job.id) continue;
+    const oldLog = state.runtimes[old.tenantId]?.log.find((entry) => entry.diaryId === old.diaryId);
+    if (oldLog) oldLog.aiPending = false;
+    state.pendingDiaries.splice(i, 1);
+  }
+  state.pendingDiaries.push({ diaryId: job.diaryId, tenantId: job.id, gameMs: job.gameMs, ctx: job.ctx });
+  while (state.pendingDiaries.length > 12) {
+    const dropped = state.pendingDiaries.shift()!;
+    const droppedLog = state.runtimes[dropped.tenantId]?.log.find((entry) => entry.diaryId === dropped.diaryId);
+    if (droppedLog) droppedLog.aiPending = false;
+  }
+  const log = state.runtimes[job.id]?.log.find((entry) => entry.diaryId === job.diaryId);
+  if (log) log.aiFallbackReason = reason;
+}
+
+/** 回到前景後，用少量、錯開的免費請求把內建日記原地升級；每個瀏覽器工作階段最多四篇。 */
+export function resumeDeferredDiaries(max = 4): Promise<void> {
+  if (!deferredRun) deferredRun = drainDeferredDiaries(max).finally(() => (deferredRun = null));
+  return deferredRun;
+}
+
+async function drainDeferredDiaries(max: number) {
+  if (diaryRun) await diaryRun;
+  let attempted = 0;
+  while (state.pendingDiaries.length && attempted < max && deferredBudget > 0) {
+    if (attempted > 0) {
+      const span = Math.max(0, diaryTiming.deferredMaxGapMs - diaryTiming.deferredMinGapMs);
+      await sleep(diaryTiming.deferredMinGapMs + Math.floor(Math.random() * (span + 1)));
+    }
+    if (typeof document !== "undefined" && document.hidden) break;
+    if (quotaHold) break;
+    const pending = state.pendingDiaries[0];
+    const rt = state.runtimes[pending.tenantId];
+    const log = rt?.log.find((entry) => entry.diaryId === pending.diaryId && entry.aiPending);
+    if (!rt || !log) {
+      state.pendingDiaries.shift();
+      continue;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      log.aiFallbackReason = "offline";
+      save();
+      break;
+    }
+    attempted++;
+    deferredBudget--;
+    const result = await generateDiary({ id: pending.tenantId, diaryId: pending.diaryId, gameMs: pending.gameMs, ctx: pending.ctx, live: true });
+    if (!result.ai) {
+      log.aiFallbackReason = result.fallbackReason ?? (result.quota ? "quota" : "unknown");
+      save();
+      break;
+    }
+    log.text = result.diary;
+    log.ai = true;
+    log.aiPending = false;
+    log.aiProvider = result.provider;
+    log.aiFallbackReason = undefined;
+    state.pendingDiaries.shift();
+    applyDiaryEffects(rt, result);
+    save();
+  }
+}
+
+export function resetDeferredDiaryBudgetForTest(value = 4) {
+  deferredBudget = value;
 }
 
 /** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed) */
@@ -211,5 +306,6 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     summary: rt.tenant.recentSummary,
     arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
     flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
+    eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
   };
 }

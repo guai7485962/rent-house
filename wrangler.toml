@@ -5,6 +5,10 @@ compatibility_flags = ["nodejs_compat"]
 # 部署時不要清掉在 Cloudflare 網頁上設定的變數/密鑰(否則每次 deploy 會洗掉 GEMINI_API_KEY)
 keep_vars = true
 
+# Gemini 失敗或免費額度用盡時，改用 Workers AI 的每日免費額度。
+[ai]
+binding = "AI"
+
 # 靜態網站(vite build 產物)綁定成 ASSETS,Worker 未匹配的請求交還它服務。
 [assets]
 directory = "./dist"

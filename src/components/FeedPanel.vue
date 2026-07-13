@@ -21,6 +21,15 @@ const pendings = computed(() =>
 const rows = computed(() => buildFeed().map((e) => ({ e, unread: e.gameMs > props.sinceMs })));
 
 const KIND_BADGE = { diary: "📖 當日觀察", decision: "🏠 房東介入", event: "◆ 事件", notice: "📢 公告" } as const;
+const PROVIDER_LABEL: Record<string, string> = {
+  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers AI", claude: "Claude",
+};
+const FALLBACK_LABEL: Record<string, string> = {
+  catchup: "掛機補進度", quota: "免費額度已滿", offline: "目前離線", no_key: "未設定服務", forbidden: "連線驗證失敗",
+  parse: "AI 格式異常", upstream: "AI 暫時無回應", unknown: "稍後再試",
+};
+const providerLabel = (provider?: string) => provider ? PROVIDER_LABEL[provider] ?? "AI" : "AI";
+const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "稍後再試" : "內建";
 </script>
 
 <template>
@@ -47,7 +56,11 @@ const KIND_BADGE = { diary: "📖 當日觀察", decision: "🏠 房東介入", 
       <div class="item-head">
         <span class="kind">{{ KIND_BADGE[row.e.kind] }}</span>
         <span v-if="row.e.roomNo" class="who">{{ row.e.roomNo }} {{ row.e.tenantName }}</span>
-        <span v-if="row.e.ai" class="ai-chip">✨ AI</span>
+        <span v-if="row.e.ai" class="ai-chip">✨ {{ providerLabel(row.e.aiProvider) }}</span>
+        <span v-else-if="row.e.aiPending" class="pending-chip" :title="fallbackLabel(row.e.aiFallbackReason)">⏳ 等候 AI</span>
+        <span v-else-if="row.e.kind === 'diary'" class="fallback-chip">
+          內建<template v-if="row.e.aiFallbackReason"> · {{ fallbackLabel(row.e.aiFallbackReason) }}</template>
+        </span>
         <span class="time">{{ row.e.timeLabel }}</span>
         <span v-if="row.unread" class="new-dot">NEW</span>
       </div>
@@ -93,6 +106,9 @@ const KIND_BADGE = { diary: "📖 當日觀察", decision: "🏠 房東介入", 
 .item.decision .kind { color: var(--accent); }
 .who { font-size: 11px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ai-chip { font-size: 9px; font-weight: 700; color: #cdbcff; background: rgba(143,123,255,0.18); border: 1px solid var(--accent-2); border-radius: 999px; padding: 0 6px; }
+.pending-chip, .fallback-chip { font-size: 9px; font-weight: 700; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.pending-chip { color: #ffd6a3; border: 1px solid var(--accent); background: rgba(255,180,94,0.12); }
+.fallback-chip { color: var(--text-dim); border: 1px solid var(--line); background: rgba(255,255,255,0.03); }
 .time { margin-left: auto; font-size: 10.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .new-dot { font-size: 9px; font-weight: 700; letter-spacing: 1px; color: #cdbcff; background: rgba(143,123,255,0.16); border: 1px solid var(--accent-2); border-radius: 999px; padding: 0 6px; }
 .text { font-size: 13px; line-height: 1.6; }

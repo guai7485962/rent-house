@@ -14,6 +14,7 @@ import type { ActiveDirective } from "./directives";
 import type { StoryArc } from "./arcs";
 import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
+import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
@@ -43,6 +44,17 @@ export interface LogEntry {
   ai?: boolean;
   /** 這筆是否為「當日觀察」總結(AI 或模板都算,用來套 📖 卡片) */
   daily?: boolean;
+  diaryId?: string;
+  aiPending?: boolean;
+  aiProvider?: AiProvider;
+  aiFallbackReason?: AiFallbackReason;
+}
+
+export interface PendingDiary {
+  diaryId: string;
+  tenantId: string;
+  gameMs: number;
+  ctx: NarrateCtx;
 }
 
 export interface TenantRuntime {
@@ -140,6 +152,8 @@ export const state = reactive({
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 待決的群體事件(全樓事務,房東抉擇影響整群人;§C-7;入存檔) */
   pendingGroupEvent: null as GroupEvent | null,
+  /** 尚待 AI 補寫的每日觀察；每位房客只保留最新一篇。 */
+  pendingDiaries: [] as PendingDiary[],
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
   /** 移動模式:待搬動的既有家具(原位座標;點地圖選新位置,免費) */

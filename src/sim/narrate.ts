@@ -25,7 +25,12 @@ export interface NarrateCtx {
   arc: { theme: string; stage: number; maxStage: number; summary: string } | null;
   /** 事件連鎖伏筆旗標(事件選項留下的,AI 用來回收伏筆) */
   flags: string[];
+  /** 事件冷卻已結束；AI 可在同一次日記請求中順便產生房東抉擇事件。 */
+  eventDue: boolean;
 }
+
+export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "claude";
+export type AiFallbackReason = "catchup" | "quota" | "offline" | "no_key" | "forbidden" | "parse" | "upstream" | "unknown";
 
 export interface NarrateResult {
   diary: string;
@@ -39,10 +44,22 @@ export interface NarrateResult {
   ai: boolean; // 是否真的由 AI 生成(false=模板 fallback)
   /** true = 這次 fallback 是因為 AI 每日額度用盡(前端可提示玩家) */
   quota?: boolean;
+  provider?: AiProvider;
+  fallbackReason?: AiFallbackReason;
+}
+
+function classifyFailure(status: number, error?: string): AiFallbackReason {
+  if (error === "quota" || status === 429) return "quota";
+  if (error === "no_key" || status === 503) return "no_key";
+  if (status === 401 || status === 403) return "forbidden";
+  if (error === "parse_failed") return "parse";
+  if (status >= 500) return "upstream";
+  return "unknown";
 }
 
 export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
   let quota = false;
+  let fallbackReason: AiFallbackReason = "unknown";
   try {
     const res = await fetch("/api/narrate", {
       method: "POST",
@@ -51,9 +68,11 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
     });
     if (!res.ok) {
       try {
-        quota = ((await res.json()) as { error?: string }).error === "quota";
+        const error = ((await res.json()) as { error?: string }).error;
+        fallbackReason = classifyFailure(res.status, error);
+        quota = fallbackReason === "quota";
       } catch {
-        /* body 非 JSON 就當一般失敗 */
+        fallbackReason = classifyFailure(res.status);
       }
     }
     if (res.ok) {
@@ -63,6 +82,7 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
         event?: unknown;
         summaryUpdate?: string | null;
         arcUpdate?: unknown;
+        provider?: AiProvider;
       };
       if (data.diary)
         return {
@@ -72,12 +92,14 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
           summaryUpdate: typeof data.summaryUpdate === "string" ? data.summaryUpdate.slice(0, 220).trim() || null : null,
           arcUpdate: data.arcUpdate ?? null,
           ai: true,
+          provider: data.provider,
         };
     }
   } catch {
+    fallbackReason = "offline";
     /* 離線 / 無後端 → 走 fallback */
   }
-  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false, quota };
+  return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false, quota, fallbackReason };
 }
 
 /** 無 AI 時的模板日記:從多樣模板庫隨機挑一句 + 補上當天重點 */

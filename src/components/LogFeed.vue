@@ -5,6 +5,15 @@ import type { LogEntry } from "../store";
 const props = defineProps<{ entries: LogEntry[]; sinceMs: number }>();
 
 const IMPORTANCE_ICON = { minor: "·", notable: "◆", major: "★" } as const;
+const PROVIDER_LABEL: Record<string, string> = {
+  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers AI", claude: "Claude",
+};
+const FALLBACK_LABEL: Record<string, string> = {
+  catchup: "掛機補進度", quota: "免費額度已滿", offline: "目前離線", no_key: "未設定服務", forbidden: "連線驗證失敗",
+  parse: "AI 格式異常", upstream: "AI 暫時無回應", unknown: "稍後再試",
+};
+const providerLabel = (provider?: string) => provider ? PROVIDER_LABEL[provider] ?? "AI" : "AI";
+const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "稍後再試" : "內建";
 
 /** 新到舊排列;標記自上次查看後的未讀 */
 const rows = computed(() =>
@@ -30,7 +39,11 @@ const unreadCount = computed(() => rows.value.filter((r) => r.unread).length);
       <div v-else-if="row.e.daily || row.e.ai" class="diary" :class="{ unread: row.unread }">
         <div class="diary-head">
           <span class="badge">📖 當日觀察</span>
-          <span v-if="row.e.ai" class="ai-chip">✨ AI</span>
+          <span v-if="row.e.ai" class="ai-chip">✨ {{ providerLabel(row.e.aiProvider) }}</span>
+          <span v-else-if="row.e.aiPending" class="pending-chip" :title="fallbackLabel(row.e.aiFallbackReason)">⏳ 等候 AI</span>
+          <span v-else class="fallback-chip">
+            內建<template v-if="row.e.aiFallbackReason"> · {{ fallbackLabel(row.e.aiFallbackReason) }}</template>
+          </span>
           <span class="time">{{ row.e.timeLabel }}</span>
           <span v-if="row.unread" class="new-dot">NEW</span>
         </div>
@@ -91,5 +104,8 @@ const unreadCount = computed(() => rows.value.filter((r) => r.unread).length);
 .diary-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
 .diary .badge { font-size: 11px; font-weight: 700; color: #cdbcff; }
 .diary .ai-chip { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: #cdbcff; background: rgba(143,123,255,0.18); border: 1px solid var(--accent-2); border-radius: 999px; padding: 0 6px; }
+.diary .pending-chip, .diary .fallback-chip { font-size: 9px; font-weight: 700; border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.diary .pending-chip { color: #ffd6a3; border: 1px solid var(--accent); background: rgba(255,180,94,0.12); }
+.diary .fallback-chip { color: var(--text-dim); border: 1px solid var(--line); background: rgba(255,255,255,0.03); }
 .diary .text { font-size: 13.5px; line-height: 1.75; color: #e8e2ff; }
 </style>

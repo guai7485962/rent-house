@@ -122,6 +122,8 @@ export const state = reactive({
   gameAnchorMs: GAME_START.getTime(),
   gameMs: GAME_START.getTime(),
   money: 52000,
+  /** 開辦補助金是否已發放(每個存檔一次;現有存檔下次載入補發) */
+  starterBonusGiven: false,
   activeId: "tenant_chen_engineer",
   /** 系統通知(退租等),App 監看後彈 toast */
   notice: "",

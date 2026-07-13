@@ -5,6 +5,7 @@
 import { state, fmt } from "./gameState";
 import { load, save } from "./persistence";
 import { syncToNow, applyHour, hourlyTick } from "./tick";
+import { grantStarterBonus } from "./economy";
 
 let timer: number | undefined;
 
@@ -23,6 +24,7 @@ export function initGame() {
     save();
   }
   syncToNow();
+  grantStarterBonus(); // 開辦補助金:每個存檔一次(現有存檔下次載入也補到)
   // 用最新的可站立點邏輯重新定位當前活動(修正舊存檔可能殘留的牆上目標)
   const hour = new Date(state.gameMs).getHours();
   for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);

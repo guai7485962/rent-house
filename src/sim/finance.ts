@@ -7,7 +7,7 @@ import { state, clamp } from "./gameState";
 import { getPlacements } from "./placements";
 import { getDef } from "../furniture/catalog";
 import { upgradeState, getUpgradeDef } from "./upgrades";
-import { BASE_UPKEEP, PER_ROOM_UPKEEP } from "./economy";
+import { BASE_UPKEEP, PER_ROOM_UPKEEP, coinLaundryIncome } from "./economy";
 
 export interface NetWorth {
   cash: number;
@@ -50,12 +50,14 @@ export function monthlyFlow(): MonthlyFlow {
 export interface DailyFlow {
   /** 預估每日實收租金(依當前好感/滿意度打折,與 collectRent 同公式) */
   rentIn: number;
+  /** 投幣洗衣機等被動收入 */
+  passiveIn: number;
   upkeepOut: number;
   net: number;
 }
 
 /** 預估每日淨現金流:讓玩家一眼看出「現在每個遊戲日大概淨賺多少」,
- *  好感/滿意提升會即時反映在這裡(和收租邏輯同一條公式)。 */
+ *  好感/滿意提升、買洗衣機都會即時反映在這裡(和收租邏輯同一條公式)。 */
 export function dailyFlow(): DailyFlow {
   let rentIn = 0;
   for (const [, tid] of Object.entries(state.occupancy)) {
@@ -66,8 +68,9 @@ export function dailyFlow(): DailyFlow {
     const factor = clamp(f.paymentReliability + (rt.tenant.stats.affinity - 50) * 0.3 + (rt.satisfaction - 50) * 0.2, 0, 100) / 100;
     rentIn += daily * factor;
   }
+  const passiveIn = coinLaundryIncome();
   const upkeepOut = BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP;
-  return { rentIn: Math.round(rentIn), upkeepOut, net: Math.round(rentIn - upkeepOut) };
+  return { rentIn: Math.round(rentIn), passiveIn, upkeepOut, net: Math.round(rentIn) + passiveIn - upkeepOut };
 }
 
 export interface MonthReport {

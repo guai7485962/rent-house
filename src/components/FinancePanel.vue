@@ -80,7 +80,7 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
           <span class="dl">預估每日淨現金流</span>
           <b class="dv" :class="daily.net >= 0 ? 'pos' : 'neg'">{{ money(daily.net) }}<span class="per">/ 遊戲日</span></b>
         </div>
-        <div class="daily-sub">實收租金 約 ${{ daily.rentIn.toLocaleString() }} − 管理費 ${{ daily.upkeepOut.toLocaleString() }}<template v-if="daily.net > 0">;把租客照顧好、好感上升,租金會跟著變多</template></div>
+        <div class="daily-sub">實收租金 約 ${{ daily.rentIn.toLocaleString() }}<template v-if="daily.passiveIn"> + 投幣洗衣機 ${{ daily.passiveIn.toLocaleString() }}</template> − 管理費 ${{ daily.upkeepOut.toLocaleString() }}<template v-if="daily.net > 0">;把租客照顧好、多買洗衣機,收入都會變多</template></div>
       </div>
 
       <!-- 資產淨值 + 月報表(§7-1:投資的成長曲線) -->

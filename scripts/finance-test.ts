@@ -12,7 +12,9 @@ const mem: Record<string, string> = {};
 };
 
 const { netWorth, monthlyFlow, monthReport, dailyFlow } = await import("../src/sim/finance");
-const { buyFurniture, addMoney, BASE_UPKEEP, PER_ROOM_UPKEEP } = await import("../src/sim/economy");
+const { buyFurniture, addMoney, BASE_UPKEEP, PER_ROOM_UPKEEP, coinLaundryIncome, collectRent, grantStarterBonus, DEPOSIT_MONTHS, WASHER_DAILY_PER_ROOM, STARTER_BONUS } = await import("../src/sim/economy");
+const { moveIn } = await import("../src/sim/tenancy");
+const { generateApplicants } = await import("../src/sim/recruit");
 const { getPlacements } = await import("../src/sim/placements");
 const { getDef } = await import("../src/furniture/catalog");
 const { upgradeState, UPGRADES } = await import("../src/sim/upgrades");
@@ -65,7 +67,8 @@ state.occupancy.r302 = bId;
 // --- dailyFlow(預估每日淨現金流)---
 const df = dailyFlow();
 check("每日管理費 = 基本 + 每房", df.upkeepOut === BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP);
-check("每日淨 = 實收租 - 管理費", df.net === df.rentIn - df.upkeepOut);
+check("每日淨 = 實收租 + 被動收入 - 管理費", df.net === df.rentIn + df.passiveIn - df.upkeepOut);
+check("dailyFlow.passiveIn = coinLaundryIncome", df.passiveIn === coinLaundryIncome());
 check("實收租金 > 0 且不超過名目日租合計", df.rentIn > 0 && df.rentIn <= Object.values(state.occupancy).reduce((s, tid) => s + Math.ceil((state.runtimes[tid]?.tenant.finance.monthlyRent ?? 0) / 30), 0) + 4);
 // 好感提升 → 實收租金增加(和收租同公式,正向循環看得見)
 const someId = Object.values(state.occupancy)[0];
@@ -85,6 +88,34 @@ check("本月收入只算本月", m.income === 3000);
 check("本月支出只算本月", m.expense === 1000);
 check("本月淨額", m.net === 2000);
 check("月份正確", m.month === now.getMonth() + 1);
+
+// --- 投幣洗衣機被動收入 ---
+const washers = getPlacements().filter((p) => p.defId === "laundry_washer").length;
+const rooms = Object.keys(state.occupancy).length;
+check("coinLaundryIncome = 台數 × 每房 × 住人房數", coinLaundryIncome() === washers * WASHER_DAILY_PER_ROOM * rooms);
+check("有洗衣機 + 有租客 → 被動收入 > 0", coinLaundryIncome() > 0);
+const coin = coinLaundryIncome();
+state.ledger.splice(0);
+collectRent();
+check("collectRent 有一筆投幣洗衣機收入 = coinLaundryIncome", state.ledger.some((t) => t.label === "投幣洗衣機收入" && t.amount === coin));
+
+// --- 入住押金:招租一次性收入 ---
+const vacant = ["r301", "r302", "r303", "r304"].find((r) => !state.occupancy[r]);
+if (vacant) {
+  state.ledger.splice(0);
+  const app = generateApplicants(vacant)[0];
+  moveIn(vacant, app);
+  check("入住 → 押金收入 = 月租 × DEPOSIT_MONTHS", state.ledger.some((t) => t.label.includes("入住押金") && t.amount === app.monthlyRent * DEPOSIT_MONTHS));
+}
+
+// --- 開辦補助金:一次性、冪等 ---
+state.starterBonusGiven = false;
+state.money = 1000;
+grantStarterBonus();
+check("開辦補助金:發放後入帳且旗標設起", state.starterBonusGiven && state.money === 1000 + STARTER_BONUS);
+const afterBonus = state.money;
+grantStarterBonus();
+check("開辦補助金:冪等不重複發", state.money === afterBonus);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

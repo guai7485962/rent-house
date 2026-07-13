@@ -91,6 +91,7 @@ export function save() {
         gameAnchorMs: state.gameAnchorMs,
         gameMs: state.gameMs,
         money: state.money,
+        starterBonusGiven: state.starterBonusGiven,
         occupancy: state.occupancy,
         cohabits: state.cohabits,
         applicantPools: state.applicantPools,
@@ -127,6 +128,7 @@ export function load(): boolean {
     state.gameAnchorMs = s.gameAnchorMs;
     state.gameMs = s.gameMs;
     state.money = s.money;
+    state.starterBonusGiven = s.starterBonusGiven === true; // 舊檔沒有 → 視為未發放,initGame 會補發
 
     // 家具擺放 + 房間升級(過濾掉目錄已查無的家具,一筆壞資料不能毀掉整個畫面)
     const loadedPlacements = (s.placements as { defId: string }[]).filter((p) => {

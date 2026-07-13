@@ -4,7 +4,7 @@
  * 家具的買/擺/移/賣(含 8-2 預覽判定 canDropAt)。
  */
 import { getDef } from "../furniture/catalog";
-import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt } from "./placements";
+import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements } from "./placements";
 import { getUpgradeDef, roomUpgradeIds, upgradeState } from "./upgrades";
 import { state, clamp, fmt, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
 import { applyHour } from "./tick";
@@ -13,6 +13,26 @@ import { save } from "./persistence";
 // 每日管理費(讓「支出」有意義;小額、可調;finance.ts 月租金流也引用)
 export const BASE_UPKEEP = 250;
 export const PER_ROOM_UPKEEP = 100;
+
+// 收入強化(可調):入住押金月數、每台投幣洗衣機的每日每房收入、一次性開辦補助
+export const DEPOSIT_MONTHS = 1; // 入住押金 = 幾個月租金(招租一次性收入)
+export const WASHER_DAILY_PER_ROOM = 50; // 每台投幣洗衣機、每有一間住人房的每日被動收入
+export const STARTER_BONUS = 30000; // 開辦補助金(每個存檔只發一次)
+
+/** 投幣洗衣機的每日被動收入:台數 × 每房收入 × 住人房數(租客越多、機台越多,賺越多) */
+export function coinLaundryIncome(): number {
+  const washers = getPlacements().filter((p) => p.defId === "laundry_washer").length;
+  const rooms = Object.keys(state.occupancy).length;
+  return washers * WASHER_DAILY_PER_ROOM * rooms;
+}
+
+/** 開辦補助金:每個存檔只發一次(現有存檔下次載入也會補到);冪等 */
+export function grantStarterBonus() {
+  if (state.starterBonusGiven) return;
+  state.starterBonusGiven = true;
+  addMoney(STARTER_BONUS, "開辦補助金", "other");
+  save();
+}
 
 /** 唯一的金錢異動入口:改餘額(下限 0)+ 記一筆帳(記錄實際變動) */
 export function addMoney(amount: number, label: string, category: TxnCategory) {
@@ -50,6 +70,9 @@ export function collectRent() {
     });
     if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
   }
+  // 投幣洗衣機被動收入(有租客投幣使用;買越多台賺越多)
+  const coin = coinLaundryIncome();
+  if (coin > 0) addMoney(coin, "投幣洗衣機收入", "other");
   // 每日管理費(水電/清潔/公共維護)
   const upkeep = BASE_UPKEEP + Object.keys(state.occupancy).length * PER_ROOM_UPKEEP;
   addMoney(-upkeep, "管理費 / 水電", "upkeep");

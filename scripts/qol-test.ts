@@ -98,11 +98,14 @@ check("遷移後 hygiene→wellbeing、補 energy", mstats.wellbeing !== undefin
 check("匯入自己匯出的檔 → 成功", !!json && importSave(json!));
 
 // --- 存檔往返:把 state 改壞 → initGame() 從(匯入的)存檔重載 → 應還原 ---
+const { STARTER_BONUS } = await import("../src/sim/economy");
 const sv = JSON.parse(json!);
 state.money = 123456789; // 哨兵值
 initGame();
 stopGame();
-check("重載後金錢從存檔還原(非哨兵值)", state.money !== 123456789 && Math.abs(state.money - sv.money) < 5000);
+// 存檔未領過開辦補助 → initGame 會一次性補發(這是預期行為),扣掉它才是「還原的金錢」
+const expectMoney = sv.money + (sv.starterBonusGiven ? 0 : STARTER_BONUS);
+check("重載後金錢從存檔還原(非哨兵值)", state.money !== 123456789 && Math.abs(state.money - expectMoney) < 5000);
 check("重載後租客數與存檔一致", Object.keys(state.runtimes).length === Object.keys(sv.runtimes).length);
 
 clearSave();

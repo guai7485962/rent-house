@@ -36,7 +36,7 @@ import {
   type TenantRuntime,
 } from "./gameState";
 import { applyHour } from "./tick";
-import { addMoney } from "./economy";
+import { addMoney, DEPOSIT_MONTHS } from "./economy";
 import { upgradeTolBonus } from "./upgrades";
 import { setCustomAppearance } from "../pixel/scene";
 import { randomAppearance } from "../pixel/parts";
@@ -100,6 +100,8 @@ export function moveIn(roomId: string, ap: Applicant) {
   refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
   if (ap.pet) adoptCat(ap.id, ap.pet); // 自帶寵物 → 入住即成為飼主(§A-1)
+  const deposit = ap.monthlyRent * DEPOSIT_MONTHS; // 入住押金:招租一次性收入
+  if (deposit > 0) addMoney(deposit, `${ap.name} 入住押金`, "other");
   save();
 }
 

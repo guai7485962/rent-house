@@ -26,6 +26,8 @@ export interface Agent {
   vs: TenantVisualState;
   /** 進行中互動 session 的圖式(§10-6:sit 坐/lie 躺;null = 無 session) */
   pose: PairPose | null;
+  /** stand_face 的水平朝向:-1 左、1 右;其他姿勢為 0 */
+  facing: -1 | 0 | 1;
 }
 
 const SPEED = 44; // px / 秒
@@ -52,6 +54,7 @@ export function createAgents(): Agent[] {
       walkPhase: 0,
       vs: rt.tenant.visualState,
       pose: null,
+      facing: 0,
     };
   });
 }
@@ -64,6 +67,7 @@ export function tickAgents(agents: Agent[], dt: number) {
     let target = ses?.tile ?? rt?.targetTile ?? null;
     a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
     a.pose = ses?.pose ?? null;
+    a.facing = ses?.facing ?? 0;
     a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {
       a.moving = false;

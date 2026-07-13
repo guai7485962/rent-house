@@ -10,8 +10,11 @@ import { currentBlocked } from "./pathfind";
 import { GRID_W, GRID_H } from "./map";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "../sim/clock";
 
-/** pair = 相鄰站一起;sit = 並肩坐(沙發/談心/開黑);lie = 並排躺(賴床);hidden = 隱藏(🔞 遮蔽式) */
-export type PairPose = "pair" | "sit" | "lie" | "hidden";
+/**
+ * pair = 相鄰站一起;stand_face = 面對面聊天;cook_pair = 並肩料理;
+ * sit = 並肩坐;lie = 並排躺;hidden = 隱藏(🔞 遮蔽式);apart = 各自退開(冷戰摔門)。
+ */
+export type PairPose = "pair" | "stand_face" | "cook_pair" | "sit" | "lie" | "hidden" | "apart";
 
 export interface PairSession {
   aId: string;
@@ -63,13 +66,24 @@ export function startPairSession(aId: string, bId: string, anchor: Tile, pose: P
 }
 
 /** 此人進行中的 session 走位(agent 層以此覆寫 targetTile);沒有則 null */
-export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pose: PairPose } | null {
+export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pose: PairPose; facing: -1 | 0 | 1 } | null {
   prune(gameNow);
   for (const s of sessions) {
-    if (s.aId === tenantId) return { tile: s.tileA, pose: s.pose };
-    if (s.bId === tenantId) return { tile: s.tileB, pose: s.pose };
+    if (s.aId === tenantId) return { tile: s.tileA, pose: s.pose, facing: facingToward(s.pose, s.tileA, s.tileB) };
+    if (s.bId === tenantId) return { tile: s.tileB, pose: s.pose, facing: facingToward(s.pose, s.tileB, s.tileA) };
   }
   return null;
+}
+
+/** 面對面姿勢只在水平相鄰時畫側向提示；垂直排列維持正面，避免假裝看向錯誤方向。 */
+function facingToward(pose: PairPose, mine: Tile, other: Tile): -1 | 0 | 1 {
+  if (pose !== "stand_face" || mine.r !== other.r || mine.c === other.c) return 0;
+  return other.c > mine.c ? 1 : -1;
+}
+
+/** 冷戰演出反向使用 pair session：兩人不靠攏，而是各自走向指定的退場格。 */
+export function startSeparationSession(aId: string, bId: string, tileA: Tile, tileB: Tile, gameNow: number, durationMs = 15000) {
+  startPairSession(aId, bId, tileA, "apart", gameNow, durationMs, { a: tileA, b: tileB });
 }
 
 export function activeSessions(gameNow: number): PairSession[] {

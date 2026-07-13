@@ -440,7 +440,7 @@ function socialPass(skip: Set<string> = new Set()) {
         else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
         else spawnFx("chat", at.c, at.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
         // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉
-        startPairSession(A.tenant.id, B.tenant.id, at, "pair", state.gameMs);
+        startPairSession(A.tenant.id, B.tenant.id, at, "stand_face", state.gameMs);
       }
       if (res.tone === "conflict") maybeFeudAfterConflict(A, B); // 大吵可能升級成冷戰
       if (res.milestone === "became_couple") {

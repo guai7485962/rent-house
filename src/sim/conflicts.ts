@@ -12,7 +12,10 @@ import { pairKey, getRel, adjustRelationship, compatibility } from "./social";
 import { state, clamp, notify, pushMemory, pushSocialLog, roomOfTenant, type TenantRuntime } from "./gameState";
 import { triggerBreakdown } from "./maintenance";
 import { spawnFx } from "../floor/fx";
-import { startPairSession } from "../floor/pairSession";
+import { startPairSession, startSeparationSession } from "../floor/pairSession";
+import { currentBlocked } from "../floor/pathfind";
+import type { Tile } from "../floor/pathfind";
+import { roomRect } from "./placements";
 import { MS_PER_GAME_HOUR } from "./clock";
 import { unlock } from "./legacy";
 
@@ -31,7 +34,7 @@ export function avoidLounge(tenantId: string): boolean {
 }
 
 /** 開始冷戰:登記期限 + 雙方記憶/日誌(玩家與 AI 都看得到「正在互相迴避」) */
-export function startFeud(A: TenantRuntime, B: TenantRuntime, quiet = false) {
+export function startFeud(A: TenantRuntime, B: TenantRuntime, quiet = false, animate = true) {
   state.feuds[pairKey(A.tenant.id, B.tenant.id)] = { untilMs: state.gameMs + FEUD_DAYS * 24 * MS_PER_GAME_HOUR };
   pushMemory(A.tenant, FEUD_MEMORY, `和${B.tenant.name}徹底鬧翻,現在連交誼廳都刻意錯開。`, "ai_event");
   pushMemory(B.tenant, FEUD_MEMORY, `和${A.tenant.name}徹底鬧翻,現在連交誼廳都刻意錯開。`, "ai_event");
@@ -40,6 +43,49 @@ export function startFeud(A: TenantRuntime, B: TenantRuntime, quiet = false) {
     pushSocialLog(B, `❄️ 和 ${A.tenant.name} 徹底鬧翻,進入冷戰,互相當作看不見。`, "major");
     notify(`❄️ ${A.tenant.name} 和 ${B.tenant.name} 鬧翻了,進入冷戰`);
   }
+  if (animate) playDoorSlamExit(A, B);
+}
+
+/** 冷戰成立時，兩人立刻停止原本互動、各自退回住處；門口顯示摔門震動。 */
+function playDoorSlamExit(A: TenantRuntime, B: TenantRuntime) {
+  if (A.tenant.visualState === "away" || B.tenant.visualState === "away") return;
+  const aTile = retreatTile(A, false);
+  const bTile = retreatTile(B, true);
+  if (aTile && bTile) startSeparationSession(A.tenant.id, B.tenant.id, aTile, bTile, state.gameMs);
+
+  const seen = new Set<string>();
+  for (const rt of [A, B]) {
+    const door = roomDoor(rt);
+    if (!door || seen.has(`${door.c},${door.r}`)) continue;
+    seen.add(`${door.c},${door.r}`);
+    spawnFx("slam", door.c, door.r, 12000, state.gameMs + MS_PER_GAME_HOUR);
+  }
+}
+
+/** 同房冷戰時分取房內左右兩端；不同房則各自選房內可走格。 */
+function retreatTile(rt: TenantRuntime, reverse: boolean): Tile | null {
+  const roomId = roomOfTenant(rt.tenant.id);
+  const rect = roomId ? roomRect(roomId) : null;
+  if (!rect) return rt.targetTile ? { ...rt.targetTile } : null;
+  const blocked = currentBlocked();
+  const cols = Array.from({ length: rect.c1 - rect.c0 + 1 }, (_, i) => rect.c0 + i);
+  const rows = Array.from({ length: rect.r1 - rect.r0 + 1 }, (_, i) => rect.r0 + i);
+  if (reverse) cols.reverse();
+  for (const c of cols) {
+    for (const r of rows) if (blocked[r]?.[c] === false) return { c, r };
+  }
+  return rt.targetTile ? { ...rt.targetTile } : null;
+}
+
+/** 四間套房的門都在靠中央走廊側，可由房間矩形推導，不另寫死座標。 */
+function roomDoor(rt: TenantRuntime): Tile | null {
+  const roomId = roomOfTenant(rt.tenant.id);
+  const rect = roomId ? roomRect(roomId) : null;
+  if (!rect) return null;
+  return {
+    c: rect.c1 < 7 ? rect.c1 + 1 : rect.c0 - 1,
+    r: Math.floor((rect.r0 + rect.r1) / 2),
+  };
 }
 
 /** 解除冷戰(期滿或房東調解成功):移除登記與 [冷戰中] 記憶 + 日誌 */
@@ -168,7 +214,8 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
   if (roomId) triggerBreakdown(roomId, "damage", rng);
 
   // 之後:冷戰(靜默登記,打架日誌已經夠大聲)+ 必發房東抉擇
-  startFeud(A, B, true);
+  // 打鬥雲優先演完，避免冷戰退場立即把 hidden session 蓋掉；一般口角/修羅場仍會直接摔門。
+  startFeud(A, B, true, false);
   A.pendingEvent = fightDecision(A.tenant, B.tenant);
   return true;
 }

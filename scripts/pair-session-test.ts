@@ -21,7 +21,7 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { startPairSession, sessionFor, activeSessions, clearPairSessions } = await import("../src/floor/pairSession");
+const { startPairSession, startSeparationSession, sessionFor, activeSessions, clearPairSessions } = await import("../src/floor/pairSession");
 const { currentBlocked } = await import("../src/floor/pathfind");
 const { createAgents, tickAgents } = await import("../src/floor/agents");
 const { interactionsPass } = await import("../src/sim/interactions");
@@ -60,6 +60,23 @@ check("A 分到錨點", !!sa && sa.tile.c === anchor.c && sa.tile.r === anchor.r
 check("B 分到相鄰格(非同格)", !!sb && Math.abs(sb.tile.c - anchor.c) + Math.abs(sb.tile.r - anchor.r) === 1);
 check("B 的格可走", !!sb && !blocked[sb.tile.r][sb.tile.c]);
 check("局外人查不到 session", sessionFor("px", now()) === null);
+
+// 面對面:優先找水平相鄰格，兩人的 facing 必須朝向彼此
+let faceAnchor = anchor;
+outerFace: for (let r = 1; r < blocked.length - 1; r++) {
+  for (let c = 1; c < blocked[0].length - 1; c++) {
+    if (!blocked[r][c] && !blocked[r][c + 1]) {
+      faceAnchor = { c, r };
+      break outerFace;
+    }
+  }
+}
+startPairSession("face_a", "face_b", faceAnchor, "stand_face", now());
+check("stand_face:兩人水平相鄰且朝向彼此", sessionFor("face_a", now())?.facing === 1 && sessionFor("face_b", now())?.facing === -1);
+
+startSeparationSession("apart_a", "apart_b", { c: 1, r: 1 }, { c: 14, r: 22 }, now());
+check("apart:冷戰退場保留各自指定格", sessionFor("apart_a", now())?.tile.c === 1 && sessionFor("apart_b", now())?.tile.c === 14 && sessionFor("apart_a", now())?.pose === "apart");
+clearPairSessions();
 
 // 替換:同一人再登記 → 舊的被清掉,一人同時只演一場
 startPairSession("pa", "pc", anchor, "hidden", now());
@@ -107,17 +124,25 @@ check("sit pose:兩人不隱藏且 agent.pose=sit", !agA.hidden && !agB.hidden &
 startPairSession(A.tenant.id, B.tenant.id, anchor, "lie", now());
 tickAgents(agents, 0.05);
 check("lie pose:agent.pose=lie", agA.pose === "lie" && agB.pose === "lie");
+startPairSession(A.tenant.id, B.tenant.id, faceAnchor, "stand_face", now());
+tickAgents(agents, 0.05);
+check("stand_face pose:agent 收到相反朝向", agA.pose === "stand_face" && agA.facing === 1 && agB.facing === -1);
+startPairSession(A.tenant.id, B.tenant.id, anchor, "cook_pair", now());
+tickAgents(agents, 0.05);
+check("cook_pair pose:兩人不隱藏且姿勢帶到渲染層", !agA.hidden && !agB.hidden && agA.pose === "cook_pair" && agB.pose === "cook_pair");
 
 clearPairSessions();
 tickAgents(agents, 0.05);
 check("session 結束:兩人重新現身、pose 清空", !agA.hidden && !agB.hidden && agA.pose === null && agB.pose === null);
 
 // --- 家具座位錨點(§10-6):session 指定沙發佔用格 → 走到旁邊「跨上去」坐 ---
-const { furnitureSeats } = await import("../src/sim/interactions");
+const { furnitureSeats, furnitureStandingPair, forceInteraction } = await import("../src/sim/interactions");
 const seats = furnitureSeats("lounge", ["shared_sofa"]);
 check("furnitureSeats 找到共用沙發並肩兩格", !!seats && Math.abs(seats!.a.c - seats!.b.c) === 1 && seats!.a.r === seats!.b.r);
 check("寬 1 家具坐不下兩人 → null", furnitureSeats("lounge", ["coffee_machine"]) === null);
 check("地點沒這件家具 → null", furnitureSeats("r301", ["shared_sofa"]) === null);
+const kitchenPair = furnitureStandingPair("lounge", ["counter"]);
+check("furnitureStandingPair:找到流理臺前兩個並排可走格", !!kitchenPair && kitchenPair.a.r === kitchenPair.b.r && Math.abs(kitchenPair.a.c - kitchenPair.b.c) === 1 && !blocked[kitchenPair.a.r][kitchenPair.a.c] && !blocked[kitchenPair.b.r][kitchenPair.b.c]);
 if (seats) {
   A.targetTile = { c: seats.a.c, r: seats.a.r + 1 }; // 從沙發正前方出發
   B.targetTile = { c: seats.b.c - 2, r: seats.b.r + 2 }; // 稍遠處出發(要走幾步)
@@ -143,6 +168,11 @@ A.tenant.visualState = "idle"; B.tenant.visualState = "idle";
 A.pendingEvent = null; B.pendingEvent = null;
 state.adultMode = true;
 state.gameMs = new Date("2026-07-06T23:30:00+08:00").getTime();
+
+clearPairSessions();
+check("整合:強制雙人料理成功", forceInteraction(A.tenant.id, B.tenant.id, "cook_dinner"));
+const cookSession = activeSessions(now())[0];
+check("整合:雙人料理在流理臺前使用 cook_pair", !!cookSession && cookSession.pose === "cook_pair" && !!kitchenPair && cookSession.tileA.c === kitchenPair.a.c && cookSession.tileA.r === kitchenPair.a.r && cookSession.tileB.c === kitchenPair.b.c && cookSession.tileB.r === kitchenPair.b.r);
 
 let triggered = false;
 for (let i = 0; i < 300 && !triggered; i++) {

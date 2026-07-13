@@ -18,6 +18,7 @@ import { roomRect, getPlacements } from "./placements";
 import { getDef } from "../furniture/catalog";
 import { spawnFx, type FxKind } from "../floor/fx";
 import { startPairSession, type PairPose } from "../floor/pairSession";
+import { currentBlocked } from "../floor/pathfind";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 
 export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
@@ -49,6 +50,8 @@ export interface InteractionDef {
   pose?: PairPose;
   /** 家具座位錨點(§10-6):兩人「坐/躺到」這件家具上(反查地點的第一件;沒有就退回站位演出) */
   seatOn?: string[];
+  /** 兩人並排站在家具互動面前(如流理臺),不踩進家具格。 */
+  standAt?: string[];
   /** 演出改在指定共用設施發生(如一起洗澡在「bathroom」淋浴間,而不是在自己房間) */
   venue?: string;
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
@@ -101,6 +104,9 @@ export const INTERACTIONS: InteractionDef[] = [
     id: "cook_dinner",
     tier: "cohabit",
     location: "room",
+    venue: "lounge",
+    pose: "cook_pair",
+    standAt: ["counter"],
     timeWindow: [18, 19],
     weight: 2,
     cooldownHours: 16,
@@ -227,7 +233,7 @@ export const INTERACTIONS: InteractionDef[] = [
     id: "room_hangout",
     tier: "close",
     location: "room",
-    pose: "pair",
+    pose: "stand_face",
     timeWindow: [15, 23],
     weight: 3,
     cooldownHours: 8,
@@ -284,6 +290,41 @@ export function furnitureSeats(roomId: string | null, seatOn?: string[]): { a: {
     return { a: { c: p.c + mid - 1, r: p.r }, b: { c: p.c + mid, r: p.r } };
   }
   return null;
+}
+
+/**
+ * 家具前的雙人站位：沿著寬/高至少 2 格的家具各取一個 interact 格。
+ * 例如 lounge 的 2 格流理臺位於 r9，兩人會站在 r10 並排料理，而不是踩上檯面。
+ */
+export function furnitureStandingPair(roomId: string | null, standAt?: string[]): { a: { c: number; r: number }; b: { c: number; r: number } } | null {
+  if (!standAt || !roomId) return null;
+  const blocked = currentBlocked();
+  for (const p of getPlacements()) {
+    if (p.room !== roomId || !standAt.includes(p.defId)) continue;
+    const def = getDef(p.defId);
+    let a: { c: number; r: number };
+    let b: { c: number; r: number };
+    if (def.footprint.w >= 2) {
+      const mid = Math.floor(def.footprint.w / 2);
+      a = { c: p.c + mid - 1 + def.interact.dc, r: p.r + def.interact.dr };
+      b = { c: p.c + mid + def.interact.dc, r: p.r + def.interact.dr };
+    } else if (def.footprint.h >= 2) {
+      const mid = Math.floor(def.footprint.h / 2);
+      a = { c: p.c + def.interact.dc, r: p.r + mid - 1 + def.interact.dr };
+      b = { c: p.c + def.interact.dc, r: p.r + mid + def.interact.dr };
+    } else {
+      continue;
+    }
+    if (blocked[a.r]?.[a.c] === false && blocked[b.r]?.[b.c] === false) return { a, b };
+  }
+  return null;
+}
+
+/** standAt 是硬性演出條件：指定家具不在或前方兩格不可達時，本次互動不成立。 */
+function hasStandingStage(def: InteractionDef, roomId: string | null): boolean {
+  if (!def.standAt) return true;
+  const loc = def.venue ?? (def.location === "lounge" ? "lounge" : roomId);
+  return furnitureStandingPair(loc, def.standAt) !== null;
 }
 
 const inWindow = (hour: number, w?: [number, number]): boolean => {
@@ -368,6 +409,7 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
         (def) => def.location === location
           && (!visitPair || def.tier === "close")
           && canInteract(def, A.tenant, B.tenant, ctx)
+          && hasStandingStage(def, roomId)
           && offCooldown(A.tenant.id, B.tenant.id, def),
       );
       if (eligible.length === 0) continue;
@@ -409,14 +451,16 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
   const venueRect = def.venue ? roomRect(def.venue) : null;
   const loc = def.venue ?? (def.location === "lounge" ? "lounge" : roomId);
   const seats = furnitureSeats(loc, def.seatOn);
+  const standingPair = furnitureStandingPair(loc, def.standAt);
+  const pairTiles = seats ?? standingPair;
   const rect = venueRect ?? (roomId ? roomRect(roomId) : null);
   const venueAnchor = venueRect ? { c: Math.floor((venueRect.c0 + venueRect.c1) / 2), r: Math.floor((venueRect.r0 + venueRect.r1) / 2) } : null;
-  const anchor = seats?.a ?? venueAnchor ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
+  const anchor = pairTiles?.a ?? venueAnchor ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
   if (anchor) {
     // 進行中的互動演出(泡泡/霧氣…)+ 姿勢:持續到下一個動作(1 遊戲小時);快轉時 gameUntil 收掉
     spawnFx(def.fx, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
     // §10-6:登記雙人 session——有座位就坐/躺上去,否則走到錨點旁站一起;🔞 遮蔽式則整段隱藏
-    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, REAL_MS_PER_GAME_HOUR, seats ?? undefined);
+    startPairSession(A.tenant.id, B.tenant.id, anchor, def.pose ?? "pair", state.gameMs, REAL_MS_PER_GAME_HOUR, pairTiles ?? undefined);
   }
   state.interactionCooldowns[cdKey(A.tenant.id, B.tenant.id, def.id)] = state.gameMs;
   // 被撞見(§10-2 戲劇批):私密互動有低機率被第三位租客撞見,三方尷尬
@@ -437,6 +481,7 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
   if (feudActive(aId, bId)) return false;
 
   const roomId = roomOfTenant(aId) ?? roomOfTenant(bId);
+  if (!hasStandingStage(def, roomId)) return false;
   const thirdPresent = Object.values(state.runtimes).some(
     (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );

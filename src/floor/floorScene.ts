@@ -234,6 +234,15 @@ function drawFx(ctx: Ctx, f: Fx, frame: number) {
     pxPat(ctx, PAT_STAR, x - 5, y - 13 - ((frame + 1) % 3), star);
     pxPat(ctx, PAT_STAR, x + 14, y - 15 - bob, star);
     pxPat(ctx, PAT_STAR, x + 16, y - 2 - ((frame + 2) % 3), star);
+  } else if (f.kind === "slam") {
+    // 冷戰摔門:門板震動 + 驚嘆號/撞擊線,不依賴音效也能看懂「砰」的一下
+    const shake = frame % 2;
+    rect(ctx, x + 4 + shake, y - 10, 8, 10, "#4b2f24");
+    rect(ctx, x + 5 + shake, y - 9, 6, 9, "#9a6240");
+    rect(ctx, x + 10 + shake, y - 5, 1, 1, "#ffd27a");
+    pxPat(ctx, PAT_BANG, x + 13, y - 13, "#ffcf4a");
+    rect(ctx, x + 1 - shake, y - 8, 2, 1, "#ff8a5b");
+    rect(ctx, x, y - 5, 3, 1, "#ff8a5b");
   }
 }
 
@@ -286,6 +295,29 @@ function drawAgent(ctx: Ctx, a: Agent) {
   // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件
   const ap = getCustomAppearance(a.tenantId);
   if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff);
+  if (!a.moving && a.pose === "stand_face") drawFacingCue(ctx, a, pal);
+  else if (!a.moving && a.pose === "cook_pair") drawCookingCue(ctx, a, pal);
+}
+
+/** 正面基底上補一顆朝同伴方向的眼睛與鼻尖，讓相鄰兩人明確互看。 */
+function drawFacingCue(ctx: Ctx, a: Agent, pal: Palette) {
+  if (!a.facing) return;
+  const x = a.px + 3;
+  const y = a.py - 4;
+  const eyeX = a.facing > 0 ? x + 6 : x + 3;
+  const noseX = a.facing > 0 ? x + 8 : x + 1;
+  rect(ctx, eyeX, y + 5, 1, 1, shade(pal.F, -55));
+  rect(ctx, noseX, y + 6, 1, 1, pal.F);
+}
+
+/** 並肩料理:抬起靠流理台的一隻手，搭配鍋鏟像素，和一般站姿區分。 */
+function drawCookingCue(ctx: Ctx, a: Agent, pal: Palette) {
+  const x = a.px + 3;
+  const y = a.py - 4;
+  rect(ctx, x + 1, y + 10, 2, 1, pal.F);
+  rect(ctx, x, y + 8, 1, 3, shade(pal.F, -12));
+  rect(ctx, x, y + 5, 1, 4, "#5f6470");
+  rect(ctx, x - 1, y + 4, 3, 1, "#353943");
 }
 
 // ---------------------------------------------------------------------------

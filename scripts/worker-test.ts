@@ -6,7 +6,7 @@
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
  */
 const { _internal } = await import("../worker/index");
-const { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel } = _internal;
+const { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel, extractWorkersAiText } = _internal;
 
 let pass = 0;
 let fail = 0;
@@ -50,9 +50,15 @@ check("clampCtx:無 arc → null", clampCtx({ name: "a" }).arc === null);
 check("clampCtx:eventDue 僅接受 true", clampCtx({ eventDue: true }).eventDue && !clampCtx({ eventDue: "true" }).eventDue);
 
 // --- 免費模型分流:平淡日常用 Lite,事件/主線日用 Flash ---
-check("模型分流:平淡日常 → Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-2.5-flash-lite");
-check("模型分流:事件機會已到 → Flash", chooseGeminiModel(clampCtx({ name: "a", eventDue: true })) === "gemini-2.5-flash");
-check("模型分流:進行中劇情弧 → Flash", chooseGeminiModel(clampCtx({ name: "a", arc: { theme: "搬家", stage: 1, maxStage: 3, summary: "整理中" } })) === "gemini-2.5-flash");
+check("模型分流:平淡日常 → 3.1 Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-3.1-flash-lite");
+check("模型分流:事件機會已到 → 3 Flash", chooseGeminiModel(clampCtx({ name: "a", eventDue: true })) === "gemini-3-flash-preview");
+check("模型分流:進行中劇情弧 → 3 Flash", chooseGeminiModel(clampCtx({ name: "a", arc: { theme: "搬家", stage: 1, maxStage: 3, summary: "整理中" } })) === "gemini-3-flash-preview");
+
+// --- Workers AI 同步輸出:新版是 OpenAI choices,舊版是 response ---
+check("Workers AI:解析 OpenAI choices", extractWorkersAiText({ choices: [{ message: { content: "新版" } }] }) === "新版");
+check("Workers AI:兼容舊 response", extractWorkersAiText({ response: "舊版" }) === "舊版");
+check("Workers AI:支援 content parts", extractWorkersAiText({ choices: [{ message: { content: [{ type: "text", text: "分" }, { type: "text", text: "段" }] } }] }) === "分段");
+check("Workers AI:空輸出 → null", extractWorkersAiText({ choices: [] }) === null);
 
 // --- parseResult ---
 check("parseResult:抽出 JSON + diary", parseResult('前綴 {"diary":"你好","summaryUpdate":"s"} 後綴')?.diary === "你好");

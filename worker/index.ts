@@ -192,7 +192,7 @@ function clampCtx(raw: unknown): NarrateCtx {
 }
 
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
-export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel };
+export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel, extractWorkersAiText };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
  *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */
@@ -202,7 +202,7 @@ async function geminiGenerate(
   key: string,
   maxOutputTokens = 1024,
   schema?: unknown,
-  model = "gemini-2.5-flash",
+  model = "gemini-3.1-flash-lite",
 ): Promise<string> {
   const doFetch = () =>
     fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -215,8 +215,8 @@ async function geminiGenerate(
           maxOutputTokens,
           responseMimeType: "application/json",
           ...(schema ? { responseSchema: schema } : {}),
-          temperature: 1.1, // 敘事多一點變化
-          thinkingConfig: { thinkingBudget: 0 }, // 關思考,確保輸出、更快更省
+          temperature: 1.0, // Gemini 3 官方建議維持預設值,避免低溫造成重複
+          thinkingConfig: { thinkingLevel: "minimal" }, // 日記不需深度推理,節省延遲與輸出額度
         },
       }),
     });
@@ -231,9 +231,9 @@ async function geminiGenerate(
   return (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
 }
 
-function chooseGeminiModel(ctx: NarrateCtx): "gemini-2.5-flash" | "gemini-2.5-flash-lite" {
+function chooseGeminiModel(ctx: NarrateCtx): "gemini-3-flash-preview" | "gemini-3.1-flash-lite" {
   const important = ctx.eventDue || ctx.events.length > 0 || (ctx.flags?.length ?? 0) > 0 || !!ctx.arc;
-  return important ? "gemini-2.5-flash" : "gemini-2.5-flash-lite";
+  return important ? "gemini-3-flash-preview" : "gemini-3.1-flash-lite";
 }
 
 async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
@@ -249,11 +249,30 @@ async function callWorkersAi(ctx: NarrateCtx, ai: NonNullable<Env["AI"]>): Promi
     ],
     max_tokens: 1024,
     temperature: 0.9,
+    response_format: { type: "json_object" },
   });
-  const result = raw as { response?: unknown; result?: { response?: unknown } };
-  const text = result.response ?? result.result?.response;
+  const text = extractWorkersAiText(raw);
   if (typeof text !== "string" || !text.trim()) throw new Error("Workers AI empty response");
   return text;
+}
+
+/** Workers AI 新版採 OpenAI Chat Completions 格式;同時兼容舊版 response 包裝。 */
+function extractWorkersAiText(raw: unknown): string | null {
+  if (typeof raw === "string") return raw;
+  const result = raw as {
+    response?: unknown;
+    result?: { response?: unknown };
+    choices?: { message?: { content?: unknown }; text?: unknown }[];
+  };
+  const content = result.response ?? result.result?.response ?? result.choices?.[0]?.message?.content ?? result.choices?.[0]?.text;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
+      .join("");
+    return text || null;
+  }
+  return null;
 }
 
 /** Claude(備援,需 Anthropic 額度) */
@@ -394,7 +413,7 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
 
   const attempts: { provider: "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen"; run: () => Promise<string> }[] = [];
   if (env.GEMINI_API_KEY) {
-    const provider = chooseGeminiModel(ctx) === "gemini-2.5-flash" ? "gemini-flash" : "gemini-flash-lite";
+    const provider = chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite";
     attempts.push({ provider, run: () => callGemini(ctx, env.GEMINI_API_KEY!) });
   }
   if (env.AI) attempts.push({ provider: "workers-ai-qwen", run: () => callWorkersAi(ctx, env.AI!) });

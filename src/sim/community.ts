@@ -30,6 +30,88 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
 
 const hasTag = (rt: TenantRuntime, ids: string[]) => rt.tenant.coreTags.some((t) => ids.includes(t.id));
 
+/** 依遊戲日、參與者與事件 id 選文案；不用 Math.random，避免純文字擴充改變平衡 RNG。 */
+function sceneIndex(parts: TenantRuntime[], salt: string, size: number): number {
+  const day = Math.floor(state.gameMs / (24 * 3600 * 1000));
+  const key = `${salt}|${day}|${parts.map((p) => p.tenant.id).join("|")}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  return Math.abs(hash) % size;
+}
+
+const COMMUNITY_LINES = {
+  laundryConflictA: [
+    "🧺 在洗衣房為了搶最後一台空機和 {o} 起了口角。",
+    "🧺 抱著一籃衣服趕到洗衣房時,發現 {o} 正要搶最後一台空機,兩人誰也不讓。",
+    "🧺 在洗衣房為了誰先使用最後一台空機和 {o} 爭了半天,洗衣服洗出一肚子氣。",
+  ],
+  laundryConflictB: [
+    "🧺 洗到一半發現機子被 {o} 佔走,兩人在洗衣房僵了一下。",
+    "🧺 覺得空洗衣機被 {o} 搶走,兩個人對著倒數時間越講越不高興。",
+    "🧺 和 {o} 各自抱著衣服堵在機器前,最後用猜拳也沒能好好收場。",
+  ],
+  laundryFriendlyA: [
+    "🧺 在洗衣房邊等烘乾邊和 {o} 聊了起來,意外地投機。",
+    "🧺 和 {o} 一起研究洗衣標籤,邊聊邊發現彼此都曾洗壞過衣服。",
+    "🧺 等洗衣機時和 {o} 分享最近的生活,機器停了還多聊了一會。",
+  ],
+  laundryFriendlyB: [
+    "🧺 洗衣服時碰上 {o},一來一往聊得挺開心。",
+    "🧺 和 {o} 閒聊誰又把衛生紙洗成滿桶雪花,笑到差點忘了收衣服。",
+    "🧺 被 {o} 幫忙撿起掉落的襪子,兩人順勢聊起各自的洗衣災難。",
+  ],
+  bathroomConflictA: [
+    "🚿 早上趕時間,為了搶浴室在門外猛催 {o},兩人臉都臭了。",
+    "🚿 為了搶浴室和 {o} 堵在門口互不相讓,差點連上班都一起遲到。",
+    "🚿 眼看時間來不及,和 {o} 為了搶浴室順序吵得整條走廊都聽見。",
+  ],
+  bathroomConflictB: [
+    "🚿 洗到一半被 {o} 在門外一直敲門催,心情有點差。",
+    "🚿 被 {o} 敲門催了好幾次,一開門兩個人立刻互瞪。",
+    "🚿 才剛打開熱水就聽見 {o} 敲門催,這場澡洗得全是火氣。",
+  ],
+  bathroomFriendlyA: [
+    "🚿 在浴室門口排隊等 {o},順口聊了幾句,意外地自在。",
+    "🚿 和 {o} 排隊等浴室時交換了今天的行程,順便互相提醒別遲到。",
+    "🚿 排隊時借了 {o} 一條乾毛巾,兩人站在門邊聊得很自然。",
+  ],
+  bathroomFriendlyB: [
+    "🚿 排隊等浴室時和 {o} 閒聊,關係近了一點。",
+    "🚿 和 {o} 在浴室門口閒聊昨晚的事,輪到自己時還有點意猶未盡。",
+    "🚿 等浴室時被 {o} 問了句早餐吃什麼,最後連晚餐都聊到了。",
+  ],
+  morningRush: [
+    "🚽 早上尖峰,{names} 一起卡在浴室/廁所門口排隊乾瞪眼,邊等邊吐槽。",
+    "🚽 {names} 同時趕著出門,浴室門口像臨時開了一場焦急的住戶會議。",
+    "🚽 {names} 一早全堵在浴室外,互相報時、借東西,忙亂中反而有了默契。",
+  ],
+  groupOrder: [
+    "🧋 和 {names} 揪團訂了手搖飲,樓裡難得這麼熱鬧。",
+    "🍕 和 {names} 揪團湊外送免運,最後點得比原本預計多了一倍。",
+    "🍗 和 {names} 揪團買宵夜,餐點送到後公共桌面瞬間擺滿。",
+    "🧁 和 {names} 揪團試附近新開的甜點店,大家邊吃邊認真評分。",
+  ],
+  noiseComplain: [
+    "😤 幾個鄰居一起去找 {o} 反映噪音問題。",
+    "😤 忍了好幾晚後,幾個鄰居結伴去向 {o} 抱怨噪音。",
+    "😤 幾個鄰居拿著各自記下的時間,一起找 {o} 抱怨深夜聲響。",
+  ],
+  noiseTarget: [
+    "😰 被 {names} 一起上門抱怨噪音,壓力山大。",
+    "😰 一開門就看到 {names} 排成一列抱怨噪音,當場不知道該先向誰解釋。",
+    "😰 被 {names} 拿著噪音紀錄一起抱怨,只好尷尬地連聲道歉。",
+  ],
+  rooftop: [
+    "🌇 傍晚和 {names} 相約頂樓乘涼吹風,一整天的疲憊都散了。",
+    "🌆 和 {names} 帶著飲料上頂樓看晚霞,難得誰也沒有急著滑手機。",
+    "🌙 和 {names} 在頂樓吹晚風聊近況,城市的聲音反而成了舒服的背景。",
+    "✨ 和 {names} 在頂樓認星星,最後沒認出幾顆,倒是聊了很多心事。",
+  ],
+};
+
+const fillCommunity = (line: string, vars: Record<string, string>) =>
+  Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), value), line);
+
 /** 在某設施中心掛一個特效(讓事發地點看得到) */
 function fxAt(roomId: string, kind: Parameters<typeof spawnFx>[0]) {
   const rect = roomRect(roomId);
@@ -70,20 +152,21 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     fire: (parts) => {
       const [a, b] = parts;
       const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
+      const variant = sceneIndex(parts, "laundry", COMMUNITY_LINES.laundryConflictA.length);
       if (rel < 35) {
         adjustRelationship(a.tenant.id, b.tenant.id, -4);
         bumpMood(a, -2, 5);
         bumpMood(b, -2, 5);
-        pushSocialLog(a, `🧺 在洗衣房為了搶最後一台空機和 ${b.tenant.name} 起了口角。`, "notable");
-        pushSocialLog(b, `🧺 洗到一半發現機子被 ${a.tenant.name} 佔走,兩人在洗衣房僵了一下。`, "notable");
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.laundryConflictA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.laundryConflictB[variant], { o: a.tenant.name }), "notable");
         fxAt("laundry", "anger");
         notify(`🧺 ${a.tenant.name} 和 ${b.tenant.name} 在洗衣房搶洗衣機起了口角`);
       } else {
         adjustRelationship(a.tenant.id, b.tenant.id, 3);
         bumpMood(a, 3, -2);
         bumpMood(b, 3, -2);
-        pushSocialLog(a, `🧺 在洗衣房邊等烘乾邊和 ${b.tenant.name} 聊了起來,意外地投機。`, "notable");
-        pushSocialLog(b, `🧺 洗衣服時碰上 ${a.tenant.name},一來一往聊得挺開心。`, "notable");
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.laundryFriendlyA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.laundryFriendlyB[variant], { o: a.tenant.name }), "notable");
         fxAt("laundry", "chat");
       }
     },
@@ -97,20 +180,21 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     fire: (parts) => {
       const [a, b] = parts;
       const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
+      const variant = sceneIndex(parts, "bathroom", COMMUNITY_LINES.bathroomConflictA.length);
       if (rel < 35) {
         adjustRelationship(a.tenant.id, b.tenant.id, -3);
         bumpMood(a, -1, 4);
         bumpMood(b, -1, 4);
-        pushSocialLog(a, `🚿 早上趕時間,為了搶浴室在門外猛催 ${b.tenant.name},兩人臉都臭了。`, "notable");
-        pushSocialLog(b, `🚿 洗到一半被 ${a.tenant.name} 在門外一直敲門催,心情有點差。`, "notable");
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.bathroomConflictA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.bathroomConflictB[variant], { o: a.tenant.name }), "notable");
         fxAt("bathroom", "anger");
         notify(`🚿 ${a.tenant.name} 和 ${b.tenant.name} 為了搶浴室鬧得不太愉快`);
       } else {
         adjustRelationship(a.tenant.id, b.tenant.id, 2);
         bumpMood(a, 2, -1);
         bumpMood(b, 2, -1);
-        pushSocialLog(a, `🚿 在浴室門口排隊等 ${b.tenant.name},順口聊了幾句,意外地自在。`, "notable");
-        pushSocialLog(b, `🚿 排隊等浴室時和 ${a.tenant.name} 閒聊,關係近了一點。`, "notable");
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.bathroomFriendlyA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.bathroomFriendlyB[variant], { o: a.tenant.name }), "notable");
         fxAt("bathroom", "chat");
       }
     },
@@ -125,7 +209,8 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       for (const rt of parts) bumpMood(rt, -1, 3);
       bondAll(parts, 1); // 一起排隊乾瞪眼、互吐苦水,反而熟了一點
       const names = parts.map((p) => p.tenant.name).join("、");
-      for (const rt of parts) pushSocialLog(rt, `🚽 早上尖峰,${names} 一起卡在浴室/廁所門口排隊乾瞪眼,邊等邊吐槽。`, "notable");
+      const line = COMMUNITY_LINES.morningRush[sceneIndex(parts, "morning_rush", COMMUNITY_LINES.morningRush.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
       notify(`🚽 早晨尖峰:${names} 在廁所浴室門口排起隊`);
       fxAt("bathroom", "chat");
     },
@@ -140,7 +225,8 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       bondAll(parts, 2);
       for (const rt of parts) bumpMood(rt, 4, -3);
       const names = parts.map((p) => p.tenant.name).join("、");
-      for (const rt of parts) pushSocialLog(rt, `🧋 和 ${names} 揪團訂了手搖飲,樓裡難得這麼熱鬧。`, "notable");
+      const line = COMMUNITY_LINES.groupOrder[sceneIndex(parts, "group_order", COMMUNITY_LINES.groupOrder.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
       notify(`🧋 ${names} 揪團訂飲料,整層樓熱鬧了起來`);
     },
   },
@@ -159,13 +245,14 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     },
     fire: (parts) => {
       const [target, ...complainers] = parts;
+      const variant = sceneIndex(parts, "noise_tribunal", COMMUNITY_LINES.noiseComplain.length);
       bumpMood(target, -3, 6);
       for (const c of complainers) {
         bumpMood(c, -1, 3);
         adjustRelationship(c.tenant.id, target.tenant.id, -4);
-        pushSocialLog(c, `😤 幾個鄰居一起去找 ${target.tenant.name} 反映噪音問題。`, "notable");
+        pushSocialLog(c, fillCommunity(COMMUNITY_LINES.noiseComplain[variant], { o: target.tenant.name }), "notable");
       }
-      pushSocialLog(target, `😰 被 ${complainers.map((c) => c.tenant.name).join("、")} 一起上門抱怨噪音,壓力山大。`, "notable");
+      pushSocialLog(target, fillCommunity(COMMUNITY_LINES.noiseTarget[variant], { names: complainers.map((c) => c.tenant.name).join("、") }), "notable");
       notify(`😤 幾位住戶一起向 ${target.tenant.name} 反映噪音`);
     },
   },
@@ -179,7 +266,8 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       bondAll(parts, 2);
       for (const rt of parts) bumpMood(rt, 5, -6);
       const names = parts.map((p) => p.tenant.name).join("、");
-      for (const rt of parts) pushSocialLog(rt, `🌇 傍晚和 ${names} 相約頂樓乘涼吹風,一整天的疲憊都散了。`, "notable");
+      const line = COMMUNITY_LINES.rooftop[sceneIndex(parts, "rooftop", COMMUNITY_LINES.rooftop.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
       notify(`🌇 ${names} 相約頂樓乘涼`);
     },
   },

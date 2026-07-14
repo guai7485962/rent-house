@@ -67,8 +67,9 @@ check("interaction 非字串 → 丟棄", ev?.choices[0].effect.interaction === 
 state.gameMs = new Date("2026-07-06T03:30:00+08:00").getTime(); // 凌晨 3 時(cuddle_tv 時段外)
 relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 20, romantic: false, cohabitOffered: false };
 check("未知 id → 擋", !forceInteraction(A.tenant.id, B.tenant.id, "no_such_thing"));
+const logsBeforeCuddle = { a: A.log.length, b: B.log.length };
 check("一般互動:放寬階層/時段 → 低關係+時段外照樣演", forceInteraction(A.tenant.id, B.tenant.id, "cuddle_tv"));
-check("互動有落地:雙方日誌", A.log.some((e) => e.text.includes("劇")) && B.log.some((e) => e.text.includes("劇"))); // cuddle_tv 兩句台詞都含「劇」
+check("互動有落地:雙方新增帶對方名字的日誌", A.log.slice(logsBeforeCuddle.a).some((e) => e.text.includes(B.tenant.name)) && B.log.slice(logsBeforeCuddle.b).some((e) => e.text.includes(A.tenant.name)));
 check("互動有落地:冷卻記錄", Object.keys(state.interactionCooldowns).some((k) => k.endsWith("|cuddle_tv")));
 check("互動有落地:關係加分", (getRel(A.tenant.id, B.tenant.id)?.value ?? 0) > 20);
 
@@ -114,7 +115,7 @@ const aiEv = sanitizeAiEvent({
 }, roster)!;
 A.pendingEvent = aiEv;
 decide(A.tenant.id, aiEv.choices[0].id, aiEv.choices[0].label);
-check("decide 整合:互動演出(雙方談心日誌)", A.log.some((e) => e.text.includes("聊到深夜") || e.text.includes("還好嗎")) && B.log.some((e) => e.text.includes("聊到深夜") || e.text.includes("還好嗎")));
+check("decide 整合:互動演出(雙方新增帶對方名字的談心日誌)", A.log.some((e) => e.text.includes(B.tenant.name)) && B.log.some((e) => e.text.includes(A.tenant.name)));
 check("decide 整合:事件本身的效果也套了(rel.delta+互動加分)", (getRel(A.tenant.id, B.tenant.id)?.value ?? 0) > 45);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

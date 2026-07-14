@@ -64,6 +64,10 @@ check("{name} 代換進標題", sickEv?.title === "測試員 生病了");
 check("satisfaction 29 → dissatisfied", rollEvent({ ...base, satisfaction: 29 })?.id === "dissatisfied");
 check("affinity 20 → grievance", rollEvent({ ...base, affinity: 20 })?.id === "grievance");
 check("sick 的 rest 選項帶 flag+hermit", sickEv?.choices.find((c) => c.id === "rest")?.effect.flag === "病中沒人管" && sickEv?.choices.find((c) => c.id === "rest")?.effect.directive?.id === "hermit");
+const stressEv = rollEvent({ ...base, stress: 95 });
+check("breakdown 的 space 選項留下後續旗標", stressEv?.choices.find((c) => c.id === "space")?.effect.flag === "壓力自己扛");
+const dissatisfiedEv = rollEvent({ ...base, satisfaction: 20 });
+check("dissatisfied 的 promise 選項留下承諾旗標", dissatisfiedEv?.choices.find((c) => c.id === "promise")?.effect.flag === "答應改善房間");
 
 // --- 3. 事件連鎖(rollEvent 層):requiresFlag 解鎖 + consumeFlag ---
 check("沒旗標 → sick_aftermath 不觸發", rollEvent({ ...base, wellbeing: 70 }) === null);
@@ -71,6 +75,12 @@ const after = rollEvent({ ...base, wellbeing: 70, flags: ["病中沒人管"] });
 check("有旗標且康復 → sick_aftermath 觸發", after?.id === "sick_aftermath");
 check("觸發時標記 consumeFlag", after?.consumeFlag === "病中沒人管");
 check("旗標在但還沒康復 → 不觸發", rollEvent({ ...base, wellbeing: 50, flags: ["病中沒人管"] }) === null);
+const stressAfter = rollEvent({ ...base, stress: 55, flags: ["壓力自己扛"] });
+check("壓力降下來且有旗標 → stress_aftermath", stressAfter?.id === "stress_aftermath" && stressAfter.consumeFlag === "壓力自己扛");
+check("仍在高壓時不提前觸發後續", rollEvent({ ...base, stress: 80, flags: ["壓力自己扛"] }) === null);
+const promiseDue = rollEvent({ ...base, satisfaction: 45, flags: ["答應改善房間"] });
+check("承諾未兌現且滿意仍低 → promise_due", promiseDue?.id === "promise_due" && promiseDue.consumeFlag === "答應改善房間");
+check("房間已改善 → 不追討舊承諾", rollEvent({ ...base, satisfaction: 70, flags: ["答應改善房間"] }) === null);
 
 // --- 4. 整合:生病選「休養」留旗標 → 康復日 tick 觸發後續事件並消耗旗標 ---
 const lin = state.runtimes["tenant_lin_asmr"];

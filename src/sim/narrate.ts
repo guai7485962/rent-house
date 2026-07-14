@@ -4,7 +4,13 @@
  * 無後端 / 無金鑰 / 離線時,自動 fallback 成模板日記,遊戲照跑。
  */
 
-import { DAILY_TEMPLATES } from "../content/observationLines";
+import {
+  DAILY_HAPPY_TEMPLATES,
+  DAILY_LOW_MOOD_TEMPLATES,
+  DAILY_SOCIAL_TEMPLATES,
+  DAILY_STRESS_TEMPLATES,
+  DAILY_TEMPLATES,
+} from "../content/observationLines";
 
 export interface NarrateCtx {
   name: string;
@@ -104,7 +110,13 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
 
 /** 無 AI 時的模板日記:從多樣模板庫隨機挑一句 + 補上當天重點 */
 export function templateDiary(ctx: NarrateCtx): string {
-  const tpl = DAILY_TEMPLATES[Math.floor(Math.random() * DAILY_TEMPLATES.length)]
+  // 依當日狀態把情境句混進候選池，但仍然只抽一次亂數，避免影響其後模擬的 RNG 次序。
+  const pool = [...DAILY_TEMPLATES];
+  if (ctx.stats.stress >= 70) pool.push(...DAILY_STRESS_TEMPLATES);
+  if (ctx.stats.mood <= 35) pool.push(...DAILY_LOW_MOOD_TEMPLATES);
+  if (ctx.stats.mood >= 75 && ctx.stats.stress <= 55) pool.push(...DAILY_HAPPY_TEMPLATES);
+  if (ctx.relationships.length) pool.push(...DAILY_SOCIAL_TEMPLATES);
+  const tpl = pool[Math.floor(Math.random() * pool.length)]
     .replace(/\{name\}/g, ctx.name)
     .replace(/\{time\}/g, "夜裡");
   const parts: string[] = [tpl];

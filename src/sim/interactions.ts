@@ -69,7 +69,12 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 10,
     chance: 0.4,
     fx: "hearts",
-    lines: ["和{o}窩在房裡靠著看劇,誰也沒說話,但很安心。", "和{o}擠在一起追劇,搶著吐槽劇情。"],
+    lines: [
+      "和{o}窩在房裡靠著看劇,誰也沒說話,但很安心。",
+      "和{o}擠在一起追劇,搶著吐槽劇情。",
+      "和{o}看到一半同時伸手拿遙控器,對看一眼後都笑了。",
+      "和{o}裹著同一條毯子看片,片尾播完也沒人急著起身。",
+    ],
     effects: { rel: 2, mood: 5, stress: -4 },
   },
   {
@@ -82,7 +87,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 12,
     chance: 0.3,
     fx: "chat",
-    lines: ["和{o}分食深夜的泡麵,湯都涼了還在聊。"],
+    lines: [
+      "和{o}分食深夜的泡麵,湯都涼了還在聊。",
+      "和{o}半夜翻冰箱湊出一頓宵夜,最後連碗都猜拳決定誰洗。",
+      "和{o}坐在地板上分一袋鹹酥雞,小聲交換今天的祕密。",
+    ],
     effects: { rel: 2, mood: 4 },
   },
   {
@@ -97,7 +106,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 20,
     chance: 0.3,
     fx: "hearts",
-    lines: ["和{o}賴在床上不肯起來,鬧鐘響了三次都當沒聽到。"],
+    lines: [
+      "和{o}賴在床上不肯起來,鬧鐘響了三次都當沒聽到。",
+      "和{o}為了誰去關鬧鐘推來推去,最後一起睡回籠覺。",
+      "和{o}醒了卻誰也不說破,窩在被子裡多偷了半小時清閒。",
+    ],
     effects: { rel: 1, mood: 4, energy: 3, stress: -3 },
   },
   {
@@ -112,7 +125,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 16,
     chance: 0.3,
     fx: "chat",
-    lines: ["和{o}擠在小流理台前做晚餐,差點打翻鍋子,笑成一團。"],
+    lines: [
+      "和{o}擠在小流理台前做晚餐,差點打翻鍋子,笑成一團。",
+      "和{o}一個切菜一個顧鍋,配合得像早就排練過很多次。",
+      "和{o}邊做飯邊互相偷吃食材,正餐還沒好就先吃飽一半。",
+    ],
     effects: { rel: 2, mood: 4 },
   },
   // ——— 🔞 成人模式(遮蔽式:文字含蓄、畫面只有霧氣/關燈)———
@@ -129,7 +146,11 @@ export const INTERACTIONS: InteractionDef[] = [
     chance: 0.3,
     fx: "steam",
     pose: "hidden",
-    lines: ["和{o}一起進了浴室,水聲響了很久很久…"],
+    lines: [
+      "和{o}一起進了浴室,水聲響了很久很久…",
+      "浴室門在{o}身後輕輕關上,水聲和笑聲隔了一會才安靜。",
+      "和{o}說是要節省熱水,結果浴室水聲比平常還久了一倍…",
+    ],
     memoryLabel: "[臉紅的祕密]",
     memoryHint: "和戀人共浴的悄悄話,兩人都不會說出去。",
     effects: { rel: 3, mood: 8, stress: -6 },
@@ -147,7 +168,11 @@ export const INTERACTIONS: InteractionDef[] = [
     chance: 0.35,
     fx: "lights",
     pose: "hidden",
-    lines: ["房裡的燈早早就關了,門把上掛著「請勿打擾」…"],
+    lines: [
+      "房裡的燈早早就關了,門把上掛著「請勿打擾」…",
+      "和{o}回房後把「請勿打擾」掛上門把,燈光很快暗了下來…",
+      "{o}進門後順手反鎖,門外只看得到一張輕晃的「請勿打擾」…",
+    ],
     memoryLabel: "[甜蜜的夜晚]",
     memoryHint: "昨晚之後,看對方的眼神都是軟的。",
     effects: { rel: 4, mood: 10, stress: -8, energy: -4 },
@@ -164,7 +189,12 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 24,
     chance: 0.25,
     fx: "chat",
-    lines: ["和{o}聊到深夜,把最近的煩惱都倒了出來。", "被{o}一句「你最近還好嗎」戳中,聊了很久。"],
+    lines: [
+      "和{o}聊到深夜,把最近的煩惱都倒了出來。",
+      "被{o}一句「你最近還好嗎」戳中,聊了很久。",
+      "和{o}從工作聊到家裡,幾次沉默也不覺得尷尬。",
+      "本來只想和{o}抱怨兩句,回過神時連藏很久的心事都說了。",
+    ],
     effects: { rel: 3, mood: 3, stress: -6 },
   },
   {
@@ -179,7 +209,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 16,
     chance: 0.25,
     fx: "chat",
-    lines: ["和{o}擠在沙發上開黑打電動,說好輸的人去倒垃圾。"],
+    lines: [
+      "和{o}擠在沙發上開黑打電動,說好輸的人去倒垃圾。",
+      "和{o}組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+      "和{o}輪流挑戰同一關,最後過關時兩個人一起從沙發跳起來。",
+    ],
     effects: { rel: 2, mood: 5, stress: -2 },
   },
   {
@@ -193,7 +227,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 16,
     chance: 0.2,
     fx: "chat",
-    lines: ["{o}多點了一份外送,兩人分著吃,順便交換八卦。"],
+    lines: [
+      "{o}多點了一份外送,兩人分著吃,順便交換八卦。",
+      "和{o}把兩份外送攤滿茶几,邊交換菜色邊嫌棄彼此的口味。",
+      "{o}問了一句要不要一起吃,兩個人就這樣聊完了一整頓飯。",
+    ],
     effects: { rel: 2, mood: 3 },
   },
   // ——— 交誼廳:曖昧(crush,75+ 且互有好感)———
@@ -209,7 +247,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 20,
     chance: 0.25,
     fx: "hearts",
-    lines: ["和{o}共用一副耳機看劇,肩膀碰著肩膀,誰都沒有移開。"],
+    lines: [
+      "和{o}共用一副耳機看劇,肩膀碰著肩膀,誰都沒有移開。",
+      "和{o}為了聽清楚又靠近一點,影片演了什麼反而沒人記得。",
+      "耳機線把和{o}的距離拉得很近,兩個人說話都不自覺變小聲。",
+    ],
     memoryLabel: "[心動的距離]",
     memoryHint: "那晚共用耳機的距離,近得能聽見彼此的呼吸。",
     effects: { rel: 3, mood: 4 },
@@ -225,7 +267,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 20,
     chance: 0.2,
     fx: "hearts",
-    lines: ["{o}把最後一口宵夜留給了自己,心跳漏了半拍。"],
+    lines: [
+      "{o}把最後一口宵夜留給了自己,心跳漏了半拍。",
+      "{o}把剛拆的點心先遞了過來,那個自然的動作反而讓人更在意。",
+      "和{o}搶最後一塊點心時碰到手,兩個人同時假裝什麼都沒發生。",
+    ],
     effects: { rel: 3, mood: 4 },
   },
   // ——— 朋友以上:到彼此房間串門子(§10 friend-visit)———
@@ -239,7 +285,12 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 8,
     chance: 0.5,
     fx: "chat",
-    lines: ["和{o}窩在房裡聊天鬼混,一聊就忘了時間。", "和{o}在房裡窩了一下午,天南地北地聊。"],
+    lines: [
+      "和{o}窩在房裡聊天鬼混,一聊就忘了時間。",
+      "和{o}在房裡窩了一下午,天南地北地聊。",
+      "讓{o}進房後翻出珍藏的零食,兩人坐在地上邊吃邊聊。",
+      "和{o}從房間擺設聊到以前的糗事,笑聲一路傳到走廊。",
+    ],
     effects: { rel: 2, mood: 3, stress: -2 },
   },
   {
@@ -253,7 +304,11 @@ export const INTERACTIONS: InteractionDef[] = [
     cooldownHours: 12,
     chance: 0.45,
     fx: "chat",
-    lines: ["和{o}窩在房裡一起打電動,吵吵鬧鬧殺得起勁。"],
+    lines: [
+      "和{o}窩在房裡一起打電動,吵吵鬧鬧殺得起勁。",
+      "和{o}肩並肩研究攻略,試了好幾次終於打過卡關的地方。",
+      "把手把丟給{o}救場,結果兩個人輪流失誤,笑到根本沒法專心。",
+    ],
     effects: { rel: 3, mood: 4, stress: -3 },
   },
 ];

@@ -29,7 +29,7 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 // balance-test 已在時區一致下可重現,故留在 CI 集;浮點欄位另有 ±0.6 容差兜跨版本微抖。
 const REGRESSION = [
   "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
-  "balance-test.ts", "bugfix2-test.ts", "community-test.ts", "conflict-test.ts", "data-catalog-test.ts",
+  "balance-test.ts", "bugfix2-test.ts", "community-test.ts", "conflict-test.ts", "content-variety-test.ts", "data-catalog-test.ts",
   "daynight-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "diary-upgrade-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "feed-test.ts", "finance-test.ts", "fixes-test.ts", "fx-test.ts",
   "interactions-test.ts", "invite-test.ts", "legacy-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",

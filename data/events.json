@@ -9,7 +9,7 @@
       "choices": [
         { "id": "care", "label": "主動關心", "hint": "拉近距離,但可能被嫌多管閒事", "effect": { "affinity": 8, "stress": -18, "satisfaction": 5 } },
         { "id": "treat", "label": "送宵夜慰勞", "hint": "花點小錢", "effect": { "money": -300, "stress": -12, "affinity": 5 } },
-        { "id": "space", "label": "給他空間", "hint": "不打擾,讓他自己消化", "effect": { "stress": -5 } }
+        { "id": "space", "label": "給他空間", "hint": "不打擾,讓他自己消化;之後再觀察", "effect": { "stress": -5, "flag": "壓力自己扛" } }
       ]
     },
     {
@@ -36,13 +36,39 @@
       ]
     },
     {
+      "id": "stress_aftermath",
+      "requiresFlag": "壓力自己扛",
+      "consumesFlag": true,
+      "when": [{ "stat": "stress", "op": "<=", "value": 60 }],
+      "title": "{name} 撐過去了,只是…",
+      "description": "{name} 看起來已經從那段高壓中緩過來,卻開始習慣什麼都自己扛。他經過房東時笑著說沒事,那個笑容反而有點客氣。",
+      "choices": [
+        { "id": "dayoff", "label": "補一張休假餐券", "hint": "花點錢,讓他真正喘口氣", "effect": { "money": -500, "stress": -15, "wellbeing": 8, "affinity": 6, "memory": { "label": "[遲來的喘息]", "hint": "高壓過後,房東補了一張餐券讓自己休息" } } },
+        { "id": "coffee", "label": "請他喝咖啡聊聊", "hint": "小成本重新建立信任", "effect": { "money": -180, "stress": -7, "mood": 5, "affinity": 4 } },
+        { "id": "still_space", "label": "他都說沒事了", "hint": "繼續不介入,關係會更疏遠", "effect": { "stress": 5, "affinity": -5, "memory": { "label": "[凡事靠自己]", "hint": "壓力再大也不期待房東會過問" } } }
+      ]
+    },
+    {
+      "id": "promise_due",
+      "requiresFlag": "答應改善房間",
+      "consumesFlag": true,
+      "when": [{ "stat": "satisfaction", "op": "<=", "value": 55 }],
+      "title": "{name} 還在等你改善房間",
+      "description": "你之前答應會改善房間,{name} 一直記著。今天他把當時的訊息重新傳了一遍,只補了一句:「房東,請問有進度嗎?」",
+      "choices": [
+        { "id": "renovate_now", "label": "立刻安排改善", "hint": "履行承諾,大幅修復信任", "effect": { "money": -1800, "satisfaction": 20, "affinity": 8, "memory": { "label": "[房東說到做到]", "hint": "房東雖然晚了一點,最後仍履行改善房間的承諾" } } },
+        { "id": "voucher", "label": "給家具採買補助", "hint": "折衷處理,讓他自己挑", "effect": { "money": -800, "satisfaction": 11, "affinity": 4 } },
+        { "id": "delay_again", "label": "再等等看", "hint": "第二次跳票,信任明顯下降", "effect": { "satisfaction": -8, "affinity": -9, "memory": { "label": "[房東跳票]", "hint": "房東兩次答應改善房間,最後都沒有做到" } } }
+      ]
+    },
+    {
       "id": "dissatisfied",
       "when": [{ "stat": "satisfaction", "op": "<", "value": 30 }],
       "title": "{name} 對房間不太滿意",
       "description": "{name} 私下抱怨房間少了他需要的東西,住得不太順心。再放著不管,可能會考慮搬走。",
       "choices": [
         { "id": "renovate", "label": "撥預算改善", "hint": "花錢讓他真的滿意", "effect": { "money": -2000, "satisfaction": 22, "affinity": 6 } },
-        { "id": "promise", "label": "口頭承諾改善", "hint": "先安撫,治標", "effect": { "satisfaction": 9 } },
+        { "id": "promise", "label": "口頭承諾改善", "hint": "先安撫,但住戶會記得這個承諾", "effect": { "satisfaction": 9, "flag": "答應改善房間" } },
         { "id": "ignore", "label": "不理會", "hint": "省事,但他會更不爽", "effect": { "satisfaction": -10, "affinity": -6 } }
       ]
     },

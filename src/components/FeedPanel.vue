@@ -19,6 +19,8 @@ const pendings = computed(() =>
 );
 
 const rows = computed(() => buildFeed().map((e) => ({ e, unread: e.gameMs > props.sinceMs })));
+const weeklyReports = computed(() => [...state.weeklyReports].reverse().slice(0, 4).map((report) => ({ report, unread: report.gameMs > props.sinceMs })));
+const money = (value: number) => `${value >= 0 ? "+" : "−"}$${Math.abs(value).toLocaleString()}`;
 
 const KIND_BADGE = { diary: "📖 當日觀察", decision: "🏠 房東介入", event: "◆ 事件", notice: "📢 公告" } as const;
 const PROVIDER_LABEL: Record<string, string> = {
@@ -43,7 +45,51 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
       </button>
     </section>
 
-    <p v-if="!rows.length" class="empty">還沒有動態。時間推進後,全棟的故事會匯集在這裡。</p>
+    <section v-if="weeklyReports.length" class="weekly-section">
+      <div class="weekly-title">📊 生活週報</div>
+      <details
+        v-for="({ report, unread }, i) in weeklyReports"
+        :key="report.id"
+        class="weekly-card"
+        :class="{ unread }"
+        :open="i === 0"
+      >
+        <summary>
+          <span>第 {{ report.week }} 週</span>
+          <small>第 {{ report.startDay }}–{{ report.endDay }} 天</small>
+          <b :class="report.net >= 0 ? 'positive' : 'negative'">{{ money(report.net) }}</b>
+          <em v-if="unread">NEW</em>
+        </summary>
+        <div class="weekly-body">
+          <div class="cash-row">
+            <span>收入 <b class="positive">+${{ report.income.toLocaleString() }}</b></span>
+            <span>支出 <b class="negative">−${{ report.expense.toLocaleString() }}</b></span>
+          </div>
+          <div class="weekly-block">
+            <strong>本週大事</strong>
+            <ul v-if="report.highlights.length">
+              <li v-for="(item, j) in report.highlights" :key="j">
+                <span v-if="item.tenantName">{{ item.tenantName }} · </span>{{ item.text }}
+              </li>
+            </ul>
+            <p v-else>這週沒有重大事件，大家平安過日子。</p>
+          </div>
+          <div class="weekly-block">
+            <strong>關係變化</strong>
+            <ul v-if="report.relationshipChanges.length">
+              <li v-for="(rel, j) in report.relationshipChanges" :key="j">
+                {{ rel.aName }} × {{ rel.bName }}
+                <b :class="rel.delta >= 0 ? 'positive' : 'negative'">{{ rel.delta >= 0 ? '+' : '' }}{{ rel.delta }}</b>
+                <small>{{ rel.label }} · {{ rel.current }}</small>
+              </li>
+            </ul>
+            <p v-else>本週人際關係大致平穩。</p>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <p v-if="!rows.length && !weeklyReports.length" class="empty">還沒有動態。時間推進後,全棟的故事會匯集在這裡。</p>
 
     <component
       :is="row.e.tenantId ? 'button' : 'div'"
@@ -88,6 +134,25 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
 .ec-room { font-weight: 700; color: var(--bad); font-size: 12px; }
 .ec-text { flex: 1; line-height: 1.4; }
 .ec-go { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
+
+.weekly-section { display: flex; flex-direction: column; gap: 6px; }
+.weekly-title { font-size: 12px; font-weight: 700; color: #9fd4ff; letter-spacing: 0.5px; }
+.weekly-card { border: 1px solid rgba(90, 170, 225, 0.45); border-radius: 11px; background: linear-gradient(180deg, rgba(70,145,200,0.12), rgba(70,145,200,0.03)); overflow: hidden; }
+.weekly-card.unread { box-shadow: 0 0 0 1px rgba(90,170,225,0.35); }
+.weekly-card summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; padding: 9px 11px; }
+.weekly-card summary::-webkit-details-marker { display: none; }
+.weekly-card summary span { font-size: 13px; font-weight: 700; color: #b8e2ff; }
+.weekly-card summary small { font-size: 10.5px; color: var(--text-dim); }
+.weekly-card summary b { margin-left: auto; font-size: 13px; }
+.weekly-card summary em { font-size: 8.5px; font-style: normal; color: #b8e2ff; border: 1px solid rgba(90,170,225,0.55); border-radius: 999px; padding: 0 5px; }
+.weekly-body { border-top: 1px solid rgba(90,170,225,0.25); padding: 9px 11px 11px; display: grid; gap: 9px; }
+.cash-row { display: flex; gap: 16px; font-size: 11px; color: var(--text-dim); }
+.weekly-block strong { display: block; font-size: 11px; color: #b8e2ff; margin-bottom: 3px; }
+.weekly-block ul { margin: 0; padding-left: 17px; display: grid; gap: 3px; }
+.weekly-block li, .weekly-block p { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text); }
+.weekly-block li > span, .weekly-block li > small { color: var(--text-dim); font-size: 10.5px; }
+.positive { color: var(--good) !important; }
+.negative { color: var(--bad) !important; }
 
 .item {
   display: block; width: 100%; text-align: left; color: var(--text);

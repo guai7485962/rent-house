@@ -23,6 +23,8 @@ export {
   markSeen,
   isVacant,
   roomOfTenant,
+  cohabitingPartnerId,
+  canStartCohabit,
   gameDayIndex,
 } from "./sim/gameState";
 export type { Txn, TxnCategory, LogEntry, TenantRuntime } from "./sim/gameState";
@@ -51,6 +53,7 @@ export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatP
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { communityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
+export { weeklyReportPass, currentRelationshipSnapshot, WEEKLY_REPORT_CAP, type WeeklyReport } from "./sim/weeklyReport";
 
 export type { StoryArc } from "./sim/arcs";
 

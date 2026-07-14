@@ -60,6 +60,7 @@ export function feedUnreadCount(): number {
     if (e.gameMs > state.feedSeenMs) n++;
     else break; // 已排序:遇到第一則舊的就能停
   }
+  n += state.weeklyReports.filter((report) => report.gameMs > state.feedSeenMs).length;
   return n;
 }
 

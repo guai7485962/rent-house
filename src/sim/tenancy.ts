@@ -32,6 +32,7 @@ import {
   refreshAppearances,
   makeRuntime,
   isVacant,
+  canStartCohabit,
   ROOM_APPEARANCE,
   type TenantRuntime,
 } from "./gameState";
@@ -174,6 +175,14 @@ export function resolveCohabit(accept: boolean) {
   const b = state.runtimes[pc.bId];
   if (!a || !b) return;
   if (accept) {
+    // 防止待決視窗開著時，其中一人先和第三人同居；絕不能覆寫既有 cohabits 映射。
+    if (!canStartCohabit(pc.aId, pc.bId)) {
+      const rel = getRel(pc.aId, pc.bId);
+      if (rel) rel.cohabitOffered = false;
+      notify(`${pc.aName} 或 ${pc.bName} 已有同居對象，這次同居申請已取消。`);
+      save();
+      return;
+    }
     const aRoom = Object.entries(state.occupancy).find(([, tid]) => tid === pc.aId)?.[0];
     if (!aRoom) return; // 異常(a 沒有自己的房)→ 不處理
     // b 讓出自己的房(空出可再招租),搬進 a 的房;runtime/關係全部保留

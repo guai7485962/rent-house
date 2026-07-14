@@ -18,6 +18,7 @@ import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
+import type { WeeklyReport } from "./weeklyReport";
 import { save } from "./persistence";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
@@ -149,6 +150,11 @@ export const state = reactive({
   noticeLog: [] as { gameMs: number; text: string }[],
   /** 上次查看動態 Feed 的遊戲時間(未讀徽章基準;入存檔) */
   feedSeenMs: 0,
+  /** 每 7 遊戲日產生的生活週報(最近 12 份;入存檔) */
+  weeklyReports: [] as WeeklyReport[],
+  /** 上次產生週報的遊戲日 + 當時關係快照(供下週算變化;入存檔) */
+  lastWeeklyReportDay: 0,
+  weeklyRelationshipSnapshot: {} as Record<string, number>,
   /** 上次「匯出備份」的現實時間(提醒玩家定期備份,避免 iOS 清 localStorage;0=從未;入存檔) */
   lastBackupMs: 0,
   /** 待決的同居抉擇(情侶關係極高時觸發) */
@@ -202,6 +208,23 @@ export function isVacant(roomId: string): boolean {
 export function roomOfTenant(tenantId: string): string | null {
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
   return entry ? entry[0] : state.cohabits[tenantId] ?? null;
+}
+
+/** 目前實際同居的對象；同時支援「搬進別人房」與「讓別人搬進自己的房」兩種方向。 */
+export function cohabitingPartnerId(tenantId: string): string | null {
+  const joinedRoom = state.cohabits[tenantId];
+  if (joinedRoom) {
+    const hostId = state.occupancy[joinedRoom];
+    if (hostId && hostId !== tenantId) return hostId;
+  }
+  const ownRoom = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId)?.[0];
+  if (!ownRoom) return null;
+  return Object.entries(state.cohabits).find(([guestId, roomId]) => guestId !== tenantId && roomId === ownRoom)?.[0] ?? null;
+}
+
+/** 同居採一對一：只有雙方目前都沒有同居對象，才可提出新的同居申請。 */
+export function canStartCohabit(aId: string, bId: string): boolean {
+  return aId !== bId && !cohabitingPartnerId(aId) && !cohabitingPartnerId(bId);
 }
 
 /** 依房間指派動態租客的外觀索引,確保同時在住者配色彼此不同(種子租客用專屬色不佔用) */

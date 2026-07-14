@@ -24,6 +24,7 @@ import {
   pushSocialLog,
   applySocialEffect,
   roomOfTenant,
+  canStartCohabit,
   LOG_CAP,
   type TenantRuntime,
 } from "./gameState";
@@ -36,6 +37,7 @@ import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { communityPass } from "./community";
+import { weeklyReportPass } from "./weeklyReport";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
@@ -394,6 +396,7 @@ export function hourlyTick(live = false) {
     legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
     communityPass(); // 群體事件:洗衣房口角/揪團/噪音公審/頂樓乘涼(牽動 3+ 人,§C-7)
     catJournalPass(); // 貓咪觀察筆記:每 7 遊戲日一篇,以貓口吻進 Feed(彩蛋)
+    weeklyReportPass(); // 每 7 遊戲日彙整收支、大事與關係變化,進動態頁週報卡
   }
 }
 
@@ -452,8 +455,14 @@ function socialPass(skip: Set<string> = new Set()) {
         unlock("heartbreak");
         endCohabitOnBreakup(A.tenant.id, B.tenant.id);
       }
-      if (res.cohabit && !state.pendingCohabit) {
-        state.pendingCohabit = { aId: A.tenant.id, bId: B.tenant.id, aName: A.tenant.name, bName: B.tenant.name };
+      if (res.cohabit) {
+        if (!state.pendingCohabit && canStartCohabit(A.tenant.id, B.tenant.id)) {
+          state.pendingCohabit = { aId: A.tenant.id, bId: B.tenant.id, aName: A.tenant.name, bName: B.tenant.name };
+        } else {
+          // 申請被既有同居或另一個待決申請擋住時，保留未來狀態改變後再次提出的機會。
+          const rel = getRel(A.tenant.id, B.tenant.id);
+          if (rel) rel.cohabitOffered = false;
+        }
       }
     }
   }

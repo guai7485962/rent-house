@@ -13,7 +13,7 @@ import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships, pruneInvalidRomance } from "./social";
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
-import { state, tenants, refreshAppearances, GAME_START, type Txn } from "./gameState";
+import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { stopTicker } from "./lifecycle";
@@ -101,6 +101,9 @@ export function save() {
         ledger: state.ledger,
         noticeLog: state.noticeLog,
         feedSeenMs: state.feedSeenMs,
+        weeklyReports: state.weeklyReports,
+        lastWeeklyReportDay: state.lastWeeklyReportDay,
+        weeklyRelationshipSnapshot: state.weeklyRelationshipSnapshot,
         lastBackupMs: state.lastBackupMs,
         adultMode: state.adultMode,
         interactionCooldowns: state.interactionCooldowns,
@@ -157,6 +160,14 @@ export function load(): boolean {
     state.ledger.splice(0, state.ledger.length, ...((s.ledger ?? []) as Txn[]));
     state.noticeLog.splice(0, state.noticeLog.length, ...(s.noticeLog ?? []));
     state.feedSeenMs = s.feedSeenMs ?? 0; // 舊檔沒有 → 全部視為未讀,無害
+    state.weeklyReports.splice(0, state.weeklyReports.length, ...(s.weeklyReports ?? []));
+    // 舊檔沒有週報基準:從載入當下開始計一週,避免把全部歷史誤報成「本週變化」。
+    state.lastWeeklyReportDay = typeof s.lastWeeklyReportDay === "number" ? s.lastWeeklyReportDay : gameDayIndex();
+    for (const key of Object.keys(state.weeklyRelationshipSnapshot)) delete state.weeklyRelationshipSnapshot[key];
+    Object.assign(
+      state.weeklyRelationshipSnapshot,
+      s.weeklyRelationshipSnapshot ?? Object.fromEntries((s.relationships ?? []).map((r: { key: string; value: number }) => [r.key, r.value])),
+    );
     state.lastBackupMs = s.lastBackupMs ?? 0; // 舊檔沒有 → 視為從未備份
     state.adultMode = s.adultMode === true; // 預設關
     for (const k of Object.keys(state.interactionCooldowns)) delete state.interactionCooldowns[k];

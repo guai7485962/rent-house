@@ -60,9 +60,11 @@ for (let h = 0; h < HOURS; h++) {
     // 互動 session(§10-6)會覆寫走位:人在互動錨點上 = 正常(在跟人互動,不是卡住)
     const ses = sessionFor(rt.tenant.id, state.gameMs);
     const atSession = !!ses && a.c === ses.tile.c && a.r === ses.tile.r;
-    const arrived = (a.c === target.c && a.r === target.r) || atSession;
+    const activity = rt.activityPose ? rt.activityTile : null;
+    const atActivity = !!activity && a.c === activity.c && a.r === activity.r;
+    const arrived = (a.c === target.c && a.r === target.r) || atSession || atActivity;
     const route = moved ? `(${from.c},${from.r})→(${a.c},${a.r})` : `原地(${a.c},${a.r})`;
-    const mark = atSession ? "✓互動中" : arrived ? "✓抵達" : "✗未達";
+    const mark = atSession ? "✓互動中" : atActivity ? `✓${rt.activityPose === "lie" ? "躺在家具" : "坐在家具"}` : arrived ? "✓抵達" : "✗未達";
     if (moved) totalMoves++;
     console.log(`  ${rt.tenant.name}  ${st.padEnd(16)} ${route}  目標(${target.c},${target.r}) ${mark}${dev}`);
 

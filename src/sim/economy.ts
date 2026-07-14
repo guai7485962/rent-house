@@ -4,7 +4,8 @@
  * 家具的買/擺/移/賣(含 8-2 預覽判定 canDropAt)。
  */
 import { getDef } from "../furniture/catalog";
-import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements } from "./placements";
+import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements, placementRotation } from "./placements";
+import { nextRotation, rotatedFootprint } from "../furniture/rotation";
 import { getUpgradeDef, roomUpgradeIds, upgradeState } from "./upgrades";
 import { state, clamp, fmt, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_CAP, type TxnCategory } from "./gameState";
 import { clearNoiseMemories } from "./memoryEffects";
@@ -85,7 +86,7 @@ export function buyFurniture(defId: string, roomId: string): { ok: boolean; reas
   if (state.money < def.price) return { ok: false, reason: "金錢不足" };
   const slot = findFreeSlot(roomId, def.footprint.w, def.footprint.h);
   if (!slot) return { ok: false, reason: "房間沒有空位" };
-  addPlacement({ defId, room: roomId, c: slot.c, r: slot.r });
+  addPlacement({ defId, room: roomId, c: slot.c, r: slot.r, rotation: 0 });
   addMoney(-def.price, `購買 ${def.name}`, "furniture");
   save();
   return { ok: true };
@@ -95,11 +96,20 @@ export function buyFurniture(defId: string, roomId: string): { ok: boolean; reas
 export function startPlacing(defId: string): { ok: boolean; reason?: string } {
   if (state.money < getDef(defId).price) return { ok: false, reason: "金錢不足" };
   state.pendingPlace = defId;
+  state.pendingRotation = 0;
   return { ok: true };
 }
 
 export function cancelPlacing() {
   state.pendingPlace = null;
+  state.pendingRotation = 0;
+}
+
+/** 擺放／移動中的家具順時針旋轉 90°。 */
+export function rotatePendingFurniture(): boolean {
+  if (!state.pendingPlace && !state.pendingMove) return false;
+  state.pendingRotation = nextRotation(state.pendingRotation);
+  return true;
 }
 
 /** 在指定格擺放待放置的家具(扣款) */
@@ -107,12 +117,14 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
   const defId = state.pendingPlace;
   if (!defId) return { ok: false, reason: "沒有待擺放的家具" };
   const def = getDef(defId);
+  const fp = rotatedFootprint(def, state.pendingRotation);
   if (state.money < def.price) return { ok: false, reason: "金錢不足" };
-  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h);
+  const room = canPlaceFree(c, r, fp.w, fp.h);
   if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
-  addPlacement({ defId, room, c, r });
+  addPlacement({ defId, room, c, r, rotation: state.pendingRotation });
   addMoney(-def.price, `擺放 ${def.name}`, "furniture");
   state.pendingPlace = null;
+  state.pendingRotation = 0;
   save();
   return { ok: true };
 }
@@ -121,13 +133,16 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
 export function startMoving(c: number, r: number): { ok: boolean } {
   const p = furnitureAt(c, r);
   if (!p) return { ok: false };
-  state.pendingMove = { c: p.c, r: p.r, defId: p.defId };
+  const rotation = placementRotation(p);
+  state.pendingMove = { c: p.c, r: p.r, defId: p.defId, rotation };
+  state.pendingRotation = rotation;
   state.pendingPlace = null; // 移動與擺放互斥
   return { ok: true };
 }
 
 export function cancelMoving() {
   state.pendingMove = null;
+  state.pendingRotation = 0;
 }
 
 /** 把待移動的家具搬到 (c,r):判定新位置(排除自己的舊佔位)→ 成功才真的搬 */
@@ -135,16 +150,19 @@ export function moveFurnitureTo(c: number, r: number): { ok: boolean; reason?: s
   const mv = state.pendingMove;
   if (!mv) return { ok: false, reason: "沒有待移動的家具" };
   const def = getDef(mv.defId);
+  const fp = rotatedFootprint(def, state.pendingRotation);
   // 判定時排除自己,否則會被自己的舊佔位擋住
-  const room = canPlaceFree(c, r, def.footprint.w, def.footprint.h, { c: mv.c, r: mv.r });
+  const room = canPlaceFree(c, r, fp.w, fp.h, { c: mv.c, r: mv.r });
   if (!room) return { ok: false, reason: "這裡放不下(壓到牆/家具或跨房間)" };
   const original = removePlacementAt(mv.c, mv.r);
   if (!original) {
     state.pendingMove = null;
+    state.pendingRotation = 0;
     return { ok: false, reason: "找不到這件家具" };
   }
-  addPlacement({ defId: mv.defId, room, c, r });
+  addPlacement({ defId: mv.defId, room, c, r, rotation: state.pendingRotation });
   state.pendingMove = null;
+  state.pendingRotation = 0;
   // 全員重新定位:有租客正走向這件家具時,下一步改走新位置
   const hour = new Date(state.gameMs).getHours();
   for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
@@ -156,11 +174,13 @@ export function moveFurnitureTo(c: number, r: number): { ok: boolean; reason?: s
 export function canDropAt(c: number, r: number): boolean {
   if (state.pendingMove) {
     const def = getDef(state.pendingMove.defId);
-    return canPlaceFree(c, r, def.footprint.w, def.footprint.h, { c: state.pendingMove.c, r: state.pendingMove.r }) !== null;
+    const fp = rotatedFootprint(def, state.pendingRotation);
+    return canPlaceFree(c, r, fp.w, fp.h, { c: state.pendingMove.c, r: state.pendingMove.r }) !== null;
   }
   if (state.pendingPlace) {
     const def = getDef(state.pendingPlace);
-    return canPlaceFree(c, r, def.footprint.w, def.footprint.h) !== null;
+    const fp = rotatedFootprint(def, state.pendingRotation);
+    return canPlaceFree(c, r, fp.w, fp.h) !== null;
   }
   return false;
 }

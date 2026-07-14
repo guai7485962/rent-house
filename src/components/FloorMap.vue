@@ -7,17 +7,18 @@ import { createPetAgents, tickPetAgents, type PetAgent } from "../floor/petAgent
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
+import type { FurnitureRotation } from "../furniture/rotation";
 
 const props = defineProps<{
   pendingRooms: string[];
   unread: Record<string, number>;
   /** 擺放/移動預覽 footprint(App 在玩家點格後傳入;null = 無預覽) */
-  preview?: { c: number; r: number; w: number; h: number; ok: boolean } | null;
+  preview?: { c: number; r: number; w: number; h: number; rotation: FurnitureRotation; ok: boolean } | null;
 }>();
 const emit = defineEmits<{
   enter: [room: RoomInfo];
   place: [tile: { c: number; r: number }];
-  inspect: [item: { c: number; r: number; defId: string }];
+  inspect: [item: { c: number; r: number; defId: string; rotation: FurnitureRotation }];
 }>();
 
 const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);
@@ -53,7 +54,7 @@ function loop(t: number) {
       }
       composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents);
       const pv = props.preview;
-      if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok);
+      if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
     }
     if (t - lastTagMs > 150) {
       lastTagMs = t;
@@ -124,7 +125,7 @@ function onClick(e: MouseEvent) {
   // 先看是否點到家具 → 顯示資訊/可賣掉
   const f = furnitureAt(tc, tr);
   if (f) {
-    emit("inspect", { c: f.c, r: f.r, defId: f.defId });
+    emit("inspect", { c: f.c, r: f.r, defId: f.defId, rotation: f.rotation ?? 0 });
     return;
   }
   // 否則點空地/房間 → 進入該房

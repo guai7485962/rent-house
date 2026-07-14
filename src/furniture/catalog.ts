@@ -43,6 +43,7 @@ export type FurnKind =
   | "desk"
   | "mic_desk"
   | "tv"
+  | "chair"
   | "beanbag"
   | "bookshelf"
   | "wardrobe"
@@ -172,6 +173,21 @@ export const CATALOG: FurnitureDef[] = [
     social: false,
     promptHints: ["兩個人賴著不肯起床的早晨", "換了大床之後睡得特別沉"],
     sprite: { kind: "bed" },
+  },
+  {
+    id: "wood_chair",
+    name: "木質單椅",
+    category: "seating",
+    placement: "room",
+    price: 2200,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: { cozy: 2, style: 2 },
+    fitsTags: ["高度自律", "文青"],
+    unlocksStates: ["idle", "reading"],
+    social: false,
+    promptHints: ["坐在窗邊放空", "把椅子轉向最舒服的角度"],
+    sprite: { kind: "chair" },
   },
   {
     id: "beanbag",

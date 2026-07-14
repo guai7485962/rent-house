@@ -9,6 +9,7 @@ import { reactive } from "vue";
 import type { Tenant } from "../types";
 import { hasDef } from "../furniture/catalog";
 import { placements } from "./placements";
+import { normalizeRotation } from "../furniture/rotation";
 import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships, pruneInvalidRomance } from "./social";
 import { registerRoutine } from "./routine";
@@ -140,7 +141,7 @@ export function load(): boolean {
       console.warn(`[load] 存檔內有已下架的家具「${p.defId}」,略過`);
       return false;
     });
-    placements.list.splice(0, placements.list.length, ...loadedPlacements.map((p) => ({ ...p }) as (typeof placements.list)[number]));
+    placements.list.splice(0, placements.list.length, ...loadedPlacements.map((p: any) => ({ ...p, rotation: normalizeRotation(p.rotation) }) as (typeof placements.list)[number]));
     placements.version++;
     for (const k of Object.keys(upgradeState.byRoom)) delete upgradeState.byRoom[k];
     Object.assign(upgradeState.byRoom, s.upgrades ?? {});
@@ -196,6 +197,10 @@ export function load(): boolean {
         pendingEvent: saved.pendingEvent,
         decisions: saved.decisions,
         targetTile: saved.targetTile,
+        activityPose: null,
+        activityTile: null,
+        activityRotation: 0,
+        activitySurface: null,
         archetypeKey: saved.archetypeKey,
         satisfaction: saved.satisfaction ?? 62,
         unhappyHours: saved.unhappyHours ?? 0,

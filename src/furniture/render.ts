@@ -15,11 +15,34 @@ import {
 } from "../pixel/sprites";
 import { TILE } from "../floor/map";
 import type { FurnitureDef, FurnKind, SpritePart } from "./catalog";
+import { normalizeRotation, type FurnitureRotation } from "./rotation";
 
 /** 依 def 在 (x,y)=左上角像素 畫出家具 */
-export function drawDef(ctx: Ctx, def: FurnitureDef, x: number, y: number) {
+export function drawDef(ctx: Ctx, def: FurnitureDef, x: number, y: number, rotation: FurnitureRotation = 0) {
   const w = def.footprint.w * TILE;
   const h = def.footprint.h * TILE;
+  const rot = normalizeRotation(rotation);
+  if (rot !== 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (rot === 90) {
+      ctx.translate(h, 0);
+      ctx.rotate(Math.PI / 2);
+    } else if (rot === 180) {
+      ctx.translate(w, h);
+      ctx.rotate(Math.PI);
+    } else {
+      ctx.translate(0, w);
+      ctx.rotate(-Math.PI / 2);
+    }
+    drawUnrotated(ctx, def, 0, 0, w, h);
+    ctx.restore();
+    return;
+  }
+  drawUnrotated(ctx, def, x, y, w, h);
+}
+
+function drawUnrotated(ctx: Ctx, def: FurnitureDef, x: number, y: number, w: number, h: number) {
   if ("recipe" in def.sprite) {
     drawRecipe(ctx, def.sprite.recipe, x, y);
     return;
@@ -70,6 +93,14 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
     // 主機 + 指示燈
     rect(ctx, x + 4, y + h - 6, 8, 3, "#20202c");
     rect(ctx, x + 5, y + h - 5, 1, 1, "#6fd08c");
+  },
+  chair(ctx, x, y, w, h) {
+    const wood = ramp("#8a6444");
+    groundShadow(ctx, x + w / 2, y + h - 1, w - 5);
+    block(ctx, x + 3, y + 2, w - 6, 7, wood, 2);
+    block(ctx, x + 2, y + 9, w - 4, 5, wood, 2);
+    rect(ctx, x + 3, y + 13, 2, 3, wood.dark);
+    rect(ctx, x + w - 5, y + 13, 2, 3, wood.dark);
   },
   beanbag(ctx, x, y, w, h) {
     groundShadow(ctx, x + w / 2, y + h - 1, w - 3);

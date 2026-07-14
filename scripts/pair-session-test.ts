@@ -133,7 +133,10 @@ check("cook_pair pose:兩人不隱藏且姿勢帶到渲染層", !agA.hidden && !
 
 clearPairSessions();
 tickAgents(agents, 0.05);
-check("session 結束:兩人重新現身、pose 清空", !agA.hidden && !agB.hidden && agA.pose === null && agB.pose === null);
+check(
+  "session 結束:兩人重新現身、回到各自日常姿勢",
+  !agA.hidden && !agB.hidden && agA.pose === A.activityPose && agB.pose === B.activityPose,
+);
 
 // --- 家具座位錨點(§10-6):session 指定沙發佔用格 → 走到旁邊「跨上去」坐 ---
 const { furnitureSeats, furnitureStandingPair, forceInteraction } = await import("../src/sim/interactions");

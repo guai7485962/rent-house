@@ -18,6 +18,7 @@ import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
+import type { FurnitureRotation } from "../furniture/rotation";
 import type { WeeklyReport } from "./weeklyReport";
 import { save } from "./persistence";
 
@@ -69,6 +70,11 @@ export interface TenantRuntime {
   decisions: string[];
   /** 當前活動的目標家具互動格(給 agent 走過去);null=外出/原地 */
   targetTile: Tile | null;
+  /** 日常家具姿勢與家具內錨點(不入存檔；每次 applyHour 由作息重新推導)。 */
+  activityPose: "sit" | "lie" | null;
+  activityTile: Tile | null;
+  activityRotation: FurnitureRotation;
+  activitySurface: "furniture" | "chair" | null;
   /** 動態入住租客的作息原型(存檔重載時重新登記作息用) */
   archetypeKey?: string;
   /** 張力系統:滿意度、不滿累積時數、上次事件的遊戲日 */
@@ -113,6 +119,10 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     pendingEvent: null as EventDef | null,
     decisions: [] as string[],
     targetTile: null as Tile | null,
+    activityPose: null as "sit" | "lie" | null,
+    activityTile: null as Tile | null,
+    activityRotation: 0 as FurnitureRotation,
+    activitySurface: null as "furniture" | "chair" | null,
     satisfaction: 62,
     unhappyHours: 0,
     lastEventDay: -99,
@@ -165,8 +175,10 @@ export const state = reactive({
   pendingDiaries: [] as PendingDiary[],
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */
   pendingPlace: null as string | null,
+  /** 擺放／移動中的預覽方向(不入存檔；確認後寫進 Placement)。 */
+  pendingRotation: 0 as FurnitureRotation,
   /** 移動模式:待搬動的既有家具(原位座標;點地圖選新位置,免費) */
-  pendingMove: null as { c: number; r: number; defId: string } | null,
+  pendingMove: null as { c: number; r: number; defId: string; rotation: FurnitureRotation } | null,
   /** UI 快轉剩餘小時數(>0 = 快轉中,按鈕該 disabled;不入存檔) */
   ffRemaining: 0,
   /** 收支帳:每筆金錢進出(綠進紅出),供財務面板檢視 */

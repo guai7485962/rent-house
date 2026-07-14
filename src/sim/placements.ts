@@ -10,6 +10,7 @@
 import { reactive } from "vue";
 import { INITIAL_PLACEMENTS, ROOM_RECTS, FACILITY_RECTS, buildGrid, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
+import { normalizeRotation, rotateGridOffset, rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
 import { upgradeAttributes } from "./upgrades";
 import type { RoomAttribute } from "../types";
 
@@ -25,24 +26,38 @@ export function getPlacements(): Placement[] {
 }
 
 export function addPlacement(p: Placement) {
-  placements.list.push(p);
+  placements.list.push({ ...p, rotation: normalizeRotation(p.rotation) });
   placements.version++;
+}
+
+export function placementRotation(p: Placement): FurnitureRotation {
+  return normalizeRotation(p.rotation);
+}
+
+export function placementFootprint(p: Placement): { w: number; h: number } {
+  return rotatedFootprint(getDef(p.defId), placementRotation(p));
+}
+
+export function placementInteract(p: Placement): { c: number; r: number } {
+  const def = getDef(p.defId);
+  const off = rotateGridOffset(def.interact, def.footprint, placementRotation(p));
+  return { c: p.c + off.dc, r: p.r + off.dr };
 }
 
 /** 查詢某格上是哪一件家具(涵蓋其佔位範圍);沒有回傳 null */
 export function furnitureAt(c: number, r: number): Placement | null {
   for (let i = placements.list.length - 1; i >= 0; i--) {
     const p = placements.list[i];
-    const def = getDef(p.defId);
-    if (c >= p.c && c < p.c + def.footprint.w && r >= p.r && r < p.r + def.footprint.h) return p;
+    const fp = placementFootprint(p);
+    if (c >= p.c && c < p.c + fp.w && r >= p.r && r < p.r + fp.h) return p;
   }
   return null;
 }
 
 export function removePlacementAt(c: number, r: number): Placement | null {
   const idx = placements.list.findIndex((p) => {
-    const def = getDef(p.defId);
-    return c >= p.c && c < p.c + def.footprint.w && r >= p.r && r < p.r + def.footprint.h;
+    const fp = placementFootprint(p);
+    return c >= p.c && c < p.c + fp.w && r >= p.r && r < p.r + fp.h;
   });
   if (idx < 0) return null;
   const [removed] = placements.list.splice(idx, 1);
@@ -100,9 +115,9 @@ function occupiedSet(exclude?: { c: number; r: number }): Set<string> {
   const occ = new Set<string>();
   for (const p of placements.list) {
     if (exclude && p.c === exclude.c && p.r === exclude.r) continue; // 移動判定:自己的舊佔位不算擋路
-    const d = getDef(p.defId);
-    for (let dr = 0; dr < d.footprint.h; dr++)
-      for (let dc = 0; dc < d.footprint.w; dc++) occ.add(`${p.c + dc},${p.r + dr}`);
+    const fp = placementFootprint(p);
+    for (let dr = 0; dr < fp.h; dr++)
+      for (let dc = 0; dc < fp.w; dc++) occ.add(`${p.c + dc},${p.r + dr}`);
   }
   return occ;
 }

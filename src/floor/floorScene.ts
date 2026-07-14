@@ -27,6 +27,7 @@ import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements } from "../sim/placements";
+import type { FurnitureRotation } from "../furniture/rotation";
 
 export const FLOOR_W = GRID_W * TILE; // 256
 export const FLOOR_H = GRID_H * TILE; // 384
@@ -91,7 +92,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   // 家具:讀 PLACEMENTS(id+座標)→ 查目錄 → drawDef。
   // 由上而下(r 由小到大)繪製,讓前方物件蓋住後方。
   const sorted = [...getPlacements()].sort((a, b) => a.r - b.r);
-  for (const p of sorted) drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE);
+  for (const p of sorted) drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
 
   if (agents || pets) {
     // 人與貓依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
@@ -126,7 +127,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
 }
 
 /** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */
-export function drawFootprintPreview(ctx: Ctx, c: number, r: number, w: number, h: number, ok: boolean) {
+export function drawFootprintPreview(ctx: Ctx, c: number, r: number, w: number, h: number, ok: boolean, rotation: FurnitureRotation = 0) {
   const x = c * TILE;
   const y = r * TILE;
   ctx.save();
@@ -137,6 +138,17 @@ export function drawFootprintPreview(ctx: Ctx, c: number, r: number, w: number, 
   ctx.strokeStyle = ok ? "#b6ffbe" : "#ffb3c1";
   ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, w * TILE - 1, h * TILE - 1);
+  // 中央方向箭頭；正方形家具旋轉時也看得出朝向。
+  const cx = x + (w * TILE) / 2;
+  const cy = y + (h * TILE) / 2;
+  ctx.fillStyle = ok ? "#d9ffdc" : "#ffd7df";
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.fillRect(-1, -6, 2, 9);
+  ctx.fillRect(-4, -6, 8, 2);
+  ctx.fillRect(-3, -4, 6, 1);
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +288,7 @@ function drawAgent(ctx: Ctx, a: Agent) {
     drawLying(ctx, a, pal);
     return;
   }
+  if (!a.moving && a.pose === "sit" && a.seatBack) drawActivityChair(ctx, a);
   groundShadow(ctx, a.px + TILE / 2, a.py + TILE - 1, 11);
   if (!a.moving && a.pose === "sit") {
     // 坐姿 14 行(站姿 19):底邊貼齊同一地面線 → 頭自然比站著矮一截
@@ -318,6 +331,17 @@ function drawCookingCue(ctx: Ctx, a: Agent, pal: Palette) {
   rect(ctx, x, y + 8, 1, 3, shade(pal.F, -12));
   rect(ctx, x, y + 5, 1, 4, "#5f6470");
   rect(ctx, x - 1, y + 4, 3, 1, "#353943");
+}
+
+/** 桌前／電視前的單人座椅，先畫在角色背後，讓坐姿不會像蹲在地上。 */
+function drawActivityChair(ctx: Ctx, a: Agent) {
+  const x = a.px;
+  const y = a.py;
+  rect(ctx, x + 3, y + 4, 10, 7, "#5b4636");
+  rect(ctx, x + 4, y + 5, 8, 2, "#8a6444");
+  rect(ctx, x + 2, y + 11, 12, 3, "#6d5236");
+  rect(ctx, x + 3, y + 14, 2, 2, "#3f342d");
+  rect(ctx, x + 11, y + 14, 2, 2, "#3f342d");
 }
 
 // ---------------------------------------------------------------------------
@@ -396,15 +420,19 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
 
 /** 躺姿(§10-6 lie:賴床)——頭枕左側 + 蓋著被子的身體(被子用衣服色,一眼認得出是誰) */
 function drawLying(ctx: Ctx, a: Agent, pal: Palette) {
-  const x = a.px;
-  const y = a.py;
-  rect(ctx, x + 7, y + 3, 8, 10, shade(pal.t, -22)); // 被子滾邊
-  rect(ctx, x + 8, y + 4, 7, 8, pal.t); // 被子
-  rect(ctx, x + 8, y + 7, 7, 1, shade(pal.t, 22)); // 摺線高光
-  rect(ctx, x + 2, y + 4, 5, 3, pal.h); // 頭髮
-  rect(ctx, x + 2, y + 7, 5, 3, pal.F); // 臉
-  rect(ctx, x + 3, y + 8, 1, 1, shade(pal.F, -40)); // 閉眼
-  rect(ctx, x + 5, y + 8, 1, 1, shade(pal.F, -40));
+  const rr = (x: number, y: number, w: number, h: number, color: string) => {
+    if (a.poseRotation === 90) rect(ctx, a.px + TILE - y - h, a.py + x, h, w, color);
+    else if (a.poseRotation === 180) rect(ctx, a.px + TILE - x - w, a.py + TILE - y - h, w, h, color);
+    else if (a.poseRotation === 270) rect(ctx, a.px + y, a.py + TILE - x - w, h, w, color);
+    else rect(ctx, a.px + x, a.py + y, w, h, color);
+  };
+  rr(7, 3, 8, 10, shade(pal.t, -22)); // 被子滾邊
+  rr(8, 4, 7, 8, pal.t); // 被子
+  rr(8, 7, 7, 1, shade(pal.t, 22)); // 摺線高光
+  rr(2, 4, 5, 3, pal.h); // 頭髮
+  rr(2, 7, 5, 3, pal.F); // 臉
+  rr(3, 8, 1, 1, shade(pal.F, -40)); // 閉眼
+  rr(5, 8, 1, 1, shade(pal.F, -40));
 }
 
 // ---------------------------------------------------------------------------

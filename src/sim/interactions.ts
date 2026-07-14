@@ -14,8 +14,9 @@ import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
 import { feudActive } from "./conflicts";
 import { maybeWitness } from "./drama";
 import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
-import { roomRect, getPlacements } from "./placements";
+import { roomRect, getPlacements, placementFootprint, placementInteract, placementRotation } from "./placements";
 import { getDef } from "../furniture/catalog";
+import { rotateGridVector } from "../furniture/rotation";
 import { spawnFx, type FxKind } from "../floor/fx";
 import { startPairSession, type PairPose } from "../floor/pairSession";
 import { currentBlocked } from "../floor/pathfind";
@@ -339,10 +340,15 @@ export function furnitureSeats(roomId: string | null, seatOn?: string[]): { a: {
   if (!seatOn || !roomId) return null;
   for (const p of getPlacements()) {
     if (p.room !== roomId || !seatOn.includes(p.defId)) continue;
-    const w = getDef(p.defId).footprint.w;
-    if (w < 2) continue;
-    const mid = Math.floor(w / 2);
-    return { a: { c: p.c + mid - 1, r: p.r }, b: { c: p.c + mid, r: p.r } };
+    const fp = placementFootprint(p);
+    if (fp.w >= 2) {
+      const mid = Math.floor(fp.w / 2);
+      return { a: { c: p.c + mid - 1, r: p.r }, b: { c: p.c + mid, r: p.r } };
+    }
+    if (fp.h >= 2) {
+      const mid = Math.floor(fp.h / 2);
+      return { a: { c: p.c, r: p.r + mid - 1 }, b: { c: p.c, r: p.r + mid } };
+    }
   }
   return null;
 }
@@ -357,19 +363,14 @@ export function furnitureStandingPair(roomId: string | null, standAt?: string[])
   for (const p of getPlacements()) {
     if (p.room !== roomId || !standAt.includes(p.defId)) continue;
     const def = getDef(p.defId);
-    let a: { c: number; r: number };
-    let b: { c: number; r: number };
-    if (def.footprint.w >= 2) {
-      const mid = Math.floor(def.footprint.w / 2);
-      a = { c: p.c + mid - 1 + def.interact.dc, r: p.r + def.interact.dr };
-      b = { c: p.c + mid + def.interact.dc, r: p.r + def.interact.dr };
-    } else if (def.footprint.h >= 2) {
-      const mid = Math.floor(def.footprint.h / 2);
-      a = { c: p.c + def.interact.dc, r: p.r + mid - 1 + def.interact.dr };
-      b = { c: p.c + def.interact.dc, r: p.r + mid + def.interact.dr };
-    } else {
-      continue;
-    }
+    const base = placementInteract(p);
+    const horizontal = def.footprint.w >= 2;
+    const length = horizontal ? def.footprint.w : def.footprint.h;
+    if (length < 2) continue;
+    const axis = rotateGridVector(horizontal ? 1 : 0, horizontal ? 0 : 1, placementRotation(p));
+    const start = Math.floor(length / 2) - 1;
+    const a = { c: base.c + axis.dc * start, r: base.r + axis.dr * start };
+    const b = { c: a.c + axis.dc, r: a.r + axis.dr };
     if (blocked[a.r]?.[a.c] === false && blocked[b.r]?.[b.c] === false) return { a, b };
   }
   return null;

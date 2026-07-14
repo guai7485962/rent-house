@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
+import { rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
 
-const props = defineProps<{ c: number; r: number; defId: string }>();
+const props = defineProps<{ c: number; r: number; defId: string; rotation: FurnitureRotation }>();
 const emit = defineEmits<{ close: []; sell: []; move: [] }>();
 
 const def = computed(() => getDef(props.defId));
 const refund = computed(() => Math.round(def.value.price / 2));
+const footprint = computed(() => rotatedFootprint(def.value, props.rotation));
 
 const CAT_LABEL: Record<FurnCategory, string> = {
   sleep: "睡眠", work: "工作", av: "影音", seating: "座椅",
@@ -28,7 +30,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
       </div>
 
       <div class="chips">
-        <span class="fp">佔 {{ def.footprint.w }}×{{ def.footprint.h }} 格</span>
+        <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>
       </div>
@@ -37,7 +39,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 
       <div class="actions">
         <button class="cancel" @click="emit('close')">關閉</button>
-        <button class="move" @click="emit('move')">📦 移動</button>
+        <button class="move" @click="emit('move')">📦 移動／旋轉</button>
         <button class="sell" @click="emit('sell')">賣掉(退 ${{ refund.toLocaleString() }})</button>
       </div>
     </div>

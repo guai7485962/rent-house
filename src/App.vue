@@ -20,6 +20,7 @@ import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
+import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
@@ -44,6 +45,7 @@ import {
   startMoving,
   cancelMoving,
   moveFurnitureTo,
+  rotatePendingFurniture,
   canDropAt,
   feedUnreadCount,
   markFeedSeen,
@@ -72,7 +74,7 @@ function fmtMs(ms: number) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 const recruitRoom = ref<string | null>(null);
-const inspectItem = ref<{ c: number; r: number; defId: string } | null>(null);
+const inspectItem = ref<{ c: number; r: number; defId: string; rotation: FurnitureRotation } | null>(null);
 const vacantNote = ref("");
 const sinceMs = ref(0);
 
@@ -182,6 +184,7 @@ function toast(msg: string, ms = 2200) {
 
 const pendingName = computed(() => (state.pendingPlace ? getDef(state.pendingPlace).name : ""));
 const movingName = computed(() => (state.pendingMove ? getDef(state.pendingMove.defId).name : ""));
+const rotationLabel = computed(() => `${state.pendingRotation}°`);
 
 function onStartMove() {
   const item = inspectItem.value;
@@ -212,7 +215,8 @@ const preview = computed(() => {
   const defId = state.pendingMove?.defId ?? state.pendingPlace;
   if (!t || !defId) return null;
   const def = getDef(defId);
-  return { c: t.c, r: t.r, w: def.footprint.w, h: def.footprint.h, ok: previewOk.value };
+  const fp = rotatedFootprint(def, state.pendingRotation);
+  return { c: t.c, r: t.r, w: fp.w, h: fp.h, rotation: state.pendingRotation, ok: previewOk.value };
 });
 // 進入/離開擺放與移動模式時,清掉殘留的預覽
 watch(
@@ -377,7 +381,8 @@ function onGroupResolve(choiceId: string) {
     <div v-if="state.pendingPlace" class="place-bar">
       🪑 擺放:<b>{{ pendingName }}</b>
       <span v-if="!previewTile" class="pb-hint">點地圖選位置</span>
-      <button v-else class="confirm" :disabled="!previewOk" @click="confirmPlace()">
+      <button class="rotate" @click="rotatePendingFurniture()">↻ {{ rotationLabel }}</button>
+      <button v-if="previewTile" class="confirm" :disabled="!previewOk" @click="confirmPlace()">
         {{ previewOk ? "✓ 確認放這裡" : "✕ 這裡放不下" }}
       </button>
       <button class="cancel" @click="cancelMode()">取消</button>
@@ -385,7 +390,8 @@ function onGroupResolve(choiceId: string) {
     <div v-else-if="state.pendingMove" class="place-bar">
       📦 移動:<b>{{ movingName }}</b>
       <span v-if="!previewTile" class="pb-hint">點地圖選新位置</span>
-      <button v-else class="confirm" :disabled="!previewOk" @click="confirmPlace()">
+      <button class="rotate" @click="rotatePendingFurniture()">↻ {{ rotationLabel }}</button>
+      <button v-if="previewTile" class="confirm" :disabled="!previewOk" @click="confirmPlace()">
         {{ previewOk ? "✓ 確認搬這裡" : "✕ 這裡放不下" }}
       </button>
       <button class="cancel" @click="cancelMode()">取消</button>
@@ -585,6 +591,7 @@ function onGroupResolve(choiceId: string) {
     :c="inspectItem.c"
     :r="inspectItem.r"
     :def-id="inspectItem.defId"
+    :rotation="inspectItem.rotation"
     @close="inspectItem = null"
     @sell="onSell"
     @move="onStartMove"
@@ -648,12 +655,13 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .hint { font-size: 12px; color: var(--text-dim); text-align: center; margin-top: 2px; }
 .pending-hint { font-size: 12px; color: var(--bad); text-align: center; }
 .place-bar {
-  display: flex; align-items: center; gap: 8px; justify-content: center;
+  display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap;
   font-size: 12.5px; color: #cdbcff; background: rgba(143, 123, 255, 0.12);
   border: 1px solid var(--accent-2); border-radius: 10px; padding: 8px 12px;
 }
 .place-bar .cancel { margin-left: auto; background: var(--panel); border: 1px solid var(--line); color: var(--text-dim); border-radius: 8px; padding: 3px 10px; font-size: 12px; }
 .place-bar .pb-hint { color: var(--text-dim); }
+.place-bar .rotate { background: rgba(143,123,255,0.14); border: 1px solid var(--accent-2); color: #cdbcff; border-radius: 8px; padding: 3px 9px; font-size: 12px; white-space: nowrap; }
 .place-bar .confirm { background: rgba(90,208,106,0.16); border: 1px solid var(--good); color: #b6ffbe; font-weight: 700; border-radius: 8px; padding: 3px 12px; font-size: 12px; }
 .place-bar .confirm:disabled { background: rgba(232,101,122,0.12); border-color: var(--bad); color: #ff9aa8; opacity: 0.9; }
 

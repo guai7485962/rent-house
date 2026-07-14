@@ -5,7 +5,7 @@
  */
 import { GRID_W, GRID_H, buildGrid, isWalkable } from "./map";
 import { getDef } from "../furniture/catalog";
-import { getPlacements, placements } from "../sim/placements";
+import { getPlacements, placementFootprint, placements } from "../sim/placements";
 
 export interface Tile {
   c: number;
@@ -22,8 +22,9 @@ export function buildBlocked(): boolean[][] {
     if ("kind" in def.sprite && (def.sprite.kind === "rug" || def.sprite.kind === "mat")) {
       continue;
     }
-    for (let dr = 0; dr < def.footprint.h; dr++) {
-      for (let dc = 0; dc < def.footprint.w; dc++) {
+    const fp = placementFootprint(p);
+    for (let dr = 0; dr < fp.h; dr++) {
+      for (let dc = 0; dc < fp.w; dc++) {
         const c = p.c + dc;
         const r = p.r + dr;
         if (r >= 0 && r < GRID_H && c >= 0 && c < GRID_W) blocked[r][c] = true;

@@ -126,6 +126,8 @@ export interface Placement {
   room: string;
   c: number; // 左上角格座標
   r: number;
+  /** 順時針旋轉角度；舊存檔缺欄位視為 0。 */
+  rotation?: 0 | 90 | 180 | 270;
 }
 
 /** 開場預設家具(動態家具狀態的種子;之後由 sim/placements.ts 管理可變副本) */

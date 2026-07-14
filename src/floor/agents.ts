@@ -10,6 +10,7 @@ import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { sessionFor, type PairPose } from "./pairSession";
 import { state } from "../store";
 import type { TenantVisualState } from "../types";
+import type { FurnitureRotation } from "../furniture/rotation";
 
 export interface Agent {
   tenantId: string;
@@ -28,6 +29,10 @@ export interface Agent {
   pose: PairPose | null;
   /** stand_face 的水平朝向:-1 左、1 右;其他姿勢為 0 */
   facing: -1 | 0 | 1;
+  /** 單人日常姿勢的家具方向；雙人 session 維持 0。 */
+  poseRotation: FurnitureRotation;
+  /** 桌前／電視前沒有實體座椅時，在角色後方補畫工作椅。 */
+  seatBack: boolean;
 }
 
 const SPEED = 44; // px / 秒
@@ -55,6 +60,8 @@ export function createAgents(): Agent[] {
       vs: rt.tenant.visualState,
       pose: null,
       facing: 0,
+      poseRotation: 0,
+      seatBack: false,
     };
   });
 }
@@ -64,10 +71,12 @@ export function tickAgents(agents: Agent[], dt: number) {
     const rt = state.runtimes[a.tenantId];
     // 互動 session(§10-6)覆寫走位:走到互動錨點;🔞 遮蔽式 pose 直接隱藏 sprite
     const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
-    let target = ses?.tile ?? rt?.targetTile ?? null;
+    let target = ses?.tile ?? rt?.activityTile ?? rt?.targetTile ?? null;
     a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
-    a.pose = ses?.pose ?? null;
+    a.pose = ses?.pose ?? rt?.activityPose ?? null;
     a.facing = ses?.facing ?? 0;
+    a.poseRotation = ses ? 0 : rt?.activityRotation ?? 0;
+    a.seatBack = !ses && rt?.activitySurface === "chair";
     a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {
       a.moving = false;
@@ -78,7 +87,7 @@ export function tickAgents(agents: Agent[], dt: number) {
     // 抵達後再「跨上去」坐/躺(不用尋路穿越家具、也絕不瞬移)。
     const blocked = currentBlocked();
     let snapTile: Tile | null = null;
-    if (ses && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
+    if ((ses || rt?.activityTile) && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
       snapTile = target;
       target = nearestWalkableNeighbor(target, a, blocked);
       if (!target) snapTile = null; // 四鄰全被擋:留在原地照常演

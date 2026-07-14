@@ -42,6 +42,9 @@ import { spawnFx, pruneFxByGame } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
+import { getDef } from "../furniture/catalog";
+import { placementFootprint, placementRotation } from "./placements";
+import type { Placement } from "../floor/map";
 
 /** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
 let showerClaim: { hourMs: number; id: string } | null = null;
@@ -239,11 +242,64 @@ function updateSatisfaction(rt: TenantRuntime, roomId: string | null) {
   rt.satisfaction = clamp(rt.satisfaction + (target - rt.satisfaction) * 0.2, 0, 100);
 }
 
+const SEATED_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "streaming", "working_at_desk", "playing_with_cat"]);
+
+/** 將日常活動轉成可見家具姿勢；床/沙發會跨上家具，桌前則補畫一張工作椅。 */
+function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement, fallbackTile: Tile) {
+  const def = getDef(p.defId);
+  if (!("kind" in def.sprite)) return;
+  const kind = def.sprite.kind;
+  let pose: "sit" | "lie" | null = null;
+  let surface: "furniture" | "chair" | null = null;
+  if (st === "sleeping_on_bed" && kind === "bed") {
+    pose = "lie";
+    surface = "furniture";
+  } else if (st === "sleeping_on_couch" && ["sofa", "beanbag", "chair"].includes(kind)) {
+    pose = "lie";
+    surface = "furniture";
+  } else if (SEATED_STATES.has(st)) {
+    if (["sofa", "beanbag", "chair"].includes(kind)) {
+      pose = "sit";
+      surface = "furniture";
+    } else if (["desk", "mic_desk", "tv"].includes(kind)) {
+      pose = "sit";
+      surface = "chair";
+    }
+  }
+  if (!pose || !surface) return;
+  const fp = placementFootprint(p);
+  rt.activityPose = pose;
+  rt.activitySurface = surface;
+  rt.activityRotation = placementRotation(p);
+  if (surface === "furniture") {
+    // 選最靠近原互動點的家具格，確保角色能先走到旁邊再跨上床／椅子。
+    let best = { c: p.c, r: p.r };
+    let bestDist = Infinity;
+    for (let dr = 0; dr < fp.h; dr++) {
+      for (let dc = 0; dc < fp.w; dc++) {
+        const tile = { c: p.c + dc, r: p.r + dr };
+        const dist = Math.abs(tile.c - fallbackTile.c) + Math.abs(tile.r - fallbackTile.r);
+        if (dist < bestDist) {
+          best = tile;
+          bestDist = dist;
+        }
+      }
+    }
+    rt.activityTile = best;
+  } else {
+    rt.activityTile = { ...fallbackTile };
+  }
+}
+
 /** 幫一位租客套用某小時的活動(addLog=false 用於初始定位,不寫日誌) */
 export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   const decided = decideState(rt, hour);
   let st = decided.state;
   const isDeviation = decided.isDeviation;
+  rt.activityPose = null;
+  rt.activityTile = null;
+  rt.activityRotation = 0;
+  rt.activitySurface = null;
 
   // 目標家具格(同居者用伴侶房)
   const roomId = roomOfTenant(rt.tenant.id);
@@ -287,6 +343,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
           showerClaim = { hourMs: state.gameMs, id: rt.tenant.id };
         }
       }
+      if (rt.targetTile?.c === tgt.tile.c && rt.targetTile?.r === tgt.tile.r) setFurniturePose(rt, st, tgt.placement, tgt.tile);
     } else {
       // 房裡缺對應家具、共用區也沒有(或 hermit 拒去)→ 在自己房間發呆(不闖別人房)
       st = "idle";

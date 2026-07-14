@@ -16,7 +16,7 @@ import { TENANT_VISUAL_STATES, type TenantVisualState } from "../types";
 import routinesJson from "../../data/routines.json";
 import { GRID_W, GRID_H, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
-import { getPlacements } from "./placements";
+import { getPlacements, placementFootprint, placementInteract } from "./placements";
 import { currentBlocked, type Tile } from "../floor/pathfind";
 
 export type Role = "bed" | "desk" | "kitchen" | "bathroom" | "sofa" | "tv" | "out";
@@ -32,7 +32,7 @@ const ROLE_KINDS: Record<Exclude<Role, "out">, string[]> = {
   desk: ["desk", "mic_desk"],
   kitchen: ["stove", "counter", "dining_table"],
   bathroom: ["shower", "toilet", "bathtub"],
-  sofa: ["sofa"],
+  sofa: ["sofa", "chair"],
   tv: ["tv"],
 };
 
@@ -129,16 +129,16 @@ export function resolveTarget(role: Role, roomId: string | null): { tile: Tile; 
 
 /** 家具的可站立點:先試目錄指定的互動格,若是牆/被擋則掃家具周邊找可走格 */
 function standingTile(p: Placement): Tile | null {
-  const def = getDef(p.defId);
   const blocked = currentBlocked();
   const ok = (c: number, r: number) => c >= 0 && c < GRID_W && r >= 0 && r < GRID_H && !blocked[r][c];
 
-  const pc = p.c + def.interact.dc;
-  const pr = p.r + def.interact.dr;
+  const interact = placementInteract(p);
+  const pc = interact.c;
+  const pr = interact.r;
   if (ok(pc, pr)) return { c: pc, r: pr };
 
   // 掃家具外圈一圈,回傳第一個可走格
-  const { w, h } = def.footprint;
+  const { w, h } = placementFootprint(p);
   for (let dr = -1; dr <= h; dr++) {
     for (let dc = -1; dc <= w; dc++) {
       const inside = dc >= 0 && dc < w && dr >= 0 && dr < h;

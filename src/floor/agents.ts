@@ -46,10 +46,14 @@ function sameTile(a: Tile | null, b: Tile | null) {
 }
 
 export function createAgents(): Agent[] {
+  const blocked = currentBlocked();
+  const claimed = new Set<string>();
   return Object.values(state.runtimes).map((rt) => {
     const t = rt.targetTile;
-    const c = t?.c ?? 7;
-    const r = t?.r ?? 10;
+    const hidden = rt.tenant.visualState === "away" || !t;
+    const spawn = t && !hidden ? claimCrowdTarget(t, claimed, blocked) : t;
+    const c = spawn?.c ?? 7;
+    const r = spawn?.r ?? 10;
     return {
       tenantId: rt.tenant.id,
       c,
@@ -57,9 +61,9 @@ export function createAgents(): Agent[] {
       px: c * TILE,
       py: r * TILE,
       path: [],
-      goal: t ?? null,
+      goal: spawn,
       moving: false,
-      hidden: rt.tenant.visualState === "away" || !t,
+      hidden,
       walkPhase: 0,
       vs: rt.tenant.visualState,
       pose: null,
@@ -73,12 +77,20 @@ export function createAgents(): Agent[] {
 }
 
 export function tickAgents(agents: Agent[], dt: number) {
-  for (const a of agents) {
+  const blocked = currentBlocked();
+  const claimedTargets = new Set<string>();
+  const occupied = new Map<string, Agent>();
+  const reservedSteps = new Set<string>();
+  for (const a of agents) if (!a.hidden) occupied.set(tileKey(a), a);
+
+  // 先替本幀所有角色分配不重複的演出目標。一般作息偶爾會讓多人拿到同一個
+  // 共用家具錨點；第二人起改站附近空格，避免抵達後疊成一個 sprite。
+  const plans = agents.map((a) => {
     const rt = state.runtimes[a.tenantId];
     // 互動 session(§10-6)覆寫走位:走到互動錨點;🔞 遮蔽式 pose 直接隱藏 sprite
     const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
-    let target = ses?.tile ?? rt?.activityTile ?? rt?.targetTile ?? null;
-    a.hidden = !rt || rt.tenant.visualState === "away" || !target || ses?.pose === "hidden";
+    const desired = ses?.tile ?? rt?.activityTile ?? rt?.targetTile ?? null;
+    a.hidden = !rt || rt.tenant.visualState === "away" || !desired || ses?.pose === "hidden";
     a.pose = ses?.pose ?? rt?.activityPose ?? null;
     a.facing = ses?.facing ?? 0;
     a.poseRotation = ses ? 0 : rt?.activityRotation ?? 0;
@@ -96,6 +108,12 @@ export function tickAgents(agents: Agent[], dt: number) {
     }
     a.seatBack = !ses && rt?.activitySurface === "chair";
     a.vs = rt?.tenant.visualState ?? "idle";
+    const target = !a.hidden && desired ? claimCrowdTarget(desired, claimedTargets, blocked) : null;
+    return { a, rt, ses, target };
+  });
+
+  for (const { a, rt, ses, target: plannedTarget } of plans) {
+    let target = plannedTarget;
     if (a.hidden) {
       a.moving = false;
       continue;
@@ -103,7 +121,6 @@ export function tickAgents(agents: Agent[], dt: number) {
 
     // 家具座位錨點(§10-6):session 目標若是家具佔用格(沙發/床),先走到最近可走鄰格,
     // 抵達後再「跨上去」坐/躺(不用尋路穿越家具、也絕不瞬移)。
-    const blocked = currentBlocked();
     let snapTile: Tile | null = null;
     if ((ses || rt?.activityTile) && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
       snapTile = target;
@@ -111,7 +128,10 @@ export function tickAgents(agents: Agent[], dt: number) {
       if (!target) snapTile = null; // 四鄰全被擋:留在原地照常演
     }
     if (snapTile && target && a.c === target.c && a.r === target.r && !a.moving) {
-      stepOnto(a, snapTile); // 已站在家具旁 → 直接跨上去
+      if (!occupiedByOther(snapTile, a, occupied)) {
+        moveOccupancy(a, snapTile, occupied);
+        stepOnto(a, snapTile); // 已站在家具旁 → 直接跨上去
+      }
       continue;
     }
 
@@ -135,6 +155,11 @@ export function tickAgents(agents: Agent[], dt: number) {
         a.moving = false;
         continue;
       }
+      // 另一人仍站在下一格時先讓一步；角色離開後下一幀自然繼續。
+      // 這也封住兩條路徑在窄走道同時進入同一格的視覺穿模。
+      const nextKey = tileKey(next);
+      if (occupiedByOther(next, a, occupied) || reservedSteps.has(nextKey)) continue;
+      reservedSteps.add(nextKey);
       const nx = next.c * TILE;
       const ny = next.r * TILE;
       const dx = nx - a.px;
@@ -142,6 +167,7 @@ export function tickAgents(agents: Agent[], dt: number) {
       const dist = Math.hypot(dx, dy);
       const step = SPEED * dt;
       if (dist <= step) {
+        moveOccupancy(a, next, occupied);
         a.px = nx;
         a.py = ny;
         a.c = next.c;
@@ -149,7 +175,10 @@ export function tickAgents(agents: Agent[], dt: number) {
         a.path.shift();
         if (a.path.length === 0) {
           a.moving = false;
-          if (snapTile) stepOnto(a, snapTile); // 走到家具旁的同一刻跨上去(無頭模擬也同步)
+          if (snapTile && !occupiedByOther(snapTile, a, occupied)) {
+            moveOccupancy(a, snapTile, occupied);
+            stepOnto(a, snapTile); // 走到家具旁的同一刻跨上去(無頭模擬也同步)
+          }
         }
       } else {
         a.px += (dx / dist) * step;
@@ -158,6 +187,48 @@ export function tickAgents(agents: Agent[], dt: number) {
       a.walkPhase += dt * 7;
     }
   }
+}
+
+function tileKey(t: Tile) {
+  return `${t.c},${t.r}`;
+}
+
+function occupiedByOther(t: Tile, a: Agent, occupied: Map<string, Agent>) {
+  const other = occupied.get(tileKey(t));
+  return !!other && other !== a && !other.hidden;
+}
+
+function moveOccupancy(a: Agent, next: Tile, occupied: Map<string, Agent>) {
+  const oldKey = tileKey(a);
+  if (occupied.get(oldKey) === a) occupied.delete(oldKey);
+  occupied.set(tileKey(next), a);
+}
+
+/**
+ * 同一目標被先到者占用時，在附近找最近的可走空格。
+ * 搜尋順序固定，畫面與測試都可重現；半徑 4 足以涵蓋共用家具周邊。
+ */
+function claimCrowdTarget(desired: Tile, claimed: Set<string>, blocked: boolean[][]): Tile {
+  const desiredKey = tileKey(desired);
+  if (!claimed.has(desiredKey)) {
+    claimed.add(desiredKey);
+    return { ...desired };
+  }
+  for (let radius = 1; radius <= 4; radius++) {
+    for (let dr = -radius; dr <= radius; dr++) {
+      const dc = radius - Math.abs(dr);
+      for (const signedDc of dc === 0 ? [0] : [-dc, dc]) {
+        const t = { c: desired.c + signedDc, r: desired.r + dr };
+        const key = tileKey(t);
+        if (claimed.has(key) || blocked[t.r]?.[t.c] !== false) continue;
+        claimed.add(key);
+        return t;
+      }
+    }
+  }
+  // 極端擁擠時仍保留原目標；動態格位阻擋會防止兩人同時踏入。
+  claimed.add(desiredKey);
+  return { ...desired };
 }
 
 /** 跨上家具格(坐上沙發/躺上床):位置直接落格,goal 設為該格避免下一幀重新尋路 */

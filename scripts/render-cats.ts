@@ -115,6 +115,31 @@ for (let color = 0; color < 4; color++) {
   cats.push(cat(color, 10, r, { sleeping: true }));
 }
 
+// 五種雙貓互動演出；每對固定相鄰，方便一次目檢共享道具與前景特效。
+const actions = ["chase", "groom", "nap", "territory", "mischief"] as const;
+for (let i = 0; i < actions.length; i++) {
+  const ownerA = `pair_${i}_a`;
+  const ownerB = `pair_${i}_b`;
+  const r = 15 + i * 2;
+  cats.push(cat(0, 5, r, {
+    ownerId: ownerA,
+    pairAction: actions[i],
+    pairWith: ownerB,
+    pairLeader: true,
+    moving: actions[i] === "chase",
+    sleeping: actions[i] === "nap",
+  }));
+  cats.push(cat(1, 6, r, {
+    ownerId: ownerB,
+    pairAction: actions[i],
+    pairWith: ownerA,
+    pairLeader: false,
+    moving: actions[i] === "chase",
+    sleeping: actions[i] === "nap",
+    facing: -1,
+  }));
+}
+
 const ctx = new FakeCtx(FLOOR_W, FLOOR_H);
 composeFloor(ctx as any, 0, undefined, undefined, undefined, cats);
 

@@ -97,12 +97,17 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   if (agents || pets) {
     // 人與貓依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
     const items: { y: number; draw: () => void }[] = [];
+    const catPairs = activeCatPairs(pets ?? []);
+    for (const [a, b] of catPairs) {
+      items.push({ y: Math.min(a.py, b.py) + 2, draw: () => drawCatPairGround(ctx, a, b, frame) });
+    }
     for (const a of agents ?? []) {
       if (a.hidden) continue;
       items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
     }
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
+    for (const [a, b] of catPairs) drawCatPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
     // 離線預覽:靜態站立
@@ -394,7 +399,6 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
       rect(ctx, x + 8, y + 10, 2, 2, "#413e4e");
     }
     pxPat(ctx, PAT_Z, x + 12, y + 1 - (frame % 2), "#cfd6ff", 0.8);
-    drawCatPairBadge(ctx, a, x, y, frame);
     return;
   }
 
@@ -413,7 +417,6 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
       rect(ctx, x + 4, y + 4, 2, 2, "#cd7f32");
       rect(ctx, x + 7, y + 9, 2, 2, "#413e4e");
     }
-    drawCatPairBadge(ctx, a, x, y, frame);
     return;
   }
 
@@ -433,31 +436,83 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
     rect(ctx, fx(4, 3), y + 8, 3, 2, "#cd7f32");
     rect(ctx, fx(10, 2), y + 5, 2, 2, "#413e4e");
   }
-  drawCatPairBadge(ctx, a, x, y, frame);
 }
 
-/** 雙貓互動只在領頭貓上方畫一顆像素泡泡,避免兩個圖示重疊。 */
-function drawCatPairBadge(ctx: Ctx, a: PetAgent, x: number, y: number, frame: number) {
-  if (!a.pairLeader || !a.pairAction) return;
-  const by = y - 5 - (frame % 2);
-  rect(ctx, x + 3, by, 9, 5, "#292735");
-  rect(ctx, x + 4, by + 1, 7, 3, "#f4e9da");
-  if (a.pairAction === "groom") {
-    rect(ctx, x + 5, by + 2, 2, 1, "#e95783");
-    rect(ctx, x + 8, by + 2, 2, 1, "#e95783");
-  } else if (a.pairAction === "nap") {
-    rect(ctx, x + 5, by + 1, 3, 1, "#718bd1");
-    rect(ctx, x + 7, by + 2, 1, 1, "#718bd1");
-    rect(ctx, x + 5, by + 3, 3, 1, "#718bd1");
-  } else if (a.pairAction === "territory") {
-    rect(ctx, x + 7, by + 1, 1, 2, "#d95454");
-    rect(ctx, x + 7, by + 3, 1, 1, "#d95454");
+function activeCatPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {
+  const byOwner = new Map(pets.map((p) => [p.ownerId, p]));
+  const pairs: [PetAgent, PetAgent][] = [];
+  for (const leader of pets) {
+    if (!leader.pairLeader || !leader.pairAction || !leader.pairWith) continue;
+    const partner = byOwner.get(leader.pairWith);
+    if (partner) pairs.push([leader, partner]);
+  }
+  return pairs;
+}
+
+/** 共眠與搗蛋先鋪共享道具，讓互動看起來是同一幕而非兩隻碰巧站附近。 */
+function drawCatPairGround(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
+  if (!a.pairAction) return;
+  const minX = Math.min(a.px, b.px);
+  const maxX = Math.max(a.px, b.px) + TILE;
+  const minY = Math.min(a.py, b.py);
+  const maxY = Math.max(a.py, b.py) + TILE;
+  const cx = Math.floor((minX + maxX) / 2);
+  const cy = Math.floor((minY + maxY) / 2);
+  if (a.pairAction === "nap") {
+    // 同一塊柔軟小墊＋縫線，呼應概念圖中兩隻貓捲成一團的輪廓。
+    const w = Math.min(30, maxX - minX + 8);
+    rect(ctx, cx - Math.floor(w / 2), cy + 4, w, 8, "#6f5572");
+    rect(ctx, cx - Math.floor(w / 2) + 1, cy + 5, w - 2, 5, "#a57e91");
+    for (let x = cx - Math.floor(w / 2) + 3; x < cx + w / 2 - 2; x += 4) rect(ctx, x, cy + 9, 2, 1, "#d2a2ad");
   } else if (a.pairAction === "mischief") {
-    rect(ctx, x + 5, by + 2, 5, 1, "#a66b2b");
-    rect(ctx, x + 7, by + 1, 1, 3, "#a66b2b");
+    // 被兩位主子拆開的小紙箱；箱蓋與紙屑各自有清楚輪廓。
+    rect(ctx, cx - 5, cy + 4, 10, 7, "#8c5b31");
+    rect(ctx, cx - 4, cy + 5, 8, 5, "#c18548");
+    rect(ctx, cx - 6, cy + 3, 5, 2, "#d29a5b");
+    rect(ctx, cx + 1, cy + 3, 5, 2, "#d29a5b");
+    const hop = frame % 2;
+    rect(ctx, cx - 9, cy + 9 - hop, 2, 1, "#d7ae72");
+    rect(ctx, cx + 8, cy + 7 + hop, 2, 2, "#d7ae72");
+  }
+}
+
+/** 五種雙貓事件各有獨立、無文字的像素演出。 */
+function drawCatPairAction(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
+  if (!a.pairAction) return;
+  const ax = a.px + TILE / 2, ay = a.py + 5;
+  const bx = b.px + TILE / 2, by = b.py + 5;
+  const cx = Math.floor((ax + bx) / 2), cy = Math.floor((ay + by) / 2);
+  const bob = frame % 2;
+  if (a.pairAction === "chase") {
+    // 腳後速度線與灰塵，方向跟著各自面向。
+    for (const cat of [a, b]) {
+      const tailX = cat.px + (cat.facing > 0 ? 0 : 13);
+      rect(ctx, tailX, cat.py + 8 + bob, 3, 1, "#f1d5a1");
+      rect(ctx, tailX + (cat.facing > 0 ? -2 : 3), cat.py + 11 - bob, 2, 2, "#d8b883");
+    }
+  } else if (a.pairAction === "groom") {
+    // 舔毛的小粉線與上浮愛心；不蓋住兩隻貓的臉。
+    rect(ctx, cx - 1, cy - 5 - bob, 1, 1, "#ff8fac");
+    rect(ctx, cx + 1, cy - 5 - bob, 1, 1, "#ff8fac");
+    rect(ctx, cx, cy - 4 - bob, 1, 2, "#e95783");
+    rect(ctx, cx - 2, cy + 1, 4, 1, "#ffc0ce");
+  } else if (a.pairAction === "nap") {
+    // 共享的 Z 字節奏，比兩顆獨立泡泡更像一起睡。
+    rect(ctx, cx + 2, cy - 8 - bob, 4, 1, "#cfd6ff");
+    rect(ctx, cx + 5, cy - 7 - bob, 1, 1, "#cfd6ff");
+    rect(ctx, cx + 2, cy - 6 - bob, 4, 1, "#cfd6ff");
+  } else if (a.pairAction === "territory") {
+    // 中間鋸齒狀火花與兩側炸毛線，保留明顯安全距離。
+    rect(ctx, cx, cy - 5 - bob, 2, 2, "#f0c14b");
+    rect(ctx, cx - 2, cy - 3 - bob, 2, 2, "#d95454");
+    rect(ctx, cx + 2, cy - 1 - bob, 2, 2, "#d95454");
+    rect(ctx, Math.floor(ax) - 7, Math.floor(ay) - 3, 3, 1, "#f4e9da");
+    rect(ctx, Math.floor(bx) + 4, Math.floor(by) - 3, 3, 1, "#f4e9da");
   } else {
-    rect(ctx, x + 5, by + 2, 5, 1, "#4e9a73");
-    rect(ctx, x + 8, by + 1, 2, 1, "#4e9a73");
+    // 紙箱上方跳動的驚嘆星芒，強調「一起闖禍」。
+    rect(ctx, cx, cy - 7 - bob, 1, 5, "#ffd66e");
+    rect(ctx, cx - 2, cy - 5 - bob, 5, 1, "#ffd66e");
+    rect(ctx, cx - 1, cy - 6 - bob, 3, 3, "#fff0a8");
   }
 }
 

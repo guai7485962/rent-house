@@ -19,6 +19,7 @@ import { currentBlocked } from "../src/floor/pathfind";
 import { applyHour } from "../src/sim/tick";
 import { createAgents, tickAgents } from "../src/floor/agents";
 import { furnitureStandingPair } from "../src/sim/interactions";
+import { layoutFloorTags } from "../src/floor/tagLayout";
 
 let pass = 0;
 let fail = 0;
@@ -95,6 +96,27 @@ chenAgent = agents.find((a) => a.tenantId === chen.tenant.id)!;
 check("桌前 Agent 會標記補畫椅背", chenAgent.pose === "sit" && chenAgent.seatBack);
 
 check("家具商店包含可旋轉木質單椅", getDef("wood_chair").sprite.kind === "chair");
+
+// 多人拿到同一個共用目標時，初始站位與本幀 goal 都必須錯開。
+const crowdIds = Object.keys(state.runtimes).slice(0, 2);
+for (const id of crowdIds) {
+  const rt = state.runtimes[id];
+  rt.tenant.visualState = "idle";
+  rt.targetTile = { c: 7, r: 10 };
+  rt.activityTile = null;
+  rt.activityPose = null;
+}
+const crowdedAgents = createAgents().filter((a) => crowdIds.includes(a.tenantId));
+check("同目標角色建立時會分配不同站位", new Set(crowdedAgents.map((a) => `${a.c},${a.r}`)).size === crowdedAgents.length);
+tickAgents(crowdedAgents, 0);
+check("同目標角色每幀保有不同 goal", new Set(crowdedAgents.map((a) => `${a.goal?.c},${a.goal?.r}`)).size === crowdedAgents.length);
+
+const tags = layoutFloorTags([
+  { id: "a", name: "陳家豪", x: 100, y: 100, kind: "tenant", color: "#fff" },
+  { id: "b", name: "林小婕", x: 100, y: 100, kind: "tenant", color: "#fff" },
+  { id: "cat", name: "🐈Bug", x: 101, y: 101, kind: "pet", color: "#fff" },
+], 256, 384);
+check("人物與貓咪標籤近距離時會錯位排列", new Set(tags.map((t) => `${t.drawX},${t.drawY}`)).size === tags.length);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

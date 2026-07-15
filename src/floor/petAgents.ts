@@ -24,6 +24,7 @@ export interface PetAgent {
   sleeping: boolean;
   facing: 1 | -1;
   pairAction?: Pet["pairAction"];
+  pairWith?: string;
   pairLeader: boolean;
 }
 
@@ -79,6 +80,7 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
     const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > state.gameMs;
     const partner = pairActive ? agents.find((x) => x.ownerId === pet.pairWith) : undefined;
     a.pairAction = partner ? pet.pairAction : undefined;
+    a.pairWith = partner?.ownerId;
     a.pairLeader = !!partner && a.ownerId.localeCompare(partner.ownerId) < 0;
     if (!a.moving) {
       if (now < a.restUntil) continue;

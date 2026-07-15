@@ -4,6 +4,7 @@ import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } 
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, tickPetAgents, type PetAgent } from "../floor/petAgents";
+import { layoutFloorTags } from "../floor/tagLayout";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
@@ -58,24 +59,33 @@ function loop(t: number) {
     }
     if (t - lastTagMs > 150) {
       lastTagMs = t;
-      agentTags.value = [
+      const rawTags = [
         ...agents
           .filter((a) => !a.hidden)
           .map((a) => ({
             id: a.tenantId,
             name: state.runtimes[a.tenantId]?.tenant.name ?? "",
-            left: `${((a.px + TILE / 2) / FLOOR_W) * 100}%`,
-            top: `${((a.py - 8) / FLOOR_H) * 100}%`,
+            x: a.px + TILE / 2,
+            y: a.py - 8,
+            kind: "tenant" as const,
             color: getTheme(a.tenantId).shirt,
           })),
         ...petAgents.map((p) => ({
           id: `pet_${p.ownerId}`,
           name: `🐈${p.name}`,
-          left: `${((p.px + TILE / 2) / FLOOR_W) * 100}%`,
-          top: `${((p.py + 2) / FLOOR_H) * 100}%`,
+          x: p.px + TILE / 2,
+          y: p.py + 2,
+          kind: "pet" as const,
           color: "#e0913f",
         })),
       ];
+      agentTags.value = layoutFloorTags(rawTags, FLOOR_W, FLOOR_H).map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        left: `${(tag.drawX / FLOOR_W) * 100}%`,
+        top: `${(tag.drawY / FLOOR_H) * 100}%`,
+        color: tag.color,
+      }));
     }
   } finally {
     // 單幀出錯也不讓渲染迴圈死掉(否則畫面會永久停格/消失)

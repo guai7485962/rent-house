@@ -8,6 +8,7 @@
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { sanitizeDiaryText, sanitizeSummaryText, selectDiverseNarrativeLines } from "../src/sim/narrativeQuality";
 
 export interface Env {
   ASSETS: Fetcher;
@@ -42,12 +43,15 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 你的工作:根據某位租客「今天」發生的事,寫一段房東視角的當日觀察日記。
 
 風格要求:
-- 繁體中文,2~4 句,像房東在監視器前看著寫下的札記,冷靜、帶點窺看的趣味與人情味。
+- 繁體中文。diary 以 **3 個完整句子、120~220 字**為原則；只有重大轉折才可寫第 4 句。像房東在監視器前寫下的札記,冷靜、帶點窺看的趣味與人情味。
+- **不要寫成流水帳**:從今天片段中只挑 2~3 個最有意思、彼此能串成一條線的畫面；其餘素材可以捨棄,絕對不要逐條改寫。
+- **每件事只能寫一次**:結尾不可再總結或重述開頭。輸出前自行刪除重複句、同義反覆及連續的「他還／她還／看起來」。
+- 用具體動作呈現變化,少用「沒有太大變化」「變得比較積極」「行為模式」等空泛結論。避免「聊天時態度」這類生硬搭配,句子要像自然繁體中文。
 - 必須延續角色的核心性格與既有記憶標籤,讓劇情有連貫感(例:有[偷養浪貓]就別忘了貓)。
 - **必須接續「此前的劇情摘要」**:昨天埋的線今天要有下文(伏筆推進、情緒延續、習慣持續),不要每天各寫各的。
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
 - **尊重房間聲學狀態**:若 context 顯示「室內噪音抗議已阻隔」,不得生成鄰居抗議該租客房內噪音的日記、記憶或事件；可以描寫隔音有效。外部施工等與房內隔音無關的噪音，只有今天日誌已實際提到時才可延續。
-- **summaryUpdate(必填)**:輸出一段更新後的劇情摘要(50~150 字):以舊摘要為底,保留仍然重要的事實與未回收的伏筆,寫入今天的變化。這段會在明天餵回給你,是劇情連續性的唯一載體——寫得像「連載的前情提要」。
+- **summaryUpdate(必填)**:輸出 2 個完整句子、60~120 字的更新摘要:以舊摘要為底,只保留仍然重要的事實、未回收伏筆與今天真正的新變化；同一事實只寫一次。這段會在明天餵回給你,是劇情連續性的唯一載體。
 - **記憶標籤 newMemory:只要今天出現值得記住的變化(情緒明顯起伏、關係進展、養成新習慣、突發小事、心境轉變…),就給一個 newMemory,讓角色記憶隨時間累積、越玩越立體。不必每天給,但別太吝嗇;標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])。已經有的記憶就不要重複。**
 
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
@@ -90,6 +94,7 @@ function buildPrompt(c: NarrateCtx): string {
     `既有記憶:${c.memoryTags.join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,
+    `[背景資料—只供理解,除非今天片段有新進展,不可直接寫成今日事件]`,
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
@@ -98,11 +103,11 @@ function buildPrompt(c: NarrateCtx): string {
       : `進行中的劇情弧:無(適合的話可開新弧)`,
     `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
     `房東抉擇事件機會:${c.eventDue ? "已到(適合就產生 event)" : "冷卻中(event 必須為 null)"}`,
-    `今天(${c.dayLabel})的觀察片段:`,
+    `[今天可寫素材—已去重,不必全部使用] 今天(${c.dayLabel})的觀察片段:`,
     ...c.todayLog.map((l) => `  - ${l}`),
   ];
   if (c.events.length) lines.push(`今天房東的介入/事件:${c.events.join("、")}`);
-  lines.push("", "請寫出今天的當日觀察日記(只輸出 JSON)。");
+  lines.push("", "請先在心中選出一條主線並檢查沒有重複句,再寫出當日觀察日記(只輸出 JSON)。");
   return lines.join("\n");
 }
 
@@ -119,8 +124,10 @@ function parseResult(
     // event / arcUpdate 原封不動透傳(夾值/消毒在前端 store 端統一做)
     const event = obj.event && typeof obj.event === "object" ? obj.event : null;
     const arcUpdate = obj.arcUpdate && typeof obj.arcUpdate === "object" ? obj.arcUpdate : null;
-    const summaryUpdate = typeof obj.summaryUpdate === "string" ? obj.summaryUpdate.slice(0, 220).trim() || null : null;
-    return { diary: obj.diary.trim().slice(0, 500), newMemory, event, summaryUpdate, arcUpdate };
+    const diary = sanitizeDiaryText(obj.diary);
+    if (!diary) return null;
+    const summaryUpdate = typeof obj.summaryUpdate === "string" ? sanitizeSummaryText(obj.summaryUpdate) || null : null;
+    return { diary, newMemory, event, summaryUpdate, arcUpdate };
   } catch {
     return null;
   }
@@ -190,11 +197,11 @@ function clampCtx(raw: unknown): NarrateCtx {
       // 舊版前端／既有待補日記沒有此欄位時採「仍有風險」，避免誤把未知狀態當成已隔音。
       complaintRisk: c.room?.complaintRisk === false ? false : true,
     },
-    todayLog: clampArr(c.todayLog, 20, 200),
+    todayLog: selectDiverseNarrativeLines(clampArr(c.todayLog, 20, 200), 10),
     relationships: clampArr(c.relationships, 12, 80),
-    events: clampArr(c.events, 12, 200),
+    events: selectDiverseNarrativeLines(clampArr(c.events, 12, 200), 6),
     neighbors: clampArr(c.neighbors, 8, 24),
-    summary: clampStr(c.summary, 400),
+    summary: sanitizeSummaryText(clampStr(c.summary, 400)),
     arc,
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
@@ -202,7 +209,7 @@ function clampCtx(raw: unknown): NarrateCtx {
 }
 
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
-export const _internal = { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText };
+export const _internal = { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText, systemPrompt: SYSTEM };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
  *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */

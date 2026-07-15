@@ -7,9 +7,19 @@
  *
  * 用法: npx tsx scripts/sim-trace.ts [遊戲小時數,預設 24]
  */
-import { state, debugInit, debugStepHour, debugClock, unreadCount } from "../src/store";
-import { createAgents, tickAgents } from "../src/floor/agents";
-import { sessionFor } from "../src/floor/pairSession";
+// 固定 RNG：這支是 CI 健全性檢查，不該因隨機偏離作息／互動而偶發假紅燈。
+let seed = 20260716;
+Math.random = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const { state, debugInit, debugStepHour, debugClock, unreadCount } = await import("../src/store");
+const { createAgents, tickAgents } = await import("../src/floor/agents");
+const { sessionFor } = await import("../src/floor/pairSession");
 
 const HOURS = Number(process.argv[2] ?? 24);
 const DT = 0.1;

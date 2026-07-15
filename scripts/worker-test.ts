@@ -6,7 +6,7 @@
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
  */
 const { _internal } = await import("../worker/index");
-const { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText } = _internal;
+const { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText, systemPrompt } = _internal;
 
 let pass = 0;
 let fail = 0;
@@ -40,7 +40,7 @@ const huge = {
 };
 const c = clampCtx(huge);
 check("clampCtx:name 截短 ≤24", c.name.length <= 24);
-check("clampCtx:todayLog 條數 ≤20", c.todayLog.length <= 20);
+check("clampCtx:todayLog 去重後條數 ≤10", c.todayLog.length <= 10);
 check("clampCtx:todayLog 單條 ≤200", c.todayLog[0].length <= 200);
 check("clampCtx:stat 夾 0~100", c.stats.mood === 100 && c.stats.stress === 0);
 check("clampCtx:flags ≤16", c.flags.length <= 16);
@@ -56,6 +56,11 @@ check("舊 context 缺聲學欄位時保守視為仍有抗議風險", clampCtx({
 check("隔音完成會明確限制 AI 不得生成室內噪音抗議", buildPrompt(clampCtx({
   name: "夜貓租客", room: { noise: 8, soundproof: 12, treated: true, complaintRisk: false },
 })).includes("不得生成相關抗議"));
+check("日記 prompt 明定不可寫流水帳與重複總結", systemPrompt.includes("不要寫成流水帳") && systemPrompt.includes("每件事只能寫一次"));
+check("背景與今日素材在 prompt 中明確分區", (() => {
+  const prompt = buildPrompt(clampCtx({ name: "a", todayLog: ["今天片段"] }));
+  return prompt.includes("背景資料—只供理解") && prompt.includes("今天可寫素材—已去重");
+})());
 
 // --- 免費模型分流:平淡日常用 Lite,事件/主線日用 Flash ---
 check("模型分流:平淡日常 → 3.1 Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-3.1-flash-lite");
@@ -71,8 +76,12 @@ check("Workers AI:空 response 不會遮掉有效 choices", extractWorkersAiText
 check("Workers AI:空輸出 → null", extractWorkersAiText({ choices: [] }) === null);
 
 // --- parseResult ---
-check("parseResult:抽出 JSON + diary", parseResult('前綴 {"diary":"你好","summaryUpdate":"s"} 後綴')?.diary === "你好");
-check("parseResult:diary 截 ≤500", (parseResult(`{"diary":"${"字".repeat(999)}"}`)?.diary.length ?? 0) <= 500);
+check("parseResult:抽出 JSON + 補完整句號", parseResult('前綴 {"diary":"你好","summaryUpdate":"s"} 後綴')?.diary === "你好。");
+check("parseResult:diary 只保留完整句且 ≤320", (() => {
+  const diary = parseResult(`{"diary":"${"字".repeat(999)}"}`)?.diary ?? "";
+  return diary.length <= 320 && diary.endsWith("。");
+})());
+check("parseResult:移除重複句", parseResult('{"diary":"他看了一眼窗外。他看了一眼窗外。他轉身去泡茶。"}')?.diary === "他看了一眼窗外。他轉身去泡茶。");
 check("parseResult:壞 JSON → null", parseResult("這不是 json") === null);
 check("parseResult:缺 diary → null", parseResult('{"summaryUpdate":"s"}') === null);
 

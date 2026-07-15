@@ -11,6 +11,7 @@ import {
   DAILY_STRESS_TEMPLATES,
   DAILY_TEMPLATES,
 } from "../content/observationLines";
+import { sanitizeDiaryText, sanitizeSummaryText } from "./narrativeQuality";
 
 export interface NarrateCtx {
   name: string;
@@ -94,10 +95,10 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
       };
       if (data.diary)
         return {
-          diary: data.diary,
+          diary: sanitizeDiaryText(data.diary) || templateDiary(ctx),
           newMemory: data.newMemory ?? null,
           event: data.event ?? null,
-          summaryUpdate: typeof data.summaryUpdate === "string" ? data.summaryUpdate.slice(0, 220).trim() || null : null,
+          summaryUpdate: typeof data.summaryUpdate === "string" ? sanitizeSummaryText(data.summaryUpdate) || null : null,
           arcUpdate: data.arcUpdate ?? null,
           ai: true,
           provider: data.provider,

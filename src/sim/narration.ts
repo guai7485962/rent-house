@@ -12,6 +12,7 @@ import { listRelationships } from "./social";
 import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
+import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -292,9 +293,11 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
 /** 從 runtime 組出當天的敘事 context */
 export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
-  const today = rt.log.filter((e) => e.gameMs >= dayAgo);
-  const todayLog = today.map((e) => e.text).filter((t) => t && t.length > 0).slice(-12);
-  const events = today.map((e) => e.decisionNote).filter((t): t is string => !!t);
+  // 上一篇「當日觀察」不能再當成今天的原始素材，否則 AI 會摘要自己的摘要，
+  // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
+  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily);
+  const todayLog = selectDiverseNarrativeLines(today.map((e) => e.text).filter((t) => t && t.length > 0), 8);
+  const events = selectDiverseNarrativeLines(today.map((e) => e.decisionNote).filter((t): t is string => !!t), 4);
   const id = rt.tenant.id;
   const relationships = listRelationships((tenantId) => state.runtimes[tenantId]?.tenant)
     .filter((r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId])
@@ -324,7 +327,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     relationships,
     events,
     neighbors,
-    summary: rt.tenant.recentSummary,
+    summary: sanitizeSummaryText(rt.tenant.recentSummary),
     arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
     flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,

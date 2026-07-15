@@ -69,12 +69,12 @@ relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 20, romantic: false,
 A.log.splice(0); B.log.splice(0);
 const relBeforeBath = relVal();
 ev("bathroom").fire([A, B], Math.random);
-check("浴室(關係差):兩人關係下降 + 搶浴室日誌", relVal() < relBeforeBath && (A.log.some((e) => e.text.includes("搶浴室")) || B.log.some((e) => e.text.includes("敲門催"))));
+check("浴室(關係差):兩人關係下降 + 設施爭用日誌", relVal() < relBeforeBath && [A, B].some((rt) => rt.log.some((e) => /搶浴室|敲門催|廁所|洗手台|熱水/.test(e.text))));
 relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 60, romantic: false, cohabitOffered: false };
 A.log.splice(0); B.log.splice(0);
 const relBeforeBathBond = relVal();
 ev("bathroom").fire([A, B], Math.random);
-check("浴室(關係好):兩人關係上升 + 排隊聊天日誌", relVal() > relBeforeBathBond && (A.log.some((e) => e.text.includes("排隊")) || B.log.some((e) => e.text.includes("閒聊"))));
+check("浴室(關係好):兩人關係上升 + 排隊互助日誌", relVal() > relBeforeBathBond && [A, B].some((rt) => rt.log.some((e) => /排隊|閒聊|洗手台|牙膏|熱水|乾毛巾/.test(e.text))));
 
 // --- 早晨尖峰:3 人壓力↑但同仇敵愾拉近 ---
 const rush = [rts[0], rts[1], rts[2]];

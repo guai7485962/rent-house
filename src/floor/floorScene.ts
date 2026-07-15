@@ -276,6 +276,19 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
     ctx.fillRect(a.px + 6, a.py - 10 - ((frame + 1) % 3), 2, 2);
     ctx.fillRect(a.px + 11, a.py - 5 - ((frame + 2) % 3), 2, 2);
     ctx.restore();
+  } else if (a.vs === "washing_at_sink") {
+    ctx.fillStyle = "#8fd3ff";
+    ctx.fillRect(a.px + 2, a.py + 7 + bob, 2, 1);
+    ctx.fillRect(a.px + 11, a.py + 8 - bob, 2, 1);
+  } else if (a.vs === "taking_bath") {
+    ctx.fillStyle = "#dfe9ee";
+    ctx.fillRect(px + 2, py + 2 - bob, 2, 2);
+    ctx.fillRect(px + 12, py + 4 - ((frame + 1) % 2), 1, 1);
+  } else if (a.vs === "using_toilet" || a.vs === "waiting_for_bathroom") {
+    ctx.fillStyle = "#cfd6ff";
+    ctx.fillRect(a.px + 5, a.py - 5, 2, 2);
+    ctx.fillRect(a.px + 9, a.py - 5, 2, 2);
+    ctx.fillRect(a.px + 13, a.py - 5, 2, 2);
   } else if (a.vs === "crying") {
     ctx.fillStyle = "#7fb4ff";
     ctx.fillRect(a.px + 2, a.py - 2 + bob, 1, 2);

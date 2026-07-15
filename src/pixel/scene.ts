@@ -555,6 +555,23 @@ function drawTenant(ctx: Ctx, pal: Palette, st: TenantVisualState, frame: number
       drawSteam(ctx, 96, 30, frame);
       drawSteam(ctx, 100, 32, frame + 1);
       break;
+    case "using_toilet":
+      // 私密行為不顯示人物，只用浴室位置的提示表示正在使用。
+      drawSprite(ctx, ICON_EXCLAIM, 98, 28, BASE_PAL);
+      break;
+    case "washing_at_sink":
+      stand(88, 38);
+      drawSteam(ctx, 100, 32, frame);
+      break;
+    case "taking_bath":
+      lie(84, 38);
+      drawSteam(ctx, 100, 30, frame);
+      drawSteam(ctx, 104, 34, frame + 1);
+      break;
+    case "waiting_for_bathroom":
+      stand(86, 52);
+      drawSprite(ctx, ICON_EXCLAIM, 100, 42, BASE_PAL);
+      break;
     case "cleaning": {
       const cx = 90 + (bob ? 2 : 0);
       stand(cx, 116);

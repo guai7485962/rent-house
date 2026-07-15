@@ -5,7 +5,7 @@
  */
 import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
-import { laundryHourForDay, routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
+import { bathroomActivityForDay, laundryHourForDay, routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships, pairKey, getRel } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
@@ -47,13 +47,37 @@ import { placementFootprint, placementRotation } from "./placements";
 import type { Placement } from "../floor/map";
 import { nextRotation } from "../furniture/rotation";
 
-/** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
-let showerClaim: { hourMs: number; id: string } | null = null;
+/** 共用浴室設備的本小時佔用者；不同設備可同時使用，同一設備必須排隊。 */
+let bathroomClaimMs = -1;
+const bathroomClaims = new Map<string, string>();
+
+export function resetBathroomClaims(hourMs = -1) {
+  bathroomClaimMs = hourMs;
+  bathroomClaims.clear();
+}
+
+export function claimBathroomFixture(fixtureId: string, tenantId: string, hourMs = state.gameMs): boolean {
+  if (bathroomClaimMs !== hourMs) resetBathroomClaims(hourMs);
+  for (const [fixture, owner] of bathroomClaims) if (owner === tenantId) bathroomClaims.delete(fixture);
+  const owner = bathroomClaims.get(fixtureId);
+  if (owner && owner !== tenantId) return false;
+  bathroomClaims.set(fixtureId, tenantId);
+  return true;
+}
+
+/** 家具目錄 id 可能重複擺放，座標也要納入才能分辨兩座同型設備。 */
+function bathroomFixtureId(p: Placement): string {
+  return `${p.room}:${p.defId}:${p.c},${p.r}`;
+}
 
 /** 適合串門子的休閒狀態 */
 const LEISURE_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "eating"]);
 /** 可以暫停手邊事情接待朋友；睡覺、外出、洗澡或崩潰時不接受拜訪。 */
-const VISIT_UNAVAILABLE_STATES = new Set<TenantVisualState>(["away", "sleeping_on_bed", "sleeping_on_couch", "showering", "crying"]);
+const VISIT_UNAVAILABLE_STATES = new Set<TenantVisualState>([
+  "away", "sleeping_on_bed", "sleeping_on_couch", "showering", "using_toilet",
+  "washing_at_sink", "taking_bath", "waiting_for_bathroom", "crying",
+]);
+const ACTIVE_BATHROOM_STATES = new Set<TenantVisualState>(["showering", "using_toilet", "washing_at_sink", "taking_bath"]);
 /** 在 applyHour 原時序先擲骰，等全員作息確定後才實際配對。 */
 const visitIntents = new Set<string>();
 
@@ -127,8 +151,20 @@ function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualStat
   } else if (dir === "binge_watch" && (hour === 22 || hour === 23) && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
     slot = { role: "tv", state: "watching_tv" };
   }
-  // 約每四天一次的日常洗衣：只覆寫原本清醒且在家的時段，AI 指令期間仍以指令劇情優先。
   let effectState: TenantVisualState | undefined;
+  // 原本籠統的 bathroom/showering 依日期穩定輪替成淋浴、如廁、盥洗或泡澡。
+  // 沒有浴缸時泡澡日退回淋浴；數值仍沿用原 showering，純粹增加可見生活內容。
+  if (!dir && slot.role === "bathroom" && slot.state === "showering") {
+    const candidate = bathroomActivityForDay(rt.tenant.id, gameDayIndex(), hour);
+    const chosen = candidate === "taking_bath" && !resolveTarget("bathroom", roomOfTenant(rt.tenant.id), candidate)
+      ? "showering"
+      : candidate;
+    if (chosen !== slot.state) {
+      effectState = slot.state;
+      slot = { role: "bathroom", state: chosen };
+    }
+  }
+  // 約每四天一次的日常洗衣：只覆寫原本清醒且在家的時段，AI 指令期間仍以指令劇情優先。
   if (!dir && laundryHourForDay(rt.tenant.id, gameDayIndex()) === hour) {
     effectState = slot.state;
     slot = { role: "laundry", state: "using_appliance" };
@@ -264,6 +300,12 @@ function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement
   } else if (st === "sleeping_on_couch" && ["sofa", "beanbag", "chair"].includes(kind)) {
     pose = "lie";
     surface = "furniture";
+  } else if (st === "taking_bath" && kind === "bathtub") {
+    pose = "lie";
+    surface = "furniture";
+  } else if (st === "using_toilet" && kind === "toilet") {
+    pose = "sit";
+    surface = "furniture";
   } else if (SEATED_STATES.has(st)) {
     if (["sofa", "beanbag", "chair"].includes(kind)) {
       pose = "sit";
@@ -306,6 +348,7 @@ function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement
 export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   const decided = decideState(rt, hour);
   let st = decided.state;
+  let effectState = decided.effectState;
   const isDeviation = decided.isDeviation;
   rt.activityPose = null;
   rt.activityTile = null;
@@ -323,7 +366,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     rt.targetTile = homeTile(rt.tenant.id);
   } else {
     const dir = activeDirective(rt);
-    let tgt = resolveTarget(decided.role, roomId);
+    let tgt = resolveTarget(decided.role, roomId, st);
     // 指令 social:傍晚主動泡交誼廳——把自房的休閒活動改成去交誼廳看電視
     if (dir === "social" && hour >= 19 && hour <= 21 && ["idle", "reading", "watching_tv", "gaming"].includes(st)) {
       const loungeTgt = resolveTarget("sofa", null) ?? resolveTarget("tv", null);
@@ -339,19 +382,15 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     if (tgt) {
       rt.targetTile = tgt.tile;
       rt.inLounge = tgt.placement.room === "lounge"; // 在共用交誼廳 → 可能與鄰居相遇
-      // 共用淋浴間:非伴侶「單人使用」——同一小時已有人在洗,其他人改回自房發呆(不同框洗澡);
-      // 但伴侶可以一起洗(同框洗澡就在淋浴間發生),不受此限。
-      if (st === "showering" && tgt.placement.room === "bathroom") {
-        if (showerClaim && showerClaim.hourMs === state.gameMs && showerClaim.id !== rt.tenant.id) {
-          const rel = getRel(showerClaim.id, rt.tenant.id);
-          if (!(rel && rel.romantic)) {
-            st = "idle";
-            rt.targetTile = homeTile(rt.tenant.id);
-            rt.inLounge = false;
-          }
-          // 是伴侶 → 允許一起在淋浴間洗澡(同框),保留 showering + 浴室目標
-        } else {
-          showerClaim = { hourMs: state.gameMs, id: rt.tenant.id };
+      // 不同浴室設備可同時使用；同一設備有人時，下一位會在對應門外排隊。
+      if (ACTIVE_BATHROOM_STATES.has(st) && tgt.placement.room === "bathroom") {
+        if (!claimBathroomFixture(bathroomFixtureId(tgt.placement), rt.tenant.id)) {
+          st = "waiting_for_bathroom";
+          effectState = "waiting_for_bathroom";
+          const lowerRoom = ["toilet", "bath_sink"].includes(tgt.placement.defId);
+          const lane = Math.abs(rt.tenant.id.split("").reduce((n, ch) => n + ch.charCodeAt(0), 0)) % 2;
+          rt.targetTile = { c: 7 + lane, r: lowerRoom ? 29 : 25 };
+          rt.inLounge = false;
         }
       }
       if (rt.targetTile?.c === tgt.tile.c && rt.targetTile?.r === tgt.tile.r) setFurniturePose(rt, st, tgt.placement, tgt.tile);
@@ -376,7 +415,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     hour,
     timeLabel: fmt(state.gameMs),
     state: st,
-    effectState: decided.effectState,
+    effectState,
     isDeviation,
     recentSummary: rt.tenant.recentSummary,
   });

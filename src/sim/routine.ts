@@ -37,6 +37,14 @@ const ROLE_KINDS: Record<Exclude<Role, "out">, string[]> = {
   tv: ["tv"],
 };
 
+/** 同一語意角色內再依實際活動精確選家具，避免 bathroom 永遠只拿第一間淋浴間。 */
+const STATE_KINDS: Partial<Record<TenantVisualState, string[]>> = {
+  showering: ["shower"],
+  using_toilet: ["toilet"],
+  washing_at_sink: ["sink"],
+  taking_bath: ["bathtub"],
+};
+
 const D = (role: Role, state: TenantVisualState): Slot => ({ role, state });
 
 // ---------------------------------------------------------------------------
@@ -113,6 +121,12 @@ function stableTenantHash(tenantId: string): number {
   return Math.abs(hash);
 }
 
+/** 每個浴室作息時段依住戶／日期穩定輪替，增加生活變化但不消耗模擬 RNG。 */
+export function bathroomActivityForDay(tenantId: string, day: number, hour: number): TenantVisualState {
+  const variants: TenantVisualState[] = ["showering", "using_toilet", "washing_at_sink", "taking_bath"];
+  return variants[(stableTenantHash(tenantId) + day + hour) % variants.length];
+}
+
 /**
  * 每位住戶約每四個遊戲日安排一次洗衣；從原作息中挑晚上／午後仍在家且清醒的一小時，
  * 避免固定每天洗衣，也不會把人從外出、睡眠或淋浴中硬拉走。
@@ -136,9 +150,9 @@ export function laundryHourForDay(tenantId: string, day: number): number | null 
  * 角色 → 實際家具的互動站立格(優先自己房間,其次共用區)。
  * roomId 由呼叫端(store)依動態佔用表提供;out 或找不到時回傳 null。
  */
-export function resolveTarget(role: Role, roomId: string | null): { tile: Tile; placement: Placement } | null {
+export function resolveTarget(role: Role, roomId: string | null, state?: TenantVisualState): { tile: Tile; placement: Placement } | null {
   if (role === "out") return null;
-  const kinds = ROLE_KINDS[role];
+  const kinds = STATE_KINDS[state ?? "idle"] ?? ROLE_KINDS[role];
 
   const COMMUNAL = new Set(["lounge", "bathroom", "laundry"]);
   const match = (p: Placement) => {

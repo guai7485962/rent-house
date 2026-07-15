@@ -484,10 +484,10 @@ export const CATALOG: FurnitureDef[] = [
   // =========================================================================
   // 共用設施:廁所 + 浴室
   // =========================================================================
-  { id: "bathtub", name: "浴缸", category: "utility", placement: "communal", price: 12000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: ["showering"], social: true, promptHints: ["泡澡泡到睡著", "誰又忘了放掉水"], sprite: { kind: "bathtub" } },
+  { id: "bathtub", name: "浴缸", category: "utility", placement: "communal", price: 12000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: ["taking_bath"], social: true, promptHints: ["泡澡泡到睡著", "誰又忘了放掉水"], sprite: { kind: "bathtub" } },
   { id: "shower", name: "淋浴間(玻璃隔間)", category: "utility", placement: "communal", price: 9000, footprint: { w: 2, h: 2 }, interact: { dc: 2, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["showering"], social: true, promptHints: ["淋浴間的歌聲", "熱水被用光了"], sprite: { kind: "shower" } },
-  { id: "toilet", name: "馬桶", category: "utility", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: true, promptHints: ["半夜排隊等廁所"], sprite: { kind: "toilet" } },
-  { id: "bath_sink", name: "洗手台", category: "utility", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["對著鏡子發呆刷牙"], sprite: { kind: "sink" } },
+  { id: "toilet", name: "馬桶", category: "utility", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["using_toilet"], social: true, promptHints: ["半夜排隊等廁所"], sprite: { kind: "toilet" } },
+  { id: "bath_sink", name: "洗手台", category: "utility", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["washing_at_sink"], social: false, promptHints: ["對著鏡子發呆刷牙"], sprite: { kind: "sink" } },
   { id: "bath_plant", name: "浴室小盆栽", category: "ambiance", placement: "communal", price: 1200, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "plant" } },
 
   // =========================================================================

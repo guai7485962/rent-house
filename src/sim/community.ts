@@ -66,21 +66,33 @@ const COMMUNITY_LINES = {
     "🚿 早上趕時間,為了搶浴室在門外猛催 {o},兩人臉都臭了。",
     "🚿 為了搶浴室和 {o} 堵在門口互不相讓,差點連上班都一起遲到。",
     "🚿 眼看時間來不及,和 {o} 為了搶浴室順序吵得整條走廊都聽見。",
+    "🚽 急著用廁所卻被 {o} 佔了太久,忍不住在門外催了好幾次。",
+    "🪥 和 {o} 同時擠到洗手台前刷牙,為了誰先用鏡子互不相讓。",
+    "🚿 熱水被 {o} 用到見底,站在浴室門口越想越氣。",
   ],
   bathroomConflictB: [
     "🚿 洗到一半被 {o} 在門外一直敲門催,心情有點差。",
     "🚿 被 {o} 敲門催了好幾次,一開門兩個人立刻互瞪。",
     "🚿 才剛打開熱水就聽見 {o} 敲門催,這場澡洗得全是火氣。",
+    "🚽 在廁所裡一直被 {o} 敲門催,出來時兩個人都沒好臉色。",
+    "🪥 才剛擠好牙膏就被 {o} 嫌擋住洗手台,早晨火氣一起上來了。",
+    "🚿 被 {o} 質問為什麼把熱水用完,兩人在門口吵得誰也不讓。",
   ],
   bathroomFriendlyA: [
     "🚿 在浴室門口排隊等 {o},順口聊了幾句,意外地自在。",
     "🚿 和 {o} 排隊等浴室時交換了今天的行程,順便互相提醒別遲到。",
     "🚿 排隊時借了 {o} 一條乾毛巾,兩人站在門邊聊得很自然。",
+    "🚽 等廁所時和 {o} 交換今天的行程,輪到自己前已經聊完一輪。",
+    "🪥 和 {o} 並排整理儀容,還順手提醒對方衣領沒翻好。",
+    "🚿 {o} 洗完後特地提醒熱水還很足,一句小事讓早晨順心不少。",
   ],
   bathroomFriendlyB: [
     "🚿 排隊等浴室時和 {o} 閒聊,關係近了一點。",
     "🚿 和 {o} 在浴室門口閒聊昨晚的事,輪到自己時還有點意猶未盡。",
     "🚿 等浴室時被 {o} 問了句早餐吃什麼,最後連晚餐都聊到了。",
+    "🚽 在門口排隊時被 {o} 逗笑,原本的焦躁也消了一點。",
+    "🪥 和 {o} 分享了快用完的牙膏,站在鏡子前聊起今天的安排。",
+    "🚿 被 {o} 留了一條乾毛巾和足夠熱水,心裡默默記下了這份體貼。",
   ],
   morningRush: [
     "🚽 早上尖峰,{names} 一起卡在浴室/廁所門口排隊乾瞪眼,邊等邊吐槽。",
@@ -111,7 +123,11 @@ const COMMUNITY_LINES = {
   ],
 };
 
-const LAUNDRY_UNAVAILABLE = new Set(["away", "sleeping_on_bed", "sleeping_on_couch", "showering", "crying", "pacing"]);
+const LAUNDRY_UNAVAILABLE = new Set([
+  "away", "sleeping_on_bed", "sleeping_on_couch", "showering", "using_toilet",
+  "washing_at_sink", "taking_bath", "waiting_for_bathroom", "crying", "pacing",
+]);
+const BATHROOM_UNAVAILABLE = new Set(["away", "sleeping_on_bed", "sleeping_on_couch", "crying", "pacing"]);
 
 const fillCommunity = (line: string, vars: Record<string, string>) =>
   Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), value), line);
@@ -166,6 +182,36 @@ function stageLaundry(parts: TenantRuntime[], kind: "chat" | "anger") {
   const anchor = tiles.a;
   spawnFx(kind, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
   startPairSession(a.tenant.id, b.tenant.id, anchor, "stand_face", state.gameMs, REAL_MS_PER_GAME_HOUR, tiles);
+}
+
+/** 浴室事件站位：一人在浴室門口、一人在走廊，避免只有中央特效卻看不到當事人。 */
+export function bathroomStageTiles(): { a: Tile; b: Tile } | null {
+  const blocked = currentBlocked();
+  const candidates = [
+    { a: { c: 6, r: 25 }, b: { c: 7, r: 25 } },
+    { a: { c: 6, r: 29 }, b: { c: 7, r: 29 } },
+  ];
+  return candidates.find(({ a, b }) => blocked[a.r]?.[a.c] === false && blocked[b.r]?.[b.c] === false) ?? null;
+}
+
+function stageBathroom(parts: TenantRuntime[], kind: "chat" | "anger") {
+  const [a, b] = parts;
+  for (const rt of [a, b]) {
+    rt.tenant.visualState = "waiting_for_bathroom";
+    rt.activityPose = null;
+    rt.activityTile = null;
+    rt.activitySurface = null;
+    rt.inLounge = false;
+    rt.visiting = null;
+    rt.visitHostId = null;
+  }
+  const tiles = bathroomStageTiles();
+  if (!tiles) {
+    fxAt("bathroom", kind);
+    return;
+  }
+  spawnFx(kind, tiles.a.c, tiles.a.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
+  startPairSession(a.tenant.id, b.tenant.id, tiles.a, "stand_face", state.gameMs, REAL_MS_PER_GAME_HOUR, tiles);
 }
 
 /** 對一組人兩兩調整關係 */
@@ -229,7 +275,10 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     id: "bathroom",
     need: 2,
     cooldownDays: 3,
-    select: (present, rng) => shuffle(present, rng).slice(0, 2),
+    select: (present, rng) => {
+      const available = shuffle(present, rng).filter((rt) => !BATHROOM_UNAVAILABLE.has(rt.tenant.visualState));
+      return available.length >= 2 ? available.slice(0, 2) : null;
+    },
     fire: (parts) => {
       const [a, b] = parts;
       const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
@@ -240,7 +289,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
         bumpMood(b, -1, 4);
         pushSocialLog(a, fillCommunity(COMMUNITY_LINES.bathroomConflictA[variant], { o: b.tenant.name }), "notable");
         pushSocialLog(b, fillCommunity(COMMUNITY_LINES.bathroomConflictB[variant], { o: a.tenant.name }), "notable");
-        fxAt("bathroom", "anger");
+        stageBathroom(parts, "anger");
         notify(`🚿 ${a.tenant.name} 和 ${b.tenant.name} 為了搶浴室鬧得不太愉快`);
       } else {
         adjustRelationship(a.tenant.id, b.tenant.id, 2);
@@ -248,7 +297,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
         bumpMood(b, 2, -1);
         pushSocialLog(a, fillCommunity(COMMUNITY_LINES.bathroomFriendlyA[variant], { o: b.tenant.name }), "notable");
         pushSocialLog(b, fillCommunity(COMMUNITY_LINES.bathroomFriendlyB[variant], { o: a.tenant.name }), "notable");
-        fxAt("bathroom", "chat");
+        stageBathroom(parts, "chat");
       }
     },
   },

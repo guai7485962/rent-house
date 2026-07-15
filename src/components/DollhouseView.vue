@@ -38,6 +38,10 @@ const STATE_MAP: Record<TenantVisualState, { spot: SpotKey; emoji: string; label
   pacing: { spot: "center", emoji: "😰", label: "焦慮踱步" },
   away: { spot: "door", emoji: "", label: "外出中" },
   showering: { spot: "bath", emoji: "🚿", label: "沐浴中" },
+  using_toilet: { spot: "bath", emoji: "🚽", label: "使用廁所" },
+  washing_at_sink: { spot: "bath", emoji: "🪥", label: "刷牙洗臉" },
+  taking_bath: { spot: "bath", emoji: "🛁", label: "泡澡中" },
+  waiting_for_bathroom: { spot: "door", emoji: "⏳", label: "排隊等浴室" },
   cleaning: { spot: "center", emoji: "🧹", label: "打掃中" },
   talking_on_phone: { spot: "center", emoji: "📱", label: "講電話" },
 };

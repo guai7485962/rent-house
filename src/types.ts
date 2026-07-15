@@ -32,6 +32,10 @@ export const TENANT_VISUAL_STATES = [
   "pacing",             // 焦慮踱步
   "away",               // 不在房間(上班/外出)
   "showering",          // 浴室(顯示浴室門關+蒸氣)
+  "using_toilet",       // 使用馬桶(坐姿+隱私演出)
+  "washing_at_sink",    // 在洗手台刷牙/洗臉
+  "taking_bath",        // 在浴缸泡澡
+  "waiting_for_bathroom", // 浴室設備有人使用,在門外排隊
   "cleaning",           // 打掃
   "talking_on_phone",   // 講電話
   // ─ 由家具目錄解鎖的新狀態(sprite 待與房間細看一起補) ─

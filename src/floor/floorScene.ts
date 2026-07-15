@@ -261,9 +261,11 @@ function drawFx(ctx: Ctx, f: Fx, frame: number) {
 /** 隨狀態的環境演出:睡覺 Zzz、直播音符、洗澡蒸氣、崩潰淚滴 */
 function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
   const bob = frame % 2;
+  const px = a.px + a.poseOffsetX;
+  const py = a.py + a.poseOffsetY;
   if (a.vs === "sleeping_on_bed") {
-    pxPat(ctx, PAT_Z, a.px + 9, a.py - 7 - bob, "#cfd6ff", 0.9);
-    pxPat(ctx, PAT_Z, a.px + 13, a.py - 12 - bob, "#aab4e8", 0.7);
+    pxPat(ctx, PAT_Z, px + 9, py - 7 - bob, "#cfd6ff", 0.9);
+    pxPat(ctx, PAT_Z, px + 13, py - 12 - bob, "#aab4e8", 0.7);
   } else if (a.vs === "streaming") {
     pxPat(ctx, PAT_NOTE, a.px + 10, a.py - 9 - bob, "#cfe0ff", 0.9);
   } else if (a.vs === "showering") {
@@ -420,11 +422,13 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
 
 /** 躺姿(§10-6 lie:賴床)——頭枕左側 + 蓋著被子的身體(被子用衣服色,一眼認得出是誰) */
 function drawLying(ctx: Ctx, a: Agent, pal: Palette) {
+  const ox = a.px + a.poseOffsetX;
+  const oy = a.py + a.poseOffsetY;
   const rr = (x: number, y: number, w: number, h: number, color: string) => {
-    if (a.poseRotation === 90) rect(ctx, a.px + TILE - y - h, a.py + x, h, w, color);
-    else if (a.poseRotation === 180) rect(ctx, a.px + TILE - x - w, a.py + TILE - y - h, w, h, color);
-    else if (a.poseRotation === 270) rect(ctx, a.px + y, a.py + TILE - x - w, h, w, color);
-    else rect(ctx, a.px + x, a.py + y, w, h, color);
+    if (a.poseRotation === 90) rect(ctx, ox + TILE - y - h, oy + x, h, w, color);
+    else if (a.poseRotation === 180) rect(ctx, ox + TILE - x - w, oy + TILE - y - h, w, h, color);
+    else if (a.poseRotation === 270) rect(ctx, ox + y, oy + TILE - x - w, h, w, color);
+    else rect(ctx, ox + x, oy + y, w, h, color);
   };
   rr(7, 3, 8, 10, shade(pal.t, -22)); // 被子滾邊
   rr(8, 4, 7, 8, pal.t); // 被子

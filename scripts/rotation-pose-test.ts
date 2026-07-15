@@ -61,6 +61,29 @@ let agents = createAgents();
 tickAgents(agents, 0);
 let chenAgent = agents.find((a) => a.tenantId === chen.tenant.id)!;
 check("角色會跨上床格並躺下", chenAgent.pose === "lie" && !chenAgent.moving && chenAgent.c === chen.activityTile?.c && chenAgent.r === chen.activityTile?.r);
+check("床頭朝上時躺姿會校正為直向", chen.activityRotation === 90 && chenAgent.poseRotation === 90);
+const sleepingBed = chen.activityTile ? furnitureAt(chen.activityTile.c, chen.activityTile.r) : null;
+const sleepingFp = sleepingBed ? placementFootprint(sleepingBed) : null;
+const centeredX = sleepingBed && sleepingFp
+  ? chenAgent.px + chenAgent.poseOffsetX + 8 === (sleepingBed.c + sleepingFp.w / 2) * 16
+  : false;
+const centeredY = sleepingBed && sleepingFp
+  ? chenAgent.py + chenAgent.poseOffsetY + 8 === (sleepingBed.r + sleepingFp.h / 2) * 16
+  : false;
+check("睡覺角色以整張床中心定位", centeredX && centeredY && (chenAgent.poseOffsetX !== 0 || chenAgent.poseOffsetY !== 0));
+
+if (sleepingBed) {
+  sleepingBed.rotation = 90;
+  applyHour(chen, 6, false);
+  check("床旋轉 90° 後躺姿仍沿床頭方向", chen.activityRotation === 180);
+  sleepingBed.rotation = 180;
+  applyHour(chen, 6, false);
+  check("床旋轉 180° 後躺姿仍沿床頭方向", chen.activityRotation === 270);
+  sleepingBed.rotation = 270;
+  applyHour(chen, 6, false);
+  check("床旋轉 270° 後躺姿仍沿床頭方向", chen.activityRotation === 0);
+  sleepingBed.rotation = 0;
+}
 
 applyHour(chen, 13, false);
 check("沙發休閒推導出坐姿", chen.activityPose === "sit" && chen.activitySurface === "furniture");

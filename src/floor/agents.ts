@@ -11,6 +11,7 @@ import { sessionFor, type PairPose } from "./pairSession";
 import { state } from "../store";
 import type { TenantVisualState } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
+import { furnitureAt, placementFootprint } from "../sim/placements";
 
 export interface Agent {
   tenantId: string;
@@ -31,6 +32,9 @@ export interface Agent {
   facing: -1 | 0 | 1;
   /** 單人日常姿勢的家具方向；雙人 session 維持 0。 */
   poseRotation: FurnitureRotation;
+  /** 家具姿勢的繪製位移；行走仍以可尋路的整數格為準，抵達後才置中到家具。 */
+  poseOffsetX: number;
+  poseOffsetY: number;
   /** 桌前／電視前沒有實體座椅時，在角色後方補畫工作椅。 */
   seatBack: boolean;
 }
@@ -61,6 +65,8 @@ export function createAgents(): Agent[] {
       pose: null,
       facing: 0,
       poseRotation: 0,
+      poseOffsetX: 0,
+      poseOffsetY: 0,
       seatBack: false,
     };
   });
@@ -76,6 +82,18 @@ export function tickAgents(agents: Agent[], dt: number) {
     a.pose = ses?.pose ?? rt?.activityPose ?? null;
     a.facing = ses?.facing ?? 0;
     a.poseRotation = ses ? 0 : rt?.activityRotation ?? 0;
+    a.poseOffsetX = 0;
+    a.poseOffsetY = 0;
+    if (!ses && rt?.activitySurface === "furniture" && rt.activityTile && a.pose === "lie") {
+      const furniture = furnitureAt(rt.activityTile.c, rt.activityTile.r);
+      if (furniture) {
+        const fp = placementFootprint(furniture);
+        // activityTile 必須是整數格才能尋路；畫面則以完整家具中心校正，
+        // 避免 2×2 床上的角色縮在最靠走道的角落。
+        a.poseOffsetX = (furniture.c + fp.w / 2) * TILE - TILE / 2 - rt.activityTile.c * TILE;
+        a.poseOffsetY = (furniture.r + fp.h / 2) * TILE - TILE / 2 - rt.activityTile.r * TILE;
+      }
+    }
     a.seatBack = !ses && rt?.activitySurface === "chair";
     a.vs = rt?.tenant.visualState ?? "idle";
     if (a.hidden) {

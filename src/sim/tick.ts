@@ -45,6 +45,7 @@ import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
 import { placementFootprint, placementRotation } from "./placements";
 import type { Placement } from "../floor/map";
+import { nextRotation } from "../furniture/rotation";
 
 /** 共用淋浴間單人使用的「本小時佔用者」(hourMs 變了就自然失效);見 applyHour */
 let showerClaim: { hourMs: number; id: string } | null = null;
@@ -276,7 +277,11 @@ function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement
   const fp = placementFootprint(p);
   rt.activityPose = pose;
   rt.activitySurface = surface;
-  rt.activityRotation = placementRotation(p);
+  // 床的原始圖面是床頭朝上，但角色躺姿的原始圖面是頭朝左，
+  // 因此睡床時要多轉 90° 才會與床頭方向一致。沙發原始方向則已一致。
+  rt.activityRotation = pose === "lie" && kind === "bed"
+    ? nextRotation(placementRotation(p))
+    : placementRotation(p);
   if (surface === "furniture") {
     // 選最靠近原互動點的家具格，確保角色能先走到旁邊再跨上床／椅子。
     let best = { c: p.c, r: p.r };

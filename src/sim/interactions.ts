@@ -79,6 +79,44 @@ export const INTERACTIONS: InteractionDef[] = [
     effects: { rel: 2, mood: 5, stress: -4 },
   },
   {
+    id: "loveseat_cuddle",
+    tier: "couple",
+    location: "room",
+    pose: "sit",
+    seatOn: ["loveseat"],
+    requiresFurniture: ["loveseat"],
+    timeWindow: [18, 23],
+    weight: 3,
+    cooldownHours: 12,
+    chance: 0.35,
+    fx: "hearts",
+    lines: [
+      "和{o}擠進雙人沙發,肩靠著肩交換今天發生的小事。",
+      "和{o}在雙人沙發上蓋同一條毯子,誰也捨不得先起身。",
+      "和{o}明明各坐一邊,聊著聊著卻靠到了一起。",
+    ],
+    effects: { rel: 3, mood: 5, stress: -4 },
+  },
+  {
+    id: "private_dinner",
+    tier: "couple",
+    location: "room",
+    pose: "sit",
+    seatOn: ["romantic_table"],
+    requiresFurniture: ["romantic_table"],
+    timeWindow: [18, 21],
+    weight: 2,
+    cooldownHours: 20,
+    chance: 0.3,
+    fx: "hearts",
+    lines: [
+      "和{o}把普通晚餐擺成兩人約會,連白開水都像有了儀式感。",
+      "和{o}坐在雙人餐桌前慢慢吃飯,手機都默契地沒有拿出來。",
+      "和{o}準備了只夠兩人的餐點,吃到最後才發現蠟燭已經燒了一半。",
+    ],
+    effects: { rel: 3, mood: 6, stress: -3 },
+  },
+  {
     id: "midnight_snack",
     tier: "couple",
     location: "room",
@@ -100,9 +138,9 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "cohabit",
     location: "room",
     pose: "lie",
-    seatOn: ["double_bed"],
+    seatOn: ["double_bed", "canopy_bed"],
     timeWindow: [7, 9],
-    requiresFurniture: ["double_bed"],
+    requiresFurniture: ["double_bed", "canopy_bed"],
     weight: 2,
     cooldownHours: 20,
     chance: 0.3,
@@ -113,6 +151,25 @@ export const INTERACTIONS: InteractionDef[] = [
       "和{o}醒了卻誰也不說破,窩在被子裡多偷了半小時清閒。",
     ],
     effects: { rel: 1, mood: 4, energy: 3, stress: -3 },
+  },
+  {
+    id: "pillow_talk",
+    tier: "couple",
+    location: "room",
+    pose: "lie",
+    seatOn: ["canopy_bed"],
+    requiresFurniture: ["canopy_bed"],
+    timeWindow: [22, 1],
+    weight: 3,
+    cooldownHours: 18,
+    chance: 0.35,
+    fx: "chat",
+    lines: [
+      "和{o}拉上床幔說枕邊話,從明天早餐一路聊到很久以後。",
+      "和{o}並肩躺著分享今天沒對別人說的心事。",
+      "和{o}躲進帷幔裡講悄悄話,笑聲隔著布簾變得軟綿綿的。",
+    ],
+    effects: { rel: 3, mood: 5, stress: -5 },
   },
   {
     id: "cook_dinner",
@@ -163,7 +220,7 @@ export const INTERACTIONS: InteractionDef[] = [
     adult: true,
     privacy: true,
     timeWindow: [23, 1],
-    requiresFurniture: ["double_bed"],
+    requiresFurniture: ["double_bed", "canopy_bed"],
     weight: 3,
     cooldownHours: 36,
     chance: 0.35,
@@ -177,6 +234,50 @@ export const INTERACTIONS: InteractionDef[] = [
     memoryLabel: "[甜蜜的夜晚]",
     memoryHint: "昨晚之後,看對方的眼神都是軟的。",
     effects: { rel: 4, mood: 10, stress: -8, energy: -4 },
+  },
+  {
+    id: "loveseat_after_dark",
+    tier: "couple",
+    location: "room",
+    adult: true,
+    privacy: true,
+    timeWindow: [22, 1],
+    requiresFurniture: ["loveseat"],
+    weight: 2,
+    cooldownHours: 42,
+    chance: 0.25,
+    fx: "lights",
+    pose: "hidden",
+    lines: [
+      "和{o}在雙人沙發上越靠越近,最後只留下沒有關掉的暖燈…",
+      "房門悄悄鎖上後,和{o}在沙發邊說話的聲音也慢慢低了下來…",
+      "和{o}本來只想再坐一下,直到夜深都沒有人去碰門把…",
+    ],
+    memoryLabel: "[沙發邊的祕密]",
+    memoryHint: "那晚的距離近得讓人想起來還會臉紅。",
+    effects: { rel: 4, mood: 9, stress: -7, energy: -3 },
+  },
+  {
+    id: "canopy_private_night",
+    tier: "couple",
+    location: "room",
+    adult: true,
+    privacy: true,
+    timeWindow: [23, 1],
+    requiresFurniture: ["canopy_bed"],
+    weight: 3,
+    cooldownHours: 48,
+    chance: 0.3,
+    fx: "lights",
+    pose: "hidden",
+    lines: [
+      "和{o}拉上帷幔,房裡只剩一線暖光和很輕的笑聲…",
+      "帷幔在{o}身後合上,今晚的悄悄話只留給彼此…",
+      "和{o}把「請勿打擾」掛好,床幔後的燈光很快暗了下來…",
+    ],
+    memoryLabel: "[帷幔後的夜晚]",
+    memoryHint: "拉上帷幔後,今晚只屬於彼此。",
+    effects: { rel: 5, mood: 11, stress: -9, energy: -4 },
   },
   // ——— 交誼廳:朋友(close)———
   {
@@ -494,8 +595,10 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
 /** 實際執行一次互動:雙方日誌 + 數值 + 關係 + 記憶 + 現場演出 + 冷卻 + 撞見判定 */
 function performInteraction(A: TenantRuntime, B: TenantRuntime, def: InteractionDef, roomId: string | null) {
   const line = def.lines[Math.floor(Math.random() * def.lines.length)];
-  pushSocialLog(A, line.replace(/\{o\}/g, B.tenant.name), "notable");
-  pushSocialLog(B, line.replace(/\{o\}/g, A.tenant.name), "notable");
+  // 成人向日誌一律由執行層加圖式標記,新增文案時不必靠人工記得逐句補。
+  const marker = def.adult ? "🔞 " : "";
+  pushSocialLog(A, marker + line.replace(/\{o\}/g, B.tenant.name), "notable");
+  pushSocialLog(B, marker + line.replace(/\{o\}/g, A.tenant.name), "notable");
   applyPairEffect(A, def.effects);
   applyPairEffect(B, def.effects);
   if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);

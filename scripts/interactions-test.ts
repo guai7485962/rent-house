@@ -41,6 +41,9 @@ const intimacy = INTERACTIONS.find((d) => d.id === "night_intimacy")!;
 const cuddle = INTERACTIONS.find((d) => d.id === "cuddle_tv")!;
 const lazy = INTERACTIONS.find((d) => d.id === "lazy_morning")!;
 const earbuds = INTERACTIONS.find((d) => d.id === "share_earbuds")!;
+const loveseatAdult = INTERACTIONS.find((d) => d.id === "loveseat_after_dark")!;
+const canopyTalk = INTERACTIONS.find((d) => d.id === "pillow_talk")!;
+const privateDinner = INTERACTIONS.find((d) => d.id === "private_dinner")!;
 
 // furniture = 地點家具解鎖(§10-6):預設把會用到的都放進來,個別案例再拿掉驗門檻
 const baseCtx: InteractCtx = { hour: 23, thirdPresent: false, adultMode: true, cohabiting: true, furniture: new Set(["double_bed", "tv_console", "shared_sofa", "lounge_tv"]) };
@@ -60,6 +63,10 @@ check("有第三人 → 私密互動擋", !canInteract(intimacy, a, b, { ...base
 check("白天(14 時)→ 時段擋", !canInteract(intimacy, a, b, { ...baseCtx, hour: 14 }));
 check("跨夜時段:凌晨 1 時可行", canInteract(intimacy, a, b, { ...baseCtx, hour: 1 }));
 check("跨夜時段:凌晨 2 時擋", !canInteract(intimacy, a, b, { ...baseCtx, hour: 2 }));
+check("戀人沙發+成人模式 → 私密沙發互動可行", canInteract(loveseatAdult, a, b, { ...baseCtx, furniture: new Set(["loveseat"]) }));
+check("戀人沙發成人互動:第三人在場仍擋", !canInteract(loveseatAdult, a, b, { ...baseCtx, furniture: new Set(["loveseat"]), thirdPresent: true }));
+check("帷幔床 → 解鎖一般枕邊話", canInteract(canopyTalk, a, b, { ...baseCtx, furniture: new Set(["canopy_bed"]) }));
+check("雙人約會餐桌 → 晚餐時段解鎖", canInteract(privateDinner, a, b, { ...baseCtx, hour: 19, furniture: new Set(["romantic_table"]) }));
 
 const minorB = TF("ib", false);
 check("一方未成年 → 🔞開了也擋", !canInteract(intimacy, a, minorB, baseCtx));
@@ -108,6 +115,7 @@ for (let i = 0; i < 200 && !triggered; i++) {
   triggered = hasAdultTrace();
 }
 check("整合:🔞開啟 → 深夜親密互動觸發(遮蔽式文字)", triggered);
+check("整合:成人向日誌都有 🔞 圖式標記", !triggered || A.log.filter((e) => e.text.includes("請勿打擾") || e.text.includes("水聲")).every((e) => e.text.startsWith("🔞 ")));
 check("整合:雙方都拿到記憶", B.tenant.memoryTags.some((m) => m.label === "[甜蜜的夜晚]" || m.label === "[臉紅的祕密]") === triggered);
 check("整合:心情上升", A.tenant.stats.mood >= moodBefore);
 const cdCount = Object.keys(state.interactionCooldowns).length;

@@ -328,6 +328,11 @@ export interface Pet {
   ownerId: string;
   /** 這個遊戲小時貓待的區域(r301/lounge…;渲染層讓貓走過去遊蕩) */
   hangout: string;
+  /** 雙貓互動中的另一隻貓(飼主 id);到期後由 petsPass 清掉。 */
+  pairWith?: string;
+  /** 當前雙貓演出,供樓層 agent 同步追逐、靠近或一起睡。 */
+  pairAction?: "chase" | "groom" | "nap" | "territory" | "mischief";
+  pairUntilMs?: number;
   sinceMs: number;
 }
 

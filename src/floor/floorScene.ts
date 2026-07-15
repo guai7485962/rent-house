@@ -394,6 +394,7 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
       rect(ctx, x + 8, y + 10, 2, 2, "#413e4e");
     }
     pxPat(ctx, PAT_Z, x + 12, y + 1 - (frame % 2), "#cfd6ff", 0.8);
+    drawCatPairBadge(ctx, a, x, y, frame);
     return;
   }
 
@@ -412,6 +413,7 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
       rect(ctx, x + 4, y + 4, 2, 2, "#cd7f32");
       rect(ctx, x + 7, y + 9, 2, 2, "#413e4e");
     }
+    drawCatPairBadge(ctx, a, x, y, frame);
     return;
   }
 
@@ -430,6 +432,32 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
   if (pal.patch) {
     rect(ctx, fx(4, 3), y + 8, 3, 2, "#cd7f32");
     rect(ctx, fx(10, 2), y + 5, 2, 2, "#413e4e");
+  }
+  drawCatPairBadge(ctx, a, x, y, frame);
+}
+
+/** 雙貓互動只在領頭貓上方畫一顆像素泡泡,避免兩個圖示重疊。 */
+function drawCatPairBadge(ctx: Ctx, a: PetAgent, x: number, y: number, frame: number) {
+  if (!a.pairLeader || !a.pairAction) return;
+  const by = y - 5 - (frame % 2);
+  rect(ctx, x + 3, by, 9, 5, "#292735");
+  rect(ctx, x + 4, by + 1, 7, 3, "#f4e9da");
+  if (a.pairAction === "groom") {
+    rect(ctx, x + 5, by + 2, 2, 1, "#e95783");
+    rect(ctx, x + 8, by + 2, 2, 1, "#e95783");
+  } else if (a.pairAction === "nap") {
+    rect(ctx, x + 5, by + 1, 3, 1, "#718bd1");
+    rect(ctx, x + 7, by + 2, 1, 1, "#718bd1");
+    rect(ctx, x + 5, by + 3, 3, 1, "#718bd1");
+  } else if (a.pairAction === "territory") {
+    rect(ctx, x + 7, by + 1, 1, 2, "#d95454");
+    rect(ctx, x + 7, by + 3, 1, 1, "#d95454");
+  } else if (a.pairAction === "mischief") {
+    rect(ctx, x + 5, by + 2, 5, 1, "#a66b2b");
+    rect(ctx, x + 7, by + 1, 1, 3, "#a66b2b");
+  } else {
+    rect(ctx, x + 5, by + 2, 5, 1, "#4e9a73");
+    rect(ctx, x + 8, by + 1, 2, 1, "#4e9a73");
   }
 }
 

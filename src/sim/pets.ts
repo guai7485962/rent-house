@@ -24,6 +24,7 @@ const CD = {
   visit: 12 * 3600 * 1000, // 同一位鄰居半天內不重複串門子事件
   break: 36 * 3600 * 1000,
   poop: 30 * 3600 * 1000,
+  pair: 10 * 3600 * 1000,
 };
 
 function onCooldown(key: string, cdMs: number): boolean {
@@ -135,6 +136,97 @@ export function petsPass() {
     pet.hangout = pickHangout(pet);
     rollVisit(pet, owner);
     rollMischief(pet, owner);
+  }
+  resolveCatPairs();
+}
+
+type CatPairAction = NonNullable<Pet["pairAction"]>;
+const CAT_PAIR_ACTIONS: CatPairAction[] = ["chase", "groom", "nap", "territory", "mischief"];
+
+function clearExpiredCatPairs() {
+  for (const pet of Object.values(state.pets)) {
+    if (pet.pairUntilMs != null && pet.pairUntilMs <= state.gameMs) {
+      delete pet.pairWith;
+      delete pet.pairAction;
+      delete pet.pairUntilMs;
+    }
+  }
+}
+
+/** 同區域的兩隻貓有機會互動。每小時最多一對且同一對有冷卻；force 僅供測試。 */
+export function resolveCatPairs(random: () => number = Math.random, force = false): CatPairAction | null {
+  clearExpiredCatPairs();
+  const pets = Object.values(state.pets).filter((pet) => !!state.runtimes[pet.ownerId]);
+  let arrangedKey = "";
+  const alreadyTogether = pets.some((a, i) => pets.some((b, j) => j > i && a.hangout === b.hangout));
+  // 兩隻貓原本沒碰面時,偶爾主動去找貓伴；避免「雙貓互動」只能靠兩次獨立亂數巧遇。
+  if (!force && !alreadyTogether && pets.length >= 2 && random() < 0.12) {
+    const i = Math.floor(random() * pets.length);
+    let j = Math.floor(random() * (pets.length - 1));
+    if (j >= i) j++;
+    pets[j].hangout = pets[i].hangout;
+    arrangedKey = [pets[i].ownerId, pets[j].ownerId].sort().join("|");
+  }
+  for (let i = 0; i < pets.length; i++) {
+    for (let j = i + 1; j < pets.length; j++) {
+      const a = pets[i];
+      const b = pets[j];
+      if (a.hangout !== b.hangout || a.pairWith || b.pairWith) continue;
+      const ids = [a.ownerId, b.ownerId].sort();
+      const key = `petpair|${ids[0]}|${ids[1]}`;
+      if (onCooldown(key, CD.pair)) continue;
+      if (!force && arrangedKey !== ids.join("|") && random() > 0.28) continue;
+
+      const action = CAT_PAIR_ACTIONS[Math.min(CAT_PAIR_ACTIONS.length - 1, Math.floor(random() * CAT_PAIR_ACTIONS.length))];
+      a.pairWith = b.ownerId;
+      b.pairWith = a.ownerId;
+      a.pairAction = b.pairAction = action;
+      a.pairUntilMs = b.pairUntilMs = state.gameMs + 2 * 3600 * 1000;
+      markCooldown(key);
+      applyCatPairEvent(a, b, action);
+      return action;
+    }
+  }
+  return null;
+}
+
+function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
+  const A = state.runtimes[a.ownerId];
+  const B = state.runtimes[b.ownerId];
+  if (!A || !B) return;
+  const place = a.hangout === "lounge" ? "交誼廳" : "房間裡";
+  const logBoth = (text: string) => {
+    pushSocialLog(A, `🐾 雙貓互動:${text}`, "notable");
+    pushSocialLog(B, `🐾 雙貓互動:${text}`, "notable");
+  };
+
+  if (action === "chase") {
+    A.tenant.stats.mood = clamp(A.tenant.stats.mood + 3, 0, 100);
+    B.tenant.stats.mood = clamp(B.tenant.stats.mood + 3, 0, 100);
+    logBoth(`${a.name} 和 ${b.name} 在${place}你追我跑,繞過家具後又一起折返。`);
+    fxAt(a.hangout, "chat");
+  } else if (action === "groom") {
+    for (const rt of [A, B]) {
+      rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 4, 0, 100);
+      rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 3, 0, 100);
+    }
+    logBoth(`${a.name} 和 ${b.name} 靠在一起互相理毛,理到一半還交換了位置。`);
+    adjustRelationship(a.ownerId, b.ownerId, 1);
+    fxAt(a.hangout, "hearts");
+  } else if (action === "nap") {
+    for (const rt of [A, B]) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 4, 0, 100);
+    logBoth(`${a.name} 和 ${b.name} 在${place}圈成兩團,最後頭靠著頭睡著了。`);
+    fxAt(a.hangout, "chat");
+  } else if (action === "territory") {
+    for (const rt of [A, B]) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress + 2, 0, 100);
+    logBoth(`${a.name} 和 ${b.name} 為了同一塊地盤互瞪,各自炸毛後才假裝沒事走開。`);
+    adjustRelationship(a.ownerId, b.ownerId, -1);
+    fxAt(a.hangout, "anger");
+  } else {
+    const victim = a.hangout === "lounge" ? null : residentOf(a.hangout);
+    if (victim) victim.cleanliness = clamp(victim.cleanliness - 5, 0, 100);
+    logBoth(`${a.name} 和 ${b.name} 聯手把小東西推下來,聽見聲音後還一起裝無辜。`);
+    fxAt(a.hangout, "anger");
   }
 }
 

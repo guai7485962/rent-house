@@ -6,6 +6,7 @@
 import { TILE, GRID_W, GRID_H, buildGrid, type Region } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
+import type { Pet } from "../types";
 
 export interface PetAgent {
   ownerId: string;
@@ -22,6 +23,8 @@ export interface PetAgent {
   restUntil: number;
   sleeping: boolean;
   facing: 1 | -1;
+  pairAction?: Pet["pairAction"];
+  pairLeader: boolean;
 }
 
 const GRID = buildGrid();
@@ -54,8 +57,18 @@ export function createPetAgents(): PetAgent[] {
       restUntil: 0,
       sleeping: false,
       facing: 1,
+      pairLeader: false,
     };
   });
+}
+
+/** 找一格緊鄰另一隻貓、且仍在同區域的可走格。 */
+function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Tile | null {
+  const candidates = [
+    { c: partner.c - 1, r: partner.r }, { c: partner.c + 1, r: partner.r },
+    { c: partner.c, r: partner.r - 1 }, { c: partner.c, r: partner.r + 1 },
+  ];
+  return candidates.find((t) => blocked[t.r]?.[t.c] === false && GRID[t.r]?.[t.c] === (region as Region)) ?? null;
 }
 
 export function tickPetAgents(agents: PetAgent[], dt: number) {
@@ -63,11 +76,31 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
   for (const a of agents) {
     const pet = state.pets[a.ownerId];
     if (!pet) continue; // 飼主退租(呼叫端靠數量變化重建)
+    const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > state.gameMs;
+    const partner = pairActive ? agents.find((x) => x.ownerId === pet.pairWith) : undefined;
+    a.pairAction = partner ? pet.pairAction : undefined;
+    a.pairLeader = !!partner && a.ownerId.localeCompare(partner.ownerId) < 0;
     if (!a.moving) {
       if (now < a.restUntil) continue;
-      // 找下一個遊蕩點:hangout 區域內隨機一格(換了區域就會走過去)
       const blocked = currentBlocked();
-      const tgt = tileInRegion(pet.hangout, blocked);
+      let tgt: Tile | null = null;
+      if (partner) {
+        const follower = !a.pairLeader;
+        if (follower) tgt = tileBeside(partner, pet.hangout, blocked);
+        if (!follower && pet.pairAction !== "chase") {
+          a.sleeping = pet.pairAction === "nap";
+          a.restUntil = now + 1200;
+          continue;
+        }
+        if (follower && tgt && Math.abs(tgt.c - a.c) + Math.abs(tgt.r - a.r) <= 1) {
+          a.sleeping = pet.pairAction === "nap";
+          partner.sleeping = pet.pairAction === "nap";
+          a.restUntil = partner.restUntil = now + 3500;
+          continue;
+        }
+      }
+      // 一般遊蕩；追逐時領頭貓繼續跑,另一隻追向牠身邊。
+      tgt ??= tileInRegion(pet.hangout, blocked);
       const path = tgt && !(tgt.c === a.c && tgt.r === a.r) ? findPath({ c: a.c, r: a.r }, tgt, blocked) : null;
       if (path && path.length > 1) {
         a.path = path.slice(1);

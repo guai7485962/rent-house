@@ -7,6 +7,8 @@ import { state, startPlacing } from "../store";
 /** 這件家具會解鎖哪些互動(§10-6 地點條件即玩法 → 商店裡就是賣點) */
 const INTERACTION_NAME: Record<string, string> = {
   cuddle_tv: "窩著看劇", lazy_morning: "賴床", night_intimacy: "🔞 親密夜晚",
+  loveseat_cuddle: "戀人依偎", private_dinner: "雙人約會晚餐", pillow_talk: "帷幔枕邊話",
+  loveseat_after_dark: "🔞 沙發私密時光", canopy_private_night: "🔞 帷幔私密夜晚",
   game_night: "開黑打電動", share_earbuds: "共用耳機",
 };
 function unlocks(defId: string): string[] {

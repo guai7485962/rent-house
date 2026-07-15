@@ -49,6 +49,36 @@ function drawUnrotated(ctx: Ctx, def: FurnitureDef, x: number, y: number, w: num
   }
   const drawer = KIND_DRAWERS[def.sprite.kind];
   if (drawer) drawer(ctx, x, y, w, h);
+  // 同 kind 的主題家具再疊專屬像素細節,讓商店新品在樓層上不只是改名字。
+  if (def.id === "canopy_bed") drawCanopyTrim(ctx, x, y, w, h);
+  else if (def.id === "loveseat") drawLoveseatTrim(ctx, x, y, w, h);
+  else if (def.id === "romantic_table") drawDateTableTrim(ctx, x, y, w, h);
+}
+
+function drawCanopyTrim(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  const frame = "#70465d";
+  const cloth = "#d98ba5";
+  rect(ctx, x + 1, y + 1, 2, h - 2, frame);
+  rect(ctx, x + w - 3, y + 1, 2, h - 2, frame);
+  rect(ctx, x + 1, y + 1, w - 2, 2, frame);
+  rect(ctx, x + 3, y + 3, 4, h - 6, cloth);
+  rect(ctx, x + w - 7, y + 3, 4, h - 6, cloth);
+  rect(ctx, x + 4, y + 4, 1, h - 8, "#efb7c8");
+}
+
+function drawLoveseatTrim(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  rect(ctx, x + 2, y + h - 4, w - 4, 2, "#9d5571");
+  rect(ctx, x + w - 10, y + 3, 6, 5, "#d5688d");
+  rect(ctx, x + w - 8, y + 4, 2, 2, "#f1a9be");
+}
+
+function drawDateTableTrim(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  const cx = Math.floor(x + w / 2);
+  const cy = Math.floor(y + h / 2);
+  rect(ctx, cx - 1, cy - 4, 3, 4, "#f3d9b1");
+  rect(ctx, cx, cy - 6, 1, 2, "#ffd66e");
+  rect(ctx, cx - 5, cy + 2, 3, 2, "#c95f72");
+  rect(ctx, cx + 3, cy + 2, 3, 2, "#c95f72");
 }
 
 /** 零件清單解譯器:未來新增方正家具完全不用寫程式 */

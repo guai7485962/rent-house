@@ -23,7 +23,7 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { petsPass, adoptCat, catAttitude, ensurePets, mischiefRelief } = await import("../src/sim/pets");
+const { petsPass, adoptCat, catAttitude, ensurePets, mischiefRelief, resolveCatPairs } = await import("../src/sim/pets");
 const { produceDailyDiaries, setNarrateImplForTest, diaryTiming } = await import("../src/sim/narration");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
@@ -151,6 +151,27 @@ addPlacement({ defId: "litter_box", c: 2, r: 2, room: "r301" } as any);
 check("加貓砂盆後:大小便乘數降到 0.15", mischiefRelief(chenPet).poop === 0.15);
 addPlacement({ defId: "cat_tower", c: 12, r: 2, room: "r302" } as any);
 check("給 r302 加貓跳台:破壞乘數降到 0.3", mischiefRelief(linPet).break === 0.3);
+
+// --- 雙貓互動:同區域會演出追逐/理毛/共眠/地盤戰/聯手搗蛋,並有配對冷卻 ---
+const pairActions = ["chase", "groom", "nap", "territory", "mischief"] as const;
+const seenPairActions = new Set<string>();
+state.runtimes[CHEN].log.splice(0);
+state.runtimes[LIN].log.splice(0);
+for (let i = 0; i < pairActions.length; i++) {
+  state.gameMs += 11 * 3600 * 1000;
+  chenPet.hangout = linPet.hangout = "lounge";
+  const action = resolveCatPairs(() => (i + 0.1) / pairActions.length, true);
+  if (action) seenPairActions.add(action);
+}
+check("雙貓互動:五種事件都可觸發", pairActions.every((a) => seenPairActions.has(a)), JSON.stringify([...seenPairActions]));
+check("雙貓互動:雙方飼主都有日誌", state.runtimes[CHEN].log.some((e) => e.text.includes("雙貓互動")) && state.runtimes[LIN].log.some((e) => e.text.includes("雙貓互動")));
+check("雙貓互動:兩隻貓保存同一場配對演出", chenPet.pairWith === LIN && linPet.pairWith === CHEN && chenPet.pairAction === linPet.pairAction);
+const blockedByPairCooldown = resolveCatPairs(() => 0, true);
+check("雙貓互動:同一對冷卻內不連發", blockedByPairCooldown === null);
+const { createPetAgents, tickPetAgents } = await import("../src/floor/petAgents");
+const pairedAgents = createPetAgents();
+tickPetAgents(pairedAgents, 0.016);
+check("雙貓互動:樓層 agent 收到同步演出狀態", pairedAgents.filter((a) => a.pairAction === chenPet.pairAction).length === 2 && pairedAgents.filter((a) => a.pairLeader).length === 1);
 
 // --- 招租:應徵者約兩成自帶貓(統計)---
 const { generateApplicants: genApp } = await import("../src/sim/recruit");

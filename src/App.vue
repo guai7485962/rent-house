@@ -182,6 +182,12 @@ function toast(msg: string, ms = 2200) {
   window.setTimeout(() => (vacantNote.value = ""), ms);
 }
 
+/** 主動請離後離開已不存在的房客細看，回樓層查看空房／接手者。 */
+function onTenantEvicted() {
+  showRent.value = false;
+  view.value = "floor";
+}
+
 const pendingName = computed(() => (state.pendingPlace ? getDef(state.pendingPlace).name : ""));
 const movingName = computed(() => (state.pendingMove ? getDef(state.pendingMove.defId).name : ""));
 const rotationLabel = computed(() => `${state.pendingRotation}°`);
@@ -442,8 +448,8 @@ function onGroupResolve(choiceId: string) {
     </div>
     <div class="room-tools">
       <span class="rent-now">月租 ${{ rt.tenant.finance.monthlyRent.toLocaleString() }}</span>
-      <button v-if="isLeaseHolder" class="rent-btn" @click="showRent = true">💲 談房租</button>
-      <span v-else class="rent-note">同居中(不另收租)</span>
+      <button class="rent-btn" @click="showRent = true">📄 租約管理</button>
+      <span v-if="!isLeaseHolder" class="rent-note">同居中(不另收租)</span>
       <button class="rent-btn" @click="upgradeRoom = activeRoomId">🔨 改建</button>
     </div>
     <div v-if="roomBreakdown" class="breakdown-bar">
@@ -570,7 +576,7 @@ function onGroupResolve(choiceId: string) {
 
   <SettingsPanel v-if="showSettings" @close="showSettings = false" />
   <LegacyPanel v-if="showLegacy" @close="showLegacy = false" />
-  <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" />
+  <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" @evicted="onTenantEvicted" />
   <UpgradePanel v-if="upgradeRoom" :room-id="upgradeRoom" @close="upgradeRoom = null" @done="toast($event, 3200)" />
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />

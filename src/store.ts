@@ -46,7 +46,20 @@ export {
   sellFurnitureAt,
 } from "./sim/economy";
 
-export { getApplicants, moveIn, moveOut, resolveCohabit, decide, previewRent, proposeRent, type RentPreview } from "./sim/tenancy";
+export {
+  getApplicants,
+  moveIn,
+  moveOut,
+  resolveCohabit,
+  decide,
+  previewRent,
+  proposeRent,
+  previewEviction,
+  evictTenant,
+  type RentPreview,
+  type EvictionMode,
+  type EvictionPreview,
+} from "./sim/tenancy";
 
 export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 

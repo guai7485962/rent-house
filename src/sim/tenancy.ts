@@ -147,6 +147,84 @@ export function moveOut(tenantId: string, reason: string) {
   save();
 }
 
+// ---------------------------------------------------------------------------
+// 房東主動終止居住
+// ---------------------------------------------------------------------------
+
+export type EvictionMode = "agreement" | "forced";
+export const AGREEMENT_COMPENSATION_MONTHS = 1;
+export const FORCED_EVICTION_AFFINITY = -8;
+export const FORCED_EVICTION_SATISFACTION = -10;
+
+export interface EvictionPreview {
+  mode: EvictionMode;
+  cost: number;
+  canAfford: boolean;
+  isLeaseHolder: boolean;
+  handoffName: string | null;
+}
+
+/** 玩家請離前的唯讀預覽；同居者也可以單獨終止居住。 */
+export function previewEviction(tenantId: string, mode: EvictionMode): EvictionPreview | null {
+  const rt = state.runtimes[tenantId];
+  if (!rt) return null;
+  const ownRoom = Object.entries(state.occupancy).find(([, id]) => id === tenantId)?.[0] ?? null;
+  const handoffId = ownRoom
+    ? Object.keys(state.cohabits).find((id) => id !== tenantId && state.cohabits[id] === ownRoom)
+    : null;
+  const cost = mode === "agreement"
+    ? Math.max(0, Math.round(rt.tenant.finance.monthlyRent * AGREEMENT_COMPENSATION_MONTHS))
+    : 0;
+  return {
+    mode,
+    cost,
+    canAfford: state.money >= cost,
+    isLeaseHolder: ownRoom !== null,
+    handoffName: handoffId ? state.runtimes[handoffId]?.tenant.name ?? null : null,
+  };
+}
+
+/**
+ * 玩家主動請房客離開：協議解約要付一個月搬遷補償；強制請離免費，
+ * 但所有留下的住戶都會降低對房東的信任與居住滿意度。
+ */
+export function evictTenant(tenantId: string, mode: EvictionMode): { ok: boolean; text: string } {
+  const rt = state.runtimes[tenantId];
+  const preview = previewEviction(tenantId, mode);
+  if (!rt || !preview) return { ok: false, text: "這位房客已經不在這裡了" };
+  const name = rt.tenant.name;
+
+  if (mode === "agreement") {
+    if (!preview.canAfford) {
+      return { ok: false, text: `現金不足，協議解約需要 $${preview.cost.toLocaleString()} 搬遷補償` };
+    }
+    if (preview.cost > 0) addMoney(-preview.cost, `${name} 協議解約搬遷補償`, "other");
+    moveOut(tenantId, `與房東協議解約（補償 $${preview.cost.toLocaleString()}）`);
+    return { ok: true, text: `${name} 已接受協議解約並搬走` };
+  }
+
+  moveOut(tenantId, "遭房東強制請離");
+  for (const other of Object.values(state.runtimes)) {
+    other.tenant.stats.affinity = clamp(other.tenant.stats.affinity + FORCED_EVICTION_AFFINITY, 0, 100);
+    applySocialEffect(other, {
+      satisfaction: FORCED_EVICTION_SATISFACTION,
+      mood: -4,
+      stress: 4,
+    });
+    other.unhappyHours += 12;
+    pushMemory(
+      other.tenant,
+      `[目睹${name}被強制請離]`,
+      `房東沒有協議就讓 ${name} 搬走，開始擔心自己是否也會突然失去住處。`,
+      "landlord_decision",
+    );
+    pushSocialLog(other, `⚠️ 房東強制請 ${name} 搬走，整棟公寓的氣氛變得不安。`, "major");
+  }
+  notify(`${name} 已被強制請離；其他住戶對房東的信任下降。`);
+  save();
+  return { ok: true, text: `${name} 已被強制請離` };
+}
+
 /** 同居情侶分手:同居的一方搬離伴侶房(有空房就搬過去續租,沒有就退租離開) */
 export function endCohabitOnBreakup(aId: string, bId: string) {
   const mateId = state.cohabits[aId] ? aId : state.cohabits[bId] ? bId : null;

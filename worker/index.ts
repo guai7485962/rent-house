@@ -2,7 +2,7 @@
  * Cloudflare Worker:同時服務靜態網站(env.ASSETS)與 AI 敘事端點。
  * /api/narrate 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶/事件;
  * /api/invite 由名字+個性描述生成特邀租客資料。
- * 日記 provider = Gemini 免費層 → Cloudflare Workers AI 免費額度;Claude 僅供特邀租客端點使用。
+ * 日記 provider = Cloudflare Workers AI 免費額度 → Gemini 備援;Claude 僅供特邀租客端點使用。
  * API key 存在 Worker secret,前端同源 fetch,金鑰不外洩。
  * 端點防護:同源檢查 + 請求體上限 + server 端 context 夾值(見 guardRequest / clampCtx),
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
@@ -251,15 +251,22 @@ async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
 }
 
 /** Cloudflare Workers AI 免費額度備援。 */
-async function callWorkersAi(ctx: NarrateCtx, ai: NonNullable<Env["AI"]>): Promise<string> {
-  const raw = await ai.run("@cf/qwen/qwen3-30b-a3b-fp8", {
+async function callWorkersAi(
+  ctx: NarrateCtx,
+  ai: NonNullable<Env["AI"]>,
+  model: "@cf/qwen/qwen3-30b-a3b-fp8" | "@cf/meta/llama-3.1-8b-instruct-fast",
+  jsonMode = false,
+): Promise<string> {
+  const raw = await ai.run(model, {
     messages: [
       { role: "system", content: SYSTEM },
       { role: "user", content: buildPrompt(ctx) },
     ],
     max_tokens: 1024,
     temperature: 0.9,
-    response_format: { type: "json_object" },
+    // Qwen3 的官方模型頁雖接受 response_format，但不在 Workers AI 的 JSON Mode
+    // 保證清單中；讓它照 prompt 回 JSON 即可。Llama fast 則是官方支援模型。
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
   });
   const text = extractWorkersAiText(raw);
   if (typeof text !== "string" || !text.trim()) throw new Error("Workers AI empty response");
@@ -274,13 +281,18 @@ function extractWorkersAiText(raw: unknown): string | null {
     result?: { response?: unknown };
     choices?: { message?: { content?: unknown }; text?: unknown }[];
   };
-  const content = result.response ?? result.result?.response ?? result.choices?.[0]?.message?.content ?? result.choices?.[0]?.text;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
-      .join("");
-    return text || null;
+  // 不用 ?? 串接：有些模型同時回 response:"" 與 choices，空字串不能遮掉有效 choices。
+  const candidates = [result.response, result.result?.response, result.choices?.[0]?.message?.content, result.choices?.[0]?.text];
+  for (const content of candidates) {
+    if (typeof content === "string" && content.trim()) return content;
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
+        .join("");
+      if (text.trim()) return text;
+    }
+    // Workers AI JSON Mode 官方格式會直接回 { response: { ...JSON... } }。
+    if (content && typeof content === "object") return JSON.stringify(content);
   }
   return null;
 }
@@ -421,12 +433,16 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const attempts: { provider: "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen"; run: () => Promise<string> }[] = [];
+  const attempts: { provider: "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama"; run: () => Promise<string> }[] = [];
+  if (env.AI) {
+    // 免費且不受 Google 出口地區限制：先 Qwen（繁中較自然），再用官方支援 JSON Mode 的 Llama fast。
+    attempts.push({ provider: "workers-ai-qwen", run: () => callWorkersAi(ctx, env.AI!, "@cf/qwen/qwen3-30b-a3b-fp8") });
+    attempts.push({ provider: "workers-ai-llama", run: () => callWorkersAi(ctx, env.AI!, "@cf/meta/llama-3.1-8b-instruct-fast", true) });
+  }
   if (env.GEMINI_API_KEY) {
     const provider = chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite";
     attempts.push({ provider, run: () => callGemini(ctx, env.GEMINI_API_KEY!) });
   }
-  if (env.AI) attempts.push({ provider: "workers-ai-qwen", run: () => callWorkersAi(ctx, env.AI!) });
 
   const errors: string[] = [];
   for (const attempt of attempts) {

@@ -1,6 +1,6 @@
 /**
  * 「每日 AI 敘事」的前端接縫。
- * narrateDay() 打同源 /api/narrate(由 Cloudflare Worker 呼叫 Claude)。
+ * narrateDay() 打同源 /api/narrate(由 Cloudflare Worker 呼叫 Workers AI／Gemini)。
  * 無後端 / 無金鑰 / 離線時,自動 fallback 成模板日記,遊戲照跑。
  */
 
@@ -37,7 +37,7 @@ export interface NarrateCtx {
   eventDue: boolean;
 }
 
-export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "claude";
+export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";
 export type AiFallbackReason = "catchup" | "quota" | "offline" | "no_key" | "forbidden" | "parse" | "upstream" | "unknown";
 
 export interface NarrateResult {

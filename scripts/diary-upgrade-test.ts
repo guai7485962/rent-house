@@ -11,7 +11,7 @@ const { state, SAVE_KEY } = await import("../src/store");
 import type { NarrateResult } from "../src/sim/narrate";
 
 const {
-  diaryTiming, produceDailyDiaries, resetDeferredDiaryBudgetForTest,
+  diaryTiming, produceDailyDiaries, resetDeferredDiaryBudgetForTest, resetDiaryQuota,
   resumeDeferredDiaries, setNarrateImplForTest,
 } = narration;
 diaryTiming.gapMs = 1;
@@ -76,6 +76,17 @@ resetDeferredDiaryBudgetForTest(4);
 await resumeDeferredDiaries(1);
 check("離線失敗仍保留待補篇", state.pendingDiaries.length === runtimes().length);
 check("UI 可顯示失敗原因", runtimes()[0].log.at(-1)?.aiFallbackReason === "offline");
+
+// 每日補寫預算會重置：用盡後同日不再打，換日重置入口恢復請求。
+let resetCalls = 0;
+setNarrateImplForTest(async (ctx) => { resetCalls++; return success(ctx.name); });
+resetDeferredDiaryBudgetForTest(0);
+const beforeReset = state.pendingDiaries.length;
+await resumeDeferredDiaries(1);
+check("待補預算用盡時不再白打 API", resetCalls === 0 && state.pendingDiaries.length === beforeReset);
+resetDiaryQuota();
+await resumeDeferredDiaries(1);
+check("每日重置後待補預算恢復", resetCalls === 1 && state.pendingDiaries.length === beforeReset - 1);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

@@ -66,6 +66,8 @@ check("模型分流:進行中劇情弧 → 3 Flash", chooseGeminiModel(clampCtx(
 check("Workers AI:解析 OpenAI choices", extractWorkersAiText({ choices: [{ message: { content: "新版" } }] }) === "新版");
 check("Workers AI:兼容舊 response", extractWorkersAiText({ response: "舊版" }) === "舊版");
 check("Workers AI:支援 content parts", extractWorkersAiText({ choices: [{ message: { content: [{ type: "text", text: "分" }, { type: "text", text: "段" }] } }] }) === "分段");
+check("Workers AI:JSON Mode 物件 response 會序列化", extractWorkersAiText({ response: { diary: "物件版" } }) === '{"diary":"物件版"}');
+check("Workers AI:空 response 不會遮掉有效 choices", extractWorkersAiText({ response: "", choices: [{ message: { content: "choices 有值" } }] }) === "choices 有值");
 check("Workers AI:空輸出 → null", extractWorkersAiText({ choices: [] }) === null);
 
 // --- parseResult ---

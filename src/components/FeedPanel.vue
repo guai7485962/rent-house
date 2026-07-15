@@ -24,7 +24,7 @@ const money = (value: number) => `${value >= 0 ? "+" : "−"}$${Math.abs(value).
 
 const KIND_BADGE = { diary: "📖 當日觀察", decision: "🏠 房東介入", event: "◆ 事件", notice: "📢 公告" } as const;
 const PROVIDER_LABEL: Record<string, string> = {
-  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers AI", claude: "Claude",
+  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers Qwen", "workers-ai-llama": "Workers Llama", claude: "Claude",
 };
 const FALLBACK_LABEL: Record<string, string> = {
   catchup: "掛機補進度", quota: "免費額度已滿", offline: "目前離線", no_key: "未設定服務", forbidden: "連線驗證失敗",
@@ -103,7 +103,7 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
         <span class="kind">{{ KIND_BADGE[row.e.kind] }}</span>
         <span v-if="row.e.roomNo" class="who">{{ row.e.roomNo }} {{ row.e.tenantName }}</span>
         <span v-if="row.e.ai" class="ai-chip">✨ {{ providerLabel(row.e.aiProvider) }}</span>
-        <span v-else-if="row.e.aiPending" class="pending-chip" :title="fallbackLabel(row.e.aiFallbackReason)">⏳ 等候 AI</span>
+        <span v-else-if="row.e.aiPending" class="pending-chip">⏳ 待補 · {{ fallbackLabel(row.e.aiFallbackReason) }}</span>
         <span v-else-if="row.e.kind === 'diary'" class="fallback-chip">
           內建<template v-if="row.e.aiFallbackReason"> · {{ fallbackLabel(row.e.aiFallbackReason) }}</template>
         </span>

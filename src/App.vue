@@ -77,6 +77,7 @@ const recruitRoom = ref<string | null>(null);
 const inspectItem = ref<{ c: number; r: number; defId: string; rotation: FurnitureRotation } | null>(null);
 const vacantNote = ref("");
 const sinceMs = ref(0);
+let diaryRetryTimer: number | null = null;
 
 const rt = activeRuntime;
 
@@ -131,21 +132,26 @@ onMounted(() => {
   // 分頁重新可見時補進度(掛機回來)
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("online", onOnline);
-  void resumeDeferredDiaries();
+  void resumeDeferredDiaries(2);
+  // 玩家一直停在前景時也要重試，不能只有切回分頁才會補；每輪最多兩篇，真正請求仍會錯開。
+  diaryRetryTimer = window.setInterval(() => {
+    if (!document.hidden && navigator.onLine !== false) void resumeDeferredDiaries(2);
+  }, 3 * 60_000);
 });
 onUnmounted(() => {
   stopGame();
   document.removeEventListener("visibilitychange", onVisible);
   window.removeEventListener("online", onOnline);
+  if (diaryRetryTimer != null) window.clearInterval(diaryRetryTimer);
 });
 function onVisible() {
   if (!document.hidden) {
     resume();
-    void resumeDeferredDiaries();
+    void resumeDeferredDiaries(2);
   }
 }
 function onOnline() {
-  void resumeDeferredDiaries();
+  void resumeDeferredDiaries(2);
 }
 
 // 系統通知(如退租)→ 彈 toast

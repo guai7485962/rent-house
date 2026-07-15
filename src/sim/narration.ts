@@ -39,7 +39,9 @@ interface DiaryJob {
 const diaryQueue: DiaryJob[] = [];
 let diaryRun: Promise<void> | null = null;
 let deferredRun: Promise<void> | null = null;
-let deferredBudget = 4;
+const DEFERRED_DAILY_BUDGET = 6;
+let deferredBudget = DEFERRED_DAILY_BUDGET;
+let deferredBudgetDay = -1;
 let diarySerial = 0;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -59,6 +61,8 @@ export function ensureDiaryHours() {
 /** 換日重置:額度每日重置,新的一天重新嘗試 AI(tick 在跨日時呼叫) */
 export function resetDiaryQuota() {
   quotaHold = false;
+  deferredBudget = DEFERRED_DAILY_BUDGET;
+  deferredBudgetDay = gameDayIndex();
 }
 
 /** 為單一租客產生「這一天」的日記:live 進錯開佇列、否則模板同步落地 */
@@ -209,8 +213,16 @@ function queuePendingDiary(job: DiaryJob, reason: AiFallbackReason) {
   if (log) log.aiFallbackReason = reason;
 }
 
-/** 回到前景後，用少量、錯開的免費請求把內建日記原地升級；每個瀏覽器工作階段最多四篇。 */
-export function resumeDeferredDiaries(max = 4): Promise<void> {
+function refreshDeferredBudget() {
+  const day = gameDayIndex();
+  if (deferredBudgetDay === day) return;
+  deferredBudgetDay = day;
+  deferredBudget = DEFERRED_DAILY_BUDGET;
+}
+
+/** 回到前景或前景定時器觸發時，用少量、錯開的免費請求把內建日記原地升級。 */
+export function resumeDeferredDiaries(max = 2): Promise<void> {
+  refreshDeferredBudget();
   if (!deferredRun) deferredRun = drainDeferredDiaries(max).finally(() => (deferredRun = null));
   return deferredRun;
 }
@@ -258,6 +270,7 @@ async function drainDeferredDiaries(max: number) {
 
 export function resetDeferredDiaryBudgetForTest(value = 4) {
   deferredBudget = value;
+  deferredBudgetDay = gameDayIndex();
 }
 
 /** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed) */

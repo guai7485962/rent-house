@@ -6,7 +6,7 @@ const props = defineProps<{ entries: LogEntry[]; sinceMs: number }>();
 
 const IMPORTANCE_ICON = { minor: "·", notable: "◆", major: "★" } as const;
 const PROVIDER_LABEL: Record<string, string> = {
-  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers AI", claude: "Claude",
+  "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers Qwen", "workers-ai-llama": "Workers Llama", claude: "Claude",
 };
 const FALLBACK_LABEL: Record<string, string> = {
   catchup: "掛機補進度", quota: "免費額度已滿", offline: "目前離線", no_key: "未設定服務", forbidden: "連線驗證失敗",
@@ -40,7 +40,7 @@ const unreadCount = computed(() => rows.value.filter((r) => r.unread).length);
         <div class="diary-head">
           <span class="badge">📖 當日觀察</span>
           <span v-if="row.e.ai" class="ai-chip">✨ {{ providerLabel(row.e.aiProvider) }}</span>
-          <span v-else-if="row.e.aiPending" class="pending-chip" :title="fallbackLabel(row.e.aiFallbackReason)">⏳ 等候 AI</span>
+          <span v-else-if="row.e.aiPending" class="pending-chip">⏳ 待補 · {{ fallbackLabel(row.e.aiFallbackReason) }}</span>
           <span v-else class="fallback-chip">
             內建<template v-if="row.e.aiFallbackReason"> · {{ fallbackLabel(row.e.aiFallbackReason) }}</template>
           </span>

@@ -9,18 +9,23 @@ const emit = defineEmits<{ close: [] }>();
 const name = (id: string) => state.runtimes[id]?.tenant.name ?? "已搬走";
 
 const rels = computed(() =>
-  listRelationships().filter((r) => state.runtimes[r.aId] && state.runtimes[r.bId]),
+  listRelationships((id) => state.runtimes[id]?.tenant)
+    .filter((r) => state.runtimes[r.aId] && state.runtimes[r.bId]),
 );
 
 /** 這一「對」是否真的同居中；共用模擬層的一對一判定，避免 UI 與規則分歧。 */
 const isCohabit = (r: { aId: string; bId: string }) => cohabitingPartnerId(r.aId) === r.bId;
 
-/** 分組:情侶(置頂)/ 朋友以上 / 認識中 */
+const bestFriendLabels = new Set(["閨密", "哥們", "摯友"]);
+
+/** 分組:情侶(置頂)/ 曖昧 / 摯友 / 朋友 / 認識中 */
 const groups = computed(() => {
   const all = rels.value;
   return [
     { title: "❤️ 情侶", rows: all.filter((r) => r.romantic) },
-    { title: "🤝 朋友", rows: all.filter((r) => !r.romantic && r.value >= 35) },
+    { title: "💕 曖昧", rows: all.filter((r) => !r.romantic && r.label === "曖昧") },
+    { title: "🌟 摯友", rows: all.filter((r) => !r.romantic && bestFriendLabels.has(r.label)) },
+    { title: "🤝 朋友", rows: all.filter((r) => !r.romantic && r.value >= 35 && r.value < 75) },
     { title: "👋 認識中", rows: all.filter((r) => !r.romantic && r.value < 35) },
   ].filter((g) => g.rows.length > 0);
 });
@@ -53,7 +58,7 @@ const groups = computed(() => {
         </template>
       </div>
 
-      <p class="foot">關係由個性是否合拍決定;夠熟且互有好感(依性別/取向)才會發展成情侶,關係極高會想同居。</p>
+      <p class="foot">關係由個性是否合拍決定;不走戀愛線的高好感朋友會成為閨密、哥們或摯友。具戀愛可能且互有好感才會曖昧、交往與同居。</p>
     </div>
   </div>
 </template>

@@ -5,7 +5,7 @@
  * - 被撞見(maybeWitness 由 interactions 在 🔞 互動觸發後呼叫):第三位租客撞見,三方尷尬。
  * 全部走既有安全機制:夾值、記憶標籤接 AI、冷戰接 conflicts、冷卻用 interactionCooldowns。
  */
-import { relationships, getRel, pairKey, canRomance, setCouple, adjustRelationship } from "./social";
+import { relationships, getRel, pairKey, canRomance, isBestFriend, tierLabel, setCouple, adjustRelationship } from "./social";
 import { state, clamp, notify, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { startFeud } from "./conflicts";
 import { endCohabitOnBreakup } from "./tenancy";
@@ -39,9 +39,15 @@ function affairThird(cheaterId: string, partnerId: string): TenantRuntime | null
 function scandal(cheater: TenantRuntime, partner: TenantRuntime, third: TenantRuntime) {
   const cId = cheater.tenant.id;
   const pId = partner.tenant.id;
+  const partnerThirdRel = getRel(pId, third.tenant.id);
+  const bestFriendBetrayal = isBestFriend(partnerThirdRel, partner.tenant, third.tenant);
+  const formerBond = bestFriendBetrayal && partnerThirdRel
+    ? tierLabel(partnerThirdRel, partner.tenant, third.tenant)
+    : null;
   setCouple(cId, pId, false);
   adjustRelationship(cId, pId, -35);
   adjustRelationship(cId, third.tenant.id, -20); // 曖昧對象也尷尬退避
+  if (bestFriendBetrayal) adjustRelationship(pId, third.tenant.id, -70); // 伴侶與摯友的雙重背叛
 
   const ps = partner.tenant.stats;
   ps.mood = clamp(ps.mood - 20, 0, 100);
@@ -54,11 +60,19 @@ function scandal(cheater: TenantRuntime, partner: TenantRuntime, third: TenantRu
 
   pushMemory(partner.tenant, "[被劈腿]", `發現${cheater.tenant.name}和${third.tenant.name}走得太近,當場鬧翻分手。`, "ai_event");
   pushMemory(cheater.tenant, "[劈腿被抓包]", `和${third.tenant.name}的曖昧被${partner.tenant.name}抓包,場面難看。`, "ai_event");
-  pushMemory(third.tenant, "[捲入修羅場]", `莫名捲入${cheater.tenant.name}的感情風暴,全樓都在看自己。`, "ai_event");
+  if (bestFriendBetrayal) {
+    pushMemory(partner.tenant, "[摯友背叛]", `自己的${formerBond}${third.tenant.name}竟和伴侶${cheater.tenant.name}曖昧,同時失去愛情與友情。`, "ai_event");
+    pushMemory(third.tenant, "[背叛摯友]", `和${partner.tenant.name}的伴侶${cheater.tenant.name}越界,被曾經的${formerBond}當場發現。`, "ai_event");
+  } else {
+    pushMemory(third.tenant, "[捲入修羅場]", `捲入${cheater.tenant.name}的感情風暴,全樓都在看自己。`, "ai_event");
+  }
 
-  pushSocialLog(partner, `💔 發現 ${cheater.tenant.name} 和 ${third.tenant.name} 走得太近,當場鬧翻,分手了!`, "major");
+  const betrayalNote = bestFriendBetrayal ? `,對象竟是自己的${formerBond}` : "";
+  pushSocialLog(partner, `💔 發現 ${cheater.tenant.name} 和 ${third.tenant.name} 走得太近${betrayalNote},當場鬧翻,分手了!`, "major");
   pushSocialLog(cheater, `💥 和 ${third.tenant.name} 的曖昧被 ${partner.tenant.name} 抓包,修羅場…分手了。`, "major");
-  pushSocialLog(third, `🫣 被捲入 ${cheater.tenant.name} 和 ${partner.tenant.name} 的修羅場,超級尷尬。`, "major");
+  pushSocialLog(third, bestFriendBetrayal
+    ? `🗡️ 和 ${cheater.tenant.name} 的曖昧被${formerBond} ${partner.tenant.name} 發現,友情徹底決裂。`
+    : `🫣 被捲入 ${cheater.tenant.name} 和 ${partner.tenant.name} 的修羅場,超級尷尬。`, "major");
 
   // 全樓八卦:其他住戶都在傳
   for (const rt of Object.values(state.runtimes)) {
@@ -75,6 +89,7 @@ function scandal(cheater: TenantRuntime, partner: TenantRuntime, third: TenantRu
   }
 
   startFeud(partner, cheater, true); // 分手後冷戰(修羅場日誌已經夠大聲)
+  if (bestFriendBetrayal) startFeud(partner, third, true);
   endCohabitOnBreakup(cId, pId);
   notify(`💔 修羅場!${cheater.tenant.name} 劈腿被 ${partner.tenant.name} 抓包,兩人分手了`);
   unlock("scandal"); // 成就:修羅場(§G-7)

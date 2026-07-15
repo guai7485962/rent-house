@@ -26,7 +26,7 @@ export interface EncounterResult {
   importance: "minor" | "notable" | "major";
   effectA?: SocialEffect;
   effectB?: SocialEffect;
-  milestone?: "became_friends" | "became_couple" | "broke_up";
+  milestone?: "became_friends" | "became_best_friends" | "became_couple" | "broke_up";
   cohabit?: boolean;
   /** 互動基調(演出層選特效用):聊天/戀愛氛圍/起衝突 */
   tone: "friendly" | "romantic" | "conflict";
@@ -55,6 +55,18 @@ export function getRel(a: string, b: string): Relationship | undefined {
 /** 兩人是否可能發展戀情(雙方皆成年 + 性別/取向相容)—— 戀愛線唯一把關點 */
 export function canRomance(a: Tenant, b: Tenant): boolean {
   return (a.isAdult ?? true) && (b.isAdult ?? true) && attractedMutual(a, b);
+}
+
+/** 高好感但不走戀愛線的關係名稱；同性朋友不會再被顯示成「曖昧」。 */
+export function bestFriendLabel(a: Tenant, b: Tenant): "閨密" | "哥們" | "摯友" {
+  if (a.gender === "female" && b.gender === "female") return "閨密";
+  if (a.gender === "male" && b.gender === "male") return "哥們";
+  return "摯友";
+}
+
+/** 是否已達摯友等級（高好感、非情侶且彼此不具戀愛可能）。 */
+export function isBestFriend(rel: Relationship | undefined, a: Tenant, b: Tenant): boolean {
+  return !!rel && !rel.romantic && rel.value >= 75 && !canRomance(a, b);
 }
 
 /** 目前的正式伴侶；唯一伴侶制下最多一人。舊存檔修復前若有多位，依關係表順序回傳第一位。 */
@@ -258,6 +270,13 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     res.textA = fill(line, b.name);
     res.textB = fill(line, a.name);
     if (before < 35 && rel.value >= 35) res.milestone = "became_friends";
+    if (before < 75 && isBestFriend(rel, a, b)) {
+      const bond = bestFriendLabel(a, b);
+      res.milestone = "became_best_friends";
+      res.importance = "notable";
+      res.textA = `🤝 和 ${b.name} 成了無話不談的${bond}`;
+      res.textB = `🤝 和 ${a.name} 成了無話不談的${bond}`;
+    }
   }
 
   // 在一起(canRomance = 雙方成年 + 取向相容)
@@ -290,9 +309,9 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
   return res;
 }
 
-export function tierLabel(rel: Relationship): string {
+export function tierLabel(rel: Relationship, a?: Tenant, b?: Tenant): string {
   if (rel.romantic) return "情侶";
-  if (rel.value >= 75) return "曖昧";
+  if (rel.value >= 75) return a && b && !canRomance(a, b) ? bestFriendLabel(a, b) : "曖昧";
   if (rel.value >= 50) return "好朋友";
   if (rel.value >= 35) return "朋友";
   if (rel.value >= 15) return "點頭之交";
@@ -300,12 +319,18 @@ export function tierLabel(rel: Relationship): string {
 }
 
 /** 給 UI:列出所有已建立(value>0 或情侶)的關係 */
-export function listRelationships(): { aId: string; bId: string; value: number; romantic: boolean; label: string }[] {
+export function listRelationships(getTenant?: (id: string) => Tenant | undefined): { aId: string; bId: string; value: number; romantic: boolean; label: string }[] {
   const out: { aId: string; bId: string; value: number; romantic: boolean; label: string }[] = [];
   for (const [k, rel] of Object.entries(relationships)) {
     if (rel.value <= 0 && !rel.romantic) continue;
     const [aId, bId] = k.split("|");
-    out.push({ aId, bId, value: Math.round(rel.value), romantic: rel.romantic, label: tierLabel(rel) });
+    out.push({
+      aId,
+      bId,
+      value: Math.round(rel.value),
+      romantic: rel.romantic,
+      label: tierLabel(rel, getTenant?.(aId), getTenant?.(bId)),
+    });
   }
   return out.sort((x, y) => Number(y.romantic) - Number(x.romantic) || y.value - x.value);
 }

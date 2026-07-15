@@ -76,6 +76,17 @@ const scandal = affairPass(() => 0);
 check("高曖昧第三者會進入修羅場風險", scandal);
 check("修羅場會解除原正式戀情", getRel(A.id, B.id)?.romantic === false);
 
+// 高好感但不具戀愛可能的同性朋友應成為閨密／哥們，而不是曖昧。
+clearRels();
+relationships[pairKey(B.id, C.id)] = { value: 74, romantic: false, cohabitOffered: false };
+Math.random = () => 0.5;
+const besties = encounter(B, C);
+Math.random = originalRandom;
+check("同性女性高好感顯示為閨密", tierLabel(getRel(B.id, C.id)!, B, C) === "閨密");
+check("跨過 75 會觸發摯友里程碑", besties.milestone === "became_best_friends" && besties.textA.includes("閨密"));
+relationships[pairKey(A.id, D.id)] = { value: 100, romantic: false, cohabitOffered: false };
+check("同性男性滿好感顯示為哥們", tierLabel(getRel(A.id, D.id)!, A, D) === "哥們");
+
 // AI event 的 couple:true 同樣走 setCouple，不可繞過唯一伴侶守門。
 clearRels();
 setCouple(A.id, B.id, true, A, B);

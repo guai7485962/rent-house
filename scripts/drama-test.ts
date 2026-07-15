@@ -52,6 +52,7 @@ relationships[pairKey(A.tenant.id, C.tenant.id)] = { value: 60, romantic: false,
 check("曖昧 60 → 不觸發", !affairPass(() => 0));
 
 relationships[pairKey(A.tenant.id, C.tenant.id)] = { value: 80, romantic: false, cohabitOffered: false };
+relationships[pairKey(B.tenant.id, C.tenant.id)] = { value: 96, romantic: false, cohabitOffered: false };
 B.tenant.visualState = "away";
 check("伴侶外出 → 抓不到", !affairPass(() => 0));
 B.tenant.visualState = "idle";
@@ -68,7 +69,11 @@ check("關係重挫", (getRel(A.tenant.id, B.tenant.id)?.value ?? 99) <= 60);
 check("伴侶心情重挫", B.tenant.stats.mood < moodB);
 check("三方記憶:[被劈腿]", B.tenant.memoryTags.some((m) => m.label === "[被劈腿]"));
 check("三方記憶:[劈腿被抓包]", A.tenant.memoryTags.some((m) => m.label === "[劈腿被抓包]"));
-check("三方記憶:[捲入修羅場]", C.tenant.memoryTags.some((m) => m.label === "[捲入修羅場]"));
+check("閨密背叛好感超級重挫", (getRel(B.tenant.id, C.tenant.id)?.value ?? 99) <= 26);
+check("受害者記住摯友背叛", B.tenant.memoryTags.some((m) => m.label === "[摯友背叛]"));
+check("第三者記住背叛摯友", C.tenant.memoryTags.some((m) => m.label === "[背叛摯友]"));
+check("背叛的閨密也進入冷戰", feudActive(B.tenant.id, C.tenant.id));
+check("抓包日誌點明閨密雙重背叛", B.log.some((e) => e.text.includes("自己的閨密")));
 check("全樓八卦(D 吃瓜)", D.log.some((e) => e.text.includes("全樓都在傳")));
 check("分手後冷戰", feudActive(A.tenant.id, B.tenant.id));
 check("通知有發", state.noticeLog.some((n) => n.text.includes("修羅場")));

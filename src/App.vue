@@ -196,14 +196,14 @@ function onStartMove() {
 // 目前這位租客的感情狀態(顯示在房間細看抬頭)
 const partnerLine = computed(() => {
   const id = state.activeId;
-  const bonds = listRelationships().filter(
+  const bonds = listRelationships((tenantId) => state.runtimes[tenantId]?.tenant).filter(
     (r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId],
   );
   const other = (r: { aId: string; bId: string }) => (r.aId === id ? r.bId : r.aId);
   const love = bonds.find((r) => r.romantic);
   if (love) return `❤️ 與 ${state.runtimes[other(love)].tenant.name} 交往中`;
   const friend = bonds.find((r) => r.value >= 50);
-  if (friend) return `🤝 與 ${state.runtimes[other(friend)].tenant.name} 是好友`;
+  if (friend) return `🤝 與 ${state.runtimes[other(friend)].tenant.name} 是${friend.label}`;
   return "";
 });
 

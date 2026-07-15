@@ -283,7 +283,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
   const todayLog = today.map((e) => e.text).filter((t) => t && t.length > 0).slice(-12);
   const events = today.map((e) => e.decisionNote).filter((t): t is string => !!t);
   const id = rt.tenant.id;
-  const relationships = listRelationships()
+  const relationships = listRelationships((tenantId) => state.runtimes[tenantId]?.tenant)
     .filter((r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId])
     .map((r) => {
       const otherId = r.aId === id ? r.bId : r.aId;

@@ -105,7 +105,7 @@ function weeklyRelationshipChanges(): WeeklyRelationshipChange[] {
       bName: b.tenant.name,
       delta,
       current: Math.round(rel.value),
-      label: tierLabel(rel),
+      label: tierLabel(rel, a.tenant, b.tenant),
     });
   }
   return changes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 3);

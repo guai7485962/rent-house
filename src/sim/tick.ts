@@ -519,6 +519,11 @@ function socialPass(skip: Set<string> = new Set()) {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
         unlock("first_love");
       }
+      if (res.milestone === "became_best_friends") {
+        const label = listRelationships((id) => state.runtimes[id]?.tenant)
+          .find((r) => pairKey(r.aId, r.bId) === pairKey(A.tenant.id, B.tenant.id))?.label ?? "摯友";
+        notify(`${A.tenant.name} 和 ${B.tenant.name} 成為${label}了 🌟`);
+      }
       if (res.milestone === "broke_up") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 分手了 💔`);
         unlock("heartbreak");

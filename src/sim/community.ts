@@ -9,7 +9,7 @@
  * 每遊戲日 communityPass 最多觸發一件(有機率、各事件有冷卻),節奏刻意稀疏不洗版。
  */
 import type { GroupChoice, GroupEvent, GroupDelta } from "../types";
-import { state, clamp, notify, pushSocialLog, type TenantRuntime } from "./gameState";
+import { state, addFlag, clamp, notify, pushSocialLog, type TenantRuntime } from "./gameState";
 import { adjustRelationship, getRel } from "./social";
 import { clearNoiseMemories } from "./memoryEffects";
 import { addMoney } from "./economy";
@@ -42,6 +42,60 @@ function sceneIndex(parts: TenantRuntime[], salt: string, size: number): number 
 }
 
 const COMMUNITY_LINES = {
+  fridgeMissingA: [
+    "🍮 放在冰箱裡的布丁不見了,第一個想到的是剛站在冰箱前的 {o}。",
+    "🥡 昨晚特地留下的外送被吃掉一半,冰箱盒上只剩一張沒有署名的紙條。",
+    "🧃 貼了名字的飲料突然見底,忍不住問 {o} 是不是拿錯了。",
+    "🍰 冰箱裡留著明天吃的蛋糕消失了,和 {o} 對著空盒越講越尷尬。",
+  ],
+  fridgeMissingB: [
+    "🍮 被 {o} 問是不是偷吃了冰箱裡的東西,覺得自己被冤枉。",
+    "🥡 面對 {o} 的質問一時說不清楚,兩人站在冰箱前僵了好一會。",
+    "🧃 被 {o} 指著空瓶追問,明明只是剛好經過冰箱卻越解釋越可疑。",
+    "🍰 和 {o} 一起看到空盒,卻因為一句『不是你嗎』讓氣氛瞬間冷掉。",
+  ],
+  fridgeTruthA: [
+    "🔎 終於在冰箱最裡層找到失蹤的食物,趕緊向 {o} 道歉,還分了一半賠罪。",
+    "🧾 才發現是自己記錯了保存盒,{o} 沒有偷吃;兩人把誤會說開後反而笑了。",
+    "🍮 {o} 坦白是不小心拿錯,當天就買了兩份新的放回冰箱,這場風波總算落幕。",
+    "📝 從冰箱旁掉出的紙條證明只是拿錯格,{o} 主動補買,兩人決定以後都寫清楚名字。",
+  ],
+  fridgeTruthB: [
+    "🔎 被 {o} 正式道歉,那口被冤枉的氣總算消了一大半。",
+    "🧾 和 {o} 把冰箱翻了一遍才解開誤會,最後一起把快過期的食物分著吃。",
+    "🍮 向 {o} 承認自己拿錯了,補買兩份後還被虧了整晚。",
+    "📝 和 {o} 一起重新整理冰箱格位,決定各自貼上名字,免得下次再吵一次。",
+  ],
+  fridgeShare: [
+    "🍱 發現 {o} 忙到沒吃飯,把冰箱裡留著的那份餐點熱給了對方。",
+    "🍉 和 {o} 一起清冰箱,把快過期的食材拼成一頓意外好吃的宵夜。",
+    "🧁 買甜點時順手替 {o} 多帶一份,打開冰箱看到紙條時兩個人都笑了。",
+    "🥣 和 {o} 約好冰箱最上層是共享區,誰晚回家都至少有一份飯可吃。",
+  ],
+  cookFriendly: [
+    "🍳 和 {o} 一個切菜、一個顧鍋,第一次合作竟然很有默契。",
+    "🥘 和 {o} 把冰箱剩料全搬上流理臺,邊試味道邊完成了一桌晚餐。",
+    "🥟 和 {o} 在流理臺前包了一排歪歪扭扭的餃子,成品不好看卻很好吃。",
+    "🍛 和 {o} 說好輪流掌廚,今天負責的人做飯、另一個人自動收拾。",
+  ],
+  cookConflictA: [
+    "🔥 和 {o} 同時搶著用流理臺,一個嫌動作慢、一個嫌對方礙手礙腳。",
+    "🧂 覺得 {o} 偷改了鍋裡的調味,兩個人為了該不該加鹽爭了起來。",
+    "🍽️ 做完飯後發現 {o} 把髒鍋全留著,忍不住在廚房直接質問。",
+    "🥬 和 {o} 為了誰用了最後一份食材起口角,晚餐還沒好氣氛就先焦了。",
+  ],
+  cookConflictB: [
+    "🔥 被 {o} 嫌在廚房擋路,索性放下鍋鏟不做了。",
+    "🧂 和 {o} 對著同一鍋菜各有堅持,最後誰也不肯先試吃。",
+    "🍽️ 被 {o} 追著問為什麼不洗鍋,兩人在流理臺前越講越大聲。",
+    "🥬 覺得 {o} 把公共食材算得太清楚,這頓飯吃得一點都不痛快。",
+  ],
+  coffeeKindness: [
+    "☕ 看見 {o} 一臉沒睡醒,順手多沖了一杯咖啡放在桌上。",
+    "☕ 和 {o} 在咖啡機前碰見,一邊等機器一邊交換今天的行程。",
+    "☕ 記得 {o} 不加糖的習慣,什麼都沒問就把第二杯遞了過去。",
+    "☕ 和 {o} 在安靜的早晨分著一壺咖啡,昨天的小尷尬也淡了一點。",
+  ],
   laundryConflictA: [
     "🧺 在洗衣房為了搶最後一台空機和 {o} 起了口角。",
     "🧺 抱著一籃衣服趕到洗衣房時,發現 {o} 正要搶最後一台空機,兩人誰也不讓。",
@@ -128,6 +182,12 @@ const LAUNDRY_UNAVAILABLE = new Set([
   "washing_at_sink", "taking_bath", "waiting_for_bathroom", "crying", "pacing",
 ]);
 const BATHROOM_UNAVAILABLE = new Set(["away", "sleeping_on_bed", "sleeping_on_couch", "crying", "pacing"]);
+const KITCHEN_UNAVAILABLE = new Set([
+  "away", "sleeping_on_bed", "sleeping_on_couch", "showering", "using_toilet",
+  "taking_bath", "waiting_for_bathroom", "crying", "pacing",
+]);
+const FRIDGE_MISSING_PREFIX = "冰箱食物失蹤:";
+const FRIDGE_SUSPECT_PREFIX = "被懷疑偷吃:";
 
 const fillCommunity = (line: string, vars: Record<string, string>) =>
   Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), value), line);
@@ -214,6 +274,70 @@ function stageBathroom(parts: TenantRuntime[], kind: "chat" | "anger") {
   startPairSession(a.tenant.id, b.tenant.id, tiles.a, "stand_face", state.gameMs, REAL_MS_PER_GAME_HOUR, tiles);
 }
 
+function loungeFurniture(defId: string) {
+  return getPlacements().find((p) => p.room === "lounge" && p.defId === defId) ?? null;
+}
+
+function hasLoungeFurniture(...defIds: string[]): boolean {
+  return defIds.every((id) => loungeFurniture(id) != null);
+}
+
+/** 以指定家具的互動格為第一站位，再找相鄰空格給第二人。 */
+export function kitchenStageTiles(defId: string): { a: Tile; b: Tile } | null {
+  const placement = loungeFurniture(defId);
+  if (!placement) return null;
+  const blocked = currentBlocked();
+  const a = placementInteract(placement);
+  if (blocked[a.r]?.[a.c] !== false) return null;
+  const neighbors = [
+    { c: a.c + 1, r: a.r }, { c: a.c - 1, r: a.r },
+    { c: a.c, r: a.r + 1 }, { c: a.c, r: a.r - 1 },
+  ];
+  const b = neighbors.find((tile) => blocked[tile.r]?.[tile.c] === false);
+  return b ? { a, b } : null;
+}
+
+/** 把廚房文字事件接到實際家具前，讓兩人中止原活動並走去演出。 */
+function stageKitchen(
+  parts: TenantRuntime[],
+  defId: string,
+  pose: "stand_face" | "cook_pair",
+  visualState: "cooking" | "eating" | "using_appliance",
+  fx: "chat" | "anger" | "hearts",
+) {
+  const [a, b] = parts;
+  for (const rt of [a, b]) {
+    rt.tenant.visualState = visualState;
+    rt.activityPose = null;
+    rt.activityTile = null;
+    rt.activitySurface = null;
+    rt.inLounge = true;
+    rt.visiting = null;
+    rt.visitHostId = null;
+  }
+  const tiles = kitchenStageTiles(defId);
+  if (!tiles) return;
+  spawnFx(fx, tiles.a.c, tiles.a.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
+  startPairSession(a.tenant.id, b.tenant.id, tiles.a, pose, state.gameMs, REAL_MS_PER_GAME_HOUR, tiles);
+}
+
+function removeFlag(rt: TenantRuntime, flag: string) {
+  const index = rt.flags.indexOf(flag);
+  if (index >= 0) rt.flags.splice(index, 1);
+}
+
+/** 找出尚未收尾的「冰箱食物失蹤」配對；回傳順序固定為失主、被懷疑者。 */
+function pendingFridgePair(present: TenantRuntime[]): [TenantRuntime, TenantRuntime] | null {
+  for (const victim of present) {
+    const flag = victim.flags.find((f) => f.startsWith(FRIDGE_MISSING_PREFIX));
+    if (!flag) continue;
+    const suspectId = flag.slice(FRIDGE_MISSING_PREFIX.length);
+    const suspect = present.find((rt) => rt.tenant.id === suspectId);
+    if (suspect?.flags.includes(`${FRIDGE_SUSPECT_PREFIX}${victim.tenant.id}`)) return [victim, suspect];
+  }
+  return null;
+}
+
 /** 對一組人兩兩調整關係 */
 function bondAll(parts: TenantRuntime[], delta: number) {
   for (let i = 0; i < parts.length; i++)
@@ -239,6 +363,115 @@ interface CommunityEvent {
 }
 
 export const COMMUNITY_EVENTS: CommunityEvent[] = [
+  {
+    // 冰箱連鎖:先發生食物失蹤與猜疑，下一次事件優先讓同一對把真相說開。
+    id: "kitchen_fridge",
+    need: 2,
+    cooldownDays: 2,
+    select: (present, rng) => {
+      if (!hasLoungeFurniture("fridge")) return null;
+      const available = shuffle(present, rng).filter((rt) => !KITCHEN_UNAVAILABLE.has(rt.tenant.visualState));
+      const pending = pendingFridgePair(available);
+      if (pending) return pending;
+      const free = available.filter((rt) => !rt.flags.some((f) => f.startsWith(FRIDGE_MISSING_PREFIX) || f.startsWith(FRIDGE_SUSPECT_PREFIX)));
+      return free.length >= 2 ? free.slice(0, 2) : null;
+    },
+    fire: (parts, rng) => {
+      const [a, b] = parts;
+      const missingFlag = `${FRIDGE_MISSING_PREFIX}${b.tenant.id}`;
+      const suspectFlag = `${FRIDGE_SUSPECT_PREFIX}${a.tenant.id}`;
+      const variant = sceneIndex(parts, "kitchen_fridge", COMMUNITY_LINES.fridgeMissingA.length);
+
+      if (a.flags.includes(missingFlag) && b.flags.includes(suspectFlag)) {
+        removeFlag(a, missingFlag);
+        removeFlag(b, suspectFlag);
+        adjustRelationship(a.tenant.id, b.tenant.id, 4);
+        bumpMood(a, 3, -3);
+        bumpMood(b, 3, -2);
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.fridgeTruthA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.fridgeTruthB[variant], { o: a.tenant.name }), "notable");
+        stageKitchen(parts, "fridge", "stand_face", "eating", "chat");
+        notify(`🔎 ${a.tenant.name} 和 ${b.tenant.name} 終於把冰箱食物失蹤的誤會說開了`);
+        return;
+      }
+
+      const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
+      if (rel < 50 || rng() < 0.4) {
+        addFlag(a, missingFlag);
+        addFlag(b, suspectFlag);
+        adjustRelationship(a.tenant.id, b.tenant.id, -3);
+        bumpMood(a, -2, 4);
+        bumpMood(b, -2, 3);
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.fridgeMissingA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.fridgeMissingB[variant], { o: a.tenant.name }), "notable");
+        stageKitchen(parts, "fridge", "stand_face", "eating", "anger");
+        notify(`🍮 ${a.tenant.name} 的冰箱食物不見了，第一個懷疑 ${b.tenant.name}`);
+      } else {
+        adjustRelationship(a.tenant.id, b.tenant.id, 2);
+        bumpMood(a, 3, -2);
+        bumpMood(b, 3, -2);
+        const line = fillCommunity(COMMUNITY_LINES.fridgeShare[variant], { o: b.tenant.name });
+        pushSocialLog(a, line, "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.fridgeShare[variant], { o: a.tenant.name }), "notable");
+        stageKitchen(parts, "fridge", "stand_face", "eating", "chat");
+      }
+    },
+  },
+  {
+    // 瓦斯爐 + 流理臺 + 餐桌:關係好會合作料理，關係差則為用料與收拾起口角。
+    id: "kitchen_cook",
+    need: 2,
+    cooldownDays: 2,
+    select: (present, rng) => {
+      if (!hasLoungeFurniture("stove", "counter", "dining_table")) return null;
+      const available = shuffle(present, rng).filter((rt) => !KITCHEN_UNAVAILABLE.has(rt.tenant.visualState));
+      return available.length >= 2 ? available.slice(0, 2) : null;
+    },
+    fire: (parts) => {
+      const [a, b] = parts;
+      const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
+      const variant = sceneIndex(parts, "kitchen_cook", COMMUNITY_LINES.cookFriendly.length);
+      if (rel < 35) {
+        adjustRelationship(a.tenant.id, b.tenant.id, -3);
+        bumpMood(a, -2, 4);
+        bumpMood(b, -2, 4);
+        pushSocialLog(a, fillCommunity(COMMUNITY_LINES.cookConflictA[variant], { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(COMMUNITY_LINES.cookConflictB[variant], { o: a.tenant.name }), "notable");
+        stageKitchen(parts, "counter", "cook_pair", "cooking", "anger");
+        notify(`🍳 ${a.tenant.name} 和 ${b.tenant.name} 在廚房越幫越忙，最後吵了起來`);
+      } else {
+        adjustRelationship(a.tenant.id, b.tenant.id, 3);
+        bumpMood(a, 4, -3);
+        bumpMood(b, 4, -3);
+        const line = COMMUNITY_LINES.cookFriendly[variant];
+        pushSocialLog(a, fillCommunity(line, { o: b.tenant.name }), "notable");
+        pushSocialLog(b, fillCommunity(line, { o: a.tenant.name }), "notable");
+        stageKitchen(parts, "counter", "cook_pair", "cooking", "chat");
+        notify(`🍳 ${a.tenant.name} 和 ${b.tenant.name} 一起完成了一頓飯`);
+      }
+    },
+  },
+  {
+    // 咖啡機:低強度的日常善意，也能讓原本不熟或尷尬的兩人慢慢回溫。
+    id: "morning_coffee",
+    need: 2,
+    cooldownDays: 2,
+    select: (present, rng) => {
+      if (!hasLoungeFurniture("coffee_machine")) return null;
+      const available = shuffle(present, rng).filter((rt) => !KITCHEN_UNAVAILABLE.has(rt.tenant.visualState));
+      return available.length >= 2 ? available.slice(0, 2) : null;
+    },
+    fire: (parts) => {
+      const [a, b] = parts;
+      const variant = sceneIndex(parts, "morning_coffee", COMMUNITY_LINES.coffeeKindness.length);
+      adjustRelationship(a.tenant.id, b.tenant.id, 1);
+      bumpMood(a, 2, -2);
+      bumpMood(b, 2, -2);
+      pushSocialLog(a, fillCommunity(COMMUNITY_LINES.coffeeKindness[variant], { o: b.tenant.name }), "notable");
+      pushSocialLog(b, fillCommunity(COMMUNITY_LINES.coffeeKindness[variant], { o: a.tenant.name }), "notable");
+      stageKitchen(parts, "coffee_machine", "stand_face", "using_appliance", "chat");
+    },
+  },
   {
     // 洗衣房:關係好 → 邊等邊聊變更近;關係差 → 搶洗衣機起口角(讓死空間活起來)
     id: "laundry",

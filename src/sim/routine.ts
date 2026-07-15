@@ -19,7 +19,7 @@ import { getDef } from "../furniture/catalog";
 import { getPlacements, placementFootprint, placementInteract } from "./placements";
 import { currentBlocked, type Tile } from "../floor/pathfind";
 
-export type Role = "bed" | "desk" | "kitchen" | "bathroom" | "sofa" | "tv" | "out";
+export type Role = "bed" | "desk" | "kitchen" | "bathroom" | "laundry" | "sofa" | "tv" | "out";
 
 export interface Slot {
   role: Role;
@@ -32,6 +32,7 @@ const ROLE_KINDS: Record<Exclude<Role, "out">, string[]> = {
   desk: ["desk", "mic_desk"],
   kitchen: ["stove", "counter", "dining_table"],
   bathroom: ["shower", "toilet", "bathtub"],
+  laundry: ["washer", "drying_rack"],
   sofa: ["sofa", "chair"],
   tv: ["tv"],
 };
@@ -48,7 +49,7 @@ interface RoutineSpan {
   state: string;
 }
 
-const VALID_ROLES = new Set<string>(["bed", "desk", "kitchen", "bathroom", "sofa", "tv", "out"]);
+const VALID_ROLES = new Set<string>(["bed", "desk", "kitchen", "bathroom", "laundry", "sofa", "tv", "out"]);
 const VALID_STATES = new Set<string>(TENANT_VISUAL_STATES);
 
 /** 區段展開成 24 小時 Slot 表;非法 role/state 或格式略過並警告,缺漏小時以 bed/idle 補 */
@@ -103,6 +104,34 @@ export function routineSlot(tenantId: string, hour: number): Slot {
   return table[((hour % 24) + 24) % 24];
 }
 
+const LAUNDRY_CANDIDATE_HOURS = [20, 21, 22, 23, 18, 19, 17, 16, 15, 14, 13, 12, 11, 10];
+
+/** 穩定雜湊：偶爾洗衣不消耗模擬 RNG，也不會每次重載就換日子。 */
+function stableTenantHash(tenantId: string): number {
+  let hash = 0;
+  for (let i = 0; i < tenantId.length; i++) hash = ((hash << 5) - hash + tenantId.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+/**
+ * 每位住戶約每四個遊戲日安排一次洗衣；從原作息中挑晚上／午後仍在家且清醒的一小時，
+ * 避免固定每天洗衣，也不會把人從外出、睡眠或淋浴中硬拉走。
+ */
+export function laundryHourForDay(tenantId: string, day: number): number | null {
+  const table = ROUTINES[tenantId];
+  if (!table || day < 0) return null;
+  const hash = stableTenantHash(tenantId);
+  if ((day + hash) % 4 !== 0) return null;
+  const candidates = LAUNDRY_CANDIDATE_HOURS.filter((hour) => {
+    const state = table[hour]?.state;
+    return state && !["away", "sleeping_on_bed", "sleeping_on_couch", "showering"].includes(state);
+  });
+  // 優先取原本在自己房內的桌前時段，避免單純增加洗衣畫面卻改掉交誼廳社交擲骰與平衡序列。
+  const privateCandidates = candidates.filter((hour) => table[hour]?.role === "desk");
+  const pool = privateCandidates.length ? privateCandidates : candidates;
+  return pool.length ? pool[hash % pool.length] : null;
+}
+
 /**
  * 角色 → 實際家具的互動站立格(優先自己房間,其次共用區)。
  * roomId 由呼叫端(store)依動態佔用表提供;out 或找不到時回傳 null。
@@ -115,6 +144,7 @@ export function resolveTarget(role: Role, roomId: string | null): { tile: Tile; 
   const match = (p: Placement) => {
     const def = getDef(p.defId);
     if (!("kind" in def.sprite) || !kinds.includes(def.sprite.kind)) return false;
+    if (role === "laundry") return p.room === "laundry"; // 交誼廳也有 washer，日常洗衣必須進真正的洗衣間
     // 只能用自己房間或共用區的家具,絕不闖別人套房
     return p.room === roomId || COMMUNAL.has(p.room);
   };

@@ -57,23 +57,45 @@ export function canRomance(a: Tenant, b: Tenant): boolean {
   return (a.isAdult ?? true) && (b.isAdult ?? true) && attractedMutual(a, b);
 }
 
+/** 目前的正式伴侶；唯一伴侶制下最多一人。舊存檔修復前若有多位，依關係表順序回傳第一位。 */
+export function romanticPartnerId(tenantId: string): string | null {
+  for (const [key, rel] of Object.entries(relationships)) {
+    if (!rel.romantic) continue;
+    const [aId, bId] = key.split("|");
+    if (aId === tenantId) return bId;
+    if (bId === tenantId) return aId;
+  }
+  return null;
+}
+
+/** 正式交往共用守門：取向／成年合法，且雙方都沒有另一位正式伴侶。 */
+export function canBecomeCouple(a: Tenant, b: Tenant): boolean {
+  if (!canRomance(a, b)) return false;
+  const aPartner = romanticPartnerId(a.id);
+  const bPartner = romanticPartnerId(b.id);
+  return (!aPartner || aPartner === b.id) && (!bPartner || bPartner === a.id);
+}
+
 /** 夾值調整兩人關係值(AI 事件用:拉近/疏遠) */
 export function adjustRelationship(aId: string, bId: string, delta: number) {
   const rel = ensureRel(aId, bId);
   rel.value = clamp(rel.value + delta, 0, 100);
 }
 
-/** 設定/解除情侶關係;成為情侶仍受取向限制(需傳入雙方 Tenant 檢查) */
-export function setCouple(aId: string, bId: string, value: boolean, aT?: Tenant, bT?: Tenant) {
+/** 設定/解除情侶關係；所有自然／AI 入口都必須由此套用唯一伴侶與取向限制。 */
+export function setCouple(aId: string, bId: string, value: boolean, aT?: Tenant, bT?: Tenant): boolean {
   const rel = ensureRel(aId, bId);
   if (!value) {
     rel.romantic = false;
-    return;
+    rel.cohabitOffered = false;
+    return true;
   }
-  if (aT && bT && canRomance(aT, bT)) {
+  if (aT && bT && canBecomeCouple(aT, bT)) {
     rel.romantic = true;
     rel.value = Math.max(rel.value, 75); // 在一起至少拉到曖昧線以上
+    return true;
   }
+  return false;
 }
 
 /** 兩人是否互有戀愛意願(性別 × 取向)。依設定,伴侶關係只在異性之間發展。 */
@@ -93,6 +115,41 @@ export function pruneInvalidRomance(getTenant: (id: string) => Tenant | undefine
     const b = getTenant(bId);
     if (a && b && !canRomance(a, b)) rel.romantic = false;
   }
+}
+
+/**
+ * 舊存檔戀愛完整性修復：先排除不合法戀情，再把多重戀情縮成一對一 matching。
+ * 同居配對優先保留；其餘按關係值由高到低保留。被降級的關係值不清空，會顯示為曖昧。
+ */
+export function pruneRomanceIntegrity(
+  getTenant: (id: string) => Tenant | undefined,
+  preferredPartner: (id: string) => string | null = () => null,
+): string[] {
+  const removed: string[] = [];
+  const candidates = Object.entries(relationships)
+    .filter(([, rel]) => rel.romantic)
+    .map(([key, rel]) => {
+      const [aId, bId] = key.split("|");
+      const a = getTenant(aId);
+      const b = getTenant(bId);
+      const valid = !!a && !!b && canRomance(a, b);
+      const preferred = preferredPartner(aId) === bId || preferredPartner(bId) === aId;
+      return { key, rel, aId, bId, valid, preferred };
+    })
+    .sort((x, y) => Number(y.preferred) - Number(x.preferred) || y.rel.value - x.rel.value || x.key.localeCompare(y.key));
+
+  const matched = new Set<string>();
+  for (const edge of candidates) {
+    if (edge.valid && !matched.has(edge.aId) && !matched.has(edge.bId)) {
+      matched.add(edge.aId);
+      matched.add(edge.bId);
+      continue;
+    }
+    edge.rel.romantic = false;
+    edge.rel.cohabitOffered = false;
+    removed.push(edge.key);
+  }
+  return removed;
 }
 
 /** 個性相容度(-5 排斥 ~ +5 契合),由核心標籤推得 */
@@ -204,8 +261,8 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
   }
 
   // 在一起(canRomance = 雙方成年 + 取向相容)
-  if (!rel.romantic && rel.value >= 75 && canRomance(a, b) && comp >= 0) {
-    rel.romantic = true;
+  if (!rel.romantic && rel.value >= 75 && canBecomeCouple(a, b) && comp >= 0) {
+    setCouple(a.id, b.id, true, a, b);
     res.milestone = "became_couple";
     res.importance = "major";
     res.textA = `❤️ 和 ${b.name} 在一起了`;

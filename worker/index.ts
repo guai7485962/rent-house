@@ -24,6 +24,7 @@ interface NarrateCtx {
   coreTags: string[];
   memoryTags: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
+  room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };
   todayLog: string[];
   relationships: string[];
   events: string[];
@@ -45,6 +46,7 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - 必須延續角色的核心性格與既有記憶標籤,讓劇情有連貫感(例:有[偷養浪貓]就別忘了貓)。
 - **必須接續「此前的劇情摘要」**:昨天埋的線今天要有下文(伏筆推進、情緒延續、習慣持續),不要每天各寫各的。
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
+- **尊重房間聲學狀態**:若 context 顯示「室內噪音抗議已阻隔」,不得生成鄰居抗議該租客房內噪音的日記、記憶或事件；可以描寫隔音有效。外部施工等與房內隔音無關的噪音，只有今天日誌已實際提到時才可延續。
 - **summaryUpdate(必填)**:輸出一段更新後的劇情摘要(50~150 字):以舊摘要為底,保留仍然重要的事實與未回收的伏筆,寫入今天的變化。這段會在明天餵回給你,是劇情連續性的唯一載體——寫得像「連載的前情提要」。
 - **記憶標籤 newMemory:只要今天出現值得記住的變化(情緒明顯起伏、關係進展、養成新習慣、突發小事、心境轉變…),就給一個 newMemory,讓角色記憶隨時間累積、越玩越立體。不必每天給,但別太吝嗇;標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])。已經有的記憶就不要重複。**
 
@@ -87,6 +89,7 @@ function buildPrompt(c: NarrateCtx): string {
     `核心性格:${c.coreTags.join("、") || "無"}`,
     `既有記憶:${c.memoryTags.join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
+    `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
@@ -180,6 +183,13 @@ function clampCtx(raw: unknown): NarrateCtx {
       affinity: clampStat(c.stats?.affinity),
       satisfaction: clampStat(c.stats?.satisfaction),
     },
+    room: {
+      noise: clampInt(c.room?.noise, 0, 100, 0),
+      soundproof: clampInt(c.room?.soundproof, 0, 100, 0),
+      treated: c.room?.treated === true,
+      // 舊版前端／既有待補日記沒有此欄位時採「仍有風險」，避免誤把未知狀態當成已隔音。
+      complaintRisk: c.room?.complaintRisk === false ? false : true,
+    },
     todayLog: clampArr(c.todayLog, 20, 200),
     relationships: clampArr(c.relationships, 12, 80),
     events: clampArr(c.events, 12, 200),
@@ -192,7 +202,7 @@ function clampCtx(raw: unknown): NarrateCtx {
 }
 
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
-export const _internal = { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel, extractWorkersAiText };
+export const _internal = { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
  *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */

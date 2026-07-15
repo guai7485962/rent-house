@@ -13,9 +13,13 @@ import { state, clamp, notify, pushSocialLog, type TenantRuntime } from "./gameS
 import { adjustRelationship, getRel } from "./social";
 import { clearNoiseMemories } from "./memoryEffects";
 import { addMoney } from "./economy";
-import { roomRect } from "./placements";
+import { getPlacements, placementInteract, roomRect } from "./placements";
 import { spawnFx } from "../floor/fx";
 import { save } from "./persistence";
+import { currentBlocked, type Tile } from "../floor/pathfind";
+import { startPairSession } from "../floor/pairSession";
+import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
+import { grantEventSoundproofing, noiseComplaintEligible } from "./acoustics";
 
 type Rng = () => number;
 
@@ -27,8 +31,6 @@ function shuffle<T>(arr: T[], rng: Rng): T[] {
   }
   return a;
 }
-
-const hasTag = (rt: TenantRuntime, ids: string[]) => rt.tenant.coreTags.some((t) => ids.includes(t.id));
 
 /** 依遊戲日、參與者與事件 id 選文案；不用 Math.random，避免純文字擴充改變平衡 RNG。 */
 function sceneIndex(parts: TenantRuntime[], salt: string, size: number): number {
@@ -109,6 +111,8 @@ const COMMUNITY_LINES = {
   ],
 };
 
+const LAUNDRY_UNAVAILABLE = new Set(["away", "sleeping_on_bed", "sleeping_on_couch", "showering", "crying", "pacing"]);
+
 const fillCommunity = (line: string, vars: Record<string, string>) =>
   Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), value), line);
 
@@ -116,6 +120,52 @@ const fillCommunity = (line: string, vars: Record<string, string>) =>
 function fxAt(roomId: string, kind: Parameters<typeof spawnFx>[0]) {
   const rect = roomRect(roomId);
   if (rect) spawnFx(kind, Math.floor((rect.c0 + rect.c1) / 2), Math.floor((rect.r0 + rect.r1) / 2), 10000);
+}
+
+/** 洗衣事件的兩個實際站位：優先使用兩台洗衣機的互動格，缺機台時才掃設施內空格。 */
+export function laundryStageTiles(): { a: Tile; b: Tile } | null {
+  const blocked = currentBlocked();
+  const usable = (tile: Tile) => blocked[tile.r]?.[tile.c] === false;
+  const washerTiles = getPlacements()
+    .filter((p) => p.room === "laundry" && p.defId === "laundry_washer")
+    .map(placementInteract)
+    .filter(usable)
+    .filter((tile, i, all) => all.findIndex((t) => t.c === tile.c && t.r === tile.r) === i);
+  if (washerTiles.length >= 2) return { a: washerTiles[0], b: washerTiles[1] };
+
+  const rect = roomRect("laundry");
+  if (!rect) return null;
+  const open: Tile[] = [];
+  for (let r = rect.r0; r <= rect.r1; r++) {
+    for (let c = rect.c0; c <= rect.c1; c++) if (usable({ c, r })) open.push({ c, r });
+  }
+  for (const a of open) {
+    const b = open.find((t) => Math.abs(t.c - a.c) + Math.abs(t.r - a.r) === 1);
+    if (b) return { a, b };
+  }
+  return null;
+}
+
+/** 把文字上的洗衣事件接到樓層演出：兩人中止原活動，走到洗衣機前互動一小時。 */
+function stageLaundry(parts: TenantRuntime[], kind: "chat" | "anger") {
+  const [a, b] = parts;
+  for (const rt of [a, b]) {
+    rt.tenant.visualState = "using_appliance";
+    rt.activityPose = null;
+    rt.activityTile = null;
+    rt.activitySurface = null;
+    rt.inLounge = false;
+    rt.visiting = null;
+    rt.visitHostId = null;
+  }
+  const tiles = laundryStageTiles();
+  if (!tiles) {
+    fxAt("laundry", kind);
+    return;
+  }
+  const anchor = tiles.a;
+  spawnFx(kind, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
+  startPairSession(a.tenant.id, b.tenant.id, anchor, "stand_face", state.gameMs, REAL_MS_PER_GAME_HOUR, tiles);
 }
 
 /** 對一組人兩兩調整關係 */
@@ -148,7 +198,10 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     id: "laundry",
     need: 2,
     cooldownDays: 3,
-    select: (present, rng) => shuffle(present, rng).slice(0, 2),
+    select: (present, rng) => {
+      const available = shuffle(present, rng).filter((rt) => !LAUNDRY_UNAVAILABLE.has(rt.tenant.visualState));
+      return available.length >= 2 ? available.slice(0, 2) : null;
+    },
     fire: (parts) => {
       const [a, b] = parts;
       const rel = getRel(a.tenant.id, b.tenant.id)?.value ?? 40;
@@ -159,7 +212,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
         bumpMood(b, -2, 5);
         pushSocialLog(a, fillCommunity(COMMUNITY_LINES.laundryConflictA[variant], { o: b.tenant.name }), "notable");
         pushSocialLog(b, fillCommunity(COMMUNITY_LINES.laundryConflictB[variant], { o: a.tenant.name }), "notable");
-        fxAt("laundry", "anger");
+        stageLaundry(parts, "anger");
         notify(`🧺 ${a.tenant.name} 和 ${b.tenant.name} 在洗衣房搶洗衣機起了口角`);
       } else {
         adjustRelationship(a.tenant.id, b.tenant.id, 3);
@@ -167,7 +220,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
         bumpMood(b, 3, -2);
         pushSocialLog(a, fillCommunity(COMMUNITY_LINES.laundryFriendlyA[variant], { o: b.tenant.name }), "notable");
         pushSocialLog(b, fillCommunity(COMMUNITY_LINES.laundryFriendlyB[variant], { o: a.tenant.name }), "notable");
-        fxAt("laundry", "chat");
+        stageLaundry(parts, "chat");
       }
     },
   },
@@ -237,7 +290,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     cooldownDays: 3,
     select: (present, rng) => {
       const shuffled = shuffle(present, rng);
-      const target = shuffled.find((rt) => hasTag(rt, ["noisy", "night_owl", "gamer", "late_return"]));
+      const target = shuffled.find(noiseComplaintEligible);
       if (!target) return null;
       const complainers = shuffled.filter((rt) => rt.tenant.id !== target.tenant.id).slice(0, 2);
       if (complainers.length < 2) return null;
@@ -331,7 +384,7 @@ const GROUP_TEMPLATES: GroupTemplate[] = [
     need: 3,
     select: (present, rng) => {
       const s = shuffle(present, rng);
-      const target = s.find((rt) => hasTag(rt, ["noisy", "night_owl", "gamer", "late_return"]));
+      const target = s.find(noiseComplaintEligible);
       if (!target) return null;
       const others = s.filter((rt) => rt.tenant.id !== target.tenant.id).slice(0, 2);
       return others.length >= 2 ? [target, ...others] : null;
@@ -343,7 +396,7 @@ const GROUP_TEMPLATES: GroupTemplate[] = [
         description: `${others.map((p) => p.tenant.name).join("、")} 一起來反映 ${target.tenant.name} 的作息太吵。你怎麼處理?`,
         choices: [
           { id: "warn", label: `警告 ${target.tenant.name}`, hint: "站在鄰居這邊(當事人會不爽)", first: { stress: 8, affinity: -6 }, rest: { satisfaction: 4, affinity: 4 } },
-          { id: "soundproof", label: "花錢做隔音($3,000)", hint: "一勞永逸,大家都滿意", money: -3000, all: { satisfaction: 6, affinity: 5 }, clearsNoise: true },
+          { id: "soundproof", label: "花錢做隔音($3,000)", hint: "永久改善這間房的噪音外洩", money: -3000, all: { satisfaction: 6, affinity: 5 }, clearsNoise: true, installsSoundproofing: true },
           { id: "tolerate", label: "請大家互相包容", hint: "不花錢,但抱怨方會不滿", first: { mood: 3 }, rest: { stress: 4, affinity: -3 } },
         ],
       };
@@ -405,6 +458,9 @@ export function resolveGroupEvent(choiceId: string): boolean {
   });
   if (choice.bond) bondAll(parts, choice.bond);
   if (choice.clearsNoise) for (const rt of parts) clearNoiseMemories(rt.tenant); // 隔音選項:清掉噪音困擾記憶
+  if ((choice.installsSoundproofing || (ev.id === "noise_verdict" && choice.id === "soundproof")) && parts[0]) {
+    grantEventSoundproofing(parts[0].tenant.id); // 永久入 upgrades 存檔，不再只是清掉當下抱怨
+  }
   for (const rt of parts) pushSocialLog(rt, `🏢 「${ev.title}」——房東選擇了「${choice.label}」。`, "notable");
   state.interactionCooldowns["community|group_any"] = state.gameMs; // 與 onCooldown("group_any") 同鍵
   state.pendingGroupEvent = null;

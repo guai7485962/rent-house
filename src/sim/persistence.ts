@@ -11,10 +11,10 @@ import { hasDef } from "../furniture/catalog";
 import { placements } from "./placements";
 import { normalizeRotation } from "../furniture/rotation";
 import { upgradeState } from "./upgrades";
-import { serializeRelationships, loadRelationships, pruneInvalidRomance } from "./social";
+import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from "./social";
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
-import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, type Txn } from "./gameState";
+import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { stopTicker } from "./lifecycle";
@@ -231,7 +231,8 @@ export function load(): boolean {
         }
       }
     }
-    pruneInvalidRomance((id) => state.runtimes[id]?.tenant); // 清掉不再合法的情侶(同性/未成年)
+    // 清掉不合法／多重戀情；同居對象優先保留，否則保留關係值最高的一組。
+    pruneRomanceIntegrity((id) => state.runtimes[id]?.tenant, cohabitingPartnerId);
     refreshAppearances(); // 依房間指派配色,修正舊存檔可能的撞色
     ensureDiaryHours(); // 舊檔沒有日記時段 → 指派(每人錯開)
     state.pendingDiaries.splice(

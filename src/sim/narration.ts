@@ -11,6 +11,7 @@ import { sanitizeArcUpdate } from "./arcs";
 import { listRelationships } from "./social";
 import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
+import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -276,7 +277,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
 }
 
 /** 從 runtime 組出當天的敘事 context */
-function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
+export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
   const today = rt.log.filter((e) => e.gameMs >= dayAgo);
   const todayLog = today.map((e) => e.text).filter((t) => t && t.length > 0).slice(-12);
@@ -291,6 +292,7 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
   const neighbors = Object.values(state.runtimes)
     .filter((o) => o.tenant.id !== id)
     .map((o) => o.tenant.name);
+  const acoustics = roomAcousticsForTenant(id);
   return {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
@@ -299,6 +301,12 @@ function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
     coreTags: rt.tenant.coreTags.map((t) => t.label),
     memoryTags: rt.tenant.memoryTags.map((t) => t.label),
     stats: { mood: rt.tenant.stats.mood, stress: rt.tenant.stats.stress, affinity: rt.tenant.stats.affinity, satisfaction: Math.round(rt.satisfaction) },
+    room: {
+      noise: acoustics.noise,
+      soundproof: acoustics.soundproof,
+      treated: acoustics.treated,
+      complaintRisk: noiseComplaintEligible(rt),
+    },
     todayLog,
     relationships,
     events,

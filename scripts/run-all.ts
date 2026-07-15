@@ -28,12 +28,12 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 // getHours()/getDate() 決定作息,設計基準 +08:00;UTC 下作息位移 8 小時會讓時段型測試假性失敗。
 // balance-test 已在時區一致下可重現,故留在 CI 集;浮點欄位另有 ±0.6 容差兜跨版本微抖。
 const REGRESSION = [
-  "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
+  "acoustics-laundry-test.ts", "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
   "balance-test.ts", "bugfix2-test.ts", "cohabit-integrity-test.ts", "community-test.ts", "conflict-test.ts", "content-variety-test.ts", "data-catalog-test.ts",
   "daynight-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "diary-upgrade-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "feed-test.ts", "finance-test.ts", "fixes-test.ts", "fx-test.ts",
   "interactions-test.ts", "invite-test.ts", "legacy-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",
-  "move-test.ts", "pair-session-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts",
+  "move-test.ts", "pair-session-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts", "romance-integrity-test.ts",
   "rent-test.ts", "roomcam-test.ts", "rotation-pose-test.ts", "stats-model-test.ts", "summary-test.ts", "weekly-report-test.ts", "worker-test.ts",
 ];
 

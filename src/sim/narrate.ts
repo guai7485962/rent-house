@@ -20,6 +20,8 @@ export interface NarrateCtx {
   coreTags: string[];
   memoryTags: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
+  /** 房間實際聲學狀態；讓 AI 不會在隔音完成後又捏造室內噪音抗議。 */
+  room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };
   todayLog: string[];
   relationships: string[];
   events: string[];

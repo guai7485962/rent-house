@@ -6,7 +6,7 @@
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
  */
 const { _internal } = await import("../worker/index");
-const { sameOrigin, guardRequest, clampCtx, parseResult, chooseGeminiModel, extractWorkersAiText } = _internal;
+const { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText } = _internal;
 
 let pass = 0;
 let fail = 0;
@@ -48,6 +48,14 @@ check("clampCtx:arc.stage/maxStage 夾值", (c.arc?.stage ?? 0) <= 9 && (c.arc?.
 check("clampCtx:亂資料不炸", (() => { try { clampCtx(null); clampCtx("x"); clampCtx(123); return true; } catch { return false; } })());
 check("clampCtx:無 arc → null", clampCtx({ name: "a" }).arc === null);
 check("clampCtx:eventDue 僅接受 true", clampCtx({ eventDue: true }).eventDue && !clampCtx({ eventDue: "true" }).eventDue);
+check("clampCtx:房間聲學夾值 + 非布林風險採保守預設", (() => {
+  const room = clampCtx({ room: { noise: 999, soundproof: -3, treated: true, complaintRisk: "true" } }).room;
+  return room.noise === 100 && room.soundproof === 0 && room.treated && room.complaintRisk;
+})());
+check("舊 context 缺聲學欄位時保守視為仍有抗議風險", clampCtx({ name: "舊租客" }).room.complaintRisk === true);
+check("隔音完成會明確限制 AI 不得生成室內噪音抗議", buildPrompt(clampCtx({
+  name: "夜貓租客", room: { noise: 8, soundproof: 12, treated: true, complaintRisk: false },
+})).includes("不得生成相關抗議"));
 
 // --- 免費模型分流:平淡日常用 Lite,事件/主線日用 Flash ---
 check("模型分流:平淡日常 → 3.1 Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-3.1-flash-lite");

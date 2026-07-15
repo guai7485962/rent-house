@@ -32,7 +32,7 @@ check("四種情境每日總結各至少 6 句", [DAILY_STRESS_TEMPLATES, DAILY_
 
 const base: NarrateCtx = {
   name: "測試員", occupation: "", bio: "", dayLabel: "第 3 天", coreTags: [], memoryTags: [],
-  stats: { mood: 60, stress: 40, affinity: 55, satisfaction: 60 }, todayLog: [], relationships: [], events: [], neighbors: [],
+  stats: { mood: 60, stress: 40, affinity: 55, satisfaction: 60 }, room: { noise: 0, soundproof: 0, treated: false, complaintRisk: false }, todayLog: [], relationships: [], events: [], neighbors: [],
   summary: "", arc: null, flags: [], eventDue: false,
 };
 const originalRandom = Math.random;

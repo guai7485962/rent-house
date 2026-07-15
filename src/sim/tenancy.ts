@@ -336,7 +336,13 @@ function applyCrossTenant(aId: string, bId: string, eff: EventEffect) {
     if (typeof eff.rel.delta === "number" && eff.rel.delta) adjustRelationship(aId, bId, eff.rel.delta);
     const a = state.runtimes[aId];
     if (eff.rel.breakup) setCouple(aId, bId, false);
-    else if (eff.rel.couple && a && canRomance(a.tenant, b.tenant)) setCouple(aId, bId, true, a.tenant, b.tenant);
+    else if (eff.rel.couple && a && canRomance(a.tenant, b.tenant)) {
+      const becameCouple = setCouple(aId, bId, true, a.tenant, b.tenant);
+      if (!becameCouple) {
+        pushSocialLog(a, `💭 和 ${b.tenant.name} 彼此有好感,但其中一人已有伴侶,關係停在曖昧。`, "notable");
+        pushSocialLog(b, `💭 和 ${a.tenant.name} 彼此有好感,但其中一人已有伴侶,關係停在曖昧。`, "notable");
+      }
+    }
   }
 }
 

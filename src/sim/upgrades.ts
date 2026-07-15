@@ -57,13 +57,41 @@ export const UPGRADES: UpgradeDef[] = [
   },
 ];
 
-export const getUpgradeDef = (id: string): UpgradeDef | undefined => UPGRADES.find((u) => u.id === id);
+/**
+ * 噪音裁決中 $3,000 的局部隔音處理。它會永久留在存檔並阻止同一房再次被一般噪音公審，
+ * 但不提供完整改建的租金／漲租加成，也不在改建商店重複販售。
+ */
+export const EVENT_SOUNDPROOFING_ID = "event_soundproofing";
+const HIDDEN_UPGRADES: UpgradeDef[] = [
+  {
+    id: EVENT_SOUNDPROOFING_ID,
+    icon: "🛠️",
+    name: "噪音改善工程",
+    desc: "針對門縫、牆面與震動源做局部隔音處理。",
+    price: 3000,
+    attributes: { soundproof: 4 },
+    rentBonus: 0,
+    tolBonus: 0,
+  },
+];
+
+export const getUpgradeDef = (id: string): UpgradeDef | undefined =>
+  UPGRADES.find((u) => u.id === id) ?? HIDDEN_UPGRADES.find((u) => u.id === id);
 
 /** 各房間已安裝的升級(入存檔;additive,舊存檔缺 = 空) */
 export const upgradeState = reactive({ byRoom: {} as Record<string, string[]> });
 
 export function roomUpgradeIds(roomId: string): string[] {
   return upgradeState.byRoom[roomId] ?? [];
+}
+
+/** 不重複地登記一項永久房間工程；費用與住戶效果由呼叫端處理。 */
+export function grantRoomUpgrade(roomId: string, upgradeId: string): boolean {
+  if (!getUpgradeDef(upgradeId)) return false;
+  const ids = (upgradeState.byRoom[roomId] ??= []);
+  if (ids.includes(upgradeId)) return false;
+  ids.push(upgradeId);
+  return true;
 }
 
 /** 該房升級帶來的屬性加成合計(placements.roomAttributes 會疊加) */

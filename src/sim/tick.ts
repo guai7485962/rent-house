@@ -5,7 +5,7 @@
  */
 import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
-import { routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
+import { laundryHourForDay, routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships, pairKey, getRel } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
@@ -115,7 +115,7 @@ function activeDirective(rt: TenantRuntime): string | null {
 }
 
 /** 作息 + 行為指令 + 偏離 → 最終 { state, role, isDeviation } */
-function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualState; role: Role; isDeviation: boolean } {
+function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualState; role: Role; isDeviation: boolean; effectState?: TenantVisualState } {
   const dir = activeDirective(rt);
   // 作息位移型指令:熬夜=整段往後 3 小時、早鳥=提前 2 小時(查表時反向偏移)
   const slotHour = dir === "night_owl" ? (hour - 3 + 24) % 24 : dir === "early_bird" ? (hour + 2) % 24 : hour;
@@ -126,6 +126,12 @@ function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualStat
   } else if (dir === "binge_watch" && (hour === 22 || hour === 23) && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
     slot = { role: "tv", state: "watching_tv" };
   }
+  // 約每四天一次的日常洗衣：只覆寫原本清醒且在家的時段，AI 指令期間仍以指令劇情優先。
+  let effectState: TenantVisualState | undefined;
+  if (!dir && laundryHourForDay(rt.tenant.id, gameDayIndex()) === hour) {
+    effectState = slot.state;
+    slot = { role: "laundry", state: "using_appliance" };
+  }
   const stress = rt.tenant.stats.stress;
   // 壓力偏離:睡不著 / 崩潰
   if (stress >= 95 && slot.state !== "away") {
@@ -134,7 +140,7 @@ function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualStat
   if (stress >= 90 && slot.state === "sleeping_on_bed") {
     return { state: "pacing", role: "bed", isDeviation: true };
   }
-  return { state: slot.state, role: slot.role, isDeviation: false };
+  return { state: slot.state, role: slot.role, isDeviation: false, effectState };
 }
 
 /** 依狀態衍生房間小物件(給房間細看畫面氛圍) */
@@ -365,6 +371,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     hour,
     timeLabel: fmt(state.gameMs),
     state: st,
+    effectState: decided.effectState,
     isDeviation,
     recentSummary: rt.tenant.recentSummary,
   });

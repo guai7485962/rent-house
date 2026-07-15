@@ -18,6 +18,8 @@ export interface GenCtx {
   hour: number;
   timeLabel: string; // "02:00"
   state: TenantVisualState;
+  /** 純演出活動可沿用被取代作息的數值效果，避免增加內容時意外重做平衡。 */
+  effectState?: TenantVisualState;
   isDeviation: boolean; // 是否偏離了正常作息(壓力/事件)
   recentSummary: string;
 }
@@ -78,6 +80,6 @@ export function generateHourly(ctx: GenCtx): GenResult {
   return {
     logText: base,
     importance,
-    statDeltas: { ...(EFFECT[ctx.state] ?? {}) },
+    statDeltas: { ...(EFFECT[ctx.effectState ?? ctx.state] ?? {}) },
   };
 }

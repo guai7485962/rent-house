@@ -33,8 +33,8 @@ export interface NarrateCtx {
   neighbors: string[];
   /** 滾動劇情摘要(上次 AI 回寫的 summaryUpdate)——跨日連貫性的關鍵 */
   summary: string;
-  /** 進行中的劇情弧(連載骨架;null = 沒有進行中的弧,AI 可開新弧) */
-  arc: { theme: string; stage: number; maxStage: number; summary: string } | null;
+  /** 進行中的劇情弧(連載骨架;null = 沒有進行中的弧,AI 可開新弧;with = 雙人弧的另一位主角) */
+  arc: { theme: string; stage: number; maxStage: number; summary: string; with?: string | null } | null;
   /** 事件連鎖伏筆旗標(事件選項留下的,AI 用來回收伏筆) */
   flags: string[];
   /** 事件冷卻已結束；AI 可在同一次日記請求中順便產生房東抉擇事件。 */

@@ -291,7 +291,7 @@ const allTags = computed(() => [
 /** 進行中的劇情弧(AI 連載主線),顯示在標籤列最前 */
 const arcChip = computed(() => {
   const a = rt.value?.arc;
-  return a ? `📖 ${a.theme} · ${a.stage}/${a.maxStage}` : null;
+  return a ? `📖 ${a.theme}${a.partnerName ? `(與${a.partnerName})` : ""} · ${a.stage}/${a.maxStage}` : null;
 });
 
 /** 今日天氣(header 只放 emoji 省空間;完整名稱放 title 提示) */
@@ -546,7 +546,7 @@ function onGroupResolve(choiceId: string) {
         <span class="arrow">{{ showSummary ? "▲" : "▼" }}</span>
       </div>
       <p v-if="showSummary">{{ rt.tenant.recentSummary }}</p>
-      <p v-if="showSummary && rt.arc" class="arc-sum">📖 {{ rt.arc.theme }}(第 {{ rt.arc.stage }}/{{ rt.arc.maxStage }} 章):{{ rt.arc.summary }}</p>
+      <p v-if="showSummary && rt.arc" class="arc-sum">📖 {{ rt.arc.theme }}{{ rt.arc.partnerName ? `(與 ${rt.arc.partnerName} 共同)` : "" }}(第 {{ rt.arc.stage }}/{{ rt.arc.maxStage }} 章):{{ rt.arc.summary }}</p>
     </section>
 
     <LogFeed :entries="rt.log" :since-ms="sinceMs" />

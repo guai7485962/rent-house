@@ -34,8 +34,8 @@ interface NarrateCtx {
   neighbors: string[];
   /** 滾動劇情摘要(上次的 summaryUpdate) */
   summary?: string;
-  /** 進行中的劇情弧(null = 可開新弧) */
-  arc?: { theme: string; stage: number; maxStage: number; summary: string } | null;
+  /** 進行中的劇情弧(null = 可開新弧;with = 雙人弧的另一位主角) */
+  arc?: { theme: string; stage: number; maxStage: number; summary: string; with?: string | null } | null;
   /** 事件連鎖伏筆旗標 */
   flags?: string[];
   eventDue: boolean;
@@ -64,7 +64,9 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
   - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
+    **雙人弧**:若這條故事線自然是「他與某位鄰居兩個人」的(戀情發展、共同企劃、恩怨和解…),可加 "with":"鄰居名"(必須來自同棟其他租客清單)——兩人的日記會共同推進同一條線。對方已有進行中的弧或兩人還不夠熟時,系統會自動改成他的單人弧,不必自行判斷。
   - 有進行中的弧:今天的日記與摘要要推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
+    若 context 顯示這是「與某位鄰居共同」的雙人弧:從**他自己的視角**寫,但劇情要與同一條線一致;收束時兩人會一起落幕。
   - 推進或收束時可附 "tone":這一步對他情緒的方向——"up"(順利/振奮)、"down"(受挫/低落)、"tense"(緊繃/懸念升高);收束時 up=如願以償、down=留下遺憾、tense=如釋重負。系統會轉成小幅數值起伏,讓玩家從數值曲線看到劇情;方向不明確就省略 tone。
   - **只有收束(done=true)時**，若這段經歷確實讓角色產生長期改變，可附 "growthTag"，id 只能從以下白名單選一個：${GROWTH_TAG_OPTIONS}。已在「永久成長」出現的不要重複；沒有明確成長就填 null。開弧或中途推進不得給 growthTag。
   - tone 是當下情緒脈衝；growthTag 是少見的永久性格成長。除此之外弧仍是敘事骨架；較大數值影響照常用 event。
@@ -106,7 +108,7 @@ event 規則:
 只輸出 JSON,格式:
 {"diary":"當日日記文字",
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
- "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)","growthTag":"白名單 id(僅收束選填)"} 或 null,
+ "arcUpdate":{"theme":"主題","with":"鄰居名(選填,僅開新弧)","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)","growthTag":"白名單 id(僅收束選填)"} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
  "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"rel":{"name":"鄰居名","delta":0} 或 null,"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
@@ -126,7 +128,7 @@ function buildPrompt(c: NarrateCtx): string {
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
     c.arc
-      ? `進行中的劇情弧(必須推進或收束):「${c.arc.theme}」第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
+      ? `進行中的劇情弧(必須推進或收束):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
       : `進行中的劇情弧:無(適合的話可開新弧)`,
     `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
     `房東抉擇事件機會:${c.eventDue ? "已到(適合就產生 event)" : "冷卻中(event 必須為 null)"}`,
@@ -203,7 +205,13 @@ const clampInt = (v: unknown, lo: number, hi: number, dflt: number): number =>
 function clampCtx(raw: unknown): NarrateCtx {
   const c = (raw ?? {}) as Record<string, any>;
   const arc = c.arc && typeof c.arc === "object"
-    ? { theme: clampStr(c.arc.theme, 40), stage: clampInt(c.arc.stage, 1, 9, 1), maxStage: clampInt(c.arc.maxStage, 2, 9, 3), summary: clampStr(c.arc.summary, 200) }
+    ? {
+        theme: clampStr(c.arc.theme, 40),
+        stage: clampInt(c.arc.stage, 1, 9, 1),
+        maxStage: clampInt(c.arc.maxStage, 2, 9, 3),
+        summary: clampStr(c.arc.summary, 200),
+        with: clampStr(c.arc.with, 24) || null,
+      }
     : null;
   return {
     name: clampStr(c.name, 24),

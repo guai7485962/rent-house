@@ -132,6 +132,11 @@ export function moveOut(tenantId: string, reason: string) {
   // 其他租客身上「提到他」的記憶標籤一併移除(人都走了,AI 不該再寫跟他的互動)
   for (const other of Object.values(state.runtimes)) {
     const t = other.tenant;
+    // 雙人弧的另一位主角搬走 → 弧降級為單人繼續(AI 會自然把「對方離開」寫進後續推進)
+    if (other.arc?.partnerId === tenantId) {
+      other.arc = { ...other.arc, partnerId: undefined, partnerName: undefined };
+      pushSocialLog(other, `📖 篇章「${other.arc.theme}」的另一位主角 ${name} 搬走了,故事只能自己寫下去。`, "notable");
+    }
     t.memoryTags = t.memoryTags.filter((m) => !m.label.includes(name) && !m.behaviorHint.includes(name));
     const bond = bonds.find((b) => b.aId === t.id || b.bId === t.id);
     if (bond && (bond.romantic || bond.value >= 50)) {

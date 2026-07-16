@@ -22,6 +22,9 @@ export interface StoryArc {
   maxStage: number;
   /** 這條弧的進展摘要(AI 每日回寫) */
   summary: string;
+  /** 雙人弧:另一位主角(兩位租客各持一份同 id 的弧,推進/收束互相同步;缺省 = 單人弧) */
+  partnerId?: string;
+  partnerName?: string;
 }
 
 /** 這一步對租客情緒的方向(AI 只能從 enum 選;省略/未知 = 無脈衝) */
@@ -35,7 +38,7 @@ export const ARC_TONE_PULSE: Record<"advance" | "conclude", Record<ArcTone, { mo
 
 /** 消毒結果:開新弧 / 推進 / 收束;不合格回 null(整個忽略) */
 export type ArcAction =
-  | { kind: "start"; arc: StoryArc }
+  | { kind: "start"; arc: StoryArc; withName: string | null }
   | { kind: "advance"; arc: StoryArc; tone: ArcTone | null }
   | { kind: "conclude"; theme: string; tone: ArcTone | null; growthTag: GrowthTagId | null };
 
@@ -62,6 +65,8 @@ export function sanitizeArcUpdate(raw: unknown, current: StoryArc | null): ArcAc
     return {
       kind: "start",
       arc: { id: `arc_${Date.now()}`, theme, stage: 1, maxStage, summary: str(r.summary, 160) },
+      // 雙人弧候選對象:只截字串;是否成立(對方存在/沒有進行中的弧/關係夠熟)由 applyArcUpdate 把關
+      withName: str(r.with, 20) || null,
     };
   }
 

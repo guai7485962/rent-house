@@ -176,6 +176,77 @@ check("tone 保留在 conclude", conT?.kind === "conclude" && conT.tone === "up"
   check("收束成長:後續 AI context 會列出既有特質", buildNarrateCtx(rt, "測試日").growthTags?.includes("[更有自信]") === true);
 }
 
+// --- 3c. 雙人劇情弧:開弧守門/同步推進/共同收束/搬離降級 ---
+{
+  const { produceDailyDiaries, setNarrateImplForTest } = await import("../src/sim/narration");
+  const { adjustRelationship, getRel, setCouple } = await import("../src/sim/social");
+  const { moveOut } = await import("../src/sim/tenancy");
+  const { save } = await import("../src/sim/persistence");
+  diaryTiming.gapMs = 1;
+  const a = state.runtimes["tenant_lin_asmr"];
+  const b = state.runtimes["tenant_chen_engineer"];
+  a.arc = null;
+  b.arc = null;
+  setCouple(a.tenant.id, b.tenant.id, false); // 前面快轉可能撮合成情侶,先還原成純關係值測守門
+  const relTo = (v: number) => adjustRelationship(a.tenant.id, b.tenant.id, v - (getRel(a.tenant.id, b.tenant.id)?.value ?? 0));
+  const seenArcCtx: any[] = [];
+  const mkFor = (name: string, arcUpdate: unknown) => async (ctx: { name: string; arc?: unknown }) => {
+    seenArcCtx.push({ name: ctx.name, arc: ctx.arc });
+    return {
+      diary: `AI:${ctx.name}`, newMemory: null, event: null, summaryUpdate: null,
+      arcUpdate: ctx.name === name ? arcUpdate : null, observation: null, ai: true as const,
+    };
+  };
+
+  const stW = sanitizeArcUpdate({ theme: "頂樓菜園計畫", maxStage: 4, summary: "想一起種點東西", with: "陳家豪" }, null);
+  check("sanitize:開弧的 with 透傳", stW?.kind === "start" && stW.withName === "陳家豪");
+
+  // 關係不足(10):降級為單人弧
+  relTo(10);
+  setNarrateImplForTest(mkFor(a.tenant.name, { theme: "頂樓菜園計畫", maxStage: 4, summary: "想一起種點東西", with: b.tenant.name }));
+  await produceDailyDiaries(true);
+  check("關係不足 → 自動降級單人弧", a.arc?.theme === "頂樓菜園計畫" && !a.arc?.partnerId && b.arc === null);
+  a.arc = null;
+
+  // 關係夠熟(50):雙人弧成立,兩份同 id、互指對方
+  relTo(50);
+  setNarrateImplForTest(mkFor(a.tenant.name, { theme: "頂樓菜園計畫", maxStage: 4, summary: "想一起種點東西", with: b.tenant.name }));
+  await produceDailyDiaries(true);
+  check("雙人弧成立:兩份同 id、互指對方",
+    !!a.arc?.partnerId && a.arc?.partnerId === b.tenant.id && b.arc?.partnerId === a.tenant.id && a.arc?.id === b.arc?.id);
+  check("雙方都有(與 X 共同)開章日誌",
+    a.log.some((e) => e.text.includes(`與 ${b.tenant.name} 共同`)) && b.log.some((e) => e.text.includes(`與 ${a.tenant.name} 共同`)));
+
+  // 推進:A 的日記推進 → B 的 stage/summary 同步;B 的 context 顯示雙人弧
+  seenArcCtx.length = 0;
+  setNarrateImplForTest(mkFor(a.tenant.name, { stage: 2, summary: "菜苗發芽了", done: false }));
+  await produceDailyDiaries(true);
+  check("A 推進 → B 同步 stage/summary", a.arc?.stage === 2 && b.arc?.stage === 2 && b.arc?.summary === "菜苗發芽了");
+  check("B 的 context 標示雙人弧", seenArcCtx.some((c) => c.name === b.tenant.name && c.arc?.with === a.tenant.name));
+
+  // 收束:B 的日記收束 → 兩人一起落幕、都留記憶
+  setNarrateImplForTest(mkFor(b.tenant.name, { stage: 3, summary: "收成了", done: true }));
+  await produceDailyDiaries(true);
+  check("B 收束 → 兩人的弧都清除", a.arc === null && b.arc === null);
+  check("兩人都留下[經歷]記憶",
+    a.tenant.memoryTags.some((m) => m.label === "[經歷:頂樓菜園計畫]") && b.tenant.memoryTags.some((m) => m.label === "[經歷:頂樓菜園計畫]"));
+
+  // 對方已有進行中的弧:降級單人、不打擾對方的弧
+  b.arc = { id: "arc_busy", theme: "自己的計畫", stage: 1, maxStage: 3, summary: "" };
+  setNarrateImplForTest(mkFor(a.tenant.name, { theme: "再開一條線", maxStage: 3, summary: "", with: b.tenant.name }));
+  await produceDailyDiaries(true);
+  check("對方已有弧 → 降級單人、對方的弧不受影響", a.arc?.theme === "再開一條線" && !a.arc?.partnerId && b.arc?.id === "arc_busy");
+
+  // 搬離降級:另一位主角搬走 → 弧留下但斷開連結 + 日誌
+  a.arc = { id: "arc_pair2", theme: "合寫小說", stage: 2, maxStage: 4, summary: "", partnerId: b.tenant.id, partnerName: b.tenant.name };
+  b.arc = { id: "arc_pair2", theme: "合寫小說", stage: 2, maxStage: 4, summary: "", partnerId: a.tenant.id, partnerName: a.tenant.name };
+  moveOut(b.tenant.id, "測試搬離");
+  check("對方搬走 → 弧降級單人繼續", a.arc?.theme === "合寫小說" && !a.arc?.partnerId && !a.arc?.partnerName);
+  check("搬離降級留下日誌", a.log.some((e) => e.text.includes("另一位主角") && e.text.includes("搬走了")));
+  a.arc = null; // 還原:後面的重載測試預期「收束後 arc 為 null」
+  save();
+}
+
 // --- 4. 重載還原 ---
 // 目前存檔:弧已收束(null)、flags 有 cap 後的 12 筆(decide/fastForward 都會觸發 save)
 const savedFlags = JSON.parse(exportSave()!).runtimes["tenant_lin_asmr"].flags;

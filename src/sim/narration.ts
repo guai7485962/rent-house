@@ -8,7 +8,7 @@
 import { narrateDay, templateDiary, type AiFallbackReason, type NarrateCtx, type NarrateResult } from "./narrate";
 import { sanitizeAiEvent } from "./events";
 import { ARC_TONE_PULSE, sanitizeArcUpdate, type ArcTone } from "./arcs";
-import { listRelationships } from "./social";
+import { getRel, listRelationships } from "./social";
 import { state, clamp, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
@@ -281,17 +281,33 @@ export function resetDeferredDiaryBudgetForTest(value = 4) {
   deferredBudgetDay = gameDayIndex();
 }
 
+/** 雙人弧成立門檻:至少是朋友(關係值 35)或情侶,故事線才可能自然涉及兩人 */
+const PAIR_ARC_MIN_REL = 35;
+
 /** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed)。
- *  推進/收束的 tone(觀察回饋第三期)轉成固定小幅 mood/stress 脈衝——劇情反映在數值曲線上。 */
+ *  推進/收束的 tone(觀察回饋第三期)轉成固定小幅 mood/stress 脈衝——劇情反映在數值曲線上。
+ *  雙人弧:開弧可指定另一位主角(兩份同 id 的弧);推進同步對方 stage/summary、收束兩人一起落幕。
+ *  tone 脈衝與 growthTag 只作用在「這篇日記的主人」——對方的情緒由他自己的日記推進時自己決定。 */
 function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
+  const prevArc = rt.arc;
   const action = sanitizeArcUpdate(raw, rt.arc);
   if (!action) return;
   if (action.kind === "start") {
-    rt.arc = action.arc;
-    pushSocialLog(rt, `📖 新篇章開始:「${action.arc.theme}」`, "notable");
+    const partner = resolveArcPartner(rt, action.withName);
+    if (partner) {
+      rt.arc = { ...action.arc, partnerId: partner.tenant.id, partnerName: partner.tenant.name };
+      partner.arc = { ...action.arc, partnerId: rt.tenant.id, partnerName: rt.tenant.name };
+      pushSocialLog(rt, `📖 新篇章開始(與 ${partner.tenant.name} 共同):「${action.arc.theme}」`, "notable");
+      pushSocialLog(partner, `📖 新篇章開始(與 ${rt.tenant.name} 共同):「${action.arc.theme}」`, "notable");
+    } else {
+      rt.arc = action.arc;
+      pushSocialLog(rt, `📖 新篇章開始:「${action.arc.theme}」`, "notable");
+    }
   } else if (action.kind === "advance") {
     rt.arc = action.arc;
     applyArcTone(rt, "advance", action.tone);
+    const partner = pairArcPartner(action.arc);
+    if (partner) partner.arc = { ...partner.arc!, stage: action.arc.stage, summary: action.arc.summary };
   } else {
     rt.arc = null;
     applyArcTone(rt, "conclude", action.tone);
@@ -299,7 +315,33 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
     pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
     pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
     if (growth) pushSocialLog(rt, `🌱 成長:${growth.label}——${growth.hint}`, "notable");
+    // 雙人弧一起落幕:對方也留記憶與日誌(tone/growth 不擴散,那是日記主人自己的情緒與成長)
+    const partner = pairArcPartner(prevArc);
+    if (partner) {
+      partner.arc = null;
+      pushMemory(partner.tenant, `[經歷:${action.theme}]`, "這段共同經歷已成為他的一部分", "ai_event");
+      pushSocialLog(partner, `📕 篇章落幕:「${action.theme}」`, "notable");
+    }
   }
+}
+
+/** 開雙人弧的守門:對方必須是現任租客、自己沒點名自己、對方沒有進行中的弧、關係至少朋友/情侶 */
+function resolveArcPartner(rt: TenantRuntime, withName: string | null): TenantRuntime | null {
+  if (!withName) return null;
+  const partner = Object.values(state.runtimes).find(
+    (o) => o.tenant.id !== rt.tenant.id && o.tenant.name === withName,
+  );
+  if (!partner || partner.arc) return null;
+  const rel = getRel(rt.tenant.id, partner.tenant.id);
+  if (!rel || (!rel.romantic && rel.value < PAIR_ARC_MIN_REL)) return null;
+  return partner;
+}
+
+/** 取雙人弧的另一位主角(仍在住、且手上是同一條弧才算) */
+function pairArcPartner(arc: { id: string; partnerId?: string } | null): TenantRuntime | null {
+  if (!arc?.partnerId) return null;
+  const partner = state.runtimes[arc.partnerId];
+  return partner?.arc?.id === arc.id ? partner : null;
 }
 
 /** tone 脈衝:查寫死的 ARC_TONE_PULSE 表,AI 只能選方向不能自訂數值 */
@@ -351,7 +393,9 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     events,
     neighbors,
     summary: sanitizeSummaryText(rt.tenant.recentSummary),
-    arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
+    arc: rt.arc
+      ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
+      : null,
     flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),

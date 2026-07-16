@@ -96,6 +96,17 @@ check("prompt 含成長標籤白名單與僅限收束防線", systemPrompt.inclu
 check("prompt 會列出既有永久成長避免重複", buildPrompt(clampCtx({ name: "a", growthTags: ["[更有自信]"] })).includes("永久成長:[更有自信]"));
 check("prompt 含跨租客 rel 推力指引", systemPrompt.includes('"rel"') && systemPrompt.includes("delta") && systemPrompt.includes("系統會擋下越界的推力"));
 
+// --- 雙人劇情弧 ---
+check("prompt 含雙人弧開弧與推進指引", systemPrompt.includes("雙人弧") && systemPrompt.includes('"with":"鄰居名"') && systemPrompt.includes("他自己的視角"));
+check("clampCtx:arc.with 截 ≤24、缺省 null", (() => {
+  const withArc = clampCtx({ name: "a", arc: { theme: "合寫小說", stage: 2, maxStage: 4, summary: "s", with: "陳".repeat(99) } });
+  const soloArc = clampCtx({ name: "a", arc: { theme: "獨自的線", stage: 1, maxStage: 3, summary: "s" } });
+  return withArc.arc!.with!.length <= 24 && soloArc.arc!.with === null;
+})());
+check("buildPrompt:雙人弧標示共同篇章", buildPrompt(clampCtx({
+  name: "a", arc: { theme: "合寫小說", stage: 2, maxStage: 4, summary: "s", with: "陳家豪" },
+})).includes("(與 陳家豪 共同的雙人篇章)"));
+
 // --- 天氣接線 ---
 check("clampCtx:weather 截 ≤12", clampCtx({ name: "a", weather: "🌧️ 雨天".repeat(9) }).weather!.length <= 12);
 check("prompt 帶天氣行(有值才出現)", (() => {

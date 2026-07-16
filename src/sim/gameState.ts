@@ -88,6 +88,18 @@ export interface TenantRuntime {
   directive: ActiveDirective | null;
   /** 上次 AI 自發行為的遊戲日(冷卻 3 日;缺省視同 -99,見 observationEffects) */
   lastSelfBehaviorDay?: number;
+  /** 租客錢包(繳租戲劇,見 economy.ts;缺省由 ensureWallets 依月租初始化) */
+  wallet?: number;
+  /** 積欠的房租($;錢包付不出的部分才算欠,意願性短繳不列入) */
+  arrears?: number;
+  /** 財務困難(收入中斷)持續到哪個遊戲日(含;-99/缺省 = 正常) */
+  hardshipUntilDay?: number;
+  /** 上次陷入財務困難的遊戲日(冷卻用) */
+  lastHardshipDay?: number;
+  /** 房東寬限欠租到哪個遊戲日(-99/缺省 = 無寬限;補清時轉感激記憶) */
+  rentGraceUntilDay?: number;
+  /** 上次繳租求情事件的遊戲日(冷卻用) */
+  lastRentPleaDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
   arc: StoryArc | null;
   /** 事件連鎖伏筆旗標(事件選項留下,之後餵回 AI 回收伏筆) */

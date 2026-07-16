@@ -41,6 +41,8 @@ export interface NarrateCtx {
   eventDue: boolean;
   /** 今日天氣(顯示用 label,例「🌧️ 雨天」;舊待補 ctx 缺省 = 不提天氣) */
   weather?: string;
+  /** 財務狀況一句話(欠租/拮据;缺省/空 = 一切正常,不進 prompt) */
+  finance?: string;
 }
 
 export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";

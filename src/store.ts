@@ -79,5 +79,7 @@ export { initGame, stopGame, resume, debugInit, debugStepHour, debugClock } from
 // 不會踩到 gameState ↔ persistence ↔ pets 的循環載入順序;load() 之後會再各自補一次。
 import { ensurePets as _ensurePets } from "./sim/pets";
 import { ensureDiaryHours as _ensureDiaryHours } from "./sim/narration";
+import { ensureWallets as _ensureWallets } from "./sim/economy";
 _ensurePets();
 _ensureDiaryHours();
+_ensureWallets();

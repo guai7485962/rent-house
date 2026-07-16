@@ -37,7 +37,7 @@ import {
   type TenantRuntime,
 } from "./gameState";
 import { applyHour } from "./tick";
-import { addMoney, DEPOSIT_MONTHS } from "./economy";
+import { addMoney, applyRentAction, DEPOSIT_MONTHS } from "./economy";
 import { upgradeTolBonus } from "./upgrades";
 import { setCustomAppearance } from "../pixel/scene";
 import { randomAppearance } from "../pixel/parts";
@@ -111,6 +111,8 @@ export function moveOut(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
   const name = rt.tenant.name;
+  // 帶著欠款離開:這筆收不回來了,至少讓房東知道(名冊原因不變)
+  if ((rt.arrears ?? 0) > 0) notify(`💸 ${name} 帶著 $${rt.arrears} 的未繳欠租搬走了`);
   recordAlumnus(rt, reason); // 進歷任房客名冊(趁 runtime 還在;§G-8)
   // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
   const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
@@ -394,6 +396,7 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
   if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
   if (eff.flag) addFlag(rt, eff.flag); // 事件連鎖:留伏筆旗標,之後每天餵回 AI
+  if (eff.rentAction) applyRentAction(rt, eff.rentAction); // 繳租求情:寬限/催繳/一筆勾銷(economy)
   // 行為指令(已在 events 消毒過白名單):接下來 N 遊戲日的行為看得見地改變
   if (eff.directive) {
     const def = DIRECTIVES[eff.directive.id];

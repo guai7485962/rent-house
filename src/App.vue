@@ -298,6 +298,15 @@ const arcChip = computed(() => {
 const weatherFull = computed(() => weatherLabel(todayWeather()));
 const weatherEmoji = computed(() => weatherFull.value.split(" ")[0]);
 
+/** 財務狀況 chip(繳租戲劇):欠租 > 拮据 > 無;和 directive 一樣放標籤列最前 */
+const financeChip = computed(() => {
+  const r = rt.value;
+  if (!r) return null;
+  if ((r.arrears ?? 0) > 0) return `💸 欠租 $${r.arrears}${gameDayIndex() <= (r.rentGraceUntilDay ?? -99) ? "(寬限中)" : ""}`;
+  if (gameDayIndex() <= (r.hardshipUntilDay ?? -99)) return "💼 手頭拮据";
+  return null;
+});
+
 /** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
 const directiveChip = computed(() => {
   const d = rt.value?.directive;
@@ -528,6 +537,7 @@ function onGroupResolve(choiceId: string) {
     <p v-if="rt.unhappyHours >= 24" class="warn">⚠ {{ rt.tenant.name }} 住得不開心,再不改善可能會退租。</p>
 
     <section class="tags">
+      <span v-if="financeChip" class="chip warn-chip">{{ financeChip }}</span>
       <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core && !t.growth, growth: t.growth }" :style="{ opacity: t.fade }" :title="t.hint">{{ t.label }}</span>
@@ -729,6 +739,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .chip.growth { border-color: #67d391; color: #b9f6ce; background: rgba(83, 196, 126, 0.1); }
 .chip.dir { border-color: #5ad06a; color: #b6ffbe; background: rgba(90, 208, 106, 0.08); }
 .chip.arc { border-color: #58a6ff; color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
+.chip.warn-chip { border-color: #f0a35e; color: #ffd9ae; background: rgba(240, 163, 94, 0.1); }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

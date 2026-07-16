@@ -114,6 +114,14 @@ check("prompt 帶天氣行(有值才出現)", (() => {
   const without = buildPrompt(clampCtx({ name: "a" }));
   return withW.includes("今天天氣:🌧️ 雨天") && !without.includes("今天天氣");
 })());
+
+// --- 財務狀況接線(租客錢包/繳租戲劇) ---
+check("clampCtx:finance 截 ≤40", clampCtx({ name: "a", finance: "欠".repeat(99) }).finance!.length <= 40);
+check("prompt 帶財務行(有值才出現)", (() => {
+  const withF = buildPrompt(clampCtx({ name: "a", finance: "欠租 $840(房東已答應寬限)" }));
+  const without = buildPrompt(clampCtx({ name: "a" }));
+  return withF.includes("財務狀況:欠租 $840") && !without.includes("財務狀況");
+})());
 check("parseResult:observation 物件透傳", (() => {
   const r = parseResult('{"diary":"今天。","observation":{"nudge":{"mood":-2},"reason":"理由"}}');
   return !!r && typeof r.observation === "object" && (r.observation as any)?.nudge?.mood === -2;

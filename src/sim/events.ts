@@ -28,6 +28,8 @@ export interface EventEffect {
   interaction?: string;
   /** 兩人關係變化:delta 正=拉近/戀情加速、負=吵架疏遠;couple/breakup 直接成/斷情侶 */
   rel?: { delta?: number; couple?: boolean; breakup?: boolean };
+  /** 繳租求情事件的處置(只由程式建構的事件使用;cleanEffect 不透傳,AI 不能觸發) */
+  rentAction?: "grace" | "collect" | "forgive";
 }
 
 export interface EventChoiceDef {

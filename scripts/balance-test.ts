@@ -53,6 +53,8 @@ const snap = {
         affinity: r1(rt.tenant.stats.affinity),
         satisfaction: r1(rt.satisfaction),
         rent: rt.tenant.finance.monthlyRent,
+        wallet: rt.wallet,
+        arrears: rt.arrears ?? 0,
         logs: rt.log.length,
         memories: rt.tenant.memoryTags.length,
       },

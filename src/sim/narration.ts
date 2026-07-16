@@ -14,6 +14,7 @@ import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
 import { applyObservation, sanitizeObservation } from "./observationEffects";
+import { todayWeather, weatherLabel } from "./weather";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -176,15 +177,16 @@ function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
     aiFallbackReason: result.ai ? undefined : fallbackReason,
   });
   if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
-  if (result.ai) applyDiaryEffects(cur, result, job.gameMs);
+  if (result.ai) applyDiaryEffects(cur, result, job.gameMs, job.ctx.todayLog);
   save();
 }
 
-function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult, diaryGameMs: number) {
+function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult, diaryGameMs: number, todayLog: string[]) {
   if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
   // 觀察回饋:AI 對今天素材的情緒解讀 → 消毒後小幅推數值(🔮)+ 可能的自發行為(🌀)
+  // todayLog 用來驗證跨租客關係推力:AI 點名的鄰居必須真的出現在今日素材裡
   const obs = sanitizeObservation(result.observation);
-  if (obs) applyObservation(cur, obs, diaryGameMs);
+  if (obs) applyObservation(cur, obs, diaryGameMs, todayLog);
   // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
   if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
   applyArcUpdate(cur, result.arcUpdate); // 劇情弧:開新弧/推進/收束(消毒後才採用)
@@ -268,7 +270,7 @@ async function drainDeferredDiaries(max: number) {
     log.aiProvider = result.provider;
     log.aiFallbackReason = undefined;
     state.pendingDiaries.shift();
-    applyDiaryEffects(rt, result, pending.gameMs);
+    applyDiaryEffects(rt, result, pending.gameMs, pending.ctx.todayLog);
     save();
   }
 }
@@ -311,7 +313,8 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
   // 上一篇「當日觀察」不能再當成今天的原始素材，否則 AI 會摘要自己的摘要，
   // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
-  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily);
+  // 🔮/🌀 是觀察回饋的系統日誌:不能回流當素材,否則 AI 會摘要自己的回饋(同舊日報回灌問題)
+  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !e.text.startsWith("🔮") && !e.text.startsWith("🌀"));
   const todayLog = selectDiverseNarrativeLines(today.map((e) => e.text).filter((t) => t && t.length > 0), 8);
   const events = selectDiverseNarrativeLines(today.map((e) => e.decisionNote).filter((t): t is string => !!t), 4);
   const id = rt.tenant.id;
@@ -347,5 +350,6 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     arc: rt.arc ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary } : null,
     flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
+    weather: weatherLabel(todayWeather()),
   };
 }

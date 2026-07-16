@@ -22,6 +22,7 @@ import { roomAttributes } from "./sim/placements";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
+import { todayWeather, weatherLabel } from "./sim/weather";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
   state,
@@ -285,6 +286,10 @@ const arcChip = computed(() => {
   return a ? `📖 ${a.theme} · ${a.stage}/${a.maxStage}` : null;
 });
 
+/** 今日天氣(header 只放 emoji 省空間;完整名稱放 title 提示) */
+const weatherFull = computed(() => weatherLabel(todayWeather()));
+const weatherEmoji = computed(() => weatherFull.value.split(" ")[0]);
+
 /** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
 const directiveChip = computed(() => {
   const d = rt.value?.directive;
@@ -381,7 +386,7 @@ function onGroupResolve(choiceId: string) {
   <header>
     <div class="title">🏠 房東監視中</div>
     <div class="meta">
-      <span>🕐 {{ clockLabel }}</span>
+      <span :title="weatherFull">{{ weatherEmoji }} {{ clockLabel }}</span>
       <span>💰 {{ state.money.toLocaleString() }}</span>
       <button class="bell" @click="showLegacy = true">🏆</button>
       <button class="bell" @click="showNotices = true">🔔</button>

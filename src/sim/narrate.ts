@@ -10,6 +10,7 @@ import {
   DAILY_SOCIAL_TEMPLATES,
   DAILY_STRESS_TEMPLATES,
   DAILY_TEMPLATES,
+  DAILY_WEATHER_TEMPLATES,
 } from "../content/observationLines";
 import { sanitizeDiaryText, sanitizeSummaryText } from "./narrativeQuality";
 
@@ -36,6 +37,8 @@ export interface NarrateCtx {
   flags: string[];
   /** 事件冷卻已結束；AI 可在同一次日記請求中順便產生房東抉擇事件。 */
   eventDue: boolean;
+  /** 今日天氣(顯示用 label,例「🌧️ 雨天」;舊待補 ctx 缺省 = 不提天氣) */
+  weather?: string;
 }
 
 export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";
@@ -123,6 +126,13 @@ export function templateDiary(ctx: NarrateCtx): string {
   if (ctx.stats.mood <= 35) pool.push(...DAILY_LOW_MOOD_TEMPLATES);
   if (ctx.stats.mood >= 75 && ctx.stats.stress <= 55) pool.push(...DAILY_HAPPY_TEMPLATES);
   if (ctx.relationships.length) pool.push(...DAILY_SOCIAL_TEMPLATES);
+  // 天氣情境句:依 ctx.weather 的 label 對回句池(缺省不混入)
+  if (ctx.weather) {
+    if (ctx.weather.includes("雨")) pool.push(...DAILY_WEATHER_TEMPLATES.rainy);
+    else if (ctx.weather.includes("悶熱")) pool.push(...DAILY_WEATHER_TEMPLATES.sweltering);
+    else if (ctx.weather.includes("晴")) pool.push(...DAILY_WEATHER_TEMPLATES.sunny);
+    else if (ctx.weather.includes("陰")) pool.push(...DAILY_WEATHER_TEMPLATES.cloudy);
+  }
   const tpl = pool[Math.floor(Math.random() * pool.length)]
     .replace(/\{name\}/g, ctx.name)
     .replace(/\{time\}/g, "夜裡");

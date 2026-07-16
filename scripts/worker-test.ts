@@ -91,6 +91,15 @@ check("prompt 含自發行為 behavior 指引(含新 4 種、排除 adopt_cat)",
   systemPrompt.includes('"behavior"') && systemPrompt.includes("comfort_seek") && systemPrompt.includes("sulk") && systemPrompt.includes("adopt_cat 不在此清單"));
 check("事件 directive 白名單已擴充至 10 個", systemPrompt.includes("id 只能從這 10 個選"));
 check("prompt 含 arc tone 指引(enum 三值 + 收束語意)", systemPrompt.includes('"tone"') && systemPrompt.includes("如釋重負") && systemPrompt.includes('"up|down|tense(選填)"'));
+check("prompt 含跨租客 rel 推力指引", systemPrompt.includes('"rel"') && systemPrompt.includes("delta") && systemPrompt.includes("系統會擋下越界的推力"));
+
+// --- 天氣接線 ---
+check("clampCtx:weather 截 ≤12", clampCtx({ name: "a", weather: "🌧️ 雨天".repeat(9) }).weather!.length <= 12);
+check("prompt 帶天氣行(有值才出現)", (() => {
+  const withW = buildPrompt(clampCtx({ name: "a", weather: "🌧️ 雨天" }));
+  const without = buildPrompt(clampCtx({ name: "a" }));
+  return withW.includes("今天天氣:🌧️ 雨天") && !without.includes("今天天氣");
+})());
 check("parseResult:observation 物件透傳", (() => {
   const r = parseResult('{"diary":"今天。","observation":{"nudge":{"mood":-2},"reason":"理由"}}');
   return !!r && typeof r.observation === "object" && (r.observation as any)?.nudge?.mood === -2;

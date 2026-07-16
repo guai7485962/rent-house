@@ -136,5 +136,56 @@ await resumeDeferredDiaries(6);
 check("過期補寫:行為不套用", lin.directive === null);
 check("過期補寫:數值照補(mood -2)", lin.tenant.stats.mood === Math.max(0, staleMoodBefore - 2));
 
+// ============================================================
+// 跨租客關係 nudge(受限版)
+// ============================================================
+const { adjustRelationship, getRel } = await import("../src/sim/social");
+const relOf = () => getRel(lin.tenant.id, other.tenant.id)?.value ?? 0;
+
+// --- 消毒 ---
+const r1 = sanitizeObservation({ nudge: {}, rel: { name: "陳家豪", delta: 99 }, reason: "r" });
+check("rel-only 也有效;delta 夾 ±2(99→2)", !!r1 && r1.rel?.delta === 2 && r1.rel?.name === "陳家豪");
+check("rel 缺 name 或 delta=0 → rel 為 null", sanitizeObservation({ nudge: {}, rel: { delta: 2 }, reason: "r" }) === null);
+
+// --- 整合:對象必須出現在今日素材 ---
+const mention = `和${other.tenant.name}在洗衣房聊了一會`;
+const withRel = (delta: number, mood = 0) => async (ctx2: { name: string }) =>
+  aiResult(ctx2.name, ctx2.name === lin.tenant.name
+    ? { nudge: { mood }, rel: { name: other.tenant.name, delta }, reason: "洗衣房聊得投機" }
+    : null);
+const resetLogsWithMention = () => {
+  for (const rt of runtimes()) rt.log.splice(0);
+  lin.log.push({ gameMs: state.gameMs, timeLabel: "t", text: mention, visualState: lin.tenant.visualState, importance: "minor" });
+};
+
+adjustRelationship(lin.tenant.id, other.tenant.id, 40 - relOf()); // 基準 40
+resetLogsWithMention();
+setNarrateImplForTest(withRel(2));
+await produceDailyDiaries(true);
+check("關係推力套用:40 → 42", relOf() === 42);
+check("🔮 日誌含關係因果", lin.log.some((e) => e.text.startsWith("🔮") && e.text.includes(`與${other.tenant.name}的關係 +2`)));
+
+adjustRelationship(lin.tenant.id, other.tenant.id, 73 - relOf()); // 推到門檻前
+resetLogsWithMention();
+setNarrateImplForTest(withRel(2));
+await produceDailyDiaries(true);
+check("向上夾在 74:73 + 2 → 74(不跨戀愛門檻)", relOf() === 74);
+
+resetLogsWithMention();
+setNarrateImplForTest(withRel(2, 1));
+await produceDailyDiaries(true);
+check("已在 74:正向推力整筆丟棄(數值不動)", relOf() === 74);
+check("被擋下時 🔮 只剩情緒部分、無關係字樣", lin.log.some((e) => e.text.startsWith("🔮") && !e.text.includes("關係")));
+
+for (const rt of runtimes()) rt.log.splice(0); // 今日素材沒提到對方
+setNarrateImplForTest(withRel(-2));
+await produceDailyDiaries(true);
+check("對象不在今日素材 → 推力丟棄", relOf() === 74);
+
+resetLogsWithMention();
+setNarrateImplForTest(withRel(-2));
+await produceDailyDiaries(true);
+check("負向推力不受 74 上限影響:74 → 72", relOf() === 72);
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

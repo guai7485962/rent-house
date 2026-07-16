@@ -9,8 +9,10 @@ const mem: Record<string, string> = {};
 const {
   sanitizeDiaryText,
   sanitizeSummaryText,
+  sanitizeReasonText,
   selectDiverseNarrativeLines,
   splitNarrativeSentences,
+  toTraditional,
 } = await import("../src/sim/narrativeQuality");
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { state } = await import("../src/store");
@@ -67,6 +69,16 @@ mem[SAVE_KEY] = JSON.stringify(saved);
 check("舊存檔：可重新載入", load());
 const restoredDiary = state.runtimes[rt.tenant.id].log.at(-1)?.text ?? "";
 check("舊存檔：既有 AI 當日觀察也會就地去重", splitNarrativeSentences(restoredDiary).length <= 4 && occurrences(restoredDiary, "把書湊得很近又拉遠") === 1, restoredDiary);
+
+// --- 線上實測發現的品質漏洞(2026-07-16 煙霧測試):簡體混入、標點連用、reason 冗贅 ---
+check("簡繁轉換:詞級歧義(泡面→泡麵)", toTraditional("深夜一個人吃泡面") === "深夜一個人吃泡麵");
+check("簡繁轉換:字級白名單(说/这/猫/让/头)", toTraditional("他说这猫让人头疼") === "他說這貓讓人頭疼");
+check("簡繁轉換:繁體原文不受影響", toTraditional("她把麵條分給了鄰居,後來一起看書。") === "她把麵條分給了鄰居,後來一起看書。");
+const punct = sanitizeDiaryText("今天的她看起來不太好，。她早早就回房休息了。");
+check("標點連用:「,。」收斂為「。」", punct.includes("不太好。") && !punct.includes("，。"), punct);
+const reason = sanitizeReasonText("她们还是不放弃，她們還是繼續努力，她們還是不放棄。");
+check("reason 閘門:轉繁 + 冗贅子句去重 + 去尾標點", reason.includes("她們還是不放棄") && occurrences(reason, "不放棄") === 1 && !/[。！？]$/.test(reason), reason);
+check("reason 閘門:截 60 字", sanitizeReasonText("長".repeat(99)).length === 60);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

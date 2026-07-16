@@ -20,6 +20,7 @@ import { currentBlocked, type Tile } from "../floor/pathfind";
 import { startPairSession } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 import { grantEventSoundproofing, noiseComplaintEligible } from "./acoustics";
+import { todayWeather } from "./weather";
 
 type Rng = () => number;
 
@@ -168,6 +169,12 @@ const COMMUNITY_LINES = {
     "😰 被 {names} 一起上門抱怨噪音,壓力山大。",
     "😰 一開門就看到 {names} 排成一列抱怨噪音,當場不知道該先向誰解釋。",
     "😰 被 {names} 拿著噪音紀錄一起抱怨,只好尷尬地連聲道歉。",
+  ],
+  rainyLounge: [
+    "🌧️ 外頭雨下個不停,和 {names} 窩在交誼廳沙發上有一搭沒一搭地聊,反而聊出了交情。",
+    "☔ 被雨困在樓裡的下午,{names} 不知不覺都聚到了交誼廳,分著同一包餅乾看雨。",
+    "🌧️ 雨聲太大誰也不想出門,和 {names} 在交誼廳泡了壺熱茶,把最近的事都聊了一輪。",
+    "☔ 停電似的安靜雨天,{names} 擠在交誼廳看老電影,片尾曲響起時雨剛好停了。",
   ],
   rooftop: [
     "🌇 傍晚和 {names} 相約頂樓乘涼吹風,一整天的疲憊都散了。",
@@ -356,6 +363,8 @@ interface CommunityEvent {
   need: number;
   /** 冷卻(遊戲日) */
   cooldownDays: number;
+  /** 額外環境條件(例:天氣);缺省 = 隨時可觸發 */
+  when?: () => boolean;
   /** 從在場的人裡挑出參與者;回傳 null = 這次條件不成立 */
   select: (present: TenantRuntime[], rng: Rng) => TenantRuntime[] | null;
   /** 觸發:套用效果 + 寫日誌 */
@@ -592,10 +601,11 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     },
   },
   {
-    // 頂樓乘涼:傍晚幾個人相約頂樓吹風,壓力都消了
+    // 頂樓乘涼:傍晚幾個人相約頂樓吹風,壓力都消了(雨天不上頂樓)
     id: "rooftop",
     need: 3,
     cooldownDays: 3,
+    when: () => todayWeather() !== "rainy",
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
     fire: (parts) => {
       bondAll(parts, 2);
@@ -604,6 +614,22 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       const line = COMMUNITY_LINES.rooftop[sceneIndex(parts, "rooftop", COMMUNITY_LINES.rooftop.length)];
       for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
       notify(`🌇 ${names} 相約頂樓乘涼`);
+    },
+  },
+  {
+    // 雨天窩交誼廳:下雨哪兒也去不了,反而把大家聚在一起(雨天限定)
+    id: "rainy_lounge",
+    need: 3,
+    cooldownDays: 2,
+    when: () => todayWeather() === "rainy",
+    select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
+    fire: (parts) => {
+      bondAll(parts, 2);
+      for (const rt of parts) bumpMood(rt, 4, -4);
+      const names = parts.map((p) => p.tenant.name).join("、");
+      const line = COMMUNITY_LINES.rainyLounge[sceneIndex(parts, "rainy_lounge", COMMUNITY_LINES.rainyLounge.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
+      notify(`🌧️ 雨天午後,${names} 窩在交誼廳`);
     },
   },
 ];
@@ -623,7 +649,7 @@ export function communityPass(rng: Rng = Math.random): boolean {
     if (rollGroupEvent(present, rng)) return true;
   }
   if (rng() > 0.4) return false; // 不是每天都有事發生(稀疏、不洗版)
-  const eligible = COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays));
+  const eligible = COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays) && (!e.when || e.when()));
   if (eligible.length === 0) return false;
   const ev = eligible[Math.floor(rng() * eligible.length)];
   const parts = ev.select(present, rng);

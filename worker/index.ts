@@ -37,6 +37,8 @@ interface NarrateCtx {
   /** 事件連鎖伏筆旗標 */
   flags?: string[];
   eventDue: boolean;
+  /** 今日天氣 label(舊版前端/待補 ctx 缺省 = 不提天氣) */
+  weather?: string;
 }
 
 const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎。玩家是房東,透過監視器觀察租客的日常。
@@ -70,6 +72,7 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
     self_care(好好照顧自己,提早上床休息)/ sulk(悶悶不樂,不主動社交但接受別人來訪)。
     用在情緒事件的自然後果(吵架翌日→hermit 或 sulk、失戀挫折→comfort_seek、連日高壓→self_care 或 overtime、熱戀得意→social);沒有明確觸發就填 null。
     adopt_cat 不在此清單:養貓是大事,要走 event 讓房東決定。若他已有進行中的行為改變,系統會自動忽略,不必自行判斷。
+  - 可選 "rel":今天素材裡**確實出現**他與某位鄰居的互動時,可回 {"name":"鄰居名(必須來自同棟其他租客清單)","delta":-2~2} 微調兩人關係(正=拉近、負=疏遠)。沒有明確互動就填 null;成為情侶等重大轉變仍只能走 event,系統會擋下越界的推力。
   - 這代表你的「情緒解讀」,不是重算活動效果;不要連日往同一方向堆。
   - 平淡、情緒沒有明確方向的日子 → observation 填 null,不要硬給。
 
@@ -98,7 +101,7 @@ event 規則:
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
  "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)"} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
- "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"reason":"一句話理由"} 或 null,
+ "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"rel":{"name":"鄰居名","delta":0} 或 null,"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {
@@ -108,6 +111,7 @@ function buildPrompt(c: NarrateCtx): string {
     `核心性格:${c.coreTags.join("、") || "無"}`,
     `既有記憶:${c.memoryTags.join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
+    ...(c.weather ? [`今天天氣:${c.weather}(可自然融入描寫,但不要每天都以天氣開頭)`] : []),
     `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,
     `[背景資料—只供理解,除非今天片段有新進展,不可直接寫成今日事件]`,
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
@@ -221,6 +225,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     arc,
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
+    weather: clampStr(c.weather, 12),
   };
 }
 

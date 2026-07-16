@@ -50,6 +50,8 @@ export interface NarrateResult {
   summaryUpdate: string | null;
   /** AI 回的原始劇情弧更新(由 sim/arcs 消毒後才採用);null = 不動 */
   arcUpdate: unknown;
+  /** AI 回的原始每日情緒微調(由 sim/observationEffects 消毒夾值後才採用);缺省/null = 不動 */
+  observation?: unknown;
   ai: boolean; // 是否真的由 AI 生成(false=模板 fallback)
   /** true = 這次 fallback 是因為 AI 每日額度用盡(前端可提示玩家) */
   quota?: boolean;
@@ -91,6 +93,7 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
         event?: unknown;
         summaryUpdate?: string | null;
         arcUpdate?: unknown;
+        observation?: unknown;
         provider?: AiProvider;
       };
       if (data.diary)
@@ -100,6 +103,7 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
           event: data.event ?? null,
           summaryUpdate: typeof data.summaryUpdate === "string" ? sanitizeSummaryText(data.summaryUpdate) || null : null,
           arcUpdate: data.arcUpdate ?? null,
+          observation: data.observation ?? null,
           ai: true,
           provider: data.provider,
         };

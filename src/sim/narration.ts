@@ -13,6 +13,7 @@ import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, t
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
+import { applyObservation, sanitizeObservation } from "./observationEffects";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -181,6 +182,9 @@ function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
 
 function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult) {
   if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
+  // 每日情緒微調:AI 對今天素材的情緒解讀 → 消毒夾值後小幅推數值 + 🔮 因果日誌
+  const obs = sanitizeObservation(result.observation);
+  if (obs) applyObservation(cur, obs);
   // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
   if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
   applyArcUpdate(cur, result.arcUpdate); // 劇情弧:開新弧/推進/收束(消毒後才採用)

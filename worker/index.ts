@@ -60,6 +60,12 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
   - 弧是純敘事骨架,不帶數值效果;要影響數值請照常用 event。
 - 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
+- **observation(每日情緒微調)**:寫完日記後,判斷今天的素材對他情緒的「淨影響」:
+  - nudge 是小幅推力:mood/stress/energy/wellbeing 各 ±3 內、affinity(對房東好感)±2 內;只填有依據的欄位,其餘填 0。
+  - reason 一句話(≤30 字)指向今天素材裡的**具體事**(玩家會看到這行因果,例:"連兩天被搶洗衣機,悶氣還沒消")。
+  - 這代表你的「情緒解讀」,不是重算活動效果;不要連日往同一方向堆。
+  - 平淡、情緒沒有明確方向的日子 → observation 填 null,不要硬給。
+
 另外:如果今天的處境**值得房東做一個決定**(鄰居衝突、戀情轉折、財務吃緊、崩潰邊緣、養寵物…),可以**額外**產生一個 event(房東抉擇);**平淡的日子就不要給 event(填 null),不要每天都給**。
 若 context 顯示「事件機會已到」,請優先檢查今天的處境能否自然形成一個 event;仍然不適合時才填 null。事件機會冷卻中則必須填 null。
 event 規則:
@@ -84,6 +90,7 @@ event 規則:
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
  "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
+ "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {
@@ -113,7 +120,7 @@ function buildPrompt(c: NarrateCtx): string {
 
 function parseResult(
   text: string,
-): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown; summaryUpdate: string | null; arcUpdate: unknown } | null {
+): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown; summaryUpdate: string | null; arcUpdate: unknown; observation: unknown } | null {
   try {
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return null;
@@ -121,13 +128,14 @@ function parseResult(
     if (typeof obj.diary !== "string") return null;
     const nm = obj.newMemory;
     const newMemory = nm && typeof nm.label === "string" && typeof nm.hint === "string" ? { label: nm.label, hint: nm.hint } : null;
-    // event / arcUpdate 原封不動透傳(夾值/消毒在前端 store 端統一做)
+    // event / arcUpdate / observation 原封不動透傳(夾值/消毒在前端 store 端統一做)
     const event = obj.event && typeof obj.event === "object" ? obj.event : null;
     const arcUpdate = obj.arcUpdate && typeof obj.arcUpdate === "object" ? obj.arcUpdate : null;
+    const observation = obj.observation && typeof obj.observation === "object" ? obj.observation : null;
     const diary = sanitizeDiaryText(obj.diary);
     if (!diary) return null;
     const summaryUpdate = typeof obj.summaryUpdate === "string" ? sanitizeSummaryText(obj.summaryUpdate) || null : null;
-    return { diary, newMemory, event, summaryUpdate, arcUpdate };
+    return { diary, newMemory, event, summaryUpdate, arcUpdate, observation };
   } catch {
     return null;
   }

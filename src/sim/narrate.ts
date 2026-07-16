@@ -21,6 +21,8 @@ export interface NarrateCtx {
   dayLabel: string;
   coreTags: string[];
   memoryTags: string[];
+  /** 已獲得的永久成長特質(label)；讓 AI 避免重複授予。 */
+  growthTags?: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
   /** 房間實際聲學狀態；讓 AI 不會在隔音完成後又捏造室內噪音抗議。 */
   room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };

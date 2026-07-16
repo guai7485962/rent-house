@@ -16,6 +16,7 @@ import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
 import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
+import { sanitizeGrowthTags } from "./growth";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
@@ -111,8 +112,10 @@ export const clampDelta = (d: number | undefined) => clamp(d ?? 0, -20, 20);
 export const tenants = tenantsJson as unknown as Tenant[];
 
 export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, props: RoomPropState[]): TenantRuntime {
+  const tenant = JSON.parse(JSON.stringify(t)) as Tenant; // 深拷貝,避免改到 import 的原始資料
+  tenant.growthTags = sanitizeGrowthTags(tenant.growthTags);
   return reactive({
-    tenant: JSON.parse(JSON.stringify(t)) as Tenant, // 深拷貝,避免改到 import 的原始資料
+    tenant,
     roomNo,
     cleanliness,
     roomProps: props,

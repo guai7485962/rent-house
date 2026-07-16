@@ -19,6 +19,7 @@ import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { stopTicker } from "./lifecycle";
 import { sanitizeDiaryText } from "./narrativeQuality";
+import { sanitizeGrowthTags } from "./growth";
 
 export const SAVE_KEY = "rent_house_save_v1";
 export const SAVE_VERSION = 3;
@@ -189,8 +190,10 @@ export function load(): boolean {
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];
     for (const [id, saved] of Object.entries<any>(s.runtimes)) {
+      const loadedTenant = saved.tenant as Tenant;
+      loadedTenant.growthTags = sanitizeGrowthTags(loadedTenant.growthTags);
       state.runtimes[id] = reactive({
-        tenant: saved.tenant as Tenant,
+        tenant: loadedTenant,
         roomNo: saved.roomNo,
         cleanliness: saved.cleanliness,
         roomProps: saved.roomProps,

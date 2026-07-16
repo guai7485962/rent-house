@@ -38,6 +38,8 @@ const { state, fastForward, decide, exportSave, initGame, stopGame } = await imp
 const { diaryTiming } = await import("../src/sim/narration");
 diaryTiming.gapMs = 4000; // 測試用:縮短錯開間隔(正式版 25s)
 const { sanitizeArcUpdate } = await import("../src/sim/arcs");
+const { GROWTH_TAGS, MAX_GROWTH_TAGS, grantGrowthTag, growthBaselineDelta, sanitizeGrowthTags } = await import("../src/sim/growth");
+const { baselines } = await import("../src/sim/tick");
 const { sanitizeAiEvent } = await import("../src/sim/events");
 const { addFlag } = await import("../src/sim/gameState");
 
@@ -68,6 +70,26 @@ const back = sanitizeArcUpdate({ stage: 0, done: false }, cur);
 check("推進:stage 不可倒退、摘要缺省沿用", back?.kind === "advance" && back.arc.stage === 2 && back.arc.summary === "舊摘要");
 check("done=true → 收束", sanitizeArcUpdate({ stage: 3, done: true }, cur)?.kind === "conclude");
 check("推到 maxStage 未明說 done=false → 收束", sanitizeArcUpdate({ stage: 5 }, { ...cur, stage: 4 })?.kind === "conclude");
+
+// --- 1b. 成長標籤:只准在收束時從白名單選，永久效果由本地表固定 ---
+const growthConclusion = sanitizeArcUpdate({ done: true, growthTag: "more_confident" }, cur);
+check("成長標籤:收束時保留白名單 id", growthConclusion?.kind === "conclude" && growthConclusion.growthTag === "more_confident");
+const badGrowthConclusion = sanitizeArcUpdate({ done: true, growthTag: "money_plus_999" }, cur);
+check("成長標籤:未知 id 不影響弧收束", badGrowthConclusion?.kind === "conclude" && badGrowthConclusion.growthTag === null);
+const growthDuringAdvance = sanitizeArcUpdate({ stage: 3, done: false, growthTag: "more_confident" }, cur);
+check("成長標籤:中途推進不能授予", growthDuringAdvance?.kind === "advance" && !("growthTag" in growthDuringAdvance));
+
+const holder: { growthTags?: any[] } = {};
+check("成長標籤:首次授予成功", grantGrowthTag(holder, "more_confident")?.label === GROWTH_TAGS.more_confident.label);
+check("成長標籤:重複 id 不會堆疊", grantGrowthTag(holder, "more_confident") === null && holder.growthTags?.length === 1);
+check("成長標籤:未知 id 不會寫入", grantGrowthTag(holder, "unknown") === null && holder.growthTags?.length === 1);
+for (const id of ["resilient", "asks_for_help", "grounded", "hopeful", "patient"] as const) grantGrowthTag(holder, id);
+check("成長標籤:每人最多四個", holder.growthTags?.length === MAX_GROWTH_TAGS);
+check("成長標籤:舊檔正規化去重／去未知／限量", sanitizeGrowthTags(["hopeful", "bad", "hopeful", "patient", "grounded", "decisive", "resilient"]).length === MAX_GROWTH_TAGS);
+check("成長標籤:固定 baseline 效果可組合", (() => {
+  const d = growthBaselineDelta(["more_confident", "asks_for_help"]);
+  return d.mood === 3 && d.stress === -3;
+})());
 
 // --- 2. mock AI 全流程:開弧 → 推進 → 收束 ---
 const lin = state.runtimes["tenant_lin_asmr"];
@@ -129,12 +151,14 @@ const conT = sanitizeArcUpdate({ done: true, tone: "up" }, cur);
 check("tone 保留在 conclude", conT?.kind === "conclude" && conT.tone === "up");
 
 {
-  const { produceDailyDiaries, setNarrateImplForTest } = await import("../src/sim/narration");
+  const { buildNarrateCtx, produceDailyDiaries, setNarrateImplForTest } = await import("../src/sim/narration");
   diaryTiming.gapMs = 1;
   const rt = state.runtimes["tenant_lin_asmr"];
   rt.arc = { id: "arc_tone", theme: "證照考試", stage: 1, maxStage: 4, summary: "報名了" };
+  rt.tenant.growthTags = [];
   rt.tenant.stats.mood = 50;
   rt.tenant.stats.stress = 50;
+  const baseBeforeGrowth = baselines(rt);
   const mk = (arcUpdate: unknown) => async (ctx: { name: string }) => ({
     diary: `AI:${ctx.name}`, newMemory: null, event: null, summaryUpdate: null,
     arcUpdate: ctx.name === rt.tenant.name ? arcUpdate : null, observation: null, ai: true as const,
@@ -142,21 +166,27 @@ check("tone 保留在 conclude", conT?.kind === "conclude" && conT.tone === "up"
   setNarrateImplForTest(mk({ stage: 2, summary: "衝刺中", done: false, tone: "tense" }));
   await produceDailyDiaries(true);
   check("推進 tense:壓力 +4、弧到 stage 2", rt.tenant.stats.stress === 54 && rt.arc?.stage === 2);
-  setNarrateImplForTest(mk({ stage: 3, summary: "考過了", done: true, tone: "up" }));
+  setNarrateImplForTest(mk({ stage: 3, summary: "考過了", done: true, tone: "up", growthTag: "more_confident" }));
   await produceDailyDiaries(true);
   check("收束 up:心情 +8、壓力 -6、弧清除", rt.tenant.stats.mood === 58 && rt.tenant.stats.stress === 48 && rt.arc === null);
   check("收束記憶照留", rt.tenant.memoryTags.some((m) => m.label === "[經歷:證照考試]"));
+  check("收束成長:永久標籤寫入租客", rt.tenant.growthTags?.includes("more_confident") === true);
+  check("收束成長:留下可見的成長因果日誌", rt.log.some((e) => e.text.includes("🌱 成長:[更有自信]")));
+  check("收束成長:homeostasis 心情基準永久 +3", baselines(rt).mood === baseBeforeGrowth.mood + 3);
+  check("收束成長:後續 AI context 會列出既有特質", buildNarrateCtx(rt, "測試日").growthTags?.includes("[更有自信]") === true);
 }
 
 // --- 4. 重載還原 ---
 // 目前存檔:弧已收束(null)、flags 有 cap 後的 12 筆(decide/fastForward 都會觸發 save)
 const savedFlags = JSON.parse(exportSave()!).runtimes["tenant_lin_asmr"].flags;
+const savedGrowthTags = JSON.parse(exportSave()!).runtimes["tenant_lin_asmr"].tenant.growthTags;
 lin.arc = { id: "dirty", theme: "髒資料", stage: 1, maxStage: 3, summary: "" };
 initGame();
 stopGame();
 const lin2 = state.runtimes["tenant_lin_asmr"];
 check("重載後 arc 還原(收束後為 null)", lin2.arc === null);
 check("重載後 flags 還原", JSON.stringify(lin2.flags) === JSON.stringify(savedFlags));
+check("重載後永久成長標籤還原", JSON.stringify(lin2.tenant.growthTags) === JSON.stringify(savedGrowthTags));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

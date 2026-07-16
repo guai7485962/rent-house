@@ -167,6 +167,8 @@ export interface Tenant {
 
   coreTags: CoreTag[];
   memoryTags: MemoryTag[];
+  /** 劇情弧收束後獲得的永久成長特質；id 與效果由 sim/growth.ts 白名單控制。 */
+  growthTags?: import("./sim/growth").GrowthTagId[];
 
   /** 付租能力與行為 */
   finance: {

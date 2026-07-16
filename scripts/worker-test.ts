@@ -44,6 +44,7 @@ check("clampCtx:todayLog 去重後條數 ≤10", c.todayLog.length <= 10);
 check("clampCtx:todayLog 單條 ≤200", c.todayLog[0].length <= 200);
 check("clampCtx:stat 夾 0~100", c.stats.mood === 100 && c.stats.stress === 0);
 check("clampCtx:flags ≤16", c.flags.length <= 16);
+check("clampCtx:growthTags ≤4", clampCtx({ growthTags: Array(20).fill("[成長]") }).growthTags!.length <= 4);
 check("clampCtx:arc.stage/maxStage 夾值", (c.arc?.stage ?? 0) <= 9 && (c.arc?.maxStage ?? 0) >= 2);
 check("clampCtx:亂資料不炸", (() => { try { clampCtx(null); clampCtx("x"); clampCtx(123); return true; } catch { return false; } })());
 check("clampCtx:無 arc → null", clampCtx({ name: "a" }).arc === null);
@@ -91,6 +92,8 @@ check("prompt 含自發行為 behavior 指引(含新 4 種、排除 adopt_cat)",
   systemPrompt.includes('"behavior"') && systemPrompt.includes("comfort_seek") && systemPrompt.includes("sulk") && systemPrompt.includes("adopt_cat 不在此清單"));
 check("事件 directive 白名單已擴充至 10 個", systemPrompt.includes("id 只能從這 10 個選"));
 check("prompt 含 arc tone 指引(enum 三值 + 收束語意)", systemPrompt.includes('"tone"') && systemPrompt.includes("如釋重負") && systemPrompt.includes('"up|down|tense(選填)"'));
+check("prompt 含成長標籤白名單與僅限收束防線", systemPrompt.includes('"growthTag"') && systemPrompt.includes("more_confident") && systemPrompt.includes("只有收束(done=true)時"));
+check("prompt 會列出既有永久成長避免重複", buildPrompt(clampCtx({ name: "a", growthTags: ["[更有自信]"] })).includes("永久成長:[更有自信]"));
 check("prompt 含跨租客 rel 推力指引", systemPrompt.includes('"rel"') && systemPrompt.includes("delta") && systemPrompt.includes("系統會擋下越界的推力"));
 
 // --- 天氣接線 ---

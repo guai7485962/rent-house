@@ -23,6 +23,7 @@ import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
+import { GROWTH_TAGS } from "./sim/growth";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
   state,
@@ -275,9 +276,16 @@ function onSell() {
 }
 
 const allTags = computed(() => [
-  ...rt.value.tenant.coreTags.map((t) => ({ label: t.label, core: true, fade: 1 })),
+  ...rt.value.tenant.coreTags.map((t) => ({ label: t.label, core: true, growth: false, fade: 1, hint: t.behaviorHint })),
+  ...(rt.value.tenant.growthTags ?? []).map((id) => ({
+    label: `🌱 ${GROWTH_TAGS[id].label}`,
+    core: false,
+    growth: true,
+    fade: 1,
+    hint: GROWTH_TAGS[id].hint,
+  })),
   // 記憶越淡,chip 越透明(生命週期可視化)
-  ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false, fade: 0.45 + 0.55 * (t.intensity ?? 1) })),
+  ...rt.value.tenant.memoryTags.map((t) => ({ label: t.label, core: false, growth: false, fade: 0.45 + 0.55 * (t.intensity ?? 1), hint: t.behaviorHint })),
 ]);
 
 /** 進行中的劇情弧(AI 連載主線),顯示在標籤列最前 */
@@ -522,7 +530,7 @@ function onGroupResolve(choiceId: string) {
     <section class="tags">
       <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
-      <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core }" :style="{ opacity: t.fade }">{{ t.label }}</span>
+      <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core && !t.growth, growth: t.growth }" :style="{ opacity: t.fade }" :title="t.hint">{{ t.label }}</span>
     </section>
 
     <section v-if="roomAttrs.length" class="attrs">
@@ -718,6 +726,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-size: 11.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--accent-2); color: #c9befc; background: rgba(143, 123, 255, 0.08); }
 .chip.mem { border-color: var(--accent); color: #ffd6a3; background: rgba(255, 180, 94, 0.08); }
+.chip.growth { border-color: #67d391; color: #b9f6ce; background: rgba(83, 196, 126, 0.1); }
 .chip.dir { border-color: #5ad06a; color: #b6ffbe; background: rgba(90, 208, 106, 0.08); }
 .chip.arc { border-color: #58a6ff; color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
 

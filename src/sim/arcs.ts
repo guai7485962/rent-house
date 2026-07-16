@@ -8,7 +8,10 @@
  * arc tone(AI 觀察回饋第三期):推進/收束可附 tone(enum 白名單,未知值忽略),
  * 轉成固定的小幅 mood/stress 脈衝——連載劇情反映在數值曲線上,弧不再只是文字。
  * 脈衝表寫死在 ARC_TONE_PULSE,AI 只能選方向、不能自訂數值。
+ * 收束時另可選一個 growthTag 白名單 id；永久效果同樣由本地固定表決定。
  */
+
+import { sanitizeGrowthTagId, type GrowthTagId } from "./growth";
 
 export interface StoryArc {
   id: string;
@@ -34,7 +37,7 @@ export const ARC_TONE_PULSE: Record<"advance" | "conclude", Record<ArcTone, { mo
 export type ArcAction =
   | { kind: "start"; arc: StoryArc }
   | { kind: "advance"; arc: StoryArc; tone: ArcTone | null }
-  | { kind: "conclude"; theme: string; tone: ArcTone | null };
+  | { kind: "conclude"; theme: string; tone: ArcTone | null; growthTag: GrowthTagId | null };
 
 const str = (v: unknown, cap: number): string => (typeof v === "string" ? v : "").slice(0, cap).trim();
 const int = (v: unknown, lo: number, hi: number, fallback: number): number => {
@@ -66,7 +69,7 @@ export function sanitizeArcUpdate(raw: unknown, current: StoryArc | null): ArcAc
   const summary = str(r.summary, 160) || current.summary;
   const tone: ArcTone | null = r.tone === "up" || r.tone === "down" || r.tone === "tense" ? r.tone : null;
   if (r.done === true || (stage >= current.maxStage && r.done !== false)) {
-    return { kind: "conclude", theme: current.theme, tone };
+    return { kind: "conclude", theme: current.theme, tone, growthTag: sanitizeGrowthTagId(r.growthTag) };
   }
   return { kind: "advance", arc: { ...current, stage, summary }, tone };
 }

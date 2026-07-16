@@ -9,6 +9,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { sanitizeDiaryText, sanitizeSummaryText, selectDiverseNarrativeLines } from "../src/sim/narrativeQuality";
+import { GROWTH_TAGS } from "../src/sim/growth";
 
 export interface Env {
   ASSETS: Fetcher;
@@ -24,6 +25,7 @@ interface NarrateCtx {
   dayLabel: string;
   coreTags: string[];
   memoryTags: string[];
+  growthTags?: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
   room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };
   todayLog: string[];
@@ -40,6 +42,10 @@ interface NarrateCtx {
   /** 今日天氣 label(舊版前端/待補 ctx 缺省 = 不提天氣) */
   weather?: string;
 }
+
+const GROWTH_TAG_OPTIONS = Object.entries(GROWTH_TAGS)
+  .map(([id, def]) => `${id}=${def.label}`)
+  .join(" / ");
 
 const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎。玩家是房東,透過監視器觀察租客的日常。
 你的工作:根據某位租客「今天」發生的事,寫一段房東視角的當日觀察日記。
@@ -60,7 +66,8 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
   - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
   - 有進行中的弧:今天的日記與摘要要推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
   - 推進或收束時可附 "tone":這一步對他情緒的方向——"up"(順利/振奮)、"down"(受挫/低落)、"tense"(緊繃/懸念升高);收束時 up=如願以償、down=留下遺憾、tense=如釋重負。系統會轉成小幅數值起伏,讓玩家從數值曲線看到劇情;方向不明確就省略 tone。
-  - 除 tone 之外,弧是純敘事骨架;要造成較大的數值影響請照常用 event。
+  - **只有收束(done=true)時**，若這段經歷確實讓角色產生長期改變，可附 "growthTag"，id 只能從以下白名單選一個：${GROWTH_TAG_OPTIONS}。已在「永久成長」出現的不要重複；沒有明確成長就填 null。開弧或中途推進不得給 growthTag。
+  - tone 是當下情緒脈衝；growthTag 是少見的永久性格成長。除此之外弧仍是敘事骨架；較大數值影響照常用 event。
 - 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
 - **observation(觀察回饋)**:寫完日記後,判斷今天的素材對他的「淨影響」:
@@ -99,7 +106,7 @@ event 規則:
 只輸出 JSON,格式:
 {"diary":"當日日記文字",
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
- "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)"} 或 null,
+ "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)","growthTag":"白名單 id(僅收束選填)"} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
  "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"rel":{"name":"鄰居名","delta":0} 或 null,"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
@@ -110,6 +117,7 @@ function buildPrompt(c: NarrateCtx): string {
     `側寫:${c.bio}`,
     `核心性格:${c.coreTags.join("、") || "無"}`,
     `既有記憶:${c.memoryTags.join("、") || "無"}`,
+    `永久成長:${(c.growthTags ?? []).join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     ...(c.weather ? [`今天天氣:${c.weather}(可自然融入描寫,但不要每天都以天氣開頭)`] : []),
     `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,
@@ -204,6 +212,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     dayLabel: clampStr(c.dayLabel, 20),
     coreTags: clampArr(c.coreTags, 8, 40),
     memoryTags: clampArr(c.memoryTags, 12, 40),
+    growthTags: clampArr(c.growthTags, 4, 40),
     stats: {
       mood: clampStat(c.stats?.mood),
       stress: clampStat(c.stats?.stress),

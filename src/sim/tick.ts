@@ -38,6 +38,7 @@ import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { communityPass } from "./community";
 import { weeklyReportPass } from "./weeklyReport";
+import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
 import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
@@ -215,7 +216,7 @@ const HOMEOSTASIS_K = 0.06;
  * - 身心健康後果:wellbeing 低 → 心情基準大幅下修(病懨懨開心不起來)
  * - 精力後果:energy 低 → 壓力基準上修(累到什麼都煩)
  */
-function baselines(rt: TenantRuntime): { mood: number; stress: number } {
+export function baselines(rt: TenantRuntime): { mood: number; stress: number } {
   let mood = 62;
   let stress = 38;
   for (const tag of rt.tenant.coreTags) {
@@ -227,6 +228,9 @@ function baselines(rt: TenantRuntime): { mood: number; stress: number } {
     if (/佛系|慵懶|隨性|悠哉/.test(l)) stress -= 10;
     if (/自律|規律/.test(l)) stress -= 4;
   }
+  const growth = growthBaselineDelta(rt.tenant.growthTags);
+  mood += growth.mood;
+  stress += growth.stress;
   const id = rt.tenant.id;
   const bonds = listRelationships().filter(
     (r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId],

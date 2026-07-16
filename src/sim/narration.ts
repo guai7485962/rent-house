@@ -15,6 +15,7 @@ import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
 import { applyObservation, sanitizeObservation } from "./observationEffects";
 import { todayWeather, weatherLabel } from "./weather";
+import { GROWTH_TAGS, grantGrowthTag } from "./growth";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -294,8 +295,10 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
   } else {
     rt.arc = null;
     applyArcTone(rt, "conclude", action.tone);
+    const growth = grantGrowthTag(rt.tenant, action.growthTag);
     pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
     pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
+    if (growth) pushSocialLog(rt, `🌱 成長:${growth.label}——${growth.hint}`, "notable");
   }
 }
 
@@ -313,8 +316,8 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
   // 上一篇「當日觀察」不能再當成今天的原始素材，否則 AI 會摘要自己的摘要，
   // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
-  // 🔮/🌀 是觀察回饋的系統日誌:不能回流當素材,否則 AI 會摘要自己的回饋(同舊日報回灌問題)
-  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !e.text.startsWith("🔮") && !e.text.startsWith("🌀"));
+  // 🔮/🌀/🌱 是系統回饋日誌:不能回流當素材,否則 AI 會摘要自己的回饋(同舊日報回灌問題)
+  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !/^[🔮🌀🌱]/u.test(e.text));
   const todayLog = selectDiverseNarrativeLines(today.map((e) => e.text).filter((t) => t && t.length > 0), 8);
   const events = selectDiverseNarrativeLines(today.map((e) => e.decisionNote).filter((t): t is string => !!t), 4);
   const id = rt.tenant.id;
@@ -335,6 +338,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     dayLabel,
     coreTags: rt.tenant.coreTags.map((t) => t.label),
     memoryTags: rt.tenant.memoryTags.map((t) => t.label),
+    growthTags: (rt.tenant.growthTags ?? []).map((id) => GROWTH_TAGS[id].label),
     stats: { mood: rt.tenant.stats.mood, stress: rt.tenant.stats.stress, affinity: rt.tenant.stats.affinity, satisfaction: Math.round(rt.satisfaction) },
     room: {
       noise: acoustics.noise,

@@ -23,3 +23,7 @@
 - 相關功能至少跑對應測試；跨系統或平衡改動跑 `npm test` 與 `npm run build`。
 - 刻意改變平衡時，確認差異合理後執行 `npx tsx scripts/balance-test.ts --update`，並在日誌說明原因。
 - 保留未成年排除戀愛線、成人內容遮蔽式且預設關、AI 輸出白名單／夾值／消毒等既有硬規則。
+
+## 共用 Mobile UI Lab
+
+UI 修改後，從 `C:\Users\User\claude_try` 執行 `npm run ui:shot -- rent`。此命令會在共用容器內安裝依賴、建置、啟動 Vite，並以三種手機尺寸截取樓層、動態與收支頁面。完成前必須檢查 `artifacts/ui-lab/rent/` 內所有 PNG 與 `report.json`。互動式檢查網址為 `http://127.0.0.1:5173/`。

@@ -150,6 +150,12 @@ function decideState(rt: TenantRuntime, hour: number): { state: TenantVisualStat
     slot = { role: "sofa", state: "playing_with_cat" };
   } else if (dir === "binge_watch" && (hour === 22 || hour === 23) && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
     slot = { role: "tv", state: "watching_tv" };
+  } else if (dir === "overtime" && (hour === 19 || hour === 20) && slot.state !== "away" && slot.state !== "sleeping_on_bed") {
+    // 自發行為 overtime:晚上還釘在書桌前趕工(working_at_desk 的既有數值效果 = 壓力↑精力↓)
+    slot = { role: "desk", state: "working_at_desk" };
+  } else if (dir === "self_care" && (hour === 22 || hour === 23) && slot.state !== "away") {
+    // 自發行為 self_care:提早上床休息(sleeping 的既有效果 = 精力回充)
+    slot = { role: "bed", state: "sleeping_on_bed" };
   }
   let effectState: TenantVisualState | undefined;
   // 原本籠統的 bathroom/showering 依日期穩定輪替成淋浴、如廁、盥洗或泡澡。
@@ -375,8 +381,9 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
         st = "watching_tv";
       }
     }
-    // 指令 hermit:迴避交誼廳——目標落在交誼廳就改回自己房間發呆
-    if (dir === "hermit" && tgt && tgt.placement.room === "lounge") tgt = null;
+    // 指令 hermit / 自發行為 sulk:迴避交誼廳——目標落在交誼廳就改回自己房間發呆
+    // (sulk 與 hermit 的差別在下面的串門判定:sulk 只擋「主動」社交,被動接待照舊)
+    if ((dir === "hermit" || dir === "sulk") && tgt && tgt.placement.room === "lounge") tgt = null;
     // 冷戰(§10-2):交誼廳裡有冷戰對象 → 迴避不去,「看得見的不和」
     if (tgt && tgt.placement.room === "lounge" && avoidLounge(rt.tenant.id)) tgt = null;
     if (tgt) {
@@ -404,7 +411,12 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   rt.roomProps = deriveProps(rt, st, hour);
 
   // 維持既有逐人亂數時序；是否真的拜訪要等所有人的本小時狀態確定後再配對。
-  if (LEISURE_STATES.has(st) && !isDeviation && !rt.inLounge && Math.random() <= 0.15) {
+  // comfort_seek:想找人談心 → 串門意願大增;sulk:不主動社交(擲骰照擲,保持 RNG 次序)。
+  const visitDir = activeDirective(rt);
+  if (
+    LEISURE_STATES.has(st) && !isDeviation && !rt.inLounge &&
+    Math.random() <= (visitDir === "comfort_seek" ? 0.6 : 0.15) && visitDir !== "sulk"
+  ) {
     visitIntents.add(rt.tenant.id);
   }
 

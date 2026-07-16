@@ -176,15 +176,15 @@ function applyDiaryResult(job: DiaryJob, result: NarrateResult) {
     aiFallbackReason: result.ai ? undefined : fallbackReason,
   });
   if (cur.log.length > LOG_CAP) cur.log.splice(0, cur.log.length - LOG_CAP);
-  if (result.ai) applyDiaryEffects(cur, result);
+  if (result.ai) applyDiaryEffects(cur, result, job.gameMs);
   save();
 }
 
-function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult) {
+function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult, diaryGameMs: number) {
   if (result.newMemory) pushMemory(cur.tenant, result.newMemory.label, result.newMemory.hint, "ai_event");
-  // 每日情緒微調:AI 對今天素材的情緒解讀 → 消毒夾值後小幅推數值 + 🔮 因果日誌
+  // 觀察回饋:AI 對今天素材的情緒解讀 → 消毒後小幅推數值(🔮)+ 可能的自發行為(🌀)
   const obs = sanitizeObservation(result.observation);
-  if (obs) applyObservation(cur, obs);
+  if (obs) applyObservation(cur, obs, diaryGameMs);
   // 連續性摘要:AI 回寫的新摘要取代舊的,下一天餵回去 → 日記能接續昨天的劇情
   if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
   applyArcUpdate(cur, result.arcUpdate); // 劇情弧:開新弧/推進/收束(消毒後才採用)
@@ -268,7 +268,7 @@ async function drainDeferredDiaries(max: number) {
     log.aiProvider = result.provider;
     log.aiFallbackReason = undefined;
     state.pendingDiaries.shift();
-    applyDiaryEffects(rt, result);
+    applyDiaryEffects(rt, result, pending.gameMs);
     save();
   }
 }

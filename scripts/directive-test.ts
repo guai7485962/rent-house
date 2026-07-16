@@ -88,6 +88,22 @@ check(`social 前 20 點在自房(${before})`, before === "idle");
 check(`social 後泡交誼廳(${lin.tenant.visualState})`, lin.tenant.visualState === "watching_tv" && lin.inLounge);
 lin.directive = null;
 
+// --- 5b. 自發行為新指令(觀察回饋第二期)的作息接線 ---
+setHour(20);
+lin.directive = { id: "overtime", untilDay: day() + 2, source: "ai" };
+debugInit();
+check(`overtime:20 點釘在書桌前趕工(${lin.tenant.visualState})`, lin.tenant.visualState === "working_at_desk");
+lin.directive = { id: "self_care", untilDay: day() + 2, source: "ai" };
+setHour(22);
+debugInit();
+check(`self_care:22 點提早上床(${lin.tenant.visualState})`, lin.tenant.visualState === "sleeping_on_bed");
+lin.directive = null;
+setHour(13);
+chen.directive = { id: "sulk", untilDay: day() + 2, source: "ai" };
+debugInit();
+check(`sulk:13 點不去交誼廳、待在自房(${chen.tenant.visualState})`, chen.tenant.visualState === "idle" && !chen.inLounge);
+chen.directive = null;
+
 // --- 6. 事件抉擇授予指令 ---
 lin.pendingEvent = {
   id: "t",

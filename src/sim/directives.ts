@@ -7,7 +7,9 @@
  * 實際套用在 tick.applyHour(作息位移/改目標/加 props)。
  */
 
-export type DirectiveId = "night_owl" | "early_bird" | "hermit" | "social" | "adopt_cat" | "binge_watch";
+export type DirectiveId =
+  | "night_owl" | "early_bird" | "hermit" | "social" | "adopt_cat" | "binge_watch"
+  | "comfort_seek" | "overtime" | "self_care" | "sulk";
 
 export interface DirectiveDef {
   id: DirectiveId;
@@ -63,6 +65,34 @@ export const DIRECTIVES: Record<DirectiveId, DirectiveDef> = {
     endText: "劇追完了,深夜終於捨得睡了。",
     defaultDays: 3,
   },
+  comfort_seek: {
+    id: "comfort_seek",
+    label: "🫂 想找人談心",
+    startText: "🫂 心裡悶著事,一有空就想往朋友房裡跑。",
+    endText: "心裡的結解開了些,不再急著找人說話。",
+    defaultDays: 2,
+  },
+  overtime: {
+    id: "overtime",
+    label: "💼 加班晚歸",
+    startText: "💼 工作堆起來了,晚上還釘在書桌前趕進度。",
+    endText: "趕完這一波,晚上終於能喘口氣了。",
+    defaultDays: 2,
+  },
+  self_care: {
+    id: "self_care",
+    label: "🌿 好好照顧自己",
+    startText: "🌿 決定好好照顧自己,這幾天都提早上床休息。",
+    endText: "把自己養回來了,作息回到原本的樣子。",
+    defaultDays: 2,
+  },
+  sulk: {
+    id: "sulk",
+    label: "🌧️ 悶悶不樂",
+    startText: "🌧️ 悶悶不樂地縮回自己的世界,不主動找任何人。",
+    endText: "情緒過去了,願意再跟大家往來。",
+    defaultDays: 2,
+  },
 };
 
 /** 進行中的行為指令(存進 TenantRuntime、入存檔) */
@@ -70,6 +100,8 @@ export interface ActiveDirective {
   id: DirectiveId;
   /** 持續到哪個遊戲日(含) */
   untilDay: number;
+  /** 來源:choice=玩家事件拍板(預設;舊存檔缺省)、ai=AI 觀察的自發行為 */
+  source?: "choice" | "ai";
 }
 
 /** 消毒:id 必須在白名單、days 夾 1~7;不合格回 null(直接丟棄,AI 不能發明指令) */
@@ -80,4 +112,21 @@ export function sanitizeDirective(raw: unknown): { id: DirectiveId; days: number
   if (!id) return null;
   const d = typeof r.days === "number" && isFinite(r.days) ? Math.round(r.days) : DIRECTIVES[id].defaultDays;
   return { id, days: Math.min(7, Math.max(1, d)) };
+}
+
+/** 自發行為(AI 觀察回饋第二期)可用的子集:adopt_cat 是真的領養寵物、
+ *  影響經濟與存檔狀態,屬「房東層級」的決定,一律走玩家拍板的 event,不開放自發。 */
+const SELF_BEHAVIOR_IDS = new Set<DirectiveId>([
+  "night_owl", "early_bird", "hermit", "social", "binge_watch",
+  "comfort_seek", "overtime", "self_care", "sulk",
+]);
+
+/** 消毒自發行為:id 限自發子集、days 夾 1~2(比玩家拍板的 1~7 更短);不合格回 null */
+export function sanitizeSelfBehavior(raw: unknown): { id: DirectiveId; days: number } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === "string" && SELF_BEHAVIOR_IDS.has(r.id as DirectiveId) ? (r.id as DirectiveId) : null;
+  if (!id) return null;
+  const d = typeof r.days === "number" && isFinite(r.days) ? Math.round(r.days) : 1;
+  return { id, days: Math.min(2, Math.max(1, d)) };
 }

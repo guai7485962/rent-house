@@ -291,7 +291,8 @@ const directiveChip = computed(() => {
   if (!d) return null;
   const left = d.untilDay - gameDayIndex() + 1;
   if (left <= 0) return null;
-  return `${DIRECTIVES[d.id].label} · 剩 ${left} 天`;
+  // source=ai:AI 觀察的自發行為(房客自己的決定);缺省/choice = 玩家事件拍板
+  return `${DIRECTIVES[d.id].label}${d.source === "ai" ? "(自發)" : ""} · 剩 ${left} 天`;
 });
 
 const ATTR_LABEL: Record<string, string> = {

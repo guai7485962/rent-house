@@ -85,8 +85,11 @@ check("parseResult:移除重複句", parseResult('{"diary":"他看了一眼窗�
 check("parseResult:壞 JSON → null", parseResult("這不是 json") === null);
 check("parseResult:缺 diary → null", parseResult('{"summaryUpdate":"s"}') === null);
 
-// --- observation(每日情緒微調):prompt 指引 + 原樣透傳(消毒在前端統一做) ---
-check("日記 prompt 含 observation 指引與夾值提示", systemPrompt.includes("observation(每日情緒微調)") && systemPrompt.includes("±3") && systemPrompt.includes('"observation"'));
+// --- observation(觀察回饋):prompt 指引 + 原樣透傳(消毒在前端統一做) ---
+check("日記 prompt 含 observation 指引與夾值提示", systemPrompt.includes("observation(觀察回饋)") && systemPrompt.includes("±3") && systemPrompt.includes('"observation"'));
+check("prompt 含自發行為 behavior 指引(含新 4 種、排除 adopt_cat)",
+  systemPrompt.includes('"behavior"') && systemPrompt.includes("comfort_seek") && systemPrompt.includes("sulk") && systemPrompt.includes("adopt_cat 不在此清單"));
+check("事件 directive 白名單已擴充至 10 個", systemPrompt.includes("id 只能從這 10 個選"));
 check("parseResult:observation 物件透傳", (() => {
   const r = parseResult('{"diary":"今天。","observation":{"nudge":{"mood":-2},"reason":"理由"}}');
   return !!r && typeof r.observation === "object" && (r.observation as any)?.nudge?.mood === -2;

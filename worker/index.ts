@@ -60,9 +60,15 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
   - 弧是純敘事骨架,不帶數值效果;要影響數值請照常用 event。
 - 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
-- **observation(每日情緒微調)**:寫完日記後,判斷今天的素材對他情緒的「淨影響」:
-  - nudge 是小幅推力:mood/stress/energy/wellbeing 各 ±3 內、affinity(對房東好感)±2 內;只填有依據的欄位,其餘填 0。
+- **observation(觀察回饋)**:寫完日記後,判斷今天的素材對他的「淨影響」:
+  - nudge 是小幅情緒推力:mood/stress/energy/wellbeing 各 ±3 內、affinity(對房東好感)±2 內;只填有依據的欄位,其餘填 0。
   - reason 一句話(≤30 字)指向今天素材裡的**具體事**(玩家會看到這行因果,例:"連兩天被搶洗衣機,悶氣還沒消")。
+  - 可選 "behavior":他**自己決定**接下來 1~2 天改變行為(不需房東同意,玩家會在畫面上看到)。格式 {"id":"...","days":1~2},id 只能從這 9 個選:
+    night_owl / early_bird / hermit / social / binge_watch /
+    comfort_seek(想找人談心,常往朋友房裡跑)/ overtime(加班晚歸,晚上還釘在書桌前)/
+    self_care(好好照顧自己,提早上床休息)/ sulk(悶悶不樂,不主動社交但接受別人來訪)。
+    用在情緒事件的自然後果(吵架翌日→hermit 或 sulk、失戀挫折→comfort_seek、連日高壓→self_care 或 overtime、熱戀得意→social);沒有明確觸發就填 null。
+    adopt_cat 不在此清單:養貓是大事,要走 event 讓房東決定。若他已有進行中的行為改變,系統會自動忽略,不必自行判斷。
   - 這代表你的「情緒解讀」,不是重算活動效果;不要連日往同一方向堆。
   - 平淡、情緒沒有明確方向的日子 → observation 填 null,不要硬給。
 
@@ -72,9 +78,10 @@ event 規則:
 - 2~3 個選項,每個選項有 label、hint、effect。
 - effect.mood/stress/affinity/satisfaction 建議 ±15 內、money ±3000 內(正=房東收入,負=房東支出)。
 - 選項可選擇性留 memory(記憶標籤,讓後續劇情延續)。**不要驅逐租客。**
-- 選項可選擇性附 "directive":讓租客接下來幾天的行為**在遊戲畫面上看得見地改變**(玩家會親眼看到)。格式 {"id":"...","days":1~7},id 只能從這 6 個選:
+- 選項可選擇性附 "directive":讓租客接下來幾天的行為**在遊戲畫面上看得見地改變**(玩家會親眼看到)。格式 {"id":"...","days":1~7},id 只能從這 10 個選:
   night_owl(開始熬夜,作息整段後移)/ early_bird(早睡早起,作息提前)/ hermit(閉門不出,不去交誼廳)/
-  social(熱衷社交,傍晚泡交誼廳)/ adopt_cat(養了貓,房裡出現貓、每晚逗貓)/ binge_watch(追劇成癮,深夜黏在電視前)。
+  social(熱衷社交,傍晚泡交誼廳)/ adopt_cat(養了貓,房裡出現貓、每晚逗貓)/ binge_watch(追劇成癮,深夜黏在電視前)/
+  comfort_seek(想找人談心,常往朋友房裡跑)/ overtime(加班晚歸)/ self_care(提早上床休息)/ sulk(悶悶不樂,不主動社交)。
   用在劇情自然的地方(失戀→hermit、認識新朋友→social、撿到貓→adopt_cat…),不要硬塞。
 - **可以製造牽涉「另一位鄰居」的劇情**(如室友吵架/打架、戀情告白或加速、和好):把 event 的 "with" 設成那位鄰居的名字(必須是上面「同棟其他租客」清單裡的名字)。此時每個選項的 effect 可加:
   - "other":對那位鄰居的數值 {mood,stress,affinity,satisfaction}。
@@ -90,7 +97,7 @@ event 規則:
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
  "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
- "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"reason":"一句話理由"} 或 null,
+ "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {

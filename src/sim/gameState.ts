@@ -83,8 +83,10 @@ export interface TenantRuntime {
   lastEventDay: number;
   /** 上次調租談判的遊戲日(冷卻用;-99 = 沒談過) */
   rentChangeDay: number;
-  /** 進行中的行為指令(AI 事件選項/規則事件授予;到期自動恢復) */
+  /** 進行中的行為指令(AI 事件選項/規則事件授予,或 AI 觀察的自發行為;到期自動恢復) */
   directive: ActiveDirective | null;
+  /** 上次 AI 自發行為的遊戲日(冷卻 3 日;缺省視同 -99,見 observationEffects) */
+  lastSelfBehaviorDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
   arc: StoryArc | null;
   /** 事件連鎖伏筆旗標(事件選項留下,之後餵回 AI 回收伏筆) */

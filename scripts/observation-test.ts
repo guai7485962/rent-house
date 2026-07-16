@@ -84,5 +84,57 @@ await resumeDeferredDiaries(6);
 check("補寫升級路徑也套用推力(mood +2)", lin.tenant.stats.mood === Math.min(100, moodBeforeDeferred + 2));
 check("補寫升級也寫 🔮 日誌", lin.log.some((e) => e.text.startsWith("🔮 觀察影響:回頭看其實是不錯的一天")));
 
+// ============================================================
+// 第二期:selfBehavior 自發行為
+// ============================================================
+
+// --- 消毒 ---
+const b1 = sanitizeObservation({ nudge: {}, behavior: { id: "sulk", days: 99 }, reason: "理由" });
+check("behavior-only 也有效;days 夾 1~2(99→2)", !!b1 && b1.behavior?.id === "sulk" && b1.behavior.days === 2 && b1.nudge.mood === 0);
+check("behavior 未知 id → 丟棄;連同全 0 nudge → 整包 null", sanitizeObservation({ nudge: {}, behavior: { id: "teleport", days: 1 }, reason: "r" }) === null);
+check("adopt_cat 不開放自發(房東層級決定)", sanitizeObservation({ nudge: {}, behavior: { id: "adopt_cat", days: 1 }, reason: "r" }) === null);
+const b2 = sanitizeObservation({ nudge: { mood: 1 }, behavior: { id: "adopt_cat", days: 1 }, reason: "r" });
+check("非法 behavior 丟棄但合法 nudge 保留", !!b2 && b2.behavior === null && b2.nudge.mood === 1);
+
+// --- 整合:自發行為生效(source=ai + 🌀 日誌 + 冷卻登記) ---
+const { gameDayIndex } = await import("../src/sim/gameState");
+lin.directive = null;
+lin.lastSelfBehaviorDay = -99;
+for (const rt of runtimes()) rt.log.splice(0);
+const sulkReason = "和鄰居吵完架,整個人悶悶的";
+setNarrateImplForTest(async (ctx) =>
+  aiResult(ctx.name, ctx.name === lin.tenant.name ? { nudge: { mood: -1 }, behavior: { id: "sulk", days: 2 }, reason: sulkReason } : null));
+await produceDailyDiaries(true);
+check("自發行為生效:directive=sulk、source=ai、為期 2 天",
+  lin.directive?.id === "sulk" && lin.directive?.source === "ai" && lin.directive?.untilDay === gameDayIndex() + 2);
+check("冷卻已登記(lastSelfBehaviorDay=今天)", lin.lastSelfBehaviorDay === gameDayIndex());
+check("🌀 日誌含理由與行為開場白", lin.log.some((e) => e.text.startsWith(`🌀 ${sulkReason}——`) && e.text.includes("悶悶不樂")));
+check("observation=null 的租客不受影響", !other.directive);
+
+// --- 防線:進行中指令優先、3 日冷卻 ---
+lin.directive = null; // 清掉 sulk,但冷卻(今天)仍在
+await produceDailyDiaries(true);
+check("3 日冷卻內:自發行為被擋", lin.directive === null);
+lin.lastSelfBehaviorDay = -99; // 解除冷卻,改掛玩家拍板的指令
+lin.directive = { id: "social", untilDay: gameDayIndex() + 5, source: "choice" };
+await produceDailyDiaries(true);
+check("已有玩家拍板指令:自發行為不覆蓋", lin.directive?.id === "social" && lin.directive?.source === "choice");
+lin.directive = null;
+lin.lastSelfBehaviorDay = -99;
+
+// --- 待補日記隔太久(>1 遊戲日):行為過時不套,數值照補 ---
+state.pendingDiaries.splice(0);
+for (const rt of runtimes()) rt.log.splice(0);
+setNarrateImplForTest(async () => { throw new Error("不該在模板批被呼叫"); });
+await produceDailyDiaries(false);
+state.gameMs += 3 * 24 * 3600 * 1000; // 快轉 3 遊戲日後才補寫成功
+const staleMoodBefore = lin.tenant.stats.mood;
+setNarrateImplForTest(async (ctx) =>
+  aiResult(ctx.name, ctx.name === lin.tenant.name ? { nudge: { mood: -2 }, behavior: { id: "hermit", days: 2 }, reason: "那天的事還放在心上" } : null));
+resetDeferredDiaryBudgetForTest(6);
+await resumeDeferredDiaries(6);
+check("過期補寫:行為不套用", lin.directive === null);
+check("過期補寫:數值照補(mood -2)", lin.tenant.stats.mood === Math.max(0, staleMoodBefore - 2));
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

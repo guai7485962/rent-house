@@ -57,7 +57,8 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
   - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
   - 有進行中的弧:今天的日記與摘要要推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
-  - 弧是純敘事骨架,不帶數值效果;要影響數值請照常用 event。
+  - 推進或收束時可附 "tone":這一步對他情緒的方向——"up"(順利/振奮)、"down"(受挫/低落)、"tense"(緊繃/懸念升高);收束時 up=如願以償、down=留下遺憾、tense=如釋重負。系統會轉成小幅數值起伏,讓玩家從數值曲線看到劇情;方向不明確就省略 tone。
+  - 除 tone 之外,弧是純敘事骨架;要造成較大的數值影響請照常用 event。
 - 事件選項的 effect 可選擇性留 "flag"(≤16 字的伏筆旗標,例:"答應幫忙搬家"、"欠房東一次人情"):會記在租客身上並在之後每天的 context 餵回給你——請在後續日記/事件裡回收這些伏筆。
 
 - **observation(觀察回饋)**:寫完日記後,判斷今天的素材對他的「淨影響」:
@@ -95,7 +96,7 @@ event 規則:
 只輸出 JSON,格式:
 {"diary":"當日日記文字",
  "summaryUpdate":"更新後的劇情摘要(50~150 字)",
- "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false} 或 null,
+ "arcUpdate":{"theme":"主題","stage":1,"maxStage":3,"summary":"弧進展摘要","done":false,"tone":"up|down|tense(選填)"} 或 null,
  "newMemory":{"label":"[標籤]","hint":"指引"} 或 null,
  "observation":{"nudge":{"mood":0,"stress":0,"energy":0,"wellbeing":0,"affinity":0},"behavior":{"id":"...","days":1} 或 null,"reason":"一句話理由"} 或 null,
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;

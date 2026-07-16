@@ -120,6 +120,34 @@ check("flag 去重", lin.flags.length === flagCount);
 for (let i = 0; i < 20; i++) addFlag(lin, `灌水旗標${i}`);
 check("flag cap 12", lin.flags.length === 12);
 
+// --- 3b. arc tone(觀察回饋第三期):enum 消毒 + 固定脈衝 ---
+const advT = sanitizeArcUpdate({ stage: 3, done: false, tone: "tense" }, cur);
+check("tone 白名單:tense 保留在 advance", advT?.kind === "advance" && advT.tone === "tense");
+const advBad = sanitizeArcUpdate({ stage: 3, done: false, tone: "explode" }, cur);
+check("tone 未知值 → 忽略(null),弧照常推進", advBad?.kind === "advance" && advBad.tone === null);
+const conT = sanitizeArcUpdate({ done: true, tone: "up" }, cur);
+check("tone 保留在 conclude", conT?.kind === "conclude" && conT.tone === "up");
+
+{
+  const { produceDailyDiaries, setNarrateImplForTest } = await import("../src/sim/narration");
+  diaryTiming.gapMs = 1;
+  const rt = state.runtimes["tenant_lin_asmr"];
+  rt.arc = { id: "arc_tone", theme: "證照考試", stage: 1, maxStage: 4, summary: "報名了" };
+  rt.tenant.stats.mood = 50;
+  rt.tenant.stats.stress = 50;
+  const mk = (arcUpdate: unknown) => async (ctx: { name: string }) => ({
+    diary: `AI:${ctx.name}`, newMemory: null, event: null, summaryUpdate: null,
+    arcUpdate: ctx.name === rt.tenant.name ? arcUpdate : null, observation: null, ai: true as const,
+  });
+  setNarrateImplForTest(mk({ stage: 2, summary: "衝刺中", done: false, tone: "tense" }));
+  await produceDailyDiaries(true);
+  check("推進 tense:壓力 +4、弧到 stage 2", rt.tenant.stats.stress === 54 && rt.arc?.stage === 2);
+  setNarrateImplForTest(mk({ stage: 3, summary: "考過了", done: true, tone: "up" }));
+  await produceDailyDiaries(true);
+  check("收束 up:心情 +8、壓力 -6、弧清除", rt.tenant.stats.mood === 58 && rt.tenant.stats.stress === 48 && rt.arc === null);
+  check("收束記憶照留", rt.tenant.memoryTags.some((m) => m.label === "[經歷:證照考試]"));
+}
+
 // --- 4. 重載還原 ---
 // 目前存檔:弧已收束(null)、flags 有 cap 後的 12 筆(decide/fastForward 都會觸發 save)
 const savedFlags = JSON.parse(exportSave()!).runtimes["tenant_lin_asmr"].flags;

@@ -1,9 +1,13 @@
 /**
  * 劇情弧 StoryArc(設計檢討 §2):每位租客 0~1 條進行中的「連載」骨架,
- * AI 每日推進一步或收束。純敘事層——不帶任何數值效果,數值仍走事件三道關卡。
+ * AI 每日推進一步或收束。
  *
  * 安全原則(同 AI 事件):AI 回的 arcUpdate 一律經 sanitizeArcUpdate 消毒——
  * 字串截斷、stage 只能前進最多 +1、maxStage 夾 2~6、進行中不准換主題。
+ *
+ * arc tone(AI 觀察回饋第三期):推進/收束可附 tone(enum 白名單,未知值忽略),
+ * 轉成固定的小幅 mood/stress 脈衝——連載劇情反映在數值曲線上,弧不再只是文字。
+ * 脈衝表寫死在 ARC_TONE_PULSE,AI 只能選方向、不能自訂數值。
  */
 
 export interface StoryArc {
@@ -17,11 +21,20 @@ export interface StoryArc {
   summary: string;
 }
 
+/** 這一步對租客情緒的方向(AI 只能從 enum 選;省略/未知 = 無脈衝) */
+export type ArcTone = "up" | "down" | "tense";
+
+/** tone → mood/stress 脈衝(寫死;推進小步、收束較大的收尾情緒) */
+export const ARC_TONE_PULSE: Record<"advance" | "conclude", Record<ArcTone, { mood?: number; stress?: number }>> = {
+  advance: { up: { mood: 3 }, down: { mood: -3 }, tense: { stress: 4 } },
+  conclude: { up: { mood: 8, stress: -6 }, down: { mood: -8 }, tense: { stress: -8 } }, // tense 收束 = 如釋重負
+};
+
 /** 消毒結果:開新弧 / 推進 / 收束;不合格回 null(整個忽略) */
 export type ArcAction =
   | { kind: "start"; arc: StoryArc }
-  | { kind: "advance"; arc: StoryArc }
-  | { kind: "conclude"; theme: string };
+  | { kind: "advance"; arc: StoryArc; tone: ArcTone | null }
+  | { kind: "conclude"; theme: string; tone: ArcTone | null };
 
 const str = (v: unknown, cap: number): string => (typeof v === "string" ? v : "").slice(0, cap).trim();
 const int = (v: unknown, lo: number, hi: number, fallback: number): number => {
@@ -51,8 +64,9 @@ export function sanitizeArcUpdate(raw: unknown, current: StoryArc | null): ArcAc
 
   const stage = int(r.stage, current.stage, Math.min(current.stage + 1, current.maxStage), current.stage);
   const summary = str(r.summary, 160) || current.summary;
+  const tone: ArcTone | null = r.tone === "up" || r.tone === "down" || r.tone === "tense" ? r.tone : null;
   if (r.done === true || (stage >= current.maxStage && r.done !== false)) {
-    return { kind: "conclude", theme: current.theme };
+    return { kind: "conclude", theme: current.theme, tone };
   }
-  return { kind: "advance", arc: { ...current, stage, summary } };
+  return { kind: "advance", arc: { ...current, stage, summary }, tone };
 }

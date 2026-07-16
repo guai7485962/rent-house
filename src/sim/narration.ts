@@ -7,9 +7,9 @@
  */
 import { narrateDay, templateDiary, type AiFallbackReason, type NarrateCtx, type NarrateResult } from "./narrate";
 import { sanitizeAiEvent } from "./events";
-import { sanitizeArcUpdate } from "./arcs";
+import { ARC_TONE_PULSE, sanitizeArcUpdate, type ArcTone } from "./arcs";
 import { listRelationships } from "./social";
-import { state, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
+import { state, clamp, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
@@ -278,7 +278,8 @@ export function resetDeferredDiaryBudgetForTest(value = 4) {
   deferredBudgetDay = gameDayIndex();
 }
 
-/** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed) */
+/** 套用 AI 的劇情弧更新:開新弧/推進都寫回 runtime;收束時清弧 + 留一筆記憶與日誌(進 Feed)。
+ *  推進/收束的 tone(觀察回饋第三期)轉成固定小幅 mood/stress 脈衝——劇情反映在數值曲線上。 */
 function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
   const action = sanitizeArcUpdate(raw, rt.arc);
   if (!action) return;
@@ -287,11 +288,22 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
     pushSocialLog(rt, `📖 新篇章開始:「${action.arc.theme}」`, "notable");
   } else if (action.kind === "advance") {
     rt.arc = action.arc;
+    applyArcTone(rt, "advance", action.tone);
   } else {
     rt.arc = null;
+    applyArcTone(rt, "conclude", action.tone);
     pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
     pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
   }
+}
+
+/** tone 脈衝:查寫死的 ARC_TONE_PULSE 表,AI 只能選方向不能自訂數值 */
+function applyArcTone(rt: TenantRuntime, kind: "advance" | "conclude", tone: ArcTone | null) {
+  if (!tone) return;
+  const p = ARC_TONE_PULSE[kind][tone];
+  const s = rt.tenant.stats;
+  if (p.mood) s.mood = clamp(s.mood + p.mood, 0, 100);
+  if (p.stress) s.stress = clamp(s.stress + p.stress, 0, 100);
 }
 
 /** 從 runtime 組出當天的敘事 context */

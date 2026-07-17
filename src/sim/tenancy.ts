@@ -19,6 +19,7 @@ import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
 import { adoptCat } from "./pets";
 import { recordAlumnus } from "./legacy";
+import { ensureWishes } from "./wishes";
 import {
   state,
   clamp,
@@ -101,6 +102,7 @@ export function moveIn(roomId: string, ap: Applicant) {
   refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
   if (ap.pet) adoptCat(ap.id, ap.pet); // 自帶寵物 → 入住即成為飼主(§A-1)
+  ensureWishes(); // 依職業指派人生心願(入住當下就看得到,不用等換日)
   const deposit = ap.monthlyRent * DEPOSIT_MONTHS; // 入住押金:招租一次性收入
   if (deposit > 0) addMoney(deposit, `${ap.name} 入住押金`, "other");
   save();

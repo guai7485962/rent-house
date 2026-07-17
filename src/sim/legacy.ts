@@ -30,6 +30,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "full_house", icon: "🏠", label: "客滿", desc: "四間套房同時住滿" },
   { id: "endured", icon: "📅", label: "資深房東", desc: "經營滿 30 個遊戲日" },
   { id: "tycoon", icon: "💰", label: "包租公", desc: "資產淨值突破 15 萬" },
+  { id: "wish_fulfilled", icon: "🎯", label: "圓夢推手", desc: "見證第一位租客實現人生心願" },
+  { id: "wish_collector", icon: "🌠", label: "夢想孵化器", desc: "三位租客在這裡實現了心願" },
   { id: "farewell", icon: "👋", label: "後會有期", desc: "送走第一位退租的房客" },
   { id: "veteran", icon: "🏆", label: "閱人無數", desc: "累計送走 5 位房客" },
 ];

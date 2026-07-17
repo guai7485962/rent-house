@@ -124,6 +124,13 @@ check("prompt 帶財務行(有值才出現)", (() => {
   const without = buildPrompt(clampCtx({ name: "a" }));
   return withF.includes("財務狀況:欠租 $840") && !without.includes("財務狀況");
 })());
+// --- 人生心願接線 ---
+check("clampCtx:wish 截 ≤48", clampCtx({ name: "a", wish: "夢".repeat(99) }).wish!.length <= 48);
+check("prompt 帶心願行(有值才出現,且交代不得自行宣布實現)", (() => {
+  const withW = buildPrompt(clampCtx({ name: "a", wish: "存一筆自己的小店基金(進度約 60%)" }));
+  const without = buildPrompt(clampCtx({ name: "a" }));
+  return withW.includes("人生心願:存一筆自己的小店基金") && withW.includes("不得自行宣布實現") && !without.includes("人生心願");
+})());
 check("parseResult:observation 物件透傳", (() => {
   const r = parseResult('{"diary":"今天。","observation":{"nudge":{"mood":-2},"reason":"理由"}}');
   return !!r && typeof r.observation === "object" && (r.observation as any)?.nudge?.mood === -2;

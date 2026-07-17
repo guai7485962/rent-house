@@ -17,6 +17,7 @@ import { applyObservation, sanitizeObservation } from "./observationEffects";
 import { todayWeather, weatherLabel } from "./weather";
 import { tenantFinanceBrief } from "./economy";
 import { GROWTH_TAGS, grantGrowthTag } from "./growth";
+import { boostWishFromArc, wishBrief } from "./wishes";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -312,6 +313,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
   } else {
     rt.arc = null;
     applyArcTone(rt, "conclude", action.tone);
+    boostWishFromArc(rt, action.tone); // 篇章好好落幕 = 人生心願也往前一步(down 收場不加)
     const growth = grantGrowthTag(rt.tenant, action.growthTag);
     pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
     pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
@@ -401,5 +403,6 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),
     finance: tenantFinanceBrief(rt) ?? undefined,
+    wish: wishBrief(rt),
   };
 }

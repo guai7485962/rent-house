@@ -12,6 +12,7 @@ import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
 import type { StoryArc } from "./arcs";
+import type { TenantWish } from "./wishes";
 import type { SocialEffect } from "./social";
 import type { Applicant } from "./recruit";
 import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
@@ -100,6 +101,8 @@ export interface TenantRuntime {
   rentGraceUntilDay?: number;
   /** 上次繳租求情事件的遊戲日(冷卻用) */
   lastRentPleaDay?: number;
+  /** 人生心願(長期目標;缺省由 ensureWishes 依職業指派) */
+  wish?: TenantWish | null;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
   arc: StoryArc | null;
   /** 事件連鎖伏筆旗標(事件選項留下,之後餵回 AI 回收伏筆) */
@@ -219,6 +222,8 @@ export const state = reactive({
   pets: {} as Record<string, Pet>,
   /** 成就冊:已解鎖的成就 id(§G-7;入存檔) */
   achievements: [] as string[],
+  /** 累計實現的人生心願數(成就「夢想孵化器」用;入存檔) */
+  wishesFulfilled: 0,
   /** 歷任房客名冊:退租者的紀錄,最新在前(§G-8;入存檔) */
   alumni: [] as AlumniEntry[],
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */

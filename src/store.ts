@@ -66,6 +66,7 @@ export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } fr
 export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatPreset, catJournalPass } from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
+export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";
 export { communityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
 export { weeklyReportPass, currentRelationshipSnapshot, WEEKLY_REPORT_CAP, type WeeklyReport } from "./sim/weeklyReport";
 
@@ -80,6 +81,8 @@ export { initGame, stopGame, resume, debugInit, debugStepHour, debugClock } from
 import { ensurePets as _ensurePets } from "./sim/pets";
 import { ensureDiaryHours as _ensureDiaryHours } from "./sim/narration";
 import { ensureWallets as _ensureWallets } from "./sim/economy";
+import { ensureWishes as _ensureWishes } from "./sim/wishes";
 _ensurePets();
 _ensureDiaryHours();
 _ensureWallets();
+_ensureWishes();

@@ -34,7 +34,7 @@ const REGRESSION = [
   "distinct-test.ts", "drama-test.ts", "eviction-test.ts", "feed-test.ts", "finance-test.ts", "fixes-test.ts", "fx-test.ts",
   "interactions-test.ts", "invite-test.ts", "kitchen-life-test.ts", "legacy-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",
   "move-test.ts", "narrative-quality-test.ts", "observation-test.ts", "pair-session-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts", "romance-integrity-test.ts",
-  "rent-test.ts", "roomcam-test.ts", "rotation-pose-test.ts", "stats-model-test.ts", "summary-test.ts", "wallet-test.ts", "weather-test.ts", "weekly-report-test.ts", "worker-test.ts",
+  "rent-test.ts", "roomcam-test.ts", "rotation-pose-test.ts", "stats-model-test.ts", "summary-test.ts", "wallet-test.ts", "weather-test.ts", "weekly-report-test.ts", "wish-test.ts", "worker-test.ts",
 ];
 
 // 無過濾 → 跑正式回歸集;有過濾 → 從 scripts/ 全體 *-test.ts 撈符合關鍵字的(含舊煙霧腳本)

@@ -24,6 +24,7 @@ import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
+import { WISH_DEFS } from "./sim/wishes";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
   state,
@@ -307,6 +308,18 @@ const financeChip = computed(() => {
   return null;
 });
 
+/** 人生心願 chip:進行中顯示進度,實現後顯示 ✓(hover 看描述) */
+const wishChip = computed(() => {
+  const w = rt.value?.wish;
+  if (!w) return null;
+  const def = WISH_DEFS[w.id];
+  if (!def) return null;
+  return {
+    text: w.fulfilledDay !== -99 ? `${def.icon} ${def.label} ✓` : `${def.icon} ${def.label} · ${w.progress}%`,
+    hint: def.hint,
+  };
+});
+
 /** 進行中的行為指令(AI/事件造成的可見行為改變),顯示在標籤列最前 */
 const directiveChip = computed(() => {
   const d = rt.value?.directive;
@@ -538,6 +551,7 @@ function onGroupResolve(choiceId: string) {
 
     <section class="tags">
       <span v-if="financeChip" class="chip warn-chip">{{ financeChip }}</span>
+      <span v-if="wishChip" class="chip wish" :title="wishChip.hint">{{ wishChip.text }}</span>
       <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core && !t.growth, growth: t.growth }" :style="{ opacity: t.fade }" :title="t.hint">{{ t.label }}</span>
@@ -740,6 +754,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .chip.dir { border-color: #5ad06a; color: #b6ffbe; background: rgba(90, 208, 106, 0.08); }
 .chip.arc { border-color: #58a6ff; color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
 .chip.warn-chip { border-color: #f0a35e; color: #ffd9ae; background: rgba(240, 163, 94, 0.1); }
+.chip.wish { border-color: #d4a7f5; color: #ecd6ff; background: rgba(196, 138, 245, 0.1); }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

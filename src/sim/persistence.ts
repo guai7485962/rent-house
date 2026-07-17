@@ -17,6 +17,7 @@ import { setCustomAppearance } from "../pixel/scene";
 import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
+import { ensureWishes } from "./wishes";
 import { stopTicker } from "./lifecycle";
 import { sanitizeDiaryText } from "./narrativeQuality";
 import { sanitizeGrowthTags } from "./growth";
@@ -86,6 +87,7 @@ export function save() {
         lastHardshipDay: rt.lastHardshipDay,
         rentGraceUntilDay: rt.rentGraceUntilDay,
         lastRentPleaDay: rt.lastRentPleaDay,
+        wish: rt.wish,
         arc: rt.arc,
         flags: rt.flags,
         diaryHour: rt.diaryHour,
@@ -121,6 +123,7 @@ export function save() {
         feuds: state.feuds,
         pets: state.pets,
         achievements: state.achievements,
+        wishesFulfilled: state.wishesFulfilled,
         alumni: state.alumni,
         pendingGroupEvent: state.pendingGroupEvent,
         pendingDiaries: state.pendingDiaries,
@@ -189,6 +192,7 @@ export function load(): boolean {
     for (const k of Object.keys(state.pets)) delete state.pets[k];
     Object.assign(state.pets, s.pets ?? {}); // 舊檔沒有 → ensurePets 會補種子貓
     state.achievements.splice(0, state.achievements.length, ...((s.achievements ?? []) as string[]));
+    state.wishesFulfilled = typeof s.wishesFulfilled === "number" ? s.wishesFulfilled : 0; // 舊檔沒有 → 0
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
     state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
     state.pendingDiaries.splice(0, state.pendingDiaries.length, ...(s.pendingDiaries ?? []));
@@ -229,6 +233,7 @@ export function load(): boolean {
         lastHardshipDay: saved.lastHardshipDay ?? -99,
         rentGraceUntilDay: saved.rentGraceUntilDay ?? -99,
         lastRentPleaDay: saved.lastRentPleaDay ?? -99,
+        wish: saved.wish ?? null, // 舊檔沒有 → ensureWishes 依職業指派
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],
         inLounge: false,
@@ -263,6 +268,7 @@ export function load(): boolean {
       ...state.pendingDiaries.filter((job) => state.runtimes[job.tenantId]?.log.some((entry) => entry.diaryId === job.diaryId && entry.aiPending)),
     );
     ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
+    ensureWishes(); // 舊檔沒有人生心願 → 依職業指派
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     return true;
   } catch {

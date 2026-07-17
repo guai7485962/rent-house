@@ -43,6 +43,8 @@ export interface NarrateCtx {
   weather?: string;
   /** 財務狀況一句話(欠租/拮据;缺省/空 = 一切正常,不進 prompt) */
   finance?: string;
+  /** 人生心願一句話(長期目標與進度;缺省 = 不進 prompt;進度由本地決定,AI 只能當動機素材) */
+  wish?: string;
 }
 
 export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";

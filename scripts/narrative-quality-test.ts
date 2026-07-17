@@ -10,6 +10,7 @@ const {
   sanitizeDiaryText,
   sanitizeSummaryText,
   sanitizeReasonText,
+  normalizeNarrativeLanguage,
   selectDiverseNarrativeLines,
   splitNarrativeSentences,
   toTraditional,
@@ -79,6 +80,13 @@ check("標點連用:「,。」收斂為「。」", punct.includes("不太好。"
 const reason = sanitizeReasonText("她们还是不放弃，她們還是繼續努力，她們還是不放棄。");
 check("reason 閘門:轉繁 + 冗贅子句去重 + 去尾標點", reason.includes("她們還是不放棄") && occurrences(reason, "不放棄") === 1 && !/[。！？]$/.test(reason), reason);
 check("reason 閘門:截 60 字", sanitizeReasonText("長".repeat(99)).length === 60);
+
+// --- 玩家回報案例(2026-07-17):英文／拼音混入與中文姓名被羅馬化 ---
+const mixedLanguage = "今天 Chen 家豪 的行為變得更加孤僻。他吃飯的方式很慢lane，看來是很享受這頓飯。";
+const mixedCleaned = sanitizeDiaryText(mixedLanguage, ["陳家豪"]);
+check("英語混入:羅馬化姓氏依中文姓名還原", mixedCleaned.includes("陳家豪的行為") && !mixedCleaned.includes("Chen"), mixedCleaned);
+check("英語混入:未知英文單字移除並保留自然標點", mixedCleaned.includes("很慢，看來") && !/[A-Za-z]/.test(mixedCleaned), mixedCleaned);
+check("英語混入:常見縮寫轉成中文", normalizeNarrativeLanguage("他用AI整理ASMR直播內容") === "他用人工智慧整理耳語直播內容");
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

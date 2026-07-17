@@ -206,7 +206,7 @@ export function load(): boolean {
         // 舊存檔可能保留模型曾產生的重複流水帳；只清理 AI 當日觀察，
         // 一般事件日誌與玩家抉擇原文完全不動。
         log: (saved.log ?? []).map((entry: any) => entry?.daily && entry?.ai && typeof entry.text === "string"
-          ? { ...entry, text: sanitizeDiaryText(entry.text) || entry.text }
+          ? { ...entry, text: sanitizeDiaryText(entry.text, [loadedTenant.name]) || entry.text }
           : entry),
         lastSeenMs: saved.lastSeenMs,
         pendingEvent: saved.pendingEvent,

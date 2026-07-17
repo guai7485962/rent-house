@@ -54,6 +54,7 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 
 風格要求:
 - 繁體中文。diary 以 **3 個完整句子、120~220 字**為原則；只有重大轉折才可寫第 4 句。像房東在監視器前寫下的札記,冷靜、帶點窺看的趣味與人情味。
+- **敘事文字只能用自然繁體中文**:diary、summaryUpdate、newMemory、event 文案與 observation.reason 不得混入英文單字、拼音或羅馬化姓名；租客與鄰居姓名必須逐字照抄 context 的中文原名（例如「陳家豪」不可寫成「Chen 家豪」）。JSON key、白名單 id 與 enum 維持指定英文格式。
 - **不要寫成流水帳**:從今天片段中只挑 2~3 個最有意思、彼此能串成一條線的畫面；其餘素材可以捨棄,絕對不要逐條改寫。
 - **每件事只能寫一次**:結尾不可再總結或重述開頭。輸出前自行刪除重複句、同義反覆及連續的「他還／她還／看起來」。
 - 用具體動作呈現變化,少用「沒有太大變化」「變得比較積極」「行為模式」等空泛結論。避免「聊天時態度」這類生硬搭配,句子要像自然繁體中文。
@@ -145,6 +146,7 @@ function buildPrompt(c: NarrateCtx): string {
 
 function parseResult(
   text: string,
+  expectedNames: string[] = [],
 ): { diary: string; newMemory: { label: string; hint: string } | null; event: unknown; summaryUpdate: string | null; arcUpdate: unknown; observation: unknown } | null {
   try {
     const m = text.match(/\{[\s\S]*\}/);
@@ -157,9 +159,9 @@ function parseResult(
     const event = obj.event && typeof obj.event === "object" ? obj.event : null;
     const arcUpdate = obj.arcUpdate && typeof obj.arcUpdate === "object" ? obj.arcUpdate : null;
     const observation = obj.observation && typeof obj.observation === "object" ? obj.observation : null;
-    const diary = sanitizeDiaryText(obj.diary);
+    const diary = sanitizeDiaryText(obj.diary, expectedNames);
     if (!diary) return null;
-    const summaryUpdate = typeof obj.summaryUpdate === "string" ? sanitizeSummaryText(obj.summaryUpdate) || null : null;
+    const summaryUpdate = typeof obj.summaryUpdate === "string" ? sanitizeSummaryText(obj.summaryUpdate, expectedNames) || null : null;
     return { diary, newMemory, event, summaryUpdate, arcUpdate, observation };
   } catch {
     return null;
@@ -207,6 +209,8 @@ const clampInt = (v: unknown, lo: number, hi: number, dflt: number): number =>
 /** server 端把使用者送來的 context 夾到合理上限:防惡意 payload 灌爆 prompt(= 灌爆 token 成本) */
 function clampCtx(raw: unknown): NarrateCtx {
   const c = (raw ?? {}) as Record<string, any>;
+  const name = clampStr(c.name, 24);
+  const neighbors = clampArr(c.neighbors, 8, 24);
   const arc = c.arc && typeof c.arc === "object"
     ? {
         theme: clampStr(c.arc.theme, 40),
@@ -217,7 +221,7 @@ function clampCtx(raw: unknown): NarrateCtx {
       }
     : null;
   return {
-    name: clampStr(c.name, 24),
+    name,
     occupation: clampStr(c.occupation, 40),
     bio: clampStr(c.bio, 120),
     dayLabel: clampStr(c.dayLabel, 20),
@@ -240,8 +244,8 @@ function clampCtx(raw: unknown): NarrateCtx {
     todayLog: selectDiverseNarrativeLines(clampArr(c.todayLog, 20, 200), 10),
     relationships: clampArr(c.relationships, 12, 80),
     events: selectDiverseNarrativeLines(clampArr(c.events, 12, 200), 6),
-    neighbors: clampArr(c.neighbors, 8, 24),
-    summary: sanitizeSummaryText(clampStr(c.summary, 400)),
+    neighbors,
+    summary: sanitizeSummaryText(clampStr(c.summary, 400), [name, ...neighbors]),
     arc,
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
@@ -496,7 +500,7 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
   const errors: string[] = [];
   for (const attempt of attempts) {
     try {
-      const result = parseResult(await attempt.run());
+      const result = parseResult(await attempt.run(), [ctx.name, ...ctx.neighbors]);
       if (!result) throw new Error("parse_failed");
       return Response.json({ ...result, provider: attempt.provider });
     } catch (e) {

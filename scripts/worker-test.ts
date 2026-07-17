@@ -58,6 +58,7 @@ check("隔音完成會明確限制 AI 不得生成室內噪音抗議", buildProm
   name: "夜貓租客", room: { noise: 8, soundproof: 12, treated: true, complaintRisk: false },
 })).includes("不得生成相關抗議"));
 check("日記 prompt 明定不可寫流水帳與重複總結", systemPrompt.includes("不要寫成流水帳") && systemPrompt.includes("每件事只能寫一次"));
+check("日記 prompt 禁止英文混寫與姓名羅馬化", systemPrompt.includes("不得混入英文單字") && systemPrompt.includes("Chen 家豪"));
 check("背景與今日素材在 prompt 中明確分區", (() => {
   const prompt = buildPrompt(clampCtx({ name: "a", todayLog: ["今天片段"] }));
   return prompt.includes("背景資料—只供理解") && prompt.includes("今天可寫素材—已去重");
@@ -83,6 +84,7 @@ check("parseResult:diary 只保留完整句且 ≤320", (() => {
   return diary.length <= 320 && diary.endsWith("。");
 })());
 check("parseResult:移除重複句", parseResult('{"diary":"他看了一眼窗外。他看了一眼窗外。他轉身去泡茶。"}')?.diary === "他看了一眼窗外。他轉身去泡茶。");
+check("parseResult:修復羅馬化姓名與英文雜訊", parseResult('{"diary":"今天 Chen 家豪 很慢lane地吃飯。"}', ["陳家豪"])?.diary === "今天陳家豪很慢地吃飯。");
 check("parseResult:壞 JSON → null", parseResult("這不是 json") === null);
 check("parseResult:缺 diary → null", parseResult('{"summaryUpdate":"s"}') === null);
 

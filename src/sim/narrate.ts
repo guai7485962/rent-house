@@ -103,12 +103,13 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
         observation?: unknown;
         provider?: AiProvider;
       };
+      const expectedNames = [ctx.name, ...ctx.neighbors];
       if (data.diary)
         return {
-          diary: sanitizeDiaryText(data.diary) || templateDiary(ctx),
+          diary: sanitizeDiaryText(data.diary, expectedNames) || templateDiary(ctx),
           newMemory: data.newMemory ?? null,
           event: data.event ?? null,
-          summaryUpdate: typeof data.summaryUpdate === "string" ? sanitizeSummaryText(data.summaryUpdate) || null : null,
+          summaryUpdate: typeof data.summaryUpdate === "string" ? sanitizeSummaryText(data.summaryUpdate, expectedNames) || null : null,
           arcUpdate: data.arcUpdate ?? null,
           observation: data.observation ?? null,
           ai: true,

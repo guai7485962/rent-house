@@ -15,7 +15,7 @@ const callTimes: number[] = [];
   return {
     ok: true,
     json: async () => ({
-      diary: `【AI】${body?.name ?? "?"} 的一天,接續昨天的劇情。`,
+      diary: `【觀察】${body?.name ?? "?"} 的一天,接續昨天的劇情。`,
       newMemory: null,
       event: null,
       summaryUpdate: `【摘要】${body?.name ?? "?"}:昨天的伏筆持續發酵,今天有了新進展。`,
@@ -49,7 +49,7 @@ await new Promise((r) => setTimeout(r, 7000));
 
 check("兩位租客各打了一次 narrate", seenBodies.length === 2);
 check("context 帶了滾動摘要 summary", typeof seenBodies[0]?.summary === "string" && seenBodies[0].summary.length > 0);
-check("AI 日記寫入且帶 ✨AI 標", lin.log.some((e) => e.daily && e.ai && e.text.startsWith("【AI】")));
+check("AI 日記寫入且帶 ✨AI 標", lin.log.some((e) => e.daily && e.ai && e.text.startsWith("【觀察】")));
 check(
   `recentSummary 已被 summaryUpdate 取代`,
   lin.tenant.recentSummary !== summaryBefore && lin.tenant.recentSummary.startsWith("【摘要】林小婕"),

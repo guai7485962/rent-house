@@ -49,6 +49,37 @@ export function toTraditional(text: string): string {
   return out.replace(SIMP_RE, (ch) => SIMP_TO_TRAD[ch] ?? ch);
 }
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 敘事欄位只保留自然繁中：
+ * 1. 模型若把「陳家豪」寫成「Chen 家豪」，用已知中文姓名的後半段還原全名。
+ * 2. 少數有固定中文說法的縮寫先翻譯，其餘拉丁字母視為 code-switching 雜訊移除。
+ * 這只用在 diary／summary／reason，不碰 JSON key、directive id 等機制欄位。
+ */
+export function normalizeNarrativeLanguage(text: string, expectedNames: string[] = []): string {
+  let out = toTraditional(text);
+  for (const name of expectedNames) {
+    const exact = String(name ?? "").trim();
+    if (exact.length < 2) continue;
+    const suffix = exact.slice(1);
+    const romanizedPrefix = new RegExp(
+      `[A-Za-z][A-Za-z'’-]*(?:\\s+[A-Za-z][A-Za-z'’-]*)*\\s*${escapeRegExp(suffix)}`,
+      "giu",
+    );
+    out = out.replace(romanizedPrefix, exact);
+  }
+  return out
+    .replace(/\bASMR\b/gi, "耳語")
+    .replace(/\bAI\b/gi, "人工智慧")
+    .replace(/[A-Za-z]+(?:[-'’][A-Za-z]+)*/g, "")
+    .replace(/[（(]\s*[）)]/g, "")
+    .replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, "$1")
+    .replace(/\s+([，、。！？；：])/g, "$1")
+    .replace(/([（(])\s+/g, "$1")
+    .replace(/\s+([）)])/g, "$1");
+}
+
 function canonical(text: string): string {
   return text
     .normalize("NFKC")
@@ -92,8 +123,8 @@ export function selectDiverseNarrativeLines(lines: string[], max = 8): string[] 
   return chosen;
 }
 
-export function splitNarrativeSentences(text: string): string[] {
-  const normalized = toTraditional(text)
+export function splitNarrativeSentences(text: string, expectedNames: string[] = []): string[] {
+  const normalized = normalizeNarrativeLanguage(text, expectedNames)
     .replace(/\r?\n+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/,/g, "，")
@@ -120,9 +151,9 @@ function shortenCompleteSentence(sentence: string, maxChars: number): string {
   return `${(comma >= Math.floor(maxChars * 0.55) ? body.slice(0, comma) : body).replace(/[，,、；;：:]$/, "")}。`;
 }
 
-export function sanitizeNarrativeText(text: string, maxSentences: number, maxChars: number): string {
+export function sanitizeNarrativeText(text: string, maxSentences: number, maxChars: number, expectedNames: string[] = []): string {
   const kept: string[] = [];
-  for (const sentence of splitNarrativeSentences(text)) {
+  for (const sentence of splitNarrativeSentences(text, expectedNames)) {
     if (kept.some((old) => isNarrativeDuplicate(sentence, old))) continue;
     kept.push(sentence);
     if (kept.length >= maxSentences) break;
@@ -141,13 +172,13 @@ export function sanitizeNarrativeText(text: string, maxSentences: number, maxCha
   return withinLimit.join("");
 }
 
-export const sanitizeDiaryText = (text: string): string => sanitizeNarrativeText(text, 4, 320);
-export const sanitizeSummaryText = (text: string): string => sanitizeNarrativeText(text, 2, 220);
+export const sanitizeDiaryText = (text: string, expectedNames: string[] = []): string => sanitizeNarrativeText(text, 4, 320, expectedNames);
+export const sanitizeSummaryText = (text: string, expectedNames: string[] = []): string => sanitizeNarrativeText(text, 2, 220, expectedNames);
 
 /** 觀察回饋 reason 的品質閘門:轉繁、去引號、子句去重(擋「她們還是…她們還是…」
  *  這類冗贅重複)、去尾標點、截長。回空字串 = 不合格。 */
-export function sanitizeReasonText(text: string, maxChars = 60): string {
-  const base = toTraditional(text)
+export function sanitizeReasonText(text: string, maxChars = 60, expectedNames: string[] = []): string {
+  const base = normalizeNarrativeLanguage(text, expectedNames)
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^["'「『]+|["'」』]+$/g, "");

@@ -393,7 +393,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     relationships,
     events,
     neighbors,
-    summary: sanitizeSummaryText(rt.tenant.recentSummary),
+    summary: sanitizeSummaryText(rt.tenant.recentSummary, [rt.tenant.name]),
     arc: rt.arc
       ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
       : null,

@@ -21,6 +21,7 @@ import { startPairSession } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 import { grantEventSoundproofing, noiseComplaintEligible } from "./acoustics";
 import { todayWeather } from "./weather";
+import { isWeekend } from "./week";
 import { unlock } from "./legacy";
 
 type Rng = () => number;
@@ -182,6 +183,11 @@ const COMMUNITY_LINES = {
     "🌆 和 {names} 帶著飲料上頂樓看晚霞,難得誰也沒有急著滑手機。",
     "🌙 和 {names} 在頂樓吹晚風聊近況,城市的聲音反而成了舒服的背景。",
     "✨ 和 {names} 在頂樓認星星,最後沒認出幾顆,倒是聊了很多心事。",
+  ],
+  weekendMovie: [
+    "🎬 週末夜和 {names} 窩在交誼廳看電影,燈一關整層樓就成了小影廳。",
+    "🍿 和 {names} 為了週末電影夜各自帶了零食來,選片吵了十分鐘,看片倒是安靜得很。",
+    "🎬 週末晚上和 {names} 在交誼廳連看兩部片,片尾曲放完誰也捨不得先回房。",
   ],
 };
 
@@ -545,10 +551,11 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     },
   },
   {
-    // 洗衣間 · 早晨尖峰:幾個人一起卡在廁所/浴室門口,同仇敵愾反而拉近
+    // 洗衣間 · 早晨尖峰:幾個人一起卡在廁所/浴室門口,同仇敵愾反而拉近(週末沒有上班尖峰)
     id: "morning_rush",
     need: 3,
     cooldownDays: 4,
+    when: () => !isWeekend(state.gameMs),
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
     fire: (parts) => {
       for (const rt of parts) bumpMood(rt, -1, 3);
@@ -634,6 +641,22 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       unlock("rainy_day"); // 隱藏成就:雨天的交誼廳
     },
   },
+  {
+    // 週末電影夜:週末晚上幾個人把交誼廳變成小影廳(週末限定)
+    id: "weekend_movie",
+    need: 3,
+    cooldownDays: 3,
+    when: () => isWeekend(state.gameMs),
+    select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
+    fire: (parts) => {
+      bondAll(parts, 2);
+      for (const rt of parts) bumpMood(rt, 5, -5);
+      const names = parts.map((p) => p.tenant.name).join("、");
+      const line = COMMUNITY_LINES.weekendMovie[sceneIndex(parts, "weekend_movie", COMMUNITY_LINES.weekendMovie.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
+      notify(`🎬 週末電影夜:${names} 窩在交誼廳看片`);
+    },
+  },
 ];
 
 function onCooldown(id: string, days: number): boolean {
@@ -668,6 +691,8 @@ export function communityPass(rng: Rng = Math.random): boolean {
 interface GroupTemplate {
   id: string;
   need: number;
+  /** 額外環境條件(例:週末);缺省 = 隨時可觸發 */
+  when?: () => boolean;
   select: (present: TenantRuntime[], rng: Rng) => TenantRuntime[] | null;
   make: (parts: TenantRuntime[]) => { title: string; description: string; choices: GroupChoice[] };
 }
@@ -713,9 +738,10 @@ const GROUP_TEMPLATES: GroupTemplate[] = [
     },
   },
   {
-    // 樓層聚餐提議:房東請客 / 大家 AA / 婉拒
+    // 樓層聚餐提議:房東請客 / 大家 AA / 婉拒(聚餐約在週末,平日大家要上班)
     id: "floor_party",
     need: 3,
+    when: () => isWeekend(state.gameMs),
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(4, present.length)),
     make: (parts) => ({
       title: "住戶想辦一場樓層聚餐",
@@ -733,8 +759,8 @@ const GROUP_TEMPLATES: GroupTemplate[] = [
 export function rollGroupEvent(present: TenantRuntime[], rng: Rng = Math.random): boolean {
   if (state.pendingGroupEvent) return false;
   if (onCooldown("group_any", 3)) return false; // 群體抉擇之間至少隔 3 遊戲日
-  const eligible = GROUP_TEMPLATES.filter((t) => present.length >= t.need);
-  if (eligible.length === 0) return false;
+  const eligible = GROUP_TEMPLATES.filter((t) => present.length >= t.need && (!t.when || t.when()));
+  if (eligible.length === 0) return false; // 過濾後可能為空(例:平日沒有週末限定模板)
   const tmpl = eligible[Math.floor(rng() * eligible.length)];
   const parts = tmpl.select(present, rng);
   if (!parts || parts.length < tmpl.need) return false;

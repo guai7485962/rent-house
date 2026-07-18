@@ -129,7 +129,7 @@ function buildPrompt(c: NarrateCtx): string {
     `永久成長:${(c.growthTags ?? []).join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     ...(c.weather ? [`今天天氣:${c.weather}(可自然融入描寫,但不要每天都以天氣開頭)`] : []),
-    ...(c.weekday ? [`今天是:${c.weekday}(可自然帶到,如週五的期待或週末的閒適;租客實際作息仍以今日片段為準,不得虛構休假或上班)`] : []),
+    ...(c.weekday ? [`今天是:${c.weekday}(可自然帶到,如週五的期待或週末的閒適;週六/週日適合把劇情弧與事件往聚會、休閒、感情互動的節奏推,平日以工作日常為主;租客實際作息仍以今日片段為準,不得虛構與今日片段矛盾的休假或上班)`] : []),
     ...(c.finance ? [`財務狀況:${c.finance}(這正在影響他的生活,可寫進日記;沒欠租的日子不要提錢的事)`] : []),
     ...(c.wish ? [`人生心願:${c.wish}(他的長期目標,可寫他為此做的小努力或心境;進度由系統決定,不得自行宣布實現或跳進度)`] : []),
     `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,

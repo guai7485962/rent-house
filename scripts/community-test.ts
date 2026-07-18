@@ -187,5 +187,50 @@ state.pendingGroupEvent = null;
 load();
 check("群體事件:存檔往返保留待決事件", state.pendingGroupEvent?.title === pendingTitle);
 
+// --- 星期掛鉤:morning_rush 平日限定 / weekend_movie 週末限定 / floor_party 週末限定 ---
+const { GAME_START } = await import("../src/sim/gameState");
+const DAY = 24 * 3600 * 1000;
+const SUNDAY = GAME_START.getTime(); // GAME_START 2026-07-05 是週日
+const MONDAY = SUNDAY + 1 * DAY;
+const SATURDAY = SUNDAY + 6 * DAY;
+
+state.gameMs = MONDAY;
+check("morning_rush:平日 when() 開", ev("morning_rush").when!() === true);
+check("weekend_movie:平日 when() 關", ev("weekend_movie").when!() === false);
+state.gameMs = SUNDAY;
+check("morning_rush:週日 when() 關(週末沒有上班尖峰)", ev("morning_rush").when!() === false);
+check("weekend_movie:週日 when() 開", ev("weekend_movie").when!() === true);
+state.gameMs = SATURDAY;
+check("weekend_movie:週六 when() 開", ev("weekend_movie").when!() === true);
+
+// weekend_movie fire:全員 mood↑ 壓力↓、兩兩關係↑、🎬 日誌進 Feed
+const movieTrio = Object.values(state.runtimes).slice(0, 3);
+for (const rt of movieTrio) { rt.tenant.visualState = "idle"; rt.tenant.stats.mood = 50; rt.tenant.stats.stress = 60; rt.log.splice(0); }
+relationships[pairKey(movieTrio[0].tenant.id, movieTrio[1].tenant.id)] = { value: 40, romantic: false, cohabitOffered: false };
+const movieRelBefore = getRel(movieTrio[0].tenant.id, movieTrio[1].tenant.id)!.value;
+ev("weekend_movie").fire(movieTrio, Math.random);
+check("週末電影夜:全員心情↑ 壓力↓", movieTrio.every((rt) => rt.tenant.stats.mood > 50 && rt.tenant.stats.stress < 60));
+check("週末電影夜:兩兩關係上升", getRel(movieTrio[0].tenant.id, movieTrio[1].tenant.id)!.value > movieRelBefore);
+check("週末電影夜:🎬 日誌進 Feed(notable)", movieTrio.every((rt) => rt.log.some((e) => /🎬|🍿/.test(e.text) && e.importance === "notable")));
+
+// floor_party(群體抉擇模板)週末限定:平日不會被 rollGroupEvent 選中,週末可以
+const partyPresent = Object.values(state.runtimes);
+for (const rt of partyPresent) rt.tenant.visualState = "idle";
+state.gameMs = MONDAY;
+let sawPartyOnWeekday = false;
+for (let i = 0; i < 60; i++) {
+  clearGroup();
+  if (rollGroupEvent(partyPresent, Math.random) && state.pendingGroupEvent?.id === "floor_party") sawPartyOnWeekday = true;
+}
+check("floor_party:平日不會被 rollGroupEvent 選中", !sawPartyOnWeekday);
+state.gameMs = SATURDAY;
+let sawPartyOnWeekend = false;
+for (let i = 0; i < 60 && !sawPartyOnWeekend; i++) {
+  clearGroup();
+  if (rollGroupEvent(partyPresent, Math.random) && state.pendingGroupEvent?.id === "floor_party") sawPartyOnWeekend = true;
+}
+check("floor_party:週末可被 rollGroupEvent 選中", sawPartyOnWeekend);
+clearGroup();
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

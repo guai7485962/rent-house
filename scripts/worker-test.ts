@@ -117,6 +117,13 @@ check("prompt 帶天氣行(有值才出現)", (() => {
   return withW.includes("今天天氣:🌧️ 雨天") && !without.includes("今天天氣");
 })());
 
+// --- 星期接線:週末劇情節奏提示(有 weekday 才出現) ---
+check("prompt 含週末劇情節奏提示(有 weekday 才出現)", (() => {
+  const withD = buildPrompt(clampCtx({ name: "a", weekday: "週六" }));
+  const without = buildPrompt(clampCtx({ name: "a" }));
+  return withD.includes("今天是:週六") && withD.includes("聚會、休閒、感情互動") && withD.includes("平日以工作日常為主") && !without.includes("聚會、休閒、感情互動");
+})());
+
 // --- 財務狀況接線(租客錢包/繳租戲劇) ---
 check("clampCtx:finance 截 ≤40", clampCtx({ name: "a", finance: "欠".repeat(99) }).finance!.length <= 40);
 check("prompt 帶財務行(有值才出現)", (() => {

@@ -8,6 +8,15 @@ const emit = defineEmits<{ close: [] }>();
 
 const name = (id: string) => state.runtimes[id]?.tenant.name ?? "已搬走";
 
+/** 姓名後的性別小符號;資料缺漏顯示紅色「?」(debug 用,正常資料不該出現) */
+const genderMark = (id: string): { sym: string; cls: string } => {
+  const g = state.runtimes[id]?.tenant.gender;
+  if (g === "male") return { sym: "♂", cls: "g-m" };
+  if (g === "female") return { sym: "♀", cls: "g-f" };
+  if (g === "nonbinary") return { sym: "⚧", cls: "g-nb" };
+  return { sym: "?", cls: "g-miss" };
+};
+
 const rels = computed(() =>
   listRelationships((id) => state.runtimes[id]?.tenant)
     .filter((r) => state.runtimes[r.aId] && state.runtimes[r.bId]),
@@ -48,7 +57,9 @@ const groups = computed(() => {
           <div class="grp">{{ g.title }}</div>
           <div v-for="r in g.rows" :key="r.aId + r.bId" class="row" :class="{ love: r.romantic }">
             <span class="pair">
-              {{ name(r.aId) }} <span class="amp">×</span> {{ name(r.bId) }}
+              {{ name(r.aId) }}<span class="gsym" :class="genderMark(r.aId).cls">{{ genderMark(r.aId).sym }}</span>
+              <span class="amp">×</span>
+              {{ name(r.bId) }}<span class="gsym" :class="genderMark(r.bId).cls">{{ genderMark(r.bId).sym }}</span>
               <span v-if="isCohabit(r)" class="cohab">🏠 同居中</span>
               <span v-if="feudActive(r.aId, r.bId)" class="feud">❄️ 冷戰中</span>
             </span>
@@ -79,6 +90,11 @@ const groups = computed(() => {
 .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .row.love { border-color: #d9548a; background: rgba(217,84,138,0.08); }
 .pair { font-size: 13.5px; font-weight: 600; }
+.gsym { font-size: 10px; font-weight: 700; margin-left: 1px; vertical-align: 2px; }
+.g-m { color: #9ec5e8; }
+.g-f { color: #f0a8c6; }
+.g-nb { color: #c9b3ea; }
+.g-miss { color: #ff6b6b; }
 .amp { color: var(--text-dim); margin: 0 2px; }
 .tier { font-size: 12px; color: var(--accent); text-align: right; }
 .bar { grid-column: 1 / -1; height: 6px; background: #17151f; border-radius: 4px; overflow: hidden; }

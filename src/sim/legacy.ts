@@ -19,6 +19,8 @@ export interface AchievementDef {
   icon: string;
   label: string;
   desc: string;
+  /** 隱藏成就:解鎖前連描述都不給(UI 顯示 ???),留探索樂趣 */
+  hidden?: boolean;
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
@@ -34,6 +36,15 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "wish_collector", icon: "🌠", label: "夢想孵化器", desc: "三位租客在這裡實現了心願" },
   { id: "farewell", icon: "👋", label: "後會有期", desc: "送走第一位退租的房客" },
   { id: "veteran", icon: "🏆", label: "閱人無數", desc: "累計送走 5 位房客" },
+  // --- 玩家目標批:繳租戲劇/成長/心意/雙人弧/天氣 ---
+  { id: "grace_giver", icon: "🤝", label: "寬限之恩", desc: "第一次答應寬限房客的欠租" },
+  { id: "debt_forgiver", icon: "🕊️", label: "佛心房東", desc: "把一筆欠租一筆勾銷" },
+  { id: "hard_collector", icon: "🧾", label: "鐵面房東", desc: "對正處於財務困難的房客催繳欠租", hidden: true },
+  { id: "care_10", icon: "💝", label: "暖心房東", desc: "累計對房客表達 10 次心意" },
+  { id: "first_growth", icon: "🌱", label: "見證成長", desc: "有房客獲得第一個永久成長特質" },
+  { id: "growth_full", icon: "🎓", label: "桃李滿樓", desc: "同一位房客集滿 4 個成長特質", hidden: true },
+  { id: "pair_arc", icon: "👥", label: "共同篇章", desc: "見證第一條雙人劇情弧圓滿落幕" },
+  { id: "rainy_day", icon: "☔", label: "雨天的交誼廳", desc: "雨天午後,房客們擠在交誼廳取暖", hidden: true },
 ];
 
 const ACH_MAP: Record<string, AchievementDef> = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
@@ -81,4 +92,7 @@ export function legacyPass() {
   if (gameDayIndex() >= 30) unlock("endured");
   if (netWorth().total >= 150000) unlock("tycoon");
   if (listRelationships().some((r) => r.romantic)) unlock("first_love");
+  const rts = Object.values(state.runtimes);
+  if (rts.some((rt) => (rt.tenant.growthTags?.length ?? 0) >= 1)) unlock("first_growth");
+  if (rts.some((rt) => (rt.tenant.growthTags?.length ?? 0) >= 4)) unlock("growth_full");
 }

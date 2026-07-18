@@ -230,6 +230,7 @@ check("tone 保留在 conclude", conT?.kind === "conclude" && conT.tone === "up"
   check("B 收束 → 兩人的弧都清除", a.arc === null && b.arc === null);
   check("兩人都留下[經歷]記憶",
     a.tenant.memoryTags.some((m) => m.label === "[經歷:頂樓菜園計畫]") && b.tenant.memoryTags.some((m) => m.label === "[經歷:頂樓菜園計畫]"));
+  check("雙人弧收束 → 成就「共同篇章」", state.achievements.includes("pair_arc"));
 
   // 對方已有進行中的弧:降級單人、不打擾對方的弧
   b.arc = { id: "arc_busy", theme: "自己的計畫", stage: 1, maxStage: 3, summary: "" };

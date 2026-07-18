@@ -18,7 +18,7 @@ import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
 import { adoptCat } from "./pets";
-import { recordAlumnus } from "./legacy";
+import { recordAlumnus, unlock } from "./legacy";
 import { ensureWishes } from "./wishes";
 import {
   state,
@@ -38,7 +38,7 @@ import {
   type TenantRuntime,
 } from "./gameState";
 import { applyHour } from "./tick";
-import { addMoney, applyRentAction, DEPOSIT_MONTHS } from "./economy";
+import { addMoney, applyRentAction, inHardship, DEPOSIT_MONTHS } from "./economy";
 import { upgradeTolBonus } from "./upgrades";
 import { setCustomAppearance } from "../pixel/scene";
 import { randomAppearance } from "../pixel/parts";
@@ -398,7 +398,13 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   if (eff.satisfaction && eff.satisfaction > 0) rt.unhappyHours = 0; // 有改善就重置退租倒數
   if (eff.memory) pushMemory(rt.tenant, eff.memory.label, eff.memory.hint, "landlord_decision");
   if (eff.flag) addFlag(rt, eff.flag); // 事件連鎖:留伏筆旗標,之後每天餵回 AI
-  if (eff.rentAction) applyRentAction(rt, eff.rentAction); // 繳租求情:寬限/催繳/一筆勾銷(economy)
+  if (eff.rentAction) {
+    // 繳租求情:寬限/催繳/一筆勾銷(economy);房東的處置風格順手記成就
+    if (eff.rentAction === "grace") unlock("grace_giver");
+    else if (eff.rentAction === "forgive") unlock("debt_forgiver");
+    else if (inHardship(rt)) unlock("hard_collector");
+    applyRentAction(rt, eff.rentAction);
+  }
   // 行為指令(已在 events 消毒過白名單):接下來 N 遊戲日的行為看得見地改變
   if (eff.directive) {
     const def = DIRECTIVES[eff.directive.id];

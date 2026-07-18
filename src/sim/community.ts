@@ -21,6 +21,7 @@ import { startPairSession } from "../floor/pairSession";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 import { grantEventSoundproofing, noiseComplaintEligible } from "./acoustics";
 import { todayWeather } from "./weather";
+import { unlock } from "./legacy";
 
 type Rng = () => number;
 
@@ -630,6 +631,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
       const line = COMMUNITY_LINES.rainyLounge[sceneIndex(parts, "rainy_lounge", COMMUNITY_LINES.rainyLounge.length)];
       for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
       notify(`🌧️ 雨天午後,${names} 窩在交誼廳`);
+      unlock("rainy_day"); // 隱藏成就:雨天的交誼廳
     },
   },
 ];

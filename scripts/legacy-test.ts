@@ -27,7 +27,8 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // --- unlock 基本行為 ---
-check("成就清單有 12 項(含心願 2 項)", ACHIEVEMENTS.length === 12);
+check("成就清單有 20 項(含心願 2 項+玩家目標批 8 項)", ACHIEVEMENTS.length === 20);
+check("隱藏成就有標記(鐵面/桃李/雨天)", ACHIEVEMENTS.filter((a) => a.hidden).length === 3);
 unlock("first_love");
 check("解鎖後進 achievements", state.achievements.includes("first_love"));
 check("解鎖彈了通知", state.noticeLog.some((n) => n.text.includes("成就解鎖")));
@@ -71,6 +72,14 @@ check("有戀愛關係 → 輪詢補 first_love", state.achievements.includes("f
 state.money = 200000;
 legacyPass();
 check("資產破 15 萬 → tycoon", state.achievements.includes("tycoon"));
+
+// 成長特質輪詢:1 個 → 見證成長;4 個 → 桃李滿樓(隱藏)
+A.tenant.growthTags = ["more_confident"] as any;
+legacyPass();
+check("有成長特質 → first_growth", state.achievements.includes("first_growth") && !state.achievements.includes("growth_full"));
+A.tenant.growthTags = ["more_confident", "resilient", "grounded", "hopeful"] as any;
+legacyPass();
+check("集滿 4 個 → growth_full", state.achievements.includes("growth_full"));
 
 // --- 名冊:moveOut 記一筆 ---
 const before = state.alumni.length;

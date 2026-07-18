@@ -25,6 +25,8 @@ import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
 import { WISH_DEFS } from "./sim/wishes";
+import { KINDNESS_ACTS, giveKindness, caredToday, type KindnessId } from "./sim/kindness";
+import { inHardship } from "./sim/economy";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
 import {
   state,
@@ -308,6 +310,15 @@ const financeChip = computed(() => {
   return null;
 });
 
+/** 心意互動(kindness):每位租客每日一次;介紹案子只在財務困難時出現 */
+const careDone = computed(() => !!rt.value && caredToday(rt.value));
+const careHardship = computed(() => !!rt.value && inHardship(rt.value));
+function doCare(id: KindnessId) {
+  const def = KINDNESS_ACTS[id];
+  const res = giveKindness(state.activeId, id);
+  toast(res.ok ? `${def.icon} ${def.label}成功,他收到你的心意了` : `${def.icon} ${res.reason}`);
+}
+
 /** 人生心願 chip:進行中顯示進度,實現後顯示 ✓(hover 看描述) */
 const wishChip = computed(() => {
   const w = rt.value?.wish;
@@ -493,6 +504,15 @@ function onGroupResolve(choiceId: string) {
       <button class="rent-btn" @click="showRent = true">📄 租約管理</button>
       <span v-if="!isLeaseHolder" class="rent-note">同居中(不另收租)</span>
       <button class="rent-btn" @click="upgradeRoom = activeRoomId">🔨 改建</button>
+    </div>
+    <div class="care-bar">
+      <span class="care-lb">💝 心意</span>
+      <template v-if="!careDone">
+        <button class="care-btn" :title="KINDNESS_ACTS.snack.hint" :disabled="state.money < KINDNESS_ACTS.snack.cost" @click="doCare('snack')">🍜 送宵夜 ${{ KINDNESS_ACTS.snack.cost }}</button>
+        <button class="care-btn" :title="KINDNESS_ACTS.note.hint" @click="doCare('note')">📝 塞紙條</button>
+        <button v-if="careHardship" class="care-btn care-urgent" :title="KINDNESS_ACTS.referral.hint" :disabled="state.money < KINDNESS_ACTS.referral.cost" @click="doCare('referral')">💼 介紹案子 ${{ KINDNESS_ACTS.referral.cost }}</button>
+      </template>
+      <span v-else class="care-done">今天已表達過心意,明天再來吧</span>
     </div>
     <div v-if="roomBreakdown" class="breakdown-bar">
       <span class="bd-text">
@@ -723,6 +743,12 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .rent-now { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .rent-btn { background: var(--panel); border: 1px solid var(--accent); color: #ffd6a3; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
 .rent-note { font-size: 11.5px; color: var(--text-dim); }
+.care-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.care-lb { font-size: 12px; color: var(--text-dim); }
+.care-btn { background: var(--panel); border: 1px solid #d4a7f5; color: #ecd6ff; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+.care-btn:disabled { opacity: 0.45; }
+.care-btn.care-urgent { border-color: #f0a35e; color: #ffd9ae; }
+.care-done { font-size: 11.5px; color: var(--text-dim); }
 .breakdown-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #2a2013; border: 1px solid #b5872e; border-radius: var(--radius); padding: 8px 12px; }
 .bd-text { font-size: 12px; color: #ffd98a; }
 .bd-btn { background: #b5872e; border: none; color: #241a08; font-weight: 700; border-radius: 999px; padding: 5px 12px; font-size: 12px; white-space: nowrap; }

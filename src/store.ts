@@ -67,6 +67,7 @@ export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatP
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";
+export { KINDNESS_ACTS, giveKindness, caredToday, CARE_ACHIEVEMENT_AT, type KindnessId } from "./sim/kindness";
 export { communityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
 export { weeklyReportPass, currentRelationshipSnapshot, WEEKLY_REPORT_CAP, type WeeklyReport } from "./sim/weeklyReport";
 

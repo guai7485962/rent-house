@@ -18,6 +18,7 @@ import { todayWeather, weatherLabel } from "./weather";
 import { tenantFinanceBrief } from "./economy";
 import { GROWTH_TAGS, grantGrowthTag } from "./growth";
 import { boostWishFromArc, wishBrief } from "./wishes";
+import { unlock } from "./legacy";
 
 /** 日記佇列節奏(測試可調):
  *  gapMs = 每位租客間隔(把整批打散,避免撞 Gemini 免費層每分鐘限流,也讓日記「一篇篇出爐」);
@@ -324,6 +325,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
       partner.arc = null;
       pushMemory(partner.tenant, `[經歷:${action.theme}]`, "這段共同經歷已成為他的一部分", "ai_event");
       pushSocialLog(partner, `📕 篇章落幕:「${action.theme}」`, "notable");
+      unlock("pair_arc"); // 成就:共同篇章(第一條雙人弧圓滿落幕)
     }
   }
 }

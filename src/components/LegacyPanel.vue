@@ -34,7 +34,8 @@ function fmtMs(ms: number): string {
           <span class="ach-ic">{{ unlocked.has(a.id) ? a.icon : "🔒" }}</span>
           <div class="ach-body">
             <div class="ach-lb">{{ unlocked.has(a.id) ? a.label : "??????" }}</div>
-            <div class="ach-desc">{{ a.desc }}</div>
+            <!-- 隱藏成就:解鎖前連達成條件都不透露,留探索樂趣 -->
+            <div class="ach-desc">{{ unlocked.has(a.id) || !a.hidden ? a.desc : "???(隱藏成就,達成後揭曉)" }}</div>
           </div>
         </div>
       </div>

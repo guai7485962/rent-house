@@ -30,9 +30,8 @@ let petAgents: PetAgent[] = [];
 let raf = 0;
 let last = 0;
 
-/** 跟著人走的名字標籤(誰是誰一眼可辨);節流更新 + CSS 過渡補間 */
+/** 跟著人走的名字標籤(誰是誰一眼可辨);每幀使用角色當下座標，不做延遲補間。 */
 const agentTags = ref<{ id: string; name: string; left: string; top: string; color: string }[]>([]);
-let lastTagMs = 0;
 
 function loop(t: number) {
   try {
@@ -57,9 +56,7 @@ function loop(t: number) {
       const pv = props.preview;
       if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
     }
-    if (t - lastTagMs > 150) {
-      lastTagMs = t;
-      const rawTags = [
+    const rawTags = [
         ...agents
           .filter((a) => !a.hidden)
           .map((a) => ({
@@ -78,15 +75,14 @@ function loop(t: number) {
           kind: "pet" as const,
           color: "#e0913f",
         })),
-      ];
-      agentTags.value = layoutFloorTags(rawTags, FLOOR_W, FLOOR_H).map((tag) => ({
-        id: tag.id,
-        name: tag.name,
-        left: `${(tag.drawX / FLOOR_W) * 100}%`,
-        top: `${(tag.drawY / FLOOR_H) * 100}%`,
-        color: tag.color,
-      }));
-    }
+    ];
+    agentTags.value = layoutFloorTags(rawTags, FLOOR_W, FLOOR_H).map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      left: `${(tag.drawX / FLOOR_W) * 100}%`,
+      top: `${(tag.drawY / FLOOR_H) * 100}%`,
+      color: tag.color,
+    }));
   } finally {
     // 單幀出錯也不讓渲染迴圈死掉(否則畫面會永久停格/消失)
     raf = requestAnimationFrame(loop);
@@ -256,7 +252,6 @@ canvas {
 .agent-tag {
   position: absolute;
   transform: translate(-50%, -100%);
-  transition: left 0.15s linear, top 0.15s linear;
   pointer-events: none;
   font-size: 9.5px;
   line-height: 1.2;

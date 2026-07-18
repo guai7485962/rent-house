@@ -83,7 +83,7 @@ export interface ActiveBreakdown {
 }
 
 /** 每間有人住的房,每遊戲日壞掉的機率 */
-const BREAK_CHANCE = 0.05;
+export const BREAK_CHANCE = 0.02;
 
 export function getBreakdownDef(defId: string): BreakdownDef | null {
   return BREAKDOWNS.find((b) => b.id === defId) ?? null;

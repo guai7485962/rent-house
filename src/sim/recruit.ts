@@ -185,11 +185,26 @@ export const ARCHETYPES: Archetype[] = [
   },
 ];
 
-const NAMES = [
-  "王大明", "李佳蓉", "張偉", "陳思妤", "林俊傑", "黃美玲", "吳承恩", "周曉涵",
-  "蔡明軒", "許雅婷", "鄭浩宇", "謝欣妤", "洪偉哲", "郭品妍", "曾冠廷", "賴思穎",
-  "潘建宏", "簡莉雯", "邱柏翰", "溫若晴",
+/**
+ * 隨機應徵者姓名與性別綁定。舊版將姓名、性別分開亂抽，會出現「邱柏翰」
+ * 被存成女性、關係因此顯示成閨密的情況。這份表也供舊存檔載入時校正。
+ */
+const NAME_IDENTITIES: Array<{ name: string; gender: Gender }> = [
+  { name: "王大明", gender: "male" }, { name: "李佳蓉", gender: "female" },
+  { name: "張偉", gender: "male" }, { name: "陳思妤", gender: "female" },
+  { name: "林俊傑", gender: "male" }, { name: "黃美玲", gender: "female" },
+  { name: "吳承恩", gender: "male" }, { name: "周曉涵", gender: "female" },
+  { name: "蔡明軒", gender: "male" }, { name: "許雅婷", gender: "female" },
+  { name: "鄭浩宇", gender: "male" }, { name: "謝欣妤", gender: "female" },
+  { name: "洪偉哲", gender: "male" }, { name: "郭品妍", gender: "female" },
+  { name: "曾冠廷", gender: "male" }, { name: "賴思穎", gender: "female" },
+  { name: "潘建宏", gender: "male" }, { name: "簡莉雯", gender: "female" },
+  { name: "邱柏翰", gender: "male" }, { name: "溫若晴", gender: "female" },
 ];
+
+export function genderForKnownName(name: string): Gender | undefined {
+  return NAME_IDENTITIES.find((entry) => entry.name === name)?.gender;
+}
 
 export interface Applicant {
   id: string;
@@ -218,9 +233,8 @@ function offeredRent(base: number, roomId: string): number {
   return Math.round((base * (1 + upgradeRentBonus(roomId))) / 100) * 100;
 }
 
-/** 隨機生成性別與戀愛取向 */
-function randomIdentity(): { gender: Gender; attractedTo: Gender[] } {
-  const gender: Gender = Math.random() < 0.1 ? "nonbinary" : Math.random() < 0.5 ? "male" : "female";
+/** 依已決定的性別隨機生成戀愛取向；性別不再與姓名分開亂抽。 */
+function randomIdentity(gender: Gender): { gender: Gender; attractedTo: Gender[] } {
   const opp: Gender = gender === "male" ? "female" : "male";
   const roll = Math.random();
   let attractedTo: Gender[];
@@ -267,12 +281,12 @@ export function rescoreApplicants(list: Applicant[], roomId: string): Applicant[
 /** 為某空房產生 3 位應徵者(契合度依房間目前屬性);excludeNames = 已在住租客,避免同名 */
 export function generateApplicants(roomId: string, excludeNames: string[] = []): Applicant[] {
   const attrs = roomAttributes(roomId);
-  const names = shuffle(NAMES.filter((n) => !excludeNames.includes(n)));
+  const identities = shuffle(NAME_IDENTITIES.filter((entry) => !excludeNames.includes(entry.name)));
   return shuffle(ARCHETYPES)
-    .slice(0, Math.min(3, names.length))
+    .slice(0, Math.min(3, identities.length))
     .map((a, i) => ({
       id: `tenant_${roomId}_${Date.now()}_${i}`,
-      name: names[i],
+      name: identities[i].name,
       archetypeKey: a.key,
       occupation: a.occupation,
       bio: a.bio,
@@ -281,7 +295,7 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       monthlyRent: offeredRent(a.monthlyRent, roomId),
       baseRent: a.monthlyRent,
       stars: matchStars(a.preferences, attrs),
-      ...randomIdentity(),
+      ...randomIdentity(identities[i].gender),
       appearance: randomAppearance(),
       ...(Math.random() < 0.22 ? { pet: randomCatPreset() } : {}), // 約兩成應徵者自帶貓
     }));

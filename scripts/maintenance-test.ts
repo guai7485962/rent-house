@@ -14,7 +14,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { BREAKDOWNS, getBreakdownDef, triggerBreakdown, maintenancePass, repairBreakdown } = await import("../src/sim/maintenance");
+const { BREAKDOWNS, BREAK_CHANCE, getBreakdownDef, triggerBreakdown, maintenancePass, repairBreakdown } = await import("../src/sim/maintenance");
 const { save, load } = await import("../src/sim/persistence");
 const { state, debugStepHour } = await import("../src/store");
 
@@ -27,6 +27,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 const A = state.runtimes["tenant_chen_engineer"]; // r301
 const B = state.runtimes["tenant_lin_asmr"]; // r302
+check("每日每房自然故障率已降為 2%", BREAK_CHANCE === 0.02);
 
 // --- 觸發 ---
 const satBefore = A.satisfaction;

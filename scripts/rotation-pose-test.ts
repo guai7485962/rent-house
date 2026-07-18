@@ -116,7 +116,7 @@ const tags = layoutFloorTags([
   { id: "b", name: "林小婕", x: 100, y: 100, kind: "tenant", color: "#fff" },
   { id: "cat", name: "🐈Bug", x: 101, y: 101, kind: "pet", color: "#fff" },
 ], 256, 384);
-check("人物與貓咪標籤近距離時會錯位排列", new Set(tags.map((t) => `${t.drawX},${t.drawY}`)).size === tags.length);
+check("人物與貓咪標籤固定在各自角色錨點", tags.every((t, i) => t.drawX === [100, 100, 101][i] && t.drawY === [100, 100, 101][i]));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

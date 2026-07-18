@@ -19,7 +19,7 @@ export const PER_ROOM_UPKEEP = 100;
 
 // 收入強化(可調):入住押金月數、每台投幣洗衣機的每日每房收入、一次性開辦補助
 export const DEPOSIT_MONTHS = 1; // 入住押金 = 幾個月租金(招租一次性收入)
-export const WASHER_DAILY_PER_ROOM = 50; // 每台投幣洗衣機、每有一間住人房的每日被動收入
+export const WASHER_DAILY_PER_ROOM = 80; // 每台投幣洗衣機、每有一間住人房的每日被動收入
 export const STARTER_BONUS = 30000; // 開辦補助金(每個存檔只發一次)
 
 /** 投幣洗衣機的每日被動收入:台數 × 每房收入 × 住人房數(租客越多、機台越多,賺越多) */

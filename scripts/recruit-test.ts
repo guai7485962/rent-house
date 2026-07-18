@@ -1,5 +1,7 @@
 import { state, buyFurniture, moveIn, isVacant, fastForward, unreadCount } from "../src/store";
-import { generateApplicants } from "../src/sim/recruit";
+import { generateApplicants, genderForKnownName } from "../src/sim/recruit";
+
+if (genderForKnownName("邱柏翰") !== "male") throw new Error("邱柏翰的固定性別應為男性");
 
 console.log(`303 空房?${isVacant("r303")}  租客總數 ${Object.keys(state.runtimes).length}`);
 
@@ -11,7 +13,10 @@ buyFurniture("beanbag", "r303");
 // 2. 產生應徵者(契合度依裝潢)
 const apps = generateApplicants("r303");
 console.log(`\n303 應徵者(裝潢後):`);
-for (const a of apps) console.log(`  ${a.name} / ${a.occupation} / 契合 ${a.stars}★ / 月租 $${a.monthlyRent}`);
+for (const a of apps) {
+  if (genderForKnownName(a.name) !== a.gender) throw new Error(`${a.name} 的姓名與性別不一致`);
+  console.log(`  ${a.name} / ${a.occupation} / 契合 ${a.stars}★ / 月租 $${a.monthlyRent}`);
+}
 
 // 3. 讓契合度最高的入住
 const best = [...apps].sort((x, y) => y.stars - x.stars)[0];

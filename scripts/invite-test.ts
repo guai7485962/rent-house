@@ -49,6 +49,8 @@ check("租金取整到百位且夾範圍", ok1.applicant!.monthlyRent === 17800)
 check("作息原型合法沿用", ok1.applicant!.archetypeKey === "freelancer");
 check("外觀部件沿用", ok1.applicant!.appearance!.accessory === "cap");
 check("isAdult = true", ok1.applicant!.isAdult === true);
+const playerGender = sanitizeInvited("花木蘭", { ...validRaw, gender: "male" }, "female");
+check("建立畫面指定的性別優先於 AI 猜測", playerGender.applicant?.gender === "female");
 
 // --- 2. 未成年拒收 ---
 check("isAdult:false → 拒收", !sanitizeInvited("某角色", { ...validRaw, isAdult: false }).ok);

@@ -27,12 +27,12 @@ export interface InviteRequestResult {
 }
 
 /** 打 /api/invite 取得 AI 生成的原始角色資料 */
-export async function requestInvite(name: string, description: string): Promise<InviteRequestResult> {
+export async function requestInvite(name: string, description: string, gender: Gender): Promise<InviteRequestResult> {
   try {
     const res = await fetch("/api/invite", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, gender }),
     });
     if (res.ok) return { ok: true, raw: await res.json() };
     try {
@@ -61,7 +61,7 @@ const pickColor = (v: unknown, pool: string[]): string =>
   typeof v === "string" && HEX.test(v) ? v : pool[Math.floor(Math.random() * pool.length)];
 
 /** 消毒 AI 回傳的角色資料 → 應徵者;isAdult !== true 一律拒絕 */
-export function sanitizeInvited(name: string, raw: unknown): SanitizeResult {
+export function sanitizeInvited(name: string, raw: unknown, selectedGender?: Gender): SanitizeResult {
   const r = raw as Record<string, any>;
   if (!r || typeof r !== "object") return { ok: false, reason: "AI 回傳的資料無法解析" };
 
@@ -70,7 +70,10 @@ export function sanitizeInvited(name: string, raw: unknown): SanitizeResult {
 
   const archetypeKey = typeof r.archetypeKey === "string" && ARCHETYPE_ROUTINES[r.archetypeKey] ? r.archetypeKey : "office";
 
-  const gender: Gender = GENDERS.includes(r.gender) ? r.gender : "nonbinary";
+  // 玩家在建立畫面指定時，以玩家選擇為準；不讓 AI 依名字自行猜錯。
+  const gender: Gender = selectedGender && GENDERS.includes(selectedGender)
+    ? selectedGender
+    : GENDERS.includes(r.gender) ? r.gender : "nonbinary";
   const attractedTo: Gender[] = Array.isArray(r.attractedTo) ? r.attractedTo.filter((g: unknown): g is Gender => GENDERS.includes(g as Gender)) : [];
 
   const coreTags: CoreTag[] = (Array.isArray(r.coreTags) ? r.coreTags : [])

@@ -21,6 +21,7 @@ import { ensureWishes } from "./wishes";
 import { stopTicker } from "./lifecycle";
 import { sanitizeDiaryText } from "./narrativeQuality";
 import { sanitizeGrowthTags } from "./growth";
+import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
 export const SAVE_VERSION = 3;
@@ -165,6 +166,13 @@ export function load(): boolean {
     Object.assign(state.cohabits, s.cohabits ?? {});
     for (const k of Object.keys(state.applicantPools)) delete state.applicantPools[k];
     Object.assign(state.applicantPools, s.applicantPools ?? {});
+    // 舊版應徵者的姓名與性別分開亂抽；已知姓名直接以現行角色表校正。
+    for (const pool of Object.values(state.applicantPools)) {
+      for (const applicant of pool.applicants ?? []) {
+        const knownGender = genderForKnownName(applicant.name);
+        if (knownGender) applicant.gender = knownGender;
+      }
+    }
 
     // 鄰居關係
     loadRelationships(s.relationships ?? []);
@@ -248,8 +256,10 @@ export function load(): boolean {
       const ap = (saved.tenant as Tenant).appearance;
       if (ap) setCustomAppearance(id, ap);
     }
-    // 舊存檔的種子租客沒有性別/取向 → 從種子資料補回
+    // 舊存檔的種子租客補性別/取向；舊版隨機姓名則覆寫曾被亂抽錯的性別。
     for (const rt of Object.values(state.runtimes)) {
+      const knownGender = genderForKnownName(rt.tenant.name);
+      if (knownGender) rt.tenant.gender = knownGender;
       if (!rt.tenant.gender) {
         const seed = tenants.find((t) => t.id === rt.tenant.id);
         if (seed?.gender) {

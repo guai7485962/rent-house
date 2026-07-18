@@ -7,6 +7,7 @@ import { moveIn, getApplicants } from "../store";
 import { relistApplicants, RELIST_COST } from "../sim/tenancy";
 import { catAttitude } from "../sim/pets";
 import { state } from "../sim/gameState";
+import type { Gender } from "../types";
 
 // 這層樓已經有貓時,才需要提醒應徵者的「貓緣」(方便房東配房,避免把怕貓的人放進有貓的環境)
 const floorHasCat = computed(() => Object.keys(state.pets).length > 0);
@@ -27,6 +28,7 @@ const applicants = computed<Applicant[]>(() => getApplicants(props.roomId));
 const showInvite = ref(false);
 const invName = ref("");
 const invDesc = ref("");
+const invGender = ref<Gender>("male");
 const invBusy = ref(false);
 const invError = ref("");
 
@@ -43,14 +45,14 @@ async function submitInvite() {
     return;
   }
   invBusy.value = true;
-  const res = await requestInvite(name, desc);
+  const res = await requestInvite(name, desc, invGender.value);
   invBusy.value = false;
   if (!res.ok) {
     invError.value =
       res.reason === "quota" ? "今日 AI 額度已用完,明天再試。" : res.reason === "offline" ? "連不上伺服器,稍後再試。" : "AI 生成失敗,換個描述再試一次。";
     return;
   }
-  const s = sanitizeInvited(name, res.raw);
+  const s = sanitizeInvited(name, res.raw, invGender.value);
   if (!s.ok || !s.applicant) {
     invError.value = s.reason ?? "生成的角色資料不完整。";
     return;
@@ -67,6 +69,7 @@ const attrs = computed(() =>
   Object.entries(roomAttributes(props.roomId)).filter(([, v]) => v).map(([k, v]) => ({ label: ATTR_LABEL[k] ?? k, value: v as number })),
 );
 const roomNo = computed(() => props.roomId.replace(/^r/, ""));
+const GENDER_LABEL: Record<Gender, string> = { male: "男", female: "女", nonbinary: "非二元" };
 
 function accept(a: Applicant) {
   moveIn(props.roomId, a);
@@ -114,6 +117,7 @@ function stars(n: number) {
         <div v-for="a in applicants" :key="a.id" class="app">
           <div class="row1">
             <span class="name">{{ a.name }}</span>
+            <span class="gender">{{ GENDER_LABEL[a.gender] }}</span>
             <span class="job">{{ a.occupation }}</span>
             <span v-if="catNote(a)" class="catnote" :class="{ warn: catNote(a).includes('怕貓') }">{{ catNote(a) }}</span>
             <span class="stars">{{ stars(a.stars) }}</span>
@@ -132,6 +136,14 @@ function stars(n: number) {
           <div v-else class="inv-form">
             <div class="inv-ttl">✉️ 特邀租客</div>
             <input v-model="invName" class="inv-name" maxlength="12" placeholder="名字(例:赤井秀一)" />
+            <label class="inv-gender">
+              <span>性別</span>
+              <select v-model="invGender" aria-label="特邀租客性別">
+                <option value="male">男</option>
+                <option value="female">女</option>
+                <option value="nonbinary">非二元</option>
+              </select>
+            </label>
             <textarea
               v-model="invDesc"
               class="inv-desc"
@@ -139,7 +151,7 @@ function stars(n: number) {
               rows="3"
               placeholder="個性描述(例:沉默寡言的狙擊手,觀察力極強,愛喝黑咖啡,晝伏夜出)"
             ></textarea>
-            <p class="inv-note">僅接受成年角色;AI 會依描述生成職業/性格/作息/外觀,消毒後直接入住本房。</p>
+            <p class="inv-note">僅接受成年角色;你指定的性別會直接採用,AI 只生成職業/性格/作息/外觀,消毒後入住本房。</p>
             <p v-if="invError" class="inv-err">{{ invError }}</p>
             <div class="inv-actions">
               <button class="inv-cancel" :disabled="invBusy" @click="showInvite = false">取消</button>
@@ -175,6 +187,7 @@ function stars(n: number) {
 .row1 { display: flex; align-items: baseline; gap: 8px; }
 .name { font-weight: 700; font-size: 15px; }
 .job { font-size: 12px; color: var(--text-dim); }
+.gender { font-size: 10.5px; color: #ddd2ff; border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
 .catnote { font-size: 11px; color: #cdbcff; border: 1px solid var(--accent-2); border-radius: 999px; padding: 1px 7px; }
 .catnote.warn { color: #ffc9a3; border-color: #c78a5a; }
 .stars { margin-left: auto; color: var(--accent); font-size: 13px; letter-spacing: 1px; }
@@ -189,6 +202,8 @@ function stars(n: number) {
 .inv-form { background: var(--panel); border: 1px solid var(--accent-2); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .inv-ttl { font-weight: 700; font-size: 13.5px; color: #cdbcff; }
 .inv-name, .inv-desc { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 13px; padding: 8px 10px; width: 100%; }
+.inv-gender { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: 12px; }
+.inv-gender select { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 13px; padding: 7px 9px; }
 .inv-desc { resize: none; line-height: 1.5; }
 .inv-note { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
 .inv-err { font-size: 12px; color: var(--bad); }

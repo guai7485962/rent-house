@@ -94,6 +94,7 @@ const washers = getPlacements().filter((p) => p.defId === "laundry_washer").leng
 const rooms = Object.keys(state.occupancy).length;
 check("coinLaundryIncome = 台數 × 每房 × 住人房數", coinLaundryIncome() === washers * WASHER_DAILY_PER_ROOM * rooms);
 check("有洗衣機 + 有租客 → 被動收入 > 0", coinLaundryIncome() > 0);
+check("投幣洗衣機每台每房收入提升至 $80", WASHER_DAILY_PER_ROOM === 80);
 const coin = coinLaundryIncome();
 state.ledger.splice(0);
 collectRent();

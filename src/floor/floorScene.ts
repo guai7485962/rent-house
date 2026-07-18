@@ -23,12 +23,12 @@ import type { PetAgent } from "./petAgents";
 import { activeFx, type Fx } from "./fx";
 import { getTheme, getCustomAppearance } from "../pixel/scene";
 import { drawAppearanceOverlay } from "../pixel/parts";
-import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS } from "./map";
+import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
-import { tryDrawLimezuR301Floor } from "../art/limezu";
+import { tryDrawLimezuFloor, type LimezuFloorRoomId } from "../art/limezu";
 
 export const FLOOR_W = GRID_W * TILE; // 256
 export const FLOOR_H = GRID_H * TILE; // 384
@@ -87,7 +87,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
-  drawR301FloorOverlay(ctx);
+  drawLimezuFloorOverlay(ctx);
   drawWalls(ctx);
   drawEntrance(ctx);
 
@@ -581,11 +581,37 @@ function drawFloorTiles(ctx: Ctx) {
     }
 }
 
-/** 只覆蓋 301 室內的 5x7 格；圖片不可用時下方程序地板完整保留。 */
-function drawR301FloorOverlay(ctx: Ctx) {
-  for (let r = 0; r < 7; r++) {
-    for (let c = 0; c < 5; c++) {
-      tryDrawLimezuR301Floor(ctx, (c + 2 * r) % 3, 16 + c * TILE, 16 + r * TILE);
+/**
+ * LimeZu 地板覆蓋的房間範圍:四間套房 + 交誼廳橫向大廳 + 浴室 + 洗衣間。
+ * 走廊與大門刻意不鋪;範圍全部取自 map.ts,避免和格局漂移。
+ */
+const LIMEZU_FLOOR_AREAS: ReadonlyArray<{
+  room: LimezuFloorRoomId;
+  rect: { c0: number; r0: number; c1: number; r1: number };
+}> = [
+  { room: "r301", rect: ROOM_RECTS.r301 },
+  { room: "r302", rect: ROOM_RECTS.r302 },
+  { room: "r303", rect: ROOM_RECTS.r303 },
+  { room: "r304", rect: ROOM_RECTS.r304 },
+  { room: "lounge", rect: LOUNGE_HALL_RECT },
+  { room: "bathroom", rect: FACILITY_RECTS.bathroom },
+  { room: "laundry", rect: FACILITY_RECTS.laundry },
+];
+
+/**
+ * 逐房以 1:1 像素覆蓋 LimeZu 地板;圖片不可用時下方程序地板完整保留。
+ * 變體沿用 301 既有的 (c + 2*r) % 3 pattern(以房內左上角為原點),
+ * 所以 r301 的視覺結果與單房版完全一致。
+ * GRID 檢查會跳過範圍內的非本房格(例如浴室的隔間牆)。
+ */
+function drawLimezuFloorOverlay(ctx: Ctx) {
+  for (const area of LIMEZU_FLOOR_AREAS) {
+    for (let r = area.rect.r0; r <= area.rect.r1; r++) {
+      for (let c = area.rect.c0; c <= area.rect.c1; c++) {
+        if (GRID[r][c] !== area.room) continue;
+        const variant = (c - area.rect.c0 + 2 * (r - area.rect.r0)) % 3;
+        tryDrawLimezuFloor(ctx, area.room, variant, c * TILE, r * TILE);
+      }
     }
   }
 }

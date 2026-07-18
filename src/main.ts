@@ -2,11 +2,11 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import "./style.css";
 import { notify } from "./sim/gameState";
-import { preloadLimezuFurnitureAtlas, preloadLimezuR301Floor } from "./art/limezu";
+import { preloadLimezuFurnitureAtlas, preloadLimezuFloorAtlas } from "./art/limezu";
 
-// 美術檔不阻塞 Vue 啟動；尚未載好或載入失敗時家具渲染器會自動走既有程序繪圖。
+// 美術檔不阻塞 Vue 啟動；尚未載好或載入失敗時家具/地板渲染器會自動走既有程序繪圖。
 void preloadLimezuFurnitureAtlas();
-void preloadLimezuR301Floor();
+void preloadLimezuFloorAtlas();
 
 // 全域錯誤回報:任何未捕捉錯誤都變成看得見的通知(留存於 🔔 歷史,方便玩家截圖回報)。
 // 同一訊息只報一次,避免每幀重複洗版。

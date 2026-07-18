@@ -52,10 +52,13 @@ export const FACILITY_RECTS: Record<string, Rect> = {
   laundry: { c0: 10, r0: 24, c1: 14, r1: 30 },
 };
 
+/** 交誼廳中段橫向大廳(沙發+共用廚房);LimeZu 地板覆蓋只鋪這一塊,不含走廊與大門。 */
+export const LOUNGE_HALL_RECT: Rect = { c0: 1, r0: 9, c1: 14, r1: 14 };
+
 /** 交誼廳 = 中央縱向走廊 + 中段橫向大廳 */
 const LOUNGE_RECTS: Rect[] = [
   { c0: 7, r0: 1, c1: 8, r1: 31 }, // 縱向走廊(貫穿上下到大門)
-  { c0: 1, r0: 9, c1: 14, r1: 14 }, // 橫向大廳(沙發+共用廚房)
+  LOUNGE_HALL_RECT,
 ];
 
 /** 房內隔間牆(乾濕分離等)—— 在區域填完後覆蓋為牆 */

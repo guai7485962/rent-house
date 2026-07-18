@@ -1,0 +1,47 @@
+{
+  "$comment": "LimeZu Modern Interiors 選件清單(單一資料來源)。scripts/build-limezu-atlas.py 讀本檔重組出 public/assets/limezu/ 下的專案 atlas;原始付費素材不進版控。crop=[x,y,w,h] 為來源 single 檔中的裁切框(已裁掉透明邊),atlas=[x,y] 為輸出 atlas 的貼入位置。src/art/limezu.ts 的 frame 表必須與本檔一致(limezu-art-test.ts 會交叉驗證)。",
+  "source_root": "../input_image/limezu-modern-interiors/extracted/modern-interiors/1_Interiors/16x16",
+  "furniture_atlas": { "file": "public/assets/limezu/furniture.png", "width": 128, "height": 96 },
+  "furniture": {
+    "tv_console": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_107.png", "crop": [0, 0, 32, 40], "atlas": [0, 0] },
+    "lounge_tv": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_113.png", "crop": [0, 0, 32, 40], "atlas": [32, 0] },
+    "wardrobe": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_536.png", "crop": [0, 8, 16, 40], "atlas": [64, 0] },
+    "fridge": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_160.png", "crop": [0, 7, 16, 36], "atlas": [80, 0] },
+    "floor_lamp": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_83.png", "crop": [0, 8, 15, 33], "atlas": [96, 0] },
+    "toilet": { "source": "Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_50.png", "crop": [1, 7, 14, 35], "atlas": [111, 0] },
+    "gaming_desk": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_19.png", "crop": [2, 12, 28, 30], "atlas": [0, 40] },
+    "plant": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_17.png", "crop": [1, 12, 14, 29], "atlas": [28, 40] },
+    "washing_machine": { "source": "Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_87.png", "crop": [6, 0, 20, 29], "atlas": [42, 40] },
+    "laundry_washer": { "alias": "washing_machine" },
+    "dining_table": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_309.png", "crop": [1, 0, 30, 26], "atlas": [62, 40] },
+    "single_bed": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_1.png", "crop": [11, 13, 36, 25], "atlas": [92, 40] },
+    "stove": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_148.png", "crop": [0, 2, 16, 25], "atlas": [0, 70] },
+    "shower": { "source": "Theme_Sorter_Singles/3_Bathroom_Singles/Bathroom_Singles_156.png", "crop": [2, 1, 29, 25], "atlas": [16, 70] },
+    "coffee_machine": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_177.png", "crop": [1, 11, 14, 19], "atlas": [45, 70] },
+    "dresser": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_429.png", "crop": [1, 8, 15, 18], "atlas": [59, 70] },
+    "counter": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_121.png", "crop": [2, 6, 29, 14], "atlas": [74, 70] },
+    "bath_plant": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_15.png", "crop": [2, 6, 12, 14], "atlas": [103, 70] }
+  },
+  "floor_atlas": {
+    "file": "public/assets/limezu/floors.png",
+    "width": 48,
+    "height": 112,
+    "source": "Room_Builder_subfiles/Room_Builder_Floors_16x16.png"
+  },
+  "floors": {
+    "r301": { "row": 0, "cells": [[4, 13], [5, 13], [6, 13]] },
+    "r302": { "row": 1, "cells": [[0, 12], [1, 12], [2, 12]] },
+    "r303": { "row": 2, "cells": [[4, 12], [5, 12], [6, 12]] },
+    "r304": { "row": 3, "cells": [[0, 28], [1, 28], [2, 28]] },
+    "lounge": { "row": 4, "cells": [[0, 20], [1, 20], [2, 20]] },
+    "bathroom": { "row": 5, "cells": [[8, 31], [9, 31], [10, 31]] },
+    "laundry": { "row": 6, "cells": [[12, 33], [13, 33], [14, 33]] }
+  },
+  "skipped": {
+    "double_bed": "Bd226/250/235 皆為直向 2x3 床,footprint 3x2 橫向;Bedroom Singles 無橫向雙人床(125-130 為雙層床側視),保留程序繪圖",
+    "bookshelf": "Lb64/57/65 裁邊後皆 27px 寬 > footprint 1 格上限 20px,保留程序繪圖",
+    "bathtub": "Ba151/152 皆為直向 1.5x2.2 缸,footprint 2x1 橫向;Bathroom Singles 無橫向浴缸(31px 寬件皆為洗手台),保留程序繪圖",
+    "bath_sink": "Ba5/6/7 裁邊後皆 31px 寬 > footprint 1 格上限 20px,保留程序繪圖",
+    "lounge_plant": "Lv18 裁邊 22px、Lv14 裁邊 23px 皆 > footprint 1 格上限 20px,保留程序繪圖"
+  }
+}

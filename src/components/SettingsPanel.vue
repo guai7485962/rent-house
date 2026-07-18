@@ -112,6 +112,15 @@ function onImport() {
           </button>
         </section>
 
+        <section class="sec">
+          <div class="sec-ttl">美術素材</div>
+          <p class="desc">
+            <a href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">
+              Modern Interiors by LimeZu
+            </a>
+          </p>
+        </section>
+
         <p v-if="note" class="note">{{ note }}</p>
       </div>
     </div>
@@ -133,6 +142,7 @@ function onImport() {
 .sec { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .sec-ttl { font-size: 12px; font-weight: 700; color: var(--text-dim); }
 .desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+.desc a { color: var(--accent); }
 .row { display: flex; gap: 8px; }
 .btn { flex: 1; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13px; }
 .btn:hover { border-color: var(--accent-2); }

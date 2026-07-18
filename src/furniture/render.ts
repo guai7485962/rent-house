@@ -14,6 +14,7 @@ import {
   groundShadow,
 } from "../pixel/sprites";
 import { TILE } from "../floor/map";
+import { tryDrawLimezuFurniture } from "../art/limezu";
 import type { FurnitureDef, FurnKind, SpritePart } from "./catalog";
 import { normalizeRotation, type FurnitureRotation } from "./rotation";
 
@@ -43,6 +44,7 @@ export function drawDef(ctx: Ctx, def: FurnitureDef, x: number, y: number, rotat
 }
 
 function drawUnrotated(ctx: Ctx, def: FurnitureDef, x: number, y: number, w: number, h: number) {
+  if (tryDrawLimezuFurniture(ctx, def.id, x, y, w, h)) return;
   if ("recipe" in def.sprite) {
     drawRecipe(ctx, def.sprite.recipe, x, y);
     return;

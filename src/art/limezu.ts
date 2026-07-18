@@ -3,11 +3,12 @@ import type { Ctx } from "../pixel/sprites";
 /**
  * LimeZu Modern Interiors 的專案專用家具 atlas。
  *
- * 原始付費素材不進版控；只把遊戲實際使用的五件家具重組成這張小 atlas。
+ * 原始付費素材不進版控；只把遊戲實際使用的核准素材重組成專案小圖。
  * atlas 尚未載入、瀏覽器不支援 Image、或繪製失敗時一律回傳 false，
  * 由 furniture/render.ts 保留的程序繪圖完整接手。
  */
 export const LIMEZU_ATLAS_URL = "/assets/limezu/mvp301.png";
+export const LIMEZU_R301_FLOOR_URL = "/assets/limezu/r301-floor.png";
 
 export const LIMEZU_FURNITURE_IDS = [
   "single_bed",
@@ -35,6 +36,13 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   gaming_desk: { sx: 36, sy: 0, sw: 28, sh: 30, dx: 2, dy: -14 },
 };
 
+/** 301 地板小圖中的三個 16x16 變體；只供 floorScene 的 301 固定區域使用。 */
+export const LIMEZU_R301_FLOOR_FRAMES = [
+  { sx: 0, sy: 0, sw: 16, sh: 16 },
+  { sx: 16, sy: 0, sw: 16, sh: 16 },
+  { sx: 32, sy: 0, sw: 16, sh: 16 },
+] as const;
+
 type AtlasImage = CanvasImageSource;
 type LoadableImage = CanvasImageSource & {
   onload: (() => void) | null;
@@ -46,10 +54,19 @@ type LoadableImage = CanvasImageSource & {
 let atlas: AtlasImage | null = null;
 let preloadPromise: Promise<boolean> | null = null;
 let warned = false;
+let r301Floor: AtlasImage | null = null;
+let r301FloorPreloadPromise: Promise<boolean> | null = null;
+let r301FloorWarned = false;
 
 function warnOnce(message: string, cause?: unknown) {
   if (warned) return;
   warned = true;
+  console.warn(`[limezu] ${message}`, cause ?? "");
+}
+
+function warnR301FloorOnce(message: string, cause?: unknown) {
+  if (r301FloorWarned) return;
+  r301FloorWarned = true;
   console.warn(`[limezu] ${message}`, cause ?? "");
 }
 
@@ -90,6 +107,43 @@ export function preloadLimezuFurnitureAtlas(url = LIMEZU_ATLAS_URL): Promise<boo
   return preloadPromise;
 }
 
+/** 301 地板非阻塞預載；失敗時保留 floorScene 已畫好的程序地板。 */
+export function preloadLimezuR301Floor(url = LIMEZU_R301_FLOOR_URL): Promise<boolean> {
+  if (r301Floor) return Promise.resolve(true);
+  if (r301FloorPreloadPromise) return r301FloorPreloadPromise;
+  if (typeof Image === "undefined") return Promise.resolve(false);
+
+  r301FloorPreloadPromise = new Promise<boolean>((resolve) => {
+    let image: LoadableImage;
+    try {
+      image = new Image() as LoadableImage;
+      image.decoding = "async";
+    } catch (error) {
+      warnR301FloorOnce("無法建立 301 地板圖像，保留程序地板。", error);
+      resolve(false);
+      return;
+    }
+
+    image.onload = () => {
+      r301Floor = image;
+      resolve(true);
+    };
+    image.onerror = () => {
+      warnR301FloorOnce("301 地板載入失敗，保留程序地板。");
+      resolve(false);
+    };
+
+    try {
+      image.src = url;
+    } catch (error) {
+      warnR301FloorOnce("設定 301 地板路徑失敗，保留程序地板。", error);
+      resolve(false);
+    }
+  });
+
+  return r301FloorPreloadPromise;
+}
+
 function isLimezuFurnitureId(id: string): id is LimezuFurnitureId {
   return Object.prototype.hasOwnProperty.call(LIMEZU_FURNITURE_FRAMES, id);
 }
@@ -125,9 +179,35 @@ export function tryDrawLimezuFurniture(
   }
 }
 
+/** 成功以 1:1 像素畫出一格 301 地板時回傳 true；false 時保留既有程序底圖。 */
+export function tryDrawLimezuR301Floor(
+  ctx: Ctx,
+  variant: number,
+  x: number,
+  y: number,
+): boolean {
+  if (!r301Floor || !Number.isInteger(variant)) return false;
+  const frame = LIMEZU_R301_FLOOR_FRAMES[variant];
+  if (!frame) return false;
+  try {
+    ctx.drawImage(r301Floor, frame.sx, frame.sy, frame.sw, frame.sh, x, y, frame.sw, frame.sh);
+    return true;
+  } catch (error) {
+    warnR301FloorOnce("301 地板繪製失敗，保留程序地板。", error);
+    return false;
+  }
+}
+
 /** @internal 僅供確定性測試隔離模組狀態。 */
 export function resetLimezuFurnitureAtlasForTests() {
   atlas = null;
   preloadPromise = null;
   warned = false;
+}
+
+/** @internal 僅供確定性測試隔離 301 地板載入狀態。 */
+export function resetLimezuR301FloorForTests() {
+  r301Floor = null;
+  r301FloorPreloadPromise = null;
+  r301FloorWarned = false;
 }

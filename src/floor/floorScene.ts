@@ -28,6 +28,7 @@ import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
+import { tryDrawLimezuR301Floor } from "../art/limezu";
 
 export const FLOOR_W = GRID_W * TILE; // 256
 export const FLOOR_H = GRID_H * TILE; // 384
@@ -86,6 +87,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
+  drawR301FloorOverlay(ctx);
   drawWalls(ctx);
   drawEntrance(ctx);
 
@@ -577,6 +579,15 @@ function drawFloorTiles(ctx: Ctx) {
         rect(ctx, x + 3, y + 5, TILE - 6, 1, "#6d5540");
       }
     }
+}
+
+/** 只覆蓋 301 室內的 5x7 格；圖片不可用時下方程序地板完整保留。 */
+function drawR301FloorOverlay(ctx: Ctx) {
+  for (let r = 0; r < 7; r++) {
+    for (let c = 0; c < 5; c++) {
+      tryDrawLimezuR301Floor(ctx, (c + 2 * r) % 3, 16 + c * TILE, 16 + r * TILE);
+    }
+  }
 }
 
 /** 大門(樓層出入口):明顯的雙開木門 */

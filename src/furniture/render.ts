@@ -115,16 +115,27 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
   },
   tv(ctx, x, y, w, h) {
     groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
-    // 電視櫃
-    block(ctx, x + 1, y + h - 8, w - 2, 7, ramp("#5b4636"), 2);
-    // 螢幕
-    block(ctx, x + 3, y + 1, w - 6, h - 9, ramp("#2a2740"), 2);
-    rect(ctx, x + 5, y + 3, w - 10, h - 13, "#5a8fe0");
-    rect(ctx, x + 6, y + 4, 6, 1, "#a8ccff");
-    rect(ctx, x + 6, y + 6, 9, 1, "#cfe0ff");
-    // 主機 + 指示燈
-    rect(ctx, x + 4, y + h - 6, 8, 3, "#20202c");
-    rect(ctx, x + 5, y + h - 5, 1, 1, "#6fd08c");
+    const screen = ramp("#252b3a");
+    const wood = ramp("#76553d");
+    // 薄型螢幕：右側留出直立遊戲主機的清楚輪廓。
+    block(ctx, x + 3, y + 1, w - 10, 9, screen, 1);
+    rect(ctx, x + 5, y + 3, w - 14, 4, "#608fbd");
+    rect(ctx, x + 6, y + 3, 7, 1, "#9fc4da");
+    rect(ctx, x + 13, y + 9, 4, 1, screen.out);
+    // 暖木低櫃，與 301 地板及 LimeZu 木質家具共用色溫。
+    block(ctx, x + 1, y + 10, w - 2, 5, wood, 1);
+    rect(ctx, x + 16, y + 12, 1, 2, wood.out);
+    // 白色直立主機、光碟槽與狀態燈。
+    rect(ctx, x + w - 8, y + 4, 5, 8, "#d8d4cb");
+    rect(ctx, x + w - 8, y + 4, 1, 8, "#f0ede5");
+    rect(ctx, x + w - 5, y + 5, 1, 5, "#3b4150");
+    rect(ctx, x + w - 7, y + 10, 1, 1, "#71c994");
+    // 櫃面上的小控制器：兩側握把與中央按鍵。
+    rect(ctx, x + 5, y + 11, 7, 2, "#292d3a");
+    rect(ctx, x + 4, y + 12, 2, 2, "#292d3a");
+    rect(ctx, x + 11, y + 12, 2, 2, "#292d3a");
+    rect(ctx, x + 7, y + 11, 1, 1, "#7da6cc");
+    rect(ctx, x + 10, y + 11, 1, 1, "#d9818f");
   },
   chair(ctx, x, y, w, h) {
     const wood = ramp("#8a6444");
@@ -136,11 +147,19 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
   },
   beanbag(ctx, x, y, w, h) {
     groundShadow(ctx, x + w / 2, y + h - 1, w - 3);
-    const c = ramp("#c46f7a");
-    rect(ctx, x + 2, y + 5, w - 4, h - 6, c.mid);
-    rect(ctx, x + 3, y + 4, w - 6, 3, c.hi);
-    rect(ctx, x + 2, y + h - 3, w - 4, 1, c.dark);
-    rect(ctx, x + 4, y + 7, w - 10, 2, c.light);
+    const c = ramp("#b96f74");
+    // 上窄下寬的塌陷輪廓，避免讀成方凳或一般扶手椅。
+    rect(ctx, x + 5, y + 3, 6, 2, c.out);
+    rect(ctx, x + 4, y + 5, 8, 3, c.out);
+    rect(ctx, x + 3, y + 8, 10, 2, c.out);
+    rect(ctx, x + 2, y + 10, 12, 4, c.out);
+    rect(ctx, x + 3, y + 13, 10, 2, c.out);
+    rect(ctx, x + 6, y + 4, 4, 2, c.hi);
+    rect(ctx, x + 5, y + 6, 6, 3, c.light);
+    rect(ctx, x + 4, y + 9, 8, 4, c.mid);
+    rect(ctx, x + 3, y + 11, 2, 2, c.light);
+    rect(ctx, x + 10, y + 10, 2, 3, c.dark);
+    rect(ctx, x + 5, y + 13, 6, 1, c.dark);
   },
   bookshelf(ctx, x, y, w, h) {
     const wood = ramp("#7a5636");
@@ -173,13 +192,28 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
   },
   cat_tower(ctx, x, y, w, h) {
     groundShadow(ctx, x + w / 2, y + h - 1, w - 3);
-    // 柱
-    rect(ctx, x + w / 2 - 2, y + 4, 4, h - 6, "#b89a7a");
-    // 平台
-    block(ctx, x + 2, y + h - 8, w - 4, 5, ramp("#8a6a4c"), 2);
-    block(ctx, x + 3, y + 1, w - 6, 5, ramp("#9c7a58"), 2);
-    // 洞
-    rect(ctx, x + w / 2 - 2, y + h - 14, 4, 5, "#3a2f26");
+    const wood = ramp("#8b674d");
+    const rope = ramp("#b89b76");
+    // 三層錯位平台，輪廓刻意不做成垂直書架。
+    block(ctx, x + 7, y + 1, 8, 5, wood, 2);
+    block(ctx, x + 1, y + 10, 10, 5, wood, 2);
+    block(ctx, x + 1, y + 27, 14, 4, wood, 1);
+    // 兩支纏繩抓柱，使用明暗橫紋表達麻繩。
+    rect(ctx, x + 10, y + 5, 3, 22, rope.out);
+    rect(ctx, x + 11, y + 6, 1, 20, rope.light);
+    rect(ctx, x + 4, y + 14, 3, 13, rope.out);
+    rect(ctx, x + 5, y + 15, 1, 11, rope.light);
+    for (let sy = 7; sy < 26; sy += 4) rect(ctx, x + 10, y + sy, 3, 1, rope.dark);
+    for (let sy = 16; sy < 26; sy += 4) rect(ctx, x + 4, y + sy, 3, 1, rope.dark);
+    // 下層貓洞與圓形入口，讓用途在縮小畫面仍可辨識。
+    block(ctx, x + 7, y + 18, 8, 10, wood, 2);
+    rect(ctx, x + 9, y + 21, 4, 5, "#322a29");
+    rect(ctx, x + 10, y + 20, 2, 1, "#322a29");
+    rect(ctx, x + 10, y + 25, 2, 1, wood.dark);
+    // 中層垂下的小玩具。
+    rect(ctx, x + 2, y + 15, 1, 5, "#6e6570");
+    rect(ctx, x + 1, y + 20, 3, 3, "#d28b63");
+    rect(ctx, x + 2, y + 19, 1, 1, "#e6ad7f");
   },
   plant(ctx, x, y) {
     groundShadow(ctx, x + TILE / 2, y + TILE - 1, 8);

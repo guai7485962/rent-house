@@ -12,9 +12,6 @@ export const LIMEZU_ATLAS_URL = "/assets/limezu/mvp301.png";
 export const LIMEZU_FURNITURE_IDS = [
   "single_bed",
   "gaming_desk",
-  "beanbag",
-  "tv_console",
-  "cat_tower",
 ] as const;
 
 export type LimezuFurnitureId = (typeof LIMEZU_FURNITURE_IDS)[number];
@@ -30,15 +27,12 @@ interface AtlasFrame {
 }
 
 /**
- * 固定的 128x48 atlas 版面。素材整合時只裁透明邊並放進對應格位，
+ * 固定的 64x30 atlas 版面。素材整合時只裁透明邊並放進對應格位，
  * runtime 不必知道原始付費素材的檔名或資料夾結構。
  */
 export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFrame>> = {
   single_bed: { sx: 0, sy: 0, sw: 36, sh: 25, dx: -2, dy: 7 },
   gaming_desk: { sx: 36, sy: 0, sw: 28, sh: 30, dx: 2, dy: -14 },
-  beanbag: { sx: 64, sy: 0, sw: 12, sh: 17, dx: 2, dy: -1 },
-  tv_console: { sx: 76, sy: 0, sw: 32, sh: 40, dx: 0, dy: -24 },
-  cat_tower: { sx: 108, sy: 0, sw: 15, sh: 17, dx: 1, dy: 15 },
 };
 
 type AtlasImage = CanvasImageSource;

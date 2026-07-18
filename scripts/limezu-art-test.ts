@@ -1,5 +1,8 @@
 /** LimeZu 家具 atlas 的預載、映射與程序繪圖 fallback 回歸。 */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
+  LIMEZU_FURNITURE_IDS,
   LIMEZU_FURNITURE_FRAMES,
   preloadLimezuFurnitureAtlas,
   resetLimezuFurnitureAtlasForTests,
@@ -14,6 +17,33 @@ const check = (name: string, ok: boolean, detail = "") => {
   if (ok) { pass++; console.log(`✅ ${name}`); }
   else { fail++; console.log(`❌ ${name} ${detail}`); }
 };
+
+const APPROVED_IDS = ["single_bed", "gaming_desk"] as const;
+const RETIRED_IDS = ["beanbag", "tv_console", "cat_tower"] as const;
+
+const atlasBytes = readFileSync(fileURLToPath(new URL("../public/assets/limezu/mvp301.png", import.meta.url)));
+const atlasWidth = atlasBytes.readUInt32BE(16);
+const atlasHeight = atlasBytes.readUInt32BE(20);
+const frames = Object.entries(LIMEZU_FURNITURE_FRAMES);
+const overlaps = frames.some(([idA, a], index) => frames.slice(index + 1).some(([idB, b]) =>
+  idA !== idB
+  && a.sx < b.sx + b.sw
+  && a.sx + a.sw > b.sx
+  && a.sy < b.sy + b.sh
+  && a.sy + a.sh > b.sy,
+));
+
+check(
+  "runtime 白名單只保留核准的床與電競桌",
+  JSON.stringify(LIMEZU_FURNITURE_IDS) === JSON.stringify(APPROVED_IDS),
+);
+check("atlas 已縮為只容納核准 frame 的 64x30", atlasWidth === 64 && atlasHeight === 30);
+check(
+  "所有 source rect 均在 atlas 邊界內",
+  frames.every(([, f]) => f.sx >= 0 && f.sy >= 0 && f.sw > 0 && f.sh > 0
+    && f.sx + f.sw <= atlasWidth && f.sy + f.sh <= atlasHeight),
+);
+check("核准 source rect 互不重疊", !overlaps);
 
 class FakeCtx {
   fillStyle = "";
@@ -63,6 +93,13 @@ check(
 );
 check("未知家具 id 不會誤畫 atlas", !tryDrawLimezuFurniture(atlasCtx as any, "double_bed", 0, 0, 48, 32) && atlasCtx.drawCalls.length === 1);
 
+for (const id of RETIRED_IDS) {
+  check(`${id} 已退出 atlas runtime 映射`, !tryDrawLimezuFurniture(atlasCtx as any, id, 0, 0, 32, 32));
+  const fallback = new FakeCtx();
+  drawDef(fallback as any, getDef(id), 0, 0);
+  check(`${id} 恢復既有程序繪圖`, fallback.drawCalls.length === 0 && fallback.fillCount > 0);
+}
+
 const renderCtx = new FakeCtx();
 drawDef(renderCtx as any, getDef("gaming_desk"), 0, 0);
 check("drawDef 成功使用 atlas 時不疊加程序像素", renderCtx.drawCalls.length === 1 && renderCtx.fillCount === 0);
@@ -74,7 +111,7 @@ class ThrowingDrawCtx extends FakeCtx {
   drawImage() { throw new Error("fake canvas draw failure"); }
 }
 const throwingCtx = new ThrowingDrawCtx();
-drawDef(throwingCtx as any, getDef("tv_console"), 0, 0);
+drawDef(throwingCtx as any, getDef("gaming_desk"), 0, 0);
 check("drawImage 失敗時仍回退程序繪圖且只警告一次", throwingCtx.fillCount > 0 && warnings === 1);
 console.warn = originalWarn;
 

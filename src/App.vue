@@ -297,6 +297,10 @@ const arcChip = computed(() => {
   return a ? `📖 ${a.theme}${a.partnerName ? `(與${a.partnerName})` : ""} · ${a.stage}/${a.maxStage}` : null;
 });
 
+/** 房客性別(debug 輔助:資料缺漏時直接顯示「性別未設定」方便回報) */
+const GENDER_TEXT: Record<string, string> = { male: "♂ 男", female: "♀ 女", nonbinary: "⚧ 非二元" };
+const genderText = computed(() => GENDER_TEXT[rt.value?.tenant.gender ?? ""] ?? "性別未設定");
+
 /** 今日天氣(header 只放 emoji 省空間;完整名稱放 title 提示) */
 const weatherFull = computed(() => weatherLabel(todayWeather()));
 const weatherEmoji = computed(() => weatherFull.value.split(" ")[0]);
@@ -496,6 +500,7 @@ function onGroupResolve(choiceId: string) {
       <span class="rno">{{ rt.roomNo }}</span>
       <span class="rname">{{ rt.tenant.name }}</span>
       <span class="rjob">{{ rt.tenant.occupation }}</span>
+      <span class="rgender" :class="{ miss: !rt.tenant.gender }">{{ genderText }}</span>
       <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
       <span v-if="state.pets[rt.tenant.id]" class="rpet">🐈 {{ state.pets[rt.tenant.id].name }}</span>
     </div>
@@ -758,6 +763,8 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .rno { font-weight: 700; color: var(--accent); font-size: 15px; }
 .rname { font-weight: 600; font-size: 15px; }
 .rjob { font-size: 12px; color: var(--text-dim); }
+.rgender { font-size: 11.5px; color: #9ec5e8; align-self: center; }
+.rgender.miss { color: #e08c8c; }
 
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; }

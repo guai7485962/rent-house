@@ -15,6 +15,7 @@ import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
 import { applyObservation, sanitizeObservation } from "./observationEffects";
 import { todayWeather, weatherLabel } from "./weather";
+import { weekdayLabel } from "./week";
 import { tenantFinanceBrief } from "./economy";
 import { GROWTH_TAGS, grantGrowthTag } from "./growth";
 import { boostWishFromArc, wishBrief } from "./wishes";
@@ -78,7 +79,7 @@ function produceDiaryFor(rt: TenantRuntime, live: boolean): void {
     id: rt.tenant.id,
     diaryId: `diary_${rt.tenant.id}_${state.gameMs}_${++diarySerial}`,
     gameMs: state.gameMs,
-    ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天`),
+    ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天(${weekdayLabel(state.gameMs)})`),
     live,
   };
   if (live) {
@@ -404,6 +405,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),
+    weekday: weekdayLabel(state.gameMs),
     finance: tenantFinanceBrief(rt) ?? undefined,
     wish: wishBrief(rt),
   };

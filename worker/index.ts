@@ -41,6 +41,8 @@ interface NarrateCtx {
   eventDue: boolean;
   /** 今日天氣 label(舊版前端/待補 ctx 缺省 = 不提天氣) */
   weather?: string;
+  /** 今天星期幾 label(例「週五」;舊版前端缺省 = 不提星期) */
+  weekday?: string;
   /** 財務狀況一句話(欠租/拮据;缺省 = 一切正常) */
   finance?: string;
   /** 人生心願一句話(長期目標與進度;缺省 = 不提;進度由前端本地決定) */
@@ -127,6 +129,7 @@ function buildPrompt(c: NarrateCtx): string {
     `永久成長:${(c.growthTags ?? []).join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     ...(c.weather ? [`今天天氣:${c.weather}(可自然融入描寫,但不要每天都以天氣開頭)`] : []),
+    ...(c.weekday ? [`今天是:${c.weekday}(可自然帶到,如週五的期待或週末的閒適;租客實際作息仍以今日片段為準,不得虛構休假或上班)`] : []),
     ...(c.finance ? [`財務狀況:${c.finance}(這正在影響他的生活,可寫進日記;沒欠租的日子不要提錢的事)`] : []),
     ...(c.wish ? [`人生心願:${c.wish}(他的長期目標,可寫他為此做的小努力或心境;進度由系統決定,不得自行宣布實現或跳進度)`] : []),
     `房間聲學:噪音 ${c.room.noise} / 隔音 ${c.room.soundproof} / ${c.room.treated ? "已完成永久隔音" : "尚未完成永久隔音"} / ${c.room.complaintRisk ? "仍有室內噪音抗議風險" : "室內噪音抗議已阻隔(不得生成相關抗議)"}`,
@@ -253,6 +256,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
     weather: clampStr(c.weather, 12),
+    weekday: clampStr(c.weekday, 8),
     finance: clampStr(c.finance, 40),
     wish: clampStr(c.wish, 48),
   };

@@ -11,6 +11,7 @@ import {
   DAILY_STRESS_TEMPLATES,
   DAILY_TEMPLATES,
   DAILY_WEATHER_TEMPLATES,
+  DAILY_WEEKEND_TEMPLATES,
 } from "../content/observationLines";
 import { sanitizeDiaryText, sanitizeSummaryText } from "./narrativeQuality";
 
@@ -41,6 +42,8 @@ export interface NarrateCtx {
   eventDue: boolean;
   /** 今日天氣(顯示用 label,例「🌧️ 雨天」;舊待補 ctx 缺省 = 不提天氣) */
   weather?: string;
+  /** 今天星期幾(顯示用 label,例「週五」;舊待補 ctx 缺省 = 不提星期) */
+  weekday?: string;
   /** 財務狀況一句話(欠租/拮据;缺省/空 = 一切正常,不進 prompt) */
   finance?: string;
   /** 人生心願一句話(長期目標與進度;缺省 = 不進 prompt;進度由本地決定,AI 只能當動機素材) */
@@ -133,6 +136,8 @@ export function templateDiary(ctx: NarrateCtx): string {
   if (ctx.stats.mood <= 35) pool.push(...DAILY_LOW_MOOD_TEMPLATES);
   if (ctx.stats.mood >= 75 && ctx.stats.stress <= 55) pool.push(...DAILY_HAPPY_TEMPLATES);
   if (ctx.relationships.length) pool.push(...DAILY_SOCIAL_TEMPLATES);
+  // 週末情境句:週六/週日混入(平日與缺省不混;放在天氣句前,維持天氣句在池尾的既有測試假設)
+  if (ctx.weekday === "週六" || ctx.weekday === "週日") pool.push(...DAILY_WEEKEND_TEMPLATES);
   // 天氣情境句:依 ctx.weather 的 label 對回句池(缺省不混入)
   if (ctx.weather) {
     if (ctx.weather.includes("雨")) pool.push(...DAILY_WEATHER_TEMPLATES.rainy);

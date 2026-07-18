@@ -23,6 +23,7 @@ import type { Appearance, HairStyle, AccessoryKind } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
 import type { WeeklyReport } from "./weeklyReport";
 import { save } from "./persistence";
+import { weekdayShort } from "./week";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 export const LOG_CAP = 60;
@@ -348,7 +349,11 @@ export function fmt(ms: number): string {
   const d = new Date(ms);
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
-export const clockLabel = computed(() => fmt(state.gameMs));
+// header 時鐘多帶星期(日誌 timeLabel 仍用精簡的 fmt,不動既有格式)
+export const clockLabel = computed(() => {
+  const d = new Date(state.gameMs);
+  return `${d.getMonth() + 1}/${d.getDate()}(${weekdayShort(state.gameMs)}) ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+});
 
 /** 單調遞增的遊戲日序號 */
 export const gameDayIndex = () => Math.floor((state.gameMs - GAME_START.getTime()) / (24 * 3600 * 1000));

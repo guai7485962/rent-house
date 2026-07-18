@@ -422,3 +422,10 @@ export const DAILY_WEATHER_TEMPLATES: Record<"sunny" | "cloudy" | "rainy" | "swe
     "溽暑難耐,{name}一整天都揀著陰涼處待,冰水一杯接一杯。",
   ],
 };
+
+/** 每日總結的週末情境句(週六/週日混入候選池;templateDiary 仍只抽一次亂數) */
+export const DAILY_WEEKEND_TEMPLATES: string[] = [
+  "週末的樓裡少了趕早出門的腳步聲,{name}的一天過得比平常鬆一些。",
+  "難得的週末,{name}沒被鬧鐘追著跑,連監視器畫面看起來都悠哉了點。",
+  "週末午後的公共區多了些閒晃的身影,{name}也放慢了自己的步調。",
+];

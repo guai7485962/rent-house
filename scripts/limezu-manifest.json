@@ -27,6 +27,19 @@
     "wood_chair": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [49, 186, 14, 22], "atlas": [94, 96] },
     "coffee_table": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [81, 81, 14, 14], "atlas": [108, 96] }
   },
+  "wall_atlas": { "file": "public/assets/limezu/walls.png", "width": 64, "height": 48 },
+  "$walls_comment": "第三批:整棟牆面。牆身/頂蓋取 Room_Builder_Walls 右側欄群紫色套(列4-5,牆身 #8185C1、頂蓋白條);踢腳線取 Room_Builder_Baseboards 橙色橫條(16x6,恰為程序牆南面 6px)。全表無『紫身+橙踢腳』一體成形套,故依 LimeZu 模組化設計以踢腳板表組合。left/right/both 指該側鄰格非牆時帶深色收邊線的變體。",
+  "walls": {
+    "cap_mid": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [480, 64, 16, 16], "atlas": [0, 0] },
+    "cap_left": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [464, 64, 16, 16], "atlas": [16, 0] },
+    "cap_right": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [496, 64, 16, 16], "atlas": [32, 0] },
+    "cap_both": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [400, 64, 16, 16], "atlas": [48, 0] },
+    "body_mid": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [432, 64, 16, 16], "atlas": [0, 16] },
+    "body_left": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [416, 64, 16, 16], "atlas": [16, 16] },
+    "body_right": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [448, 64, 16, 16], "atlas": [32, 16] },
+    "body_both": { "source": "Room_Builder_subfiles/Room_Builder_Walls_16x16.png", "crop": [432, 80, 16, 16], "atlas": [48, 16] },
+    "baseboard": { "source": "Room_Builder_subfiles/Room_Builder_Baseboards_16x16.png", "crop": [16, 42, 16, 6], "atlas": [0, 32] }
+  },
   "floor_atlas": {
     "file": "public/assets/limezu/floors.png",
     "width": 48,

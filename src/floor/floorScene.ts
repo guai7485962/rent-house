@@ -28,7 +28,7 @@ import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
-import { tryDrawLimezuFloor, type LimezuFloorRoomId } from "../art/limezu";
+import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 
 export const FLOOR_W = GRID_W * TILE; // 256
 export const FLOOR_H = GRID_H * TILE; // 384
@@ -656,6 +656,8 @@ function drawWalls(ctx: Ctx) {
   const wallFace = "#413a55";
   const wallHi = "#6e6688";
   const wallSh = "#2c2740";
+  const isWall = (rr: number, cc: number) =>
+    rr >= 0 && rr < GRID_H && cc >= 0 && cc < GRID_W && GRID[rr][cc] === "wall";
   for (let r = 0; r < GRID_H; r++) {
     for (let c = 0; c < GRID_W; c++) {
       if (GRID[r][c] !== "wall") continue;
@@ -663,15 +665,26 @@ function drawWalls(ctx: Ctx) {
       const y = r * TILE;
       const below = r + 1 < GRID_H ? GRID[r + 1][c] : "outside";
       const faceVisible = below !== "wall"; // 牆南側露出正面
-      rect(ctx, x, y, TILE, TILE, wallTop);
-      rect(ctx, x, y, TILE, 2, wallHi); // 頂面高光
-      rect(ctx, x, y, 1, TILE, shade(wallTop, 8));
+      // LimeZu 牆貼圖(第三批):幾何沿用「整格頂 + 南向 6px 面」,只換填色。
+      // 北鄰非牆 → cap(白頂蓋條),否則 body(牆身延伸);左右鄰非牆側帶深色收邊。
+      const west = isWall(r, c - 1);
+      const east = isWall(r, c + 1);
+      const side = west && east ? "mid" : west ? "right" : east ? "left" : "both";
+      const band = isWall(r - 1, c) ? "body" : "cap";
+      const topDrawn = tryDrawLimezuWallPiece(ctx, `${band}_${side}`, x, y);
+      if (!topDrawn) {
+        rect(ctx, x, y, TILE, TILE, wallTop);
+        rect(ctx, x, y, TILE, 2, wallHi); // 頂面高光
+        rect(ctx, x, y, 1, TILE, shade(wallTop, 8));
+      }
       if (faceVisible) {
-        // 南面正面(有厚度感)
-        rect(ctx, x, y + TILE - 6, TILE, 6, wallFace);
-        rect(ctx, x, y + TILE - 6, TILE, 1, shade(wallFace, 14));
-        rect(ctx, x, y + TILE - 1, TILE, 1, wallSh);
-      } else {
+        // 南面正面(有厚度感);LimeZu 版鋪 16x6 橙踢腳條
+        if (!tryDrawLimezuWallPiece(ctx, "baseboard", x, y + TILE - 6)) {
+          rect(ctx, x, y + TILE - 6, TILE, 6, wallFace);
+          rect(ctx, x, y + TILE - 6, TILE, 1, shade(wallFace, 14));
+          rect(ctx, x, y + TILE - 1, TILE, 1, wallSh);
+        }
+      } else if (!topDrawn) {
         rect(ctx, x, y + TILE - 1, TILE, 1, wallSh);
       }
     }

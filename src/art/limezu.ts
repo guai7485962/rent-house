@@ -11,6 +11,7 @@ import type { Ctx } from "../pixel/sprites";
  */
 export const LIMEZU_ATLAS_URL = "/assets/limezu/furniture.png";
 export const LIMEZU_FLOOR_ATLAS_URL = "/assets/limezu/floors.png";
+export const LIMEZU_WALL_ATLAS_URL = "/assets/limezu/walls.png";
 
 export const LIMEZU_FURNITURE_IDS = [
   "single_bed",
@@ -123,6 +124,46 @@ export const LIMEZU_FLOOR_FRAMES: Readonly<
   laundry: floorRow(6),
 };
 
+/**
+ * 牆面 atlas(第三批):Room_Builder 紫色牆套 + 橙色踢腳條。
+ * cap_* = 北緣頂蓋(白色蓋條+牆身)、body_* = 牆身延伸;
+ * mid/left/right/both 依「該側鄰格非牆」帶深色收邊線;
+ * baseboard = 16x6 橙踢腳條,鋪在南向牆面(幾何沿用程序牆的 6px 面)。
+ */
+export const LIMEZU_WALL_PIECE_IDS = [
+  "cap_mid",
+  "cap_left",
+  "cap_right",
+  "cap_both",
+  "body_mid",
+  "body_left",
+  "body_right",
+  "body_both",
+  "baseboard",
+] as const;
+
+export type LimezuWallPieceId = (typeof LIMEZU_WALL_PIECE_IDS)[number];
+
+interface WallFrame {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+/** 固定 64x48 walls.png 版面(與 scripts/limezu-manifest.json walls 同步)。 */
+export const LIMEZU_WALL_FRAMES: Readonly<Record<LimezuWallPieceId, WallFrame>> = {
+  cap_mid: { sx: 0, sy: 0, sw: 16, sh: 16 },
+  cap_left: { sx: 16, sy: 0, sw: 16, sh: 16 },
+  cap_right: { sx: 32, sy: 0, sw: 16, sh: 16 },
+  cap_both: { sx: 48, sy: 0, sw: 16, sh: 16 },
+  body_mid: { sx: 0, sy: 16, sw: 16, sh: 16 },
+  body_left: { sx: 16, sy: 16, sw: 16, sh: 16 },
+  body_right: { sx: 32, sy: 16, sw: 16, sh: 16 },
+  body_both: { sx: 48, sy: 16, sw: 16, sh: 16 },
+  baseboard: { sx: 0, sy: 32, sw: 16, sh: 6 },
+};
+
 type AtlasImage = CanvasImageSource;
 type LoadableImage = CanvasImageSource & {
   onload: (() => void) | null;
@@ -137,6 +178,9 @@ let warned = false;
 let floorAtlas: AtlasImage | null = null;
 let floorPreloadPromise: Promise<boolean> | null = null;
 let floorWarned = false;
+let wallAtlas: AtlasImage | null = null;
+let wallPreloadPromise: Promise<boolean> | null = null;
+let wallWarned = false;
 
 function warnOnce(message: string, cause?: unknown) {
   if (warned) return;
@@ -147,6 +191,12 @@ function warnOnce(message: string, cause?: unknown) {
 function warnFloorOnce(message: string, cause?: unknown) {
   if (floorWarned) return;
   floorWarned = true;
+  console.warn(`[limezu] ${message}`, cause ?? "");
+}
+
+function warnWallOnce(message: string, cause?: unknown) {
+  if (wallWarned) return;
+  wallWarned = true;
   console.warn(`[limezu] ${message}`, cause ?? "");
 }
 
@@ -224,6 +274,43 @@ export function preloadLimezuFloorAtlas(url = LIMEZU_FLOOR_ATLAS_URL): Promise<b
   return floorPreloadPromise;
 }
 
+/** 牆面 atlas 非阻塞預載;失敗時 floorScene 保留整套程序牆。 */
+export function preloadLimezuWallAtlas(url = LIMEZU_WALL_ATLAS_URL): Promise<boolean> {
+  if (wallAtlas) return Promise.resolve(true);
+  if (wallPreloadPromise) return wallPreloadPromise;
+  if (typeof Image === "undefined") return Promise.resolve(false);
+
+  wallPreloadPromise = new Promise<boolean>((resolve) => {
+    let image: LoadableImage;
+    try {
+      image = new Image() as LoadableImage;
+      image.decoding = "async";
+    } catch (error) {
+      warnWallOnce("無法建立牆面 atlas 圖像,保留程序牆。", error);
+      resolve(false);
+      return;
+    }
+
+    image.onload = () => {
+      wallAtlas = image;
+      resolve(true);
+    };
+    image.onerror = () => {
+      warnWallOnce("牆面 atlas 載入失敗,保留程序牆。");
+      resolve(false);
+    };
+
+    try {
+      image.src = url;
+    } catch (error) {
+      warnWallOnce("設定牆面 atlas 路徑失敗,保留程序牆。", error);
+      resolve(false);
+    }
+  });
+
+  return wallPreloadPromise;
+}
+
 function isLimezuFurnitureId(id: string): id is LimezuFurnitureId {
   return Object.prototype.hasOwnProperty.call(LIMEZU_FURNITURE_FRAMES, id);
 }
@@ -283,6 +370,26 @@ export function tryDrawLimezuFloor(
   }
 }
 
+function isLimezuWallPieceId(id: string): id is LimezuWallPieceId {
+  return Object.prototype.hasOwnProperty.call(LIMEZU_WALL_FRAMES, id);
+}
+
+/**
+ * 成功以 1:1 像素畫出一個牆件(頂蓋/牆身 16x16、踢腳條 16x6)時回傳 true;
+ * false 代表呼叫端必須畫回既有程序牆。
+ */
+export function tryDrawLimezuWallPiece(ctx: Ctx, pieceId: string, x: number, y: number): boolean {
+  if (!wallAtlas || !isLimezuWallPieceId(pieceId)) return false;
+  const frame = LIMEZU_WALL_FRAMES[pieceId];
+  try {
+    ctx.drawImage(wallAtlas, frame.sx, frame.sy, frame.sw, frame.sh, x, y, frame.sw, frame.sh);
+    return true;
+  } catch (error) {
+    warnWallOnce("牆面 atlas 繪製失敗,保留程序牆。", error);
+    return false;
+  }
+}
+
 /** @internal 僅供確定性測試隔離模組狀態。 */
 export function resetLimezuFurnitureAtlasForTests() {
   atlas = null;
@@ -295,4 +402,11 @@ export function resetLimezuFloorAtlasForTests() {
   floorAtlas = null;
   floorPreloadPromise = null;
   floorWarned = false;
+}
+
+/** @internal 僅供確定性測試隔離牆面 atlas 載入狀態。 */
+export function resetLimezuWallAtlasForTests() {
+  wallAtlas = null;
+  wallPreloadPromise = null;
+  wallWarned = false;
 }

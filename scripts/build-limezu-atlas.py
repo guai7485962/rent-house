@@ -6,6 +6,7 @@
 
   public/assets/limezu/furniture.png  — 家具 atlas(裁透明邊後 1:1 貼入)
   public/assets/limezu/floors.png     — 地板 atlas(每房一列 3 個 16x16 變體)
+  public/assets/limezu/walls.png      — 牆面 atlas(頂蓋/牆身 8 件 + 踢腳條)
 
 任何來源缺檔、裁切框不符、atlas 越界或重疊 → 直接報錯,不輸出半成品。
 
@@ -71,6 +72,28 @@ def main() -> None:
         if "alias" in spec and spec["alias"] not in placed:
             fail(f"{fid} 的 alias 目標 {spec['alias']} 不存在")
 
+    # ---------------- wall atlas ----------------
+    wa = manifest["wall_atlas"]
+    wall_atlas = Image.new("RGBA", (wa["width"], wa["height"]), (0, 0, 0, 0))
+    wall_placed: dict[str, tuple[int, int, int, int]] = {}
+    for wid, spec in manifest["walls"].items():
+        src = load_source(source_root, spec["source"])
+        x, y, w, h = spec["crop"]
+        if x < 0 or y < 0 or x + w > src.width or y + h > src.height:
+            fail(f"牆件 {wid} 裁切框 {spec['crop']} 超出來源 {src.size}")
+        crop = src.crop((x, y, x + w, y + h))
+        alpha = crop.getchannel("A").getextrema()
+        if alpha[0] != 255:
+            fail(f"牆件 {wid} 含透明像素,牆貼圖必須完全不透明")
+        ax, ay = spec["atlas"]
+        if ax < 0 or ay < 0 or ax + w > wa["width"] or ay + h > wa["height"]:
+            fail(f"牆件 {wid} atlas 位置 ({ax},{ay}) + {w}x{h} 超出 atlas {wa['width']}x{wa['height']}")
+        for other, (ox, oy, ow, oh) in wall_placed.items():
+            if ax < ox + ow and ax + w > ox and ay < oy + oh and ay + h > oy:
+                fail(f"牆件 {wid} 與 {other} 在 atlas 上重疊")
+        wall_atlas.alpha_composite(crop, (ax, ay))
+        wall_placed[wid] = (ax, ay, w, h)
+
     # ---------------- floor atlas ----------------
     fl = manifest["floor_atlas"]
     sheet = load_source(source_root, fl["source"])
@@ -98,11 +121,14 @@ def main() -> None:
     # ---------------- 全部驗證通過才落地 ----------------
     out_furniture = os.path.join(REPO, fa["file"])
     out_floors = os.path.join(REPO, fl["file"])
+    out_walls = os.path.join(REPO, wa["file"])
     os.makedirs(os.path.dirname(out_furniture), exist_ok=True)
     atlas.save(out_furniture)
     floors.save(out_floors)
+    wall_atlas.save(out_walls)
     print(f"OK furniture atlas {fa['width']}x{fa['height']} → {out_furniture}({len(placed)} frames,{len(entries) - len(placed)} alias)")
     print(f"OK floor atlas {fl['width']}x{fl['height']} → {out_floors}({len(rows_seen)} rooms)")
+    print(f"OK wall atlas {wa['width']}x{wa['height']} → {out_walls}({len(wall_placed)} pieces)")
 
 
 if __name__ == "__main__":

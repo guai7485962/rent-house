@@ -6,12 +6,17 @@ import {
   LIMEZU_FURNITURE_FRAMES,
   LIMEZU_FLOOR_ROOM_IDS,
   LIMEZU_FLOOR_FRAMES,
+  LIMEZU_WALL_PIECE_IDS,
+  LIMEZU_WALL_FRAMES,
   preloadLimezuFurnitureAtlas,
   preloadLimezuFloorAtlas,
+  preloadLimezuWallAtlas,
   resetLimezuFurnitureAtlasForTests,
   resetLimezuFloorAtlasForTests,
+  resetLimezuWallAtlasForTests,
   tryDrawLimezuFurniture,
   tryDrawLimezuFloor,
+  tryDrawLimezuWallPiece,
 } from "../src/art/limezu";
 import { getDef } from "../src/furniture/catalog";
 import { drawDef } from "../src/furniture/render";
@@ -51,6 +56,8 @@ const manifest = JSON.parse(
 ) as {
   furniture_atlas: { width: number; height: number };
   furniture: Record<string, ManifestFurniture>;
+  wall_atlas: { width: number; height: number };
+  walls: Record<string, { source: string; crop: [number, number, number, number]; atlas: [number, number] }>;
   floor_atlas: { width: number; height: number };
   floors: Record<string, { row: number; cells: [number, number][] }>;
 };
@@ -395,6 +402,158 @@ const failedFloorA = await preloadLimezuFloorAtlas("/missing-floors.png");
 const failedFloorB = await preloadLimezuFloorAtlas("/missing-floors-again.png");
 console.warn = originalWarn;
 check("地板載入失敗永遠 resolve false 且只警告一次", !failedFloorA && !failedFloorB && warnings === 1);
+
+// ---------------------------------------------------------------------------
+// 牆面 atlas(第三批:整棟牆面)
+// ---------------------------------------------------------------------------
+
+const wallsPng = pngSize("../public/assets/limezu/walls.png");
+const WALL_PIECES = [
+  "cap_mid", "cap_left", "cap_right", "cap_both",
+  "body_mid", "body_left", "body_right", "body_both",
+  "baseboard",
+] as const;
+check(
+  "牆件清單 = 頂蓋/牆身各 4 向 + 踢腳條共 9 件",
+  JSON.stringify(LIMEZU_WALL_PIECE_IDS) === JSON.stringify(WALL_PIECES),
+);
+check(
+  "walls.png 尺寸 = manifest 宣告的 64x48",
+  wallsPng.width === 64 && wallsPng.height === 48
+    && manifest.wall_atlas.width === wallsPng.width
+    && manifest.wall_atlas.height === wallsPng.height,
+);
+check(
+  "每個牆件 frame 與 manifest 的 atlas 位置/裁切尺寸一致且在邊界內",
+  WALL_PIECES.every((id) => {
+    const m = manifest.walls[id];
+    const f = LIMEZU_WALL_FRAMES[id];
+    return !!m && m.atlas[0] === f.sx && m.atlas[1] === f.sy
+      && m.crop[2] === f.sw && m.crop[3] === f.sh
+      && f.sx >= 0 && f.sy >= 0
+      && f.sx + f.sw <= wallsPng.width && f.sy + f.sh <= wallsPng.height;
+  }),
+);
+check(
+  "頂蓋/牆身為 16x16、踢腳條為 16x6",
+  WALL_PIECES.every((id) => (id === "baseboard"
+    ? LIMEZU_WALL_FRAMES[id].sw === 16 && LIMEZU_WALL_FRAMES[id].sh === 6
+    : LIMEZU_WALL_FRAMES[id].sw === 16 && LIMEZU_WALL_FRAMES[id].sh === 16)),
+);
+const wallFrames = WALL_PIECES.map((id) => LIMEZU_WALL_FRAMES[id]);
+const wallOverlaps = wallFrames.some((a, index) => wallFrames.slice(index + 1).some((b) =>
+  a.sx < b.sx + b.sw && a.sx + a.sw > b.sx && a.sy < b.sy + b.sh && a.sy + a.sh > b.sy,
+));
+check("牆件 frame 互不重疊", !wallOverlaps);
+check(
+  "牆件來源僅限 Room_Builder 牆面表與踢腳板表",
+  WALL_PIECES.every((id) => {
+    const m = manifest.walls[id];
+    return id === "baseboard"
+      ? m.source === "Room_Builder_subfiles/Room_Builder_Baseboards_16x16.png"
+      : m.source === "Room_Builder_subfiles/Room_Builder_Walls_16x16.png";
+  }),
+);
+
+// runtime:未載入 → 完整回退程序牆(composeFloor 不畫任何圖片)
+resetLimezuFurnitureAtlasForTests();
+resetLimezuFloorAtlasForTests();
+resetLimezuWallAtlasForTests();
+delete (globalThis as any).Image;
+check("Node 無 Image 時牆面預載安全回傳 false", await preloadLimezuWallAtlas() === false);
+const wallFallbackCtx = new FakeCtx();
+composeFloor(wallFallbackCtx as any, 0);
+check("牆面 atlas 未載入時不畫圖片且程序牆仍有內容", wallFallbackCtx.drawCalls.length === 0 && wallFallbackCtx.fillCount > 0);
+
+(globalThis as any).Image = FakeImage;
+resetLimezuWallAtlasForTests();
+const wallImageInstancesBefore = imageInstances;
+const [wallLoadedA, wallLoadedB] = await Promise.all([
+  preloadLimezuWallAtlas("/fake-walls.png"),
+  preloadLimezuWallAtlas("/ignored-walls.png"),
+]);
+check("牆面並行預載共用同一 promise 與 Image", wallLoadedA && wallLoadedB && imageInstances === wallImageInstancesBefore + 1);
+
+const onePieceCtx = new FakeCtx();
+const capFrame = LIMEZU_WALL_FRAMES.cap_mid;
+const onePieceDrawn = tryDrawLimezuWallPiece(onePieceCtx as any, "cap_mid", 32, 128);
+const onePieceArgs = onePieceCtx.drawCalls[0] ?? [];
+check(
+  "單一牆件維持 1:1 像素且取用正確格位",
+  onePieceDrawn && onePieceArgs[1] === capFrame.sx && onePieceArgs[2] === capFrame.sy
+    && onePieceArgs[3] === 16 && onePieceArgs[4] === 16
+    && onePieceArgs[5] === 32 && onePieceArgs[6] === 128
+    && onePieceArgs[7] === 16 && onePieceArgs[8] === 16,
+);
+const baseFrame = LIMEZU_WALL_FRAMES.baseboard;
+const baseDrawn = tryDrawLimezuWallPiece(onePieceCtx as any, "baseboard", 16, 16 * 8 + 10);
+const baseArgs = onePieceCtx.drawCalls[1] ?? [];
+check(
+  "踢腳條以 16x6 貼在南向面位置",
+  baseDrawn && baseArgs[1] === baseFrame.sx && baseArgs[2] === baseFrame.sy
+    && baseArgs[3] === 16 && baseArgs[4] === 6
+    && baseArgs[5] === 16 && baseArgs[6] === 16 * 8 + 10
+    && baseArgs[7] === 16 && baseArgs[8] === 6,
+);
+check("未知牆件 id 不繪製", !tryDrawLimezuWallPiece(onePieceCtx as any, "cap_south", 0, 0) && onePieceCtx.drawCalls.length === 2);
+
+// composeFloor:只載牆 atlas 時,drawImage 全部來自牆件且逐格對應鄰格選件規則
+interface ExpectedWallCall { sx: number; sy: number; x: number; y: number; sh: number }
+const isWallAt = (rr: number, cc: number) =>
+  rr >= 0 && rr < GRID.length && cc >= 0 && cc < GRID[0].length && GRID[rr][cc] === "wall";
+const expectedWalls: ExpectedWallCall[] = [];
+for (let r = 0; r < GRID.length; r++) {
+  for (let c = 0; c < GRID[0].length; c++) {
+    if (GRID[r][c] !== "wall") continue;
+    const west = isWallAt(r, c - 1);
+    const east = isWallAt(r, c + 1);
+    const side = west && east ? "mid" : west ? "right" : east ? "left" : "both";
+    const band = isWallAt(r - 1, c) ? "body" : "cap";
+    const f = LIMEZU_WALL_FRAMES[`${band}_${side}` as keyof typeof LIMEZU_WALL_FRAMES];
+    expectedWalls.push({ sx: f.sx, sy: f.sy, x: c * TILE, y: r * TILE, sh: 16 });
+    const belowIsWall = r + 1 < GRID.length && GRID[r + 1][c] === "wall";
+    if (!belowIsWall) {
+      expectedWalls.push({ sx: baseFrame.sx, sy: baseFrame.sy, x: c * TILE, y: r * TILE + TILE - 6, sh: 6 });
+    }
+  }
+}
+const wallComposeCtx = new FakeCtx();
+composeFloor(wallComposeCtx as any, 0);
+check(
+  "composeFloor 牆面 drawImage 次數 = 牆格 + 南向面格",
+  wallComposeCtx.drawCalls.length === expectedWalls.length,
+);
+check(
+  "每個牆格依北/西/東鄰格選 cap/body 與收邊變體、南向面鋪踢腳條",
+  wallComposeCtx.drawCalls.length === expectedWalls.length && wallComposeCtx.drawCalls.every((call, i) =>
+    call[1] === expectedWalls[i].sx && call[2] === expectedWalls[i].sy
+    && call[3] === 16 && call[4] === expectedWalls[i].sh
+    && call[5] === expectedWalls[i].x && call[6] === expectedWalls[i].y
+    && call[7] === 16 && call[8] === expectedWalls[i].sh),
+);
+const firstWallCall = wallComposeCtx.drawCalls[0] ?? [];
+check(
+  "左上角 (0,0) 取 cap_left(北/西開放、東連牆)",
+  firstWallCall[1] === LIMEZU_WALL_FRAMES.cap_left.sx && firstWallCall[2] === LIMEZU_WALL_FRAMES.cap_left.sy,
+);
+
+// drawImage 失敗 → 回退程序牆且只警告一次
+warnings = 0;
+console.warn = () => { warnings++; };
+const throwingWallCtx = new ThrowingDrawCtx();
+composeFloor(throwingWallCtx as any, 0);
+console.warn = originalWarn;
+check("牆面 drawImage 失敗時整棟回退程序牆且只警告一次", throwingWallCtx.fillCount > 0 && warnings === 1);
+
+// 載入失敗 → 永遠 resolve false 且只警告一次
+resetLimezuWallAtlasForTests();
+(globalThis as any).Image = ErrorImage;
+warnings = 0;
+console.warn = () => { warnings++; };
+const failedWallA = await preloadLimezuWallAtlas("/missing-walls.png");
+const failedWallB = await preloadLimezuWallAtlas("/missing-walls-again.png");
+console.warn = originalWarn;
+check("牆面載入失敗永遠 resolve false 且只警告一次", !failedWallA && !failedWallB && warnings === 1);
 
 if (originalImage === undefined) delete (globalThis as any).Image;
 else (globalThis as any).Image = originalImage;

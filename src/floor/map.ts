@@ -167,7 +167,8 @@ export const INITIAL_PLACEMENTS: Placement[] = [
   { defId: "lounge_rug", room: "lounge", c: 9, r: 11 },
   { defId: "lounge_tv", room: "lounge", c: 10, r: 9 },
   { defId: "bar_counter", room: "lounge", c: 13, r: 9 },
-  { defId: "coffee_table", room: "lounge", c: 11, r: 12 },
+  // 茶几移到沙發前一格 (11,11):LimeZu 沙發 sprite 往上長 10px 會蓋住緊貼的 (11,12)
+  { defId: "coffee_table", room: "lounge", c: 11, r: 11 },
   { defId: "shared_sofa", room: "lounge", c: 10, r: 13 },
   { defId: "entrance_mat", room: "lounge", c: 7, r: 31 },
 

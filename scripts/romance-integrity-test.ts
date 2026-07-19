@@ -20,6 +20,7 @@ const {
   pruneRomanceIntegrity,
   encounter,
   tierLabel,
+  relationshipProgressHint,
 } = await import("../src/sim/social");
 const { state, makeRuntime } = await import("../src/sim/gameState");
 const { affairPass } = await import("../src/sim/drama");
@@ -86,6 +87,17 @@ check("同性女性高好感顯示為閨密", tierLabel(getRel(B.id, C.id)!, B, 
 check("跨過 75 會觸發摯友里程碑", besties.milestone === "became_best_friends" && besties.textA.includes("閨密"));
 relationships[pairKey(A.id, D.id)] = { value: 100, romantic: false, cohabitOffered: false };
 check("同性男性滿好感顯示為哥們", tierLabel(getRel(A.id, D.id)!, A, D) === "哥們");
+
+// 異性不代表一定互有戀愛意願；關係頁需把「摯友」原因直接說清楚。
+const F = mk("exclusive_f", "小晴", "female");
+F.attractedTo = ["female"];
+relationships[pairKey(A.id, F.id)] = { value: 100, romantic: false, cohabitOffered: false };
+check("異性但取向不互相符合 → 高關係仍是摯友", tierLabel(getRel(A.id, F.id)!, A, F) === "摯友");
+check("摯友提示會明說戀愛取向未互相符合", relationshipProgressHint(getRel(A.id, F.id)!, A, F).includes("戀愛取向"));
+
+clearRels();
+relationships[pairKey(A.id, E.id)] = { value: 80, romantic: false, cohabitOffered: false };
+check("符合條件的高關係提示下一次交誼廳相遇", relationshipProgressHint(getRel(A.id, E.id)!, A, E).includes("再次自然相遇"));
 
 // AI event 的 couple:true 同樣走 setCouple，不可繞過唯一伴侶守門。
 clearRels();

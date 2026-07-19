@@ -318,6 +318,35 @@ export function tierLabel(rel: Relationship, a?: Tenant, b?: Tenant): string {
   return "陌生";
 }
 
+/** 給關係頁的下一步說明：把戀愛守門條件翻成玩家看得懂的原因。 */
+export function relationshipProgressHint(
+  rel: Pick<Relationship, "value" | "romantic">,
+  a: Tenant,
+  b: Tenant,
+): string {
+  if (rel.romantic) {
+    return rel.value >= 92
+      ? "已是情侶；關係夠穩定時，可能提出同居。"
+      : "已是情侶；繼續安排相處能累積到同居階段。";
+  }
+  if (!(a.isAdult ?? true) || !(b.isAdult ?? true)) {
+    return "未成年角色不會進入戀愛線，高關係會維持在摯友。";
+  }
+  if (!canRomance(a, b)) {
+    return `兩人的戀愛取向沒有互相符合，關係再高也會維持${bestFriendLabel(a, b)}。`;
+  }
+  if (!canBecomeCouple(a, b)) {
+    return "其中一人已有伴侶，這段關係會停在曖昧，不會再建立第二段戀情。";
+  }
+  if (compatibility(a, b) < 0) {
+    return "兩人的個性目前不夠合拍；即使好感很高，也不會自然進入交往。";
+  }
+  if (rel.value < 75) {
+    return `關係達到 75 後，讓兩人在交誼廳自然相遇，就有機會進入戀情（目前 ${Math.round(rel.value)}）。`;
+  }
+  return "已符合戀愛條件；讓兩人在交誼廳再次自然相遇，就可能正式交往。";
+}
+
 /** 給 UI:列出所有已建立(value>0 或情侶)的關係 */
 export function listRelationships(getTenant?: (id: string) => Tenant | undefined): { aId: string; bId: string; value: number; romantic: boolean; label: string }[] {
   const out: { aId: string; bId: string; value: number; romantic: boolean; label: string }[] = [];

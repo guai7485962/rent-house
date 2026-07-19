@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { listRelationships } from "../sim/social";
+import { listRelationships, relationshipProgressHint } from "../sim/social";
 import { feudActive } from "../sim/conflicts";
 import { state, cohabitingPartnerId } from "../store";
 
@@ -24,6 +24,12 @@ const rels = computed(() =>
 
 /** 這一「對」是否真的同居中；共用模擬層的一對一判定，避免 UI 與規則分歧。 */
 const isCohabit = (r: { aId: string; bId: string }) => cohabitingPartnerId(r.aId) === r.bId;
+
+const progressHint = (r: { aId: string; bId: string; value: number; romantic: boolean }): string => {
+  const a = state.runtimes[r.aId]?.tenant;
+  const b = state.runtimes[r.bId]?.tenant;
+  return a && b ? relationshipProgressHint(r, a, b) : "";
+};
 
 const bestFriendLabels = new Set(["閨密", "哥們", "摯友"]);
 
@@ -65,6 +71,7 @@ const groups = computed(() => {
             </span>
             <span class="tier">{{ r.label }} <b class="val">{{ r.value }}</b></span>
             <div class="bar"><div :style="{ width: r.value + '%' }"></div></div>
+            <p class="next">{{ progressHint(r) }}</p>
           </div>
         </template>
       </div>
@@ -99,5 +106,6 @@ const groups = computed(() => {
 .tier { font-size: 12px; color: var(--accent); text-align: right; }
 .bar { grid-column: 1 / -1; height: 6px; background: #17151f; border-radius: 4px; overflow: hidden; }
 .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), #d9548a); border-radius: 4px; transition: width 0.5s; }
+.next { grid-column: 1 / -1; margin: 2px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.55; }
 .foot { font-size: 11.5px; color: var(--text-dim); padding: 8px 16px 16px; line-height: 1.6; }
 </style>

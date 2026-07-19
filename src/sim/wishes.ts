@@ -75,7 +75,7 @@ export const WISH_DEFS = {
   open_shop: {
     icon: "☕",
     label: "存一筆自己的小店基金",
-    hint: "夢想開一間屬於自己的店。手頭寬裕、不欠租的日子,基金就慢慢累積。",
+    hint: "達成方式：避免欠租與財務困難，並讓他保留至少約八成月租的存款；符合時每天進度最快。",
     occupations: ["咖啡師", "甜點師", "調酒師", "健身教練"],
     gain: (rt) => {
       if (inHardship(rt) || (rt.arrears ?? 0) > 0) return SETBACK;
@@ -89,7 +89,7 @@ export const WISH_DEFS = {
   finish_masterwork: {
     icon: "✍️",
     label: "完成一部代表作",
-    hint: "想做出一件真正拿得出手的作品。壓力不爆表、有精神的日子才推得動。",
+    hint: "達成方式：把壓力維持在 65 以下、精力維持在 35 以上；壓力達 85 會讓進度倒退。",
     occupations: ["漫畫家", "推理小說家", "自由接案設計師", "ASMR 實況主"],
     gain: (rt) => {
       const s = rt.tenant.stats;
@@ -104,7 +104,7 @@ export const WISH_DEFS = {
   graduate_thesis: {
     icon: "🎓",
     label: "把論文寫完順利畢業",
-    hint: "只要撐過這本論文就能畢業。狀態穩定的日子,字數就默默增加。",
+    hint: "達成方式：把壓力維持在 70 以下、精力維持在 30 以上；壓力達 85 會讓進度倒退。",
     occupations: ["研究生"],
     gain: (rt) => {
       const s = rt.tenant.stats;
@@ -119,7 +119,7 @@ export const WISH_DEFS = {
   career_step: {
     icon: "💼",
     label: "在工作上站穩腳步",
-    hint: "想把眼前的工作關卡踏實走穩。有精神、壓力可控的日子最有效率。",
+    hint: "達成方式：避免財務困難，並把精力維持在 40 以上、壓力維持在 70 以下。",
     occupations: ["上班族", "後端工程師", "大樓保全"],
     gain: (rt) => {
       const s = rt.tenant.stats;
@@ -134,7 +134,7 @@ export const WISH_DEFS = {
   recover_rhythm: {
     icon: "🌿",
     label: "把身體養回健康的節奏",
-    hint: "輪班日夜顛倒太久,想把身體養回來。睡得好、壓力低的日子就是進度。",
+    hint: "達成方式：把健康維持在 60 以上、壓力維持在 60 以下；健康降到 35 以下會倒退。",
     occupations: ["夜班護理師"],
     gain: (rt) => {
       const s = rt.tenant.stats;
@@ -149,7 +149,7 @@ export const WISH_DEFS = {
   stage_dream: {
     icon: "🎤",
     label: "站上一次正式的舞台",
-    hint: "想在正式場合證明自己一次。心情好、有幹勁的日子,練習最有效。",
+    hint: "達成方式：把心情維持在 55 以上、精力維持在 40 以上；心情降到 30 以下會倒退。",
     occupations: ["樂團鼓手", "電競系學生"],
     gain: (rt) => {
       const s = rt.tenant.stats;
@@ -164,7 +164,7 @@ export const WISH_DEFS = {
   feel_at_home: {
     icon: "🏡",
     label: "把這棟樓住成自己的家",
-    hint: "希望這裡不只是租處,而是家。和鄰居越親近,家的感覺越濃。",
+    hint: "達成方式：安排公共空間相處，讓他與至少一位鄰居的關係達到 50；30 以上也會緩慢前進。",
     occupations: ["退休教師", "瑜伽老師"],
     gain: (rt) => {
       const best = bestNeighborRel(rt.tenant.id);
@@ -178,7 +178,7 @@ export const WISH_DEFS = {
   settle_life: {
     icon: "🌤️",
     label: "把日子過成自己喜歡的樣子",
-    hint: "沒有宏大的目標,只想把日常過舒服。住得滿意、心情不錯就是進度。",
+    hint: "達成方式：改善房間與日常，把滿意維持在 60 以上、心情維持在 55 以上；滿意 45 以上也會緩慢前進。",
     occupations: [], // fallback:比不到職業的都算這條
     gain: (rt) => {
       const s = rt.tenant.stats;

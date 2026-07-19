@@ -35,6 +35,10 @@ check("後端工程師 → career_step", chen.wish!.id === "career_step");
 check("ASMR 實況主 → finish_masterwork", lin.wish!.id === "finish_masterwork");
 check("咖啡師 → open_shop / 未知職業 → settle_life",
   wishes.wishIdForOccupation("咖啡師") === "open_shop" && wishes.wishIdForOccupation("神秘人") === "settle_life");
+check("心願說明含手機可讀的明確達成方式與門檻",
+  wishes.WISH_DEFS.career_step.hint.includes("達成方式")
+    && wishes.WISH_DEFS.career_step.hint.includes("精力維持在 40 以上")
+    && wishes.WISH_DEFS.feel_at_home.hint.includes("關係達到 50"));
 chen.wish!.progress = 10;
 wishes.ensureWishes();
 check("ensureWishes 冪等(不重置既有進度)", chen.wish!.progress === 10);

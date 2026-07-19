@@ -323,7 +323,7 @@ function doCare(id: KindnessId) {
   toast(res.ok ? `${def.icon} ${def.label}成功,他收到你的心意了` : `${def.icon} ${res.reason}`);
 }
 
-/** 人生心願 chip:進行中顯示進度,實現後顯示 ✓(hover 看描述) */
+/** 人生心願：chip 顯示進度，並提供手機上直接可讀的達成方式卡片。 */
 const wishChip = computed(() => {
   const w = rt.value?.wish;
   if (!w) return null;
@@ -332,6 +332,8 @@ const wishChip = computed(() => {
   return {
     text: w.fulfilledDay !== -99 ? `${def.icon} ${def.label} ✓` : `${def.icon} ${def.label} · ${w.progress}%`,
     hint: def.hint,
+    progress: w.progress,
+    done: w.fulfilledDay !== -99,
   };
 });
 
@@ -582,6 +584,15 @@ function onGroupResolve(choiceId: string) {
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core && !t.growth, growth: t.growth }" :style="{ opacity: t.fade }" :title="t.hint">{{ t.label }}</span>
     </section>
 
+    <section v-if="wishChip" class="wish-guide" :class="{ done: wishChip.done }">
+      <div class="wish-guide-head">
+        <strong>{{ wishChip.done ? "🌟 房客目標已達成" : "🎯 房客目標怎麼達成" }}</strong>
+        <span>{{ wishChip.progress }}%</span>
+      </div>
+      <div class="wish-progress"><div :style="{ width: wishChip.progress + '%' }"></div></div>
+      <p>{{ wishChip.done ? "這個心願已經實現；完成帶來的成長會保留在房客身上。" : wishChip.hint }}</p>
+    </section>
+
     <section v-if="roomAttrs.length" class="attrs">
       <span class="attrs-title">房間屬性</span>
       <span v-for="a in roomAttrs" :key="a.label" class="attr" :class="{ neg: a.value < 0 }">
@@ -788,6 +799,16 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .chip.arc { border-color: #58a6ff; color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
 .chip.warn-chip { border-color: #f0a35e; color: #ffd9ae; background: rgba(240, 163, 94, 0.1); }
 .chip.wish { border-color: #d4a7f5; color: #ecd6ff; background: rgba(196, 138, 245, 0.1); }
+
+.wish-guide { border: 1px solid rgba(196, 138, 245, 0.45); border-radius: var(--radius); padding: 10px 12px; background: linear-gradient(135deg, rgba(196, 138, 245, 0.12), rgba(88, 166, 255, 0.06)); }
+.wish-guide.done { border-color: rgba(103, 211, 145, 0.5); background: rgba(83, 196, 126, 0.08); }
+.wish-guide-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #ecd6ff; font-size: 12.5px; }
+.wish-guide.done .wish-guide-head { color: #b9f6ce; }
+.wish-guide-head span { color: var(--text-dim); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.wish-progress { height: 6px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #17151f; }
+.wish-progress > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9b72cf, #d4a7f5); transition: width 0.5s ease; }
+.wish-guide.done .wish-progress > div { background: linear-gradient(90deg, #4fb779, #8ce8ae); }
+.wish-guide p { margin: 8px 0 0; color: var(--text-dim); font-size: 11.5px; line-height: 1.6; }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

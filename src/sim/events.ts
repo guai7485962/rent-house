@@ -5,6 +5,7 @@
  * 支援事件連鎖:requiresFlag(要有伏筆旗標才觸發)+ consumesFlag(觸發即消耗)。
  */
 import { sanitizeDirective, type DirectiveId } from "./directives";
+import { normalizeNarrativeLanguage } from "./narrativeQuality";
 import eventsJson from "../../data/events.json";
 
 export interface EventEffect {
@@ -136,15 +137,15 @@ const clampNum = (v: unknown, lo: number, hi: number): number => {
 };
 const str = (v: unknown, cap: number): string => (typeof v === "string" ? v : "").slice(0, cap).trim();
 
-function cleanMemory(v: unknown): { label: string; hint: string } | undefined {
+function cleanMemory(v: unknown, expectedNames: string[]): { label: string; hint: string } | undefined {
   if (!v || typeof v !== "object") return undefined;
   const m = v as Record<string, unknown>;
-  const label = str(m.label, 20);
-  const hint = str(m.hint, 80);
+  const label = normalizeNarrativeLanguage(str(m.label, 20), expectedNames).slice(0, 20).trim();
+  const hint = normalizeNarrativeLanguage(str(m.hint, 80), expectedNames).slice(0, 80).trim();
   return label && hint ? { label, hint } : undefined;
 }
 
-function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
+function cleanEffect(v: unknown, hasOther: boolean, expectedNames: string[]): EventEffect {
   const e = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   const eff: EventEffect = {
     mood: clampNum(e.mood, -25, 25),
@@ -156,7 +157,7 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
     money: clampNum(e.money, -5000, 2000),
     // evict 一律不開放給 AI(忽略)
   };
-  const mem = cleanMemory(e.memory);
+  const mem = cleanMemory(e.memory, expectedNames);
   if (mem) eff.memory = mem;
   // 行為指令:白名單驗證,不合格直接丟棄(AI 不能發明機制)
   const dir = sanitizeDirective(e.directive);
@@ -192,14 +193,32 @@ function cleanEffect(v: unknown, hasOther: boolean): EventEffect {
  * 強制夾值、截斷字串、丟棄 evict/未知欄位、choices 需 2~3 個。
  * roster(名字→租客 id):用來解析事件牽涉的第二位鄰居 `with`;對不上就丟棄跨租客效果。
  */
-export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>): EventDef | null {
+const FORBIDDEN_EVENT_ACTION = /驅逐|趕走|退租/u;
+
+/** 「收養租客」是弱模型常見的角色錯置；收養寵物本身仍是合法事件。 */
+function adoptsTenant(text: string, tenantNames: string[]): boolean {
+  return tenantNames.some((name) => {
+    let at = text.indexOf("收養");
+    while (at >= 0) {
+      const nameAt = text.indexOf(name, at + 2);
+      if (nameAt >= 0 && nameAt - (at + 2) <= 6) return true;
+      at = text.indexOf("收養", at + 2);
+    }
+    return false;
+  });
+}
+
+export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>, ownerName = ""): EventDef | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
-  const title = str(r.title, 40);
+  const otherNames = Object.keys(roster ?? {});
+  const expectedNames = [ownerName, ...otherNames].filter(Boolean);
+  const cleanText = (v: unknown, cap: number) => normalizeNarrativeLanguage(str(v, cap), expectedNames).slice(0, cap).trim();
+  const title = cleanText(r.title, 40);
   if (!title || !Array.isArray(r.choices)) return null;
 
   // 解析第二位鄰居:名字要對得上 roster
-  const withName = str(r.with, 20);
+  const withName = cleanText(r.with, 20);
   const withId = roster && withName && roster[withName] ? roster[withName] : undefined;
   const hasOther = !!withId;
 
@@ -208,11 +227,24 @@ export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>): 
     .filter((c) => c && typeof c === "object" && typeof (c as Record<string, unknown>).label === "string")
     .map((c, i) => {
       const cc = c as Record<string, unknown>;
-      return { id: `ai${i}`, label: str(cc.label, 40), hint: str(cc.hint, 60), effect: cleanEffect(cc.effect, hasOther) };
-    });
+      return { id: `ai${i}`, label: cleanText(cc.label, 40), hint: cleanText(cc.hint, 60), effect: cleanEffect(cc.effect, hasOther, expectedNames) };
+    })
+    .filter((choice) => !!choice.label);
   if (choices.length < 2) return null;
 
-  const ev: EventDef = { id: "ai_event", title, description: str(r.description, 200), choices, ai: true };
+  const description = cleanText(r.description, 200);
+  const narrativeFields = [title, description, ...choices.flatMap((choice) => [
+    choice.label, choice.hint, choice.effect.memory?.label ?? "", choice.effect.memory?.hint ?? "",
+  ])];
+
+  // AI 不能用文案假裝執行不存在／禁用的機制；寧可丟棄整個事件，也不要讓按鈕語意與效果脫節。
+  if (narrativeFields.some((text) => FORBIDDEN_EVENT_ACTION.test(text) || adoptsTenant(text, expectedNames))) return null;
+
+  // 事件提到的其他在住租客必須就是 `with` 指定的對象；避免事件掛在甲頁、內容卻突然演乙。
+  const mentionedOthers = otherNames.filter((name) => narrativeFields.some((text) => text.includes(name)));
+  if (mentionedOthers.some((name) => name !== withName)) return null;
+
+  const ev: EventDef = { id: "ai_event", title, description, choices, ai: true };
   if (hasOther) {
     ev.withId = withId;
     ev.withName = withName;

@@ -2,7 +2,7 @@
  * Cloudflare Worker:同時服務靜態網站(env.ASSETS)與 AI 敘事端點。
  * /api/narrate 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶/事件;
  * /api/invite 由名字+個性描述生成特邀租客資料。
- * 日記 provider = Cloudflare Workers AI 免費額度 → Gemini 備援;Claude 僅供特邀租客端點使用。
+ * 日記 provider = Cloudflare Workers AI 免費額度 → Gemini 備援；房東抉擇事件只採 Gemini。
  * API key 存在 Worker secret,前端同源 fetch,金鑰不外洩。
  * 端點防護:同源檢查 + 請求體上限 + server 端 context 夾值(見 guardRequest / clampCtx),
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
@@ -48,6 +48,8 @@ interface NarrateCtx {
   /** 人生心願一句話(長期目標與進度;缺省 = 不提;進度由前端本地決定) */
   wish?: string;
 }
+
+type NarrateProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama";
 
 const GROWTH_TAG_OPTIONS = Object.entries(GROWTH_TAGS)
   .map(([id, def]) => `${id}=${def.label}`)
@@ -263,7 +265,10 @@ function clampCtx(raw: unknown): NarrateCtx {
 }
 
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
-export const _internal = { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText, systemPrompt: SYSTEM };
+export const _internal = {
+  sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel,
+  narrateProviderOrder, providerEvent, extractWorkersAiText, systemPrompt: SYSTEM,
+};
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
  *  schema 選填:傳入 responseSchema 讓 Gemini 原生保證 JSON 結構(用在欄位固定的 invite)。 */
@@ -305,6 +310,20 @@ async function geminiGenerate(
 function chooseGeminiModel(ctx: NarrateCtx): "gemini-3-flash-preview" | "gemini-3.1-flash-lite" {
   const important = ctx.eventDue || ctx.events.length > 0 || (ctx.flags?.length ?? 0) > 0 || !!ctx.arc;
   return important ? "gemini-3-flash-preview" : "gemini-3.1-flash-lite";
+}
+
+/** 平日保留免費 Workers AI 主力；事件機會到期時先問 Gemini，弱模型只作無事件日記備援。 */
+function narrateProviderOrder(ctx: NarrateCtx, hasWorkersAi: boolean, hasGemini: boolean): NarrateProvider[] {
+  const workers: NarrateProvider[] = hasWorkersAi ? ["workers-ai-qwen", "workers-ai-llama"] : [];
+  const gemini: NarrateProvider[] = hasGemini
+    ? [chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite"]
+    : [];
+  return ctx.eventDue ? [...gemini, ...workers] : [...workers, ...gemini];
+}
+
+/** Workers AI 可以供應日記，但不得把低可信 event 送到玩家面前。 */
+function providerEvent(provider: NarrateProvider, event: unknown): unknown {
+  return provider === "gemini-flash" || provider === "gemini-flash-lite" ? event : null;
 }
 
 async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
@@ -496,23 +515,28 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
 
-  const attempts: { provider: "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama"; run: () => Promise<string> }[] = [];
-  if (env.AI) {
-    // 免費且不受 Google 出口地區限制：先 Qwen（繁中較自然），再用官方支援 JSON Mode 的 Llama fast。
-    attempts.push({ provider: "workers-ai-qwen", run: () => callWorkersAi(ctx, env.AI!, "@cf/qwen/qwen3-30b-a3b-fp8") });
-    attempts.push({ provider: "workers-ai-llama", run: () => callWorkersAi(ctx, env.AI!, "@cf/meta/llama-3.1-8b-instruct-fast", true) });
-  }
-  if (env.GEMINI_API_KEY) {
-    const provider = chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite";
-    attempts.push({ provider, run: () => callGemini(ctx, env.GEMINI_API_KEY!) });
-  }
+  const attempts: { provider: NarrateProvider; run: () => Promise<string> }[] = narrateProviderOrder(
+    ctx, !!env.AI, !!env.GEMINI_API_KEY,
+  ).map((provider) => {
+    if (provider === "workers-ai-qwen") {
+      return { provider, run: () => callWorkersAi(ctx, env.AI!, "@cf/qwen/qwen3-30b-a3b-fp8") };
+    }
+    if (provider === "workers-ai-llama") {
+      return { provider, run: () => callWorkersAi(ctx, env.AI!, "@cf/meta/llama-3.1-8b-instruct-fast", true) };
+    }
+    return { provider, run: () => callGemini(ctx, env.GEMINI_API_KEY!) };
+  });
 
   const errors: string[] = [];
   for (const attempt of attempts) {
     try {
       const result = parseResult(await attempt.run(), [ctx.name, ...ctx.neighbors]);
       if (!result) throw new Error("parse_failed");
-      return Response.json({ ...result, provider: attempt.provider });
+      return Response.json({
+        ...result,
+        event: providerEvent(attempt.provider, result.event),
+        provider: attempt.provider,
+      });
     } catch (e) {
       errors.push(`${attempt.provider}: ${String(e)}`);
     }

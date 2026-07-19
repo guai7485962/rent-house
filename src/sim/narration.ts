@@ -196,10 +196,10 @@ function applyDiaryEffects(cur: TenantRuntime, result: NarrateResult, diaryGameM
   if (result.summaryUpdate) cur.tenant.recentSummary = result.summaryUpdate;
   applyArcUpdate(cur, result.arcUpdate); // 劇情弧:開新弧/推進/收束(消毒後才採用)
   // AI 依當前處境提議的抉擇事件 → 消毒夾值後設為待決(與規則式事件共用冷卻,不覆蓋既有)
-  if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 2) {
+  if (result.event && !cur.pendingEvent && gameDayIndex() - cur.lastEventDay >= 3) {
     const roster: Record<string, string> = {};
     for (const o of Object.values(state.runtimes)) if (o.tenant.id !== cur.tenant.id) roster[o.tenant.name] = o.tenant.id;
-    const ev = sanitizeAiEvent(result.event, roster);
+    const ev = sanitizeAiEvent(result.event, roster, cur.tenant.name);
     if (ev) {
       cur.pendingEvent = ev;
       cur.lastEventDay = gameDayIndex();

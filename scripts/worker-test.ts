@@ -6,7 +6,10 @@
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
  */
 const { _internal } = await import("../worker/index");
-const { sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel, extractWorkersAiText, systemPrompt } = _internal;
+const {
+  sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel,
+  narrateProviderOrder, providerEvent, extractWorkersAiText, systemPrompt,
+} = _internal;
 
 let pass = 0;
 let fail = 0;
@@ -68,6 +71,11 @@ check("背景與今日素材在 prompt 中明確分區", (() => {
 check("模型分流:平淡日常 → 3.1 Flash-Lite", chooseGeminiModel(clampCtx({ name: "a" })) === "gemini-3.1-flash-lite");
 check("模型分流:事件機會已到 → 3 Flash", chooseGeminiModel(clampCtx({ name: "a", eventDue: true })) === "gemini-3-flash-preview");
 check("模型分流:進行中劇情弧 → 3 Flash", chooseGeminiModel(clampCtx({ name: "a", arc: { theme: "搬家", stage: 1, maxStage: 3, summary: "整理中" } })) === "gemini-3-flash-preview");
+check("provider 順序:平淡日常仍由免費 Workers AI 優先", narrateProviderOrder(clampCtx({ name: "a" }), true, true).join(",") === "workers-ai-qwen,workers-ai-llama,gemini-flash-lite");
+check("provider 順序:事件機會到期改由 Gemini 優先", narrateProviderOrder(clampCtx({ name: "a", eventDue: true }), true, true).join(",") === "gemini-flash,workers-ai-qwen,workers-ai-llama");
+const weakEventFixture = { title: "保護橘子", choices: [{ label: "驅逐邱柏翰" }, { label: "繼續加班" }] };
+check("事件信任:Qwen/Llama 回應一律剝除 event", providerEvent("workers-ai-qwen", weakEventFixture) === null && providerEvent("workers-ai-llama", weakEventFixture) === null);
+check("事件信任:Gemini 回應才可送出 event", providerEvent("gemini-flash", weakEventFixture) === weakEventFixture && providerEvent("gemini-flash-lite", weakEventFixture) === weakEventFixture);
 
 // --- Workers AI 同步輸出:新版是 OpenAI choices,舊版是 response ---
 check("Workers AI:解析 OpenAI choices", extractWorkersAiText({ choices: [{ message: { content: "新版" } }] }) === "新版");

@@ -31,6 +31,11 @@ export const LIMEZU_FURNITURE_IDS = [
   "shower",
   "washing_machine",
   "laundry_washer",
+  "shared_sofa",
+  "loveseat",
+  "lounge_plant",
+  "wood_chair",
+  "coffee_table",
 ] as const;
 
 export type LimezuFurnitureId = (typeof LIMEZU_FURNITURE_IDS)[number];
@@ -46,9 +51,10 @@ interface AtlasFrame {
 }
 
 /**
- * 固定的 128x96 atlas 版面(與 scripts/limezu-manifest.json 同步)。
+ * 固定的 128x128 atlas 版面(與 scripts/limezu-manifest.json 同步)。
  * dx = 水平置中於 footprint,dy = 底邊貼齊 footprint 底邊、高度往上長。
  * laundry_washer 與 washing_machine 共用同一格(manifest 中為 alias)。
+ * y=96 起為第二批(Generic theme sheet)交誼廳/房間家具。
  */
 export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFrame>> = {
   single_bed: { sx: 92, sy: 40, sw: 36, sh: 25, dx: -2, dy: 7 },
@@ -69,6 +75,11 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   shower: { sx: 16, sy: 70, sw: 29, sh: 25, dx: 1, dy: 7 },
   washing_machine: { sx: 42, sy: 40, sw: 20, sh: 29, dx: -2, dy: -13 },
   laundry_washer: { sx: 42, sy: 40, sw: 20, sh: 29, dx: -2, dy: -13 },
+  shared_sofa: { sx: 0, sy: 96, sw: 48, sh: 26, dx: 0, dy: -10 },
+  loveseat: { sx: 48, sy: 96, sw: 30, sh: 18, dx: 1, dy: -2 },
+  lounge_plant: { sx: 78, sy: 96, sw: 16, sh: 31, dx: 0, dy: -15 },
+  wood_chair: { sx: 94, sy: 96, sw: 14, sh: 22, dx: 1, dy: -6 },
+  coffee_table: { sx: 108, sy: 96, sw: 14, sh: 14, dx: 1, dy: 2 },
 };
 
 /** 地板 atlas 中有專屬三變體列的房間(與 manifest floors 的 row 順序同步)。 */

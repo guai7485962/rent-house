@@ -1,7 +1,7 @@
 {
-  "$comment": "LimeZu Modern Interiors 選件清單(單一資料來源)。scripts/build-limezu-atlas.py 讀本檔重組出 public/assets/limezu/ 下的專案 atlas;原始付費素材不進版控。crop=[x,y,w,h] 為來源 single 檔中的裁切框(已裁掉透明邊),atlas=[x,y] 為輸出 atlas 的貼入位置。src/art/limezu.ts 的 frame 表必須與本檔一致(limezu-art-test.ts 會交叉驗證)。",
+  "$comment": "LimeZu Modern Interiors 選件清單(單一資料來源)。scripts/build-limezu-atlas.py 讀本檔重組出 public/assets/limezu/ 下的專案 atlas;原始付費素材不進版控。crop=[x,y,w,h] 為來源檔(single 檔或 theme sheet)中的裁切框(已裁掉透明邊),atlas=[x,y] 為輸出 atlas 的貼入位置。src/art/limezu.ts 的 frame 表必須與本檔一致(limezu-art-test.ts 會交叉驗證)。",
   "source_root": "../input_image/limezu-modern-interiors/extracted/modern-interiors/1_Interiors/16x16",
-  "furniture_atlas": { "file": "public/assets/limezu/furniture.png", "width": 128, "height": 96 },
+  "furniture_atlas": { "file": "public/assets/limezu/furniture.png", "width": 128, "height": 128 },
   "furniture": {
     "tv_console": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_107.png", "crop": [0, 0, 32, 40], "atlas": [0, 0] },
     "lounge_tv": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_113.png", "crop": [0, 0, 32, 40], "atlas": [32, 0] },
@@ -20,7 +20,12 @@
     "coffee_machine": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_177.png", "crop": [1, 11, 14, 19], "atlas": [45, 70] },
     "dresser": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_429.png", "crop": [1, 8, 15, 18], "atlas": [59, 70] },
     "counter": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_121.png", "crop": [2, 6, 29, 14], "atlas": [74, 70] },
-    "bath_plant": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_15.png", "crop": [2, 6, 12, 14], "atlas": [103, 70] }
+    "bath_plant": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_15.png", "crop": [2, 6, 12, 14], "atlas": [103, 70] },
+    "shared_sofa": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [96, 176, 48, 26], "atlas": [0, 96] },
+    "loveseat": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [1, 254, 30, 18], "atlas": [48, 96] },
+    "lounge_plant": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [240, 457, 16, 31], "atlas": [78, 96] },
+    "wood_chair": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [49, 186, 14, 22], "atlas": [94, 96] },
+    "coffee_table": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [81, 81, 14, 14], "atlas": [108, 96] }
   },
   "floor_atlas": {
     "file": "public/assets/limezu/floors.png",
@@ -38,10 +43,10 @@
     "laundry": { "row": 6, "cells": [[12, 33], [13, 33], [14, 33]] }
   },
   "skipped": {
-    "double_bed": "Bd226/250/235 皆為直向 2x3 床,footprint 3x2 橫向;Bedroom Singles 無橫向雙人床(125-130 為雙層床側視),保留程序繪圖",
+    "double_bed": "Bedroom Singles 無橫向雙人床(Bd226/250/235 直向 2x3、125-130 雙層床側視);Generic 表唯一橫向床為 (60,253) 四柱床 61x62,寬 61 > footprint 3 格上限 52 且床架鏤空,其餘皆直向,保留程序繪圖",
     "bookshelf": "Lb64/57/65 裁邊後皆 27px 寬 > footprint 1 格上限 20px,保留程序繪圖",
     "bathtub": "Ba151/152 皆為直向 1.5x2.2 缸,footprint 2x1 橫向;Bathroom Singles 無橫向浴缸(31px 寬件皆為洗手台),保留程序繪圖",
     "bath_sink": "Ba5/6/7 裁邊後皆 31px 寬 > footprint 1 格上限 20px,保留程序繪圖",
-    "lounge_plant": "Lv18 裁邊 22px、Lv14 裁邊 23px 皆 > footprint 1 格上限 20px,保留程序繪圖"
+    "lounge_rug": "footprint 4x3 需整張恰 64x48;Generic 表米色綠邊毯 (3,706) 43x28、藍邊 (0,738) 48x28 皆不合,列 66-75 為 9-slice 模組件無法單一裁切整張,保留程序繪圖"
   }
 }

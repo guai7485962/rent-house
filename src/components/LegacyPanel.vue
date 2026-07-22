@@ -1,13 +1,25 @@
 <script setup lang="ts">
 /** 傳承(§G-7/G-8):成就冊 + 歷任房客名冊。純唯讀翻閱。 */
 import { computed, ref } from "vue";
-import { state, ACHIEVEMENTS } from "../store";
+import { state, ACHIEVEMENTS, unlock } from "../store";
 
 const emit = defineEmits<{ close: [] }>();
 const tab = ref<"ach" | "alumni">("ach");
 
 const unlocked = computed(() => new Set(state.achievements));
 const gotCount = computed(() => ACHIEVEMENTS.filter((a) => unlocked.value.has(a.id)).length);
+
+// 展開中的告別信(以離開時間為穩定 key,避免名冊順序變動時錯位)
+const openLetters = ref<Set<number>>(new Set());
+function toggleLetter(key: number) {
+  const next = new Set(openLetters.value);
+  if (next.has(key)) next.delete(key);
+  else {
+    next.add(key);
+    unlock("first_letter"); // ✉️ 見字如面:首次展開告別信(冪等)
+  }
+  openLetters.value = next;
+}
 
 function fmtMs(ms: number): string {
   const d = new Date(ms);
@@ -51,6 +63,12 @@ function fmtMs(ms: number): string {
           </div>
           <div class="al-memory">「{{ al.memory }}」</div>
           <div class="al-foot">{{ fmtMs(al.leftMs) }} 離開 · {{ al.reason }}</div>
+          <template v-if="al.farewell">
+            <button class="al-letter-btn" @click="toggleLetter(al.leftMs)">
+              {{ openLetters.has(al.leftMs) ? "✉️ 收起告別信" : "✉️ 展開告別信" }}
+            </button>
+            <div v-if="openLetters.has(al.leftMs)" class="al-letter">{{ al.farewell }}</div>
+          </template>
         </div>
       </div>
     </div>
@@ -191,5 +209,31 @@ function fmtMs(ms: number): string {
 .al-foot {
   font-size: 11px;
   color: var(--text-dim);
+}
+.al-letter-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 7px 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(124, 108, 255, 0.1);
+  color: var(--accent-2, #8fd0ff);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.al-letter {
+  margin-top: 8px;
+  padding: 12px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent, #7c6cff);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--text);
+  letter-spacing: 0.2px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

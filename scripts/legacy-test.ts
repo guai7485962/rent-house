@@ -18,6 +18,8 @@ const { generateApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { tryFight } = await import("../src/sim/conflicts");
 const { save, load } = await import("../src/sim/persistence");
+const { makeRuntime, tenants } = await import("../src/sim/gameState");
+const { toTraditional } = await import("../src/sim/narrativeQuality");
 
 let pass = 0;
 let fail = 0;
@@ -27,8 +29,9 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // --- unlock 基本行為 ---
-check("成就清單有 24 項(含心願 2 項+玩家目標批 8 項+圓夢畢業批 4 項)", ACHIEVEMENTS.length === 24);
+check("成就清單有 26 項(含心願 2+玩家目標批 8+圓夢畢業批 4+第二批 2)", ACHIEVEMENTS.length === 26);
 check("隱藏成就有標記(鐵面/桃李滿樓/雨天/雙雙圓夢)", ACHIEVEMENTS.filter((a) => a.hidden).length === 4);
+check("第二批新成就:名人堂 + 見字如面", ACHIEVEMENTS.some((a) => a.id === "hall_of_fame") && ACHIEVEMENTS.some((a) => a.id === "first_letter"));
 unlock("first_love");
 check("解鎖後進 achievements", state.achievements.includes("first_love"));
 check("解鎖彈了通知", state.noticeLog.some((n) => n.text.includes("成就解鎖")));
@@ -96,6 +99,36 @@ check("名冊:住了 5 天", rec.daysLived === 5, `實際 ${rec.daysLived}`);
 check("名冊:離開原因", rec.reason === "測試退租");
 check("名冊:代表記憶取自摘要", rec.memory.includes("準時交租"));
 check("送走第一位 → farewell 成就", state.achievements.includes("farewell"));
+
+// --- 告別信(畢業型才有,模板生成 + 轉繁) ---
+{
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "al_grad"; seed.name = "告別鼓手"; seed.occupation = "樂團鼓手";
+  const rtG = makeRuntime(seed, "304", 70, []);
+  rtG.moveInMs = state.gameMs - 8 * 24 * 3600 * 1000; // 假裝住了 8 天
+  rtG.tenant.recentSummary = "在頂樓練鼓的夜晚,和大家一起等日出。";
+  rtG.wish = { id: "stage_dream", progress: 100, fulfilledDay: gameDayIndex() - 6, graduateDay: gameDayIndex(), announced: true };
+  state.runtimes["al_grad"] = rtG;
+  recordAlumnus(rtG, "圓夢離開:站上一次正式的舞台");
+  const rec = state.alumni[0];
+  check("畢業型 → 附告別信", typeof rec.farewell === "string" && rec.farewell!.length > 20);
+  check("告別信含住了幾天與署名", rec.farewell!.includes("8 天") && rec.farewell!.includes("告別鼓手 敬上"));
+  check("告別信已轉繁(toTraditional 冪等)", rec.farewell === toTraditional(rec.farewell!));
+  state.alumni.shift(); // 清掉這筆,不干擾後續存檔往返的名冊順序斷言
+  delete state.runtimes["al_grad"];
+}
+// --- 非畢業離開者沒有告別信 ---
+{
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "al_evict"; seed.name = "被請離者"; seed.occupation = "上班族";
+  const rtE = makeRuntime(seed, "304", 70, []);
+  rtE.moveInMs = state.gameMs - 3 * 24 * 3600 * 1000;
+  state.runtimes["al_evict"] = rtE; // 未指派/未實現心願 → 無告別信
+  recordAlumnus(rtE, "遭房東強制請離");
+  check("非畢業離開者 → 無告別信", state.alumni[0].farewell === undefined);
+  state.alumni.shift(); // 清掉這筆,還原名冊順序
+  delete state.runtimes["al_evict"];
+}
 
 // --- 存檔往返 ---
 save();

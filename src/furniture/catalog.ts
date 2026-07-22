@@ -461,6 +461,108 @@ export const CATALOG: FurnitureDef[] = [
   },
 
   // =========================================================================
+  // 畢業生紀念物(收藏層):圓夢畢業離開時自動留在其原房間。
+  //   純裝飾(空 attributes → 不影響招租星等)、price 0、不可變賣(sellFurnitureAt 擋)、
+  //   綁房間不綁租客(placements 獨立於 occupancy,空房招租後仍保留)。
+  //   外觀走 recipe 程序繪圖(零件清單、零程式),不套 LimeZu 圖集。
+  // =========================================================================
+  {
+    id: "memorial_poster",
+    name: "簽名海報",
+    category: "ambiance",
+    placement: "room",
+    price: 0,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "登台圓夢畢業生的紀念物 · 不可變賣",
+    promptHints: ["牆上那張簽名海報,是曾住這裡的人站上舞台的證明"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 3, y: 2, w: 10, h: 12, color: "#2c2f3a" }, // 相框
+        { shape: "rect", x: 4, y: 3, w: 8, h: 10, color: "#e8d9b0" }, // 海報紙
+        { shape: "rect", x: 5, y: 5, w: 6, h: 4, color: "#c98aa0" }, // 舞台剪影
+        { shape: "rect", x: 5, y: 11, w: 6, h: 1, color: "#8a5a72" }, // 簽名
+      ],
+    },
+  },
+  {
+    id: "memorial_sign",
+    name: "小招牌",
+    category: "ambiance",
+    placement: "room",
+    price: 0,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "開店圓夢畢業生的紀念物 · 不可變賣",
+    promptHints: ["那塊小招牌,是曾住這裡的人開了自己小店的起點"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 5, y: 2, w: 1, h: 3, color: "#5a3d26" }, // 吊桿左
+        { shape: "rect", x: 10, y: 2, w: 1, h: 3, color: "#5a3d26" }, // 吊桿右
+        { shape: "rect", x: 3, y: 5, w: 10, h: 8, color: "#3f6d5a" }, // 招牌板
+        { shape: "rect", x: 3, y: 5, w: 10, h: 1, color: "#4f7d6a" }, // 高光
+        { shape: "rect", x: 5, y: 7, w: 6, h: 1, color: "#e8d9b0" }, // 字
+        { shape: "rect", x: 5, y: 9, w: 4, h: 1, color: "#e8d9b0" },
+      ],
+    },
+  },
+  {
+    id: "memorial_cert",
+    name: "裱框證書",
+    category: "ambiance",
+    placement: "room",
+    price: 0,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "論文圓夢畢業生的紀念物 · 不可變賣",
+    promptHints: ["牆上裱框的證書,是曾住這裡的人熬過論文、順利畢業的印記"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 2, y: 3, w: 12, h: 10, color: "#8a6a2f" }, // 金框
+        { shape: "rect", x: 3, y: 4, w: 10, h: 8, color: "#f3ecd8" }, // 證書紙
+        { shape: "rect", x: 5, y: 6, w: 6, h: 1, color: "#8a94b0" }, // 字
+        { shape: "rect", x: 5, y: 8, w: 6, h: 1, color: "#8a94b0" },
+        { shape: "rect", x: 9, y: 10, w: 3, h: 2, color: "#c9536a" }, // 鋼印
+      ],
+    },
+  },
+  {
+    id: "memorial_book",
+    name: "簽名書",
+    category: "ambiance",
+    placement: "room",
+    price: 0,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "代表作圓夢畢業生的紀念物 · 不可變賣",
+    promptHints: ["架上那本簽名書,是曾住這裡的人完成代表作後留下的一冊"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 4, y: 5, w: 9, h: 9, color: "#6d4a7a" }, // 書封
+        { shape: "rect", x: 4, y: 5, w: 2, h: 9, color: "#523a5e" }, // 書脊
+        { shape: "rect", x: 7, y: 7, w: 5, h: 1, color: "#e8d9b0" }, // 書名
+        { shape: "rect", x: 7, y: 11, w: 4, h: 1, color: "#c9a86a" }, // 燙金簽名
+      ],
+    },
+  },
+
+  // =========================================================================
   // 交誼廳共用家具(社交碰撞點 ★)
   // =========================================================================
   {

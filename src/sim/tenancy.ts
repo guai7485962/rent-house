@@ -19,8 +19,10 @@ import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
 import { adoptCat, adoptPet, petIcon, resolvePetFarewell } from "./pets";
 import { recordAlumnus, unlock } from "./legacy";
-import { ensureWishes } from "./wishes";
+import { ensureWishes, WISH_DEFS, type WishId, type WishDef } from "./wishes";
 import { addReputation, REP_GRADUATE } from "./reputation";
+import { addPlacement, findFreeSlot } from "./placements";
+import { getDef } from "../furniture/catalog";
 import {
   state,
   clamp,
@@ -117,6 +119,8 @@ export function moveIn(roomId: string, ap: Applicant) {
 export function graduateFarewell(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
+  farewellSendoff(rt); // 送別會/獨白:離開者仍在名單時演出(結算之前)
+  placeMemorial(rt); // 紀念物留在原房間(occupancy 尚未清除,綁房間不綁租客)
   const name = rt.tenant.name;
   const rent = rt.tenant.finance.monthlyRent;
   const gift = Math.min(rent, Math.round(0.5 * rent * (1 + rt.tenant.stats.affinity / 100)));
@@ -134,7 +138,104 @@ export function graduateFarewell(tenantId: string, reason: string) {
   state.graduateCount += 1;
   unlock("first_graduate");
   if (state.graduateCount >= 3) unlock("graduate_3");
+  if (state.graduateCount >= 5) unlock("hall_of_fame"); // 🏛️ 名人堂:五位畢業生
   moveOut(tenantId, reason);
+}
+
+// ---------------------------------------------------------------------------
+// 圓夢畢業第二批:送別會(ambient 演出)+ 紀念物家具
+// ---------------------------------------------------------------------------
+
+/** 決定性選句(不消耗 Math.random,避免擾動其他系統的 RNG 次序與平衡快照)。 */
+function sendoffIndex(salt: string): number {
+  const day = Math.floor(state.gameMs / (24 * 3600 * 1000));
+  const key = `sendoff|${day}|${salt}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+const SENDOFF_PARTY_LINES = [
+  "🎉 交誼廳臨時辦起了歡送會,鄰居們七手八腳掛上彩帶,舉杯慶祝 {name} 的「{label}」成真,笑著笑著就有人紅了眼眶。",
+  "🎉 全樓聚到交誼廳為 {name} 餞行,有人翻出舊照片,有人塞來親手做的點心,「{label}」這句話今晚被反覆說起。",
+  "🎉 {name} 要啟程了,大家在交誼廳擺上飲料熱菜辦了場歡送會,說好無論走多遠,這裡永遠是「{label}」開始的地方。",
+];
+
+const SENDOFF_SOLO_LINES = [
+  "🕯️ 沒有誰能替 {name} 熱鬧一場,他一個人把行李收拾妥當,對著空蕩蕩的樓道輕聲說了句「謝謝這裡」,帶著「{label}」的圓滿離開。",
+  "🕯️ 樓裡只剩 {name} 一人,他在門口回頭望了很久,把「{label}」的這段日子仔細收進心底,才輕輕帶上了門。",
+];
+
+const fillSendoff = (line: string, name: string, label: string) =>
+  line.replace(/\{name\}/g, name).replace(/\{label\}/g, label);
+
+/** 同棟在住者中與離開者關係最好的一位(送別日誌的落點,確保搬走後仍留在全樓 Feed);
+ *  沒有關係紀錄時退回任一在住的其他人。 */
+function bestStayingNeighbor(leaverId: string): TenantRuntime | null {
+  let best: TenantRuntime | null = null;
+  let bestVal = -1;
+  for (const rel of listRelationships()) {
+    if (rel.aId !== leaverId && rel.bId !== leaverId) continue;
+    const otherId = rel.aId === leaverId ? rel.bId : rel.aId;
+    const other = state.runtimes[otherId];
+    if (!other || otherId === leaverId) continue;
+    if (rel.value > bestVal) { bestVal = rel.value; best = other; }
+  }
+  return best ?? Object.values(state.runtimes).find((r) => r.tenant.id !== leaverId) ?? null;
+}
+
+/** 圓夢離開當天的送別會(ambient,非抉擇):graduateFarewell 結算前呼叫,離開者仍在名單。
+ *  全樓在住 ≥2 人 → 交誼廳歡送會(全員 mood+4/壓力-4、兩兩關係+2,🎉 送別日誌進全樓 Feed);
+ *  <2 人 → 改發離開者的獨白 major 日誌。文案 2~3 種、依日期與姓名決定性挑選。 */
+export function farewellSendoff(rt: TenantRuntime) {
+  const w = rt.wish;
+  const def = w ? (WISH_DEFS[w.id] as WishDef | undefined) : undefined;
+  const label = def?.label ?? "心願";
+  const name = rt.tenant.name;
+  const residents = Object.values(state.runtimes);
+  const idx = sendoffIndex(name);
+  if (residents.length < 2) {
+    pushSocialLog(rt, fillSendoff(SENDOFF_SOLO_LINES[idx % SENDOFF_SOLO_LINES.length], name, label), "major");
+    notify(`🕯️ ${name} 圓夢啟程,獨自向這棟樓道別`);
+    return;
+  }
+  for (const r of residents) {
+    r.tenant.stats.mood = clamp(r.tenant.stats.mood + 4, 0, 100);
+    r.tenant.stats.stress = clamp(r.tenant.stats.stress - 4, 0, 100);
+  }
+  const ids = residents.map((r) => r.tenant.id);
+  for (let i = 0; i < ids.length; i++)
+    for (let j = i + 1; j < ids.length; j++) adjustRelationship(ids[i], ids[j], 2);
+  // 送別日誌掛在最好的鄰居身上,離開者搬走後這筆仍留在全樓 Feed
+  const host = bestStayingNeighbor(rt.tenant.id) ?? rt;
+  pushSocialLog(host, fillSendoff(SENDOFF_PARTY_LINES[idx % SENDOFF_PARTY_LINES.length], name, label), "major");
+  notify(`🎉 全樓在交誼廳為 ${name} 辦了一場歡送會`);
+}
+
+/** 圓夢畢業軌別 → 專屬紀念物家具 id(只有畢業型 4 條有;安居型不留紀念物)。 */
+const MEMORIAL_DEF: Partial<Record<WishId, string>> = {
+  stage_dream: "memorial_poster", // 🎭 登台 → 簽名海報
+  open_shop: "memorial_sign", // 🏪 開店 → 小招牌
+  graduate_thesis: "memorial_cert", // 🎓 論文 → 裱框證書
+  finish_masterwork: "memorial_book", // 📖 代表作 → 簽名書
+};
+
+/** 在畢業生的原房間留一件紀念物(綁房間不綁租客);occupancy 尚未清除時呼叫。
+ *  房間已滿(找不到空位)→ 靜默略過並記一筆通知,不阻斷離開流程。 */
+function placeMemorial(rt: TenantRuntime) {
+  const defId = rt.wish ? MEMORIAL_DEF[rt.wish.id] : undefined;
+  if (!defId) return;
+  const roomId = `r${rt.roomNo}`;
+  if (!ROOM_APPEARANCE[roomId]) return; // 只在套房留紀念物(同居/異常房略過)
+  const slot = findFreeSlot(roomId, 1, 1);
+  if (!slot) {
+    notify(`🎁 ${rt.tenant.name} 想留件紀念物,但 ${rt.roomNo} 房已經擺滿了`);
+    return;
+  }
+  addPlacement({ defId, room: roomId, c: slot.c, r: slot.r, memorial: true });
+  const nm = getDef(defId).name;
+  pushSocialLog(rt, `🎁 臨走前,他把一件「${nm}」留在了 ${rt.roomNo} 房:「就當我還在這裡吧。」`, "major");
+  notify(`🎁 ${rt.tenant.name} 在 ${rt.roomNo} 房留下了紀念物「${nm}」`);
 }
 
 /** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶 */

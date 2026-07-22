@@ -2,11 +2,14 @@
 import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
+import { furnitureAt } from "../sim/placements";
 
 const props = defineProps<{ c: number; r: number; defId: string; rotation: FurnitureRotation }>();
 const emit = defineEmits<{ close: []; sell: []; move: [] }>();
 
 const def = computed(() => getDef(props.defId));
+// 畢業生紀念物:綁房間、不可移動/變賣
+const isMemorial = computed(() => furnitureAt(props.c, props.r)?.memorial === true);
 const refund = computed(() => Math.round(def.value.price / 2));
 const footprint = computed(() => rotatedFootprint(def.value, props.rotation));
 
@@ -33,15 +36,18 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
         <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>
-        <span v-if="def.effectHint" class="effect">🐾 {{ def.effectHint }}</span>
+        <span v-if="def.effectHint" class="effect">{{ isMemorial ? "🎁" : "🐾" }} {{ def.effectHint }}</span>
       </div>
 
       <p v-if="def.promptHints.length" class="hint">「{{ def.promptHints[0] }}」</p>
 
       <div class="actions">
         <button class="cancel" @click="emit('close')">關閉</button>
-        <button class="move" @click="emit('move')">📦 移動／旋轉</button>
-        <button class="sell" @click="emit('sell')">賣掉(退 ${{ refund.toLocaleString() }})</button>
+        <template v-if="!isMemorial">
+          <button class="move" @click="emit('move')">📦 移動／旋轉</button>
+          <button class="sell" @click="emit('sell')">賣掉(退 ${{ refund.toLocaleString() }})</button>
+        </template>
+        <span v-else class="keepsake">🎁 畢業生的紀念物,會一直留在這間房</span>
       </div>
     </div>
   </div>
@@ -68,4 +74,5 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 .cancel { flex: 0.7; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 .move { flex: 1; background: rgba(143,123,255,0.14); border: 1px solid var(--accent-2); color: #cdbcff; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 .sell { flex: 1; background: rgba(232,101,122,0.14); border: 1px solid var(--bad); color: #ff9aa8; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
+.keepsake { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: #cdbcff; border: 1px dashed var(--accent-2); border-radius: 10px; padding: 8px 10px; line-height: 1.4; }
 </style>

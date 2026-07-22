@@ -13,6 +13,8 @@ import type { AlumniEntry } from "../types";
 import { state, notify, gameDayIndex, GAME_START, ROOM_APPEARANCE, type TenantRuntime } from "./gameState";
 import { listRelationships } from "./social";
 import { netWorth } from "./finance";
+import { WISH_DEFS, type WishId, type WishDef } from "./wishes";
+import { toTraditional } from "./narrativeQuality";
 
 export interface AchievementDef {
   id: string;
@@ -50,6 +52,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "graduate_3", icon: "🎓", label: "桃李天下", desc: "三位租客從這裡圓夢畢業" },
   { id: "first_model_tenant", icon: "🏠", label: "第一位模範房客", desc: "有租客圓夢後宣告長住,成為模範房客" },
   { id: "couple_wish", icon: "💑", label: "雙雙圓夢", desc: "一對情侶先後實現了各自的人生心願", hidden: true },
+  // --- 圓夢畢業第二批:送別會/告別信/紀念物 ---
+  { id: "hall_of_fame", icon: "🏛️", label: "名人堂", desc: "五位租客從這裡圓夢畢業,走向各自的人生" },
+  { id: "first_letter", icon: "✉️", label: "見字如面", desc: "第一次展開畢業生留下的告別信" },
 ];
 
 const ACH_MAP: Record<string, AchievementDef> = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
@@ -73,19 +78,60 @@ function representativeMemory(rt: TenantRuntime): string {
   return tag ? `是個${tag.replace(/[[\]]/g, "")}的人。` : "來去匆匆,沒留下太多痕跡。";
 }
 
-/** 退租時把房客存進名冊(moveOut 在刪除 runtime 前呼叫);自己養的貓一起走時在記憶裡提一筆 */
+/** 畢業軌別語氣的告別信句庫:住了幾天 × 最好鄰居;各軌各一種口吻(登台/開店/論文/代表作)。 */
+const FAREWELL_BODY: Partial<Record<WishId, (days: number, neighbor: string) => string>> = {
+  stage_dream: (days, neighbor) =>
+    `在這棟樓住的這 ${days} 天,是我從後台一路走向聚光燈的日子。謝謝你願意收留一個追著舞台跑的人,也謝謝${neighbor}在我排練到深夜時,總幫我留著一盞燈。下次布幕拉開,我會記得這裡是我的第一排觀眾。`,
+  open_shop: (days, neighbor) =>
+    `謝謝你陪我把開店的基金一塊一塊存起來,這 ${days} 天的每個清晨都算數。等店開張那天,一定要拉著${neighbor}一起來,第一杯我請。這棟樓教會我的,是怎麼把日子過得踏實。`,
+  graduate_thesis: (days, neighbor) =>
+    `在這裡熬過論文的這 ${days} 天,是我最狼狽也最踏實的一段路。謝謝你沒在我焦頭爛額時催促,也謝謝${neighbor}在我快撐不住時遞來的那杯咖啡。我要去新的城市報到了,但這裡永遠是我畢業的起點。`,
+  finish_masterwork: (days, neighbor) =>
+    `這 ${days} 天,我把心裡的東西在這個房間裡一筆一筆畫了出來。謝謝這棟樓給了我一個能安靜創作的角落,也謝謝${neighbor}——你成了我作品裡偷偷藏著的靈感。代表作完成了,我也該翻往下一頁了。`,
+};
+
+/** 同棟在住者中與離開者關係最好的一位的名字(告別信裡的「最好鄰居」);沒有則回退。 */
+function bestNeighborName(leaverId: string): string {
+  let bestName = "這棟樓的每一個人";
+  let bestVal = -1;
+  for (const rel of listRelationships()) {
+    if (rel.aId !== leaverId && rel.bId !== leaverId) continue;
+    const otherId = rel.aId === leaverId ? rel.bId : rel.aId;
+    const other = state.runtimes[otherId];
+    if (other && otherId !== leaverId && rel.value > bestVal) { bestVal = rel.value; bestName = other.tenant.name; }
+  }
+  return bestName;
+}
+
+/** 畢業生的告別信(模板生成、零 AI):依畢業軌別語氣 + 住了幾天 + 最好鄰居 + 代表記憶。
+ *  必過 toTraditional 防簡體;非畢業型或無句庫回 undefined。 */
+function buildFarewellLetter(rt: TenantRuntime, daysLived: number, repMemory: string): string | undefined {
+  const w = rt.wish;
+  if (!w || w.fulfilledDay === -99) return undefined;
+  const def = WISH_DEFS[w.id] as WishDef | undefined;
+  const body = FAREWELL_BODY[w.id];
+  if (!def?.graduates || !body) return undefined;
+  const neighbor = bestNeighborName(rt.tenant.id);
+  const memoryLine = repMemory && !repMemory.includes("沒留下太多痕跡") ? `我會一直記得——${repMemory}` : "";
+  return toTraditional([body(daysLived, neighbor), memoryLine, `——${rt.tenant.name} 敬上`].filter(Boolean).join(""));
+}
+
+/** 退租時把房客存進名冊(moveOut 在刪除 runtime 前呼叫);自己養的貓一起走時在記憶裡提一筆。
+ *  畢業型離開者另附一封模板告別信(farewell)。 */
 export function recordAlumnus(rt: TenantRuntime, reason: string) {
   const moveInMs = rt.moveInMs ?? GAME_START.getTime();
   const daysLived = Math.max(0, Math.floor((state.gameMs - moveInMs) / (24 * 3600 * 1000)));
   const pet = state.pets[rt.tenant.id];
   const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛${pet.kind === "dog" ? "狗" : "貓"}「${pet.name}」一起離開。` : "";
+  const repMemory = representativeMemory(rt);
   const entry: AlumniEntry = {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
     daysLived,
     reason,
     leftMs: state.gameMs,
-    memory: (petNote + representativeMemory(rt)).slice(0, 120),
+    memory: (petNote + repMemory).slice(0, 120),
+    farewell: buildFarewellLetter(rt, daysLived, repMemory),
   };
   state.alumni.unshift(entry); // 最新的排前面
   if (state.alumni.length > 50) state.alumni.length = 50;

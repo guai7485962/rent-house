@@ -131,6 +131,8 @@ export interface Placement {
   r: number;
   /** 順時針旋轉角度；舊存檔缺欄位視為 0。 */
   rotation?: 0 | 90 | 180 | 270;
+  /** 畢業生的紀念物:綁房間不綁租客、不可變賣、純裝飾(空房招租後仍保留)。 */
+  memorial?: boolean;
 }
 
 /** 開場預設家具(動態家具狀態的種子;之後由 sim/placements.ts 管理可變副本) */

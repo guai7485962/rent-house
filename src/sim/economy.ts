@@ -301,6 +301,7 @@ export function placeAt(c: number, r: number): { ok: boolean; reason?: string } 
 export function startMoving(c: number, r: number): { ok: boolean } {
   const p = furnitureAt(c, r);
   if (!p) return { ok: false };
+  if (p.memorial) return { ok: false }; // 紀念物綁房間,不可搬移
   const rotation = placementRotation(p);
   state.pendingMove = { c: p.c, r: p.r, defId: p.defId, rotation };
   state.pendingRotation = rotation;
@@ -382,8 +383,10 @@ export function buyUpgrade(roomId: string, upgradeId: string): { ok: boolean; re
   return { ok: true };
 }
 
-/** 賣掉某格上的家具(退回半價) */
-export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: number } {
+/** 賣掉某格上的家具(退回半價)。畢業生的紀念物綁房間、不可變賣。 */
+export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: number; reason?: string } {
+  const target = furnitureAt(c, r);
+  if (target?.memorial) return { ok: false, reason: "畢業生的紀念物不能變賣,它會一直留在這間房" };
   const removed = removePlacementAt(c, r);
   if (!removed) return { ok: false };
   const def = getDef(removed.defId);

@@ -276,6 +276,7 @@ function onSell() {
   const res = sellFurnitureAt(item.c, item.r);
   inspectItem.value = null;
   if (res.ok) toast(`已賣掉:${name},退回 $${res.refund?.toLocaleString()}`);
+  else if (res.reason) toast(res.reason);
 }
 
 const allTags = computed(() => [

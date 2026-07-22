@@ -28,10 +28,11 @@ const wishes = await import("../src/sim/wishes");
 const { gameDayIndex, makeRuntime, tenants } = await import("../src/sim/gameState");
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { save, load } = await import("../src/sim/persistence");
-const { moveOut, graduateFarewell, decide } = await import("../src/sim/tenancy");
-const { DEPOSIT_MONTHS } = await import("../src/sim/economy");
+const { moveOut, graduateFarewell, decide, farewellSendoff, moveIn } = await import("../src/sim/tenancy");
+const { DEPOSIT_MONTHS, sellFurnitureAt } = await import("../src/sim/economy");
+const { getPlacements } = await import("../src/sim/placements");
 const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
-const { rescoreApplicants } = await import("../src/sim/recruit");
+const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { REP_GRADUATE, REP_SETTLE } = await import("../src/sim/reputation");
 
@@ -374,6 +375,80 @@ const chenRent0 = chen.tenant.finance.monthlyRent; // 模範房客 +3% 的比較
   const repBefore = state.reputation;
   check("load 還原:模範房客/口碑/樓貓", load() && state.runtimes["tenant_chen_engineer"].modelTenant === true
     && state.reputation === repBefore && state.pets["t_drummer"]?.ownerId === HOUSE_CAT_OWNER);
+}
+
+// ============================================================
+// 圓夢畢業第二批(送別會 / 紀念物 / 名人堂)
+// ============================================================
+
+const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = id; seed.name = name; seed.occupation = occupation;
+  const r = makeRuntime(seed, roomNo, 70, []);
+  state.runtimes[id] = r;
+  return r;
+};
+
+// --- 19. 送別會(farewellSendoff 人數門檻) ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  const leaver = mkRt("s_leaver", "送別鼓手", "樂團鼓手"); // stage_dream(畢業型)
+  const n1 = mkRt("s_n1", "鄰居甲", "上班族");
+  const n2 = mkRt("s_n2", "鄰居乙", "上班族");
+  wishes.ensureWishes();
+  leaver.wish!.fulfilledDay = day(); // 標記已實現 → 文案帶心願 label
+  relationships[pairKey("s_leaver", "s_n1")] = { value: 70, romantic: false, cohabitOffered: false };
+  relationships[pairKey("s_n1", "s_n2")] = { value: 40, romantic: false, cohabitOffered: false };
+  n1.tenant.stats.mood = 50; n1.tenant.stats.stress = 50;
+  n2.tenant.stats.mood = 50; n2.tenant.stats.stress = 50;
+  farewellSendoff(leaver);
+  check("≥2 人:全員 mood +4 / 壓力 -4", n1.tenant.stats.mood === 54 && n1.tenant.stats.stress === 46,
+    `mood=${n1.tenant.stats.mood} stress=${n1.tenant.stats.stress}`);
+  check("≥2 人:兩兩關係 +2", (relationships[pairKey("s_n1", "s_n2")]?.value ?? 0) === 42,
+    `rel=${relationships[pairKey("s_n1", "s_n2")]?.value}`);
+  check("≥2 人:🎉 送別 major 日誌落在最好鄰居身上",
+    n1.log.some((e) => e.text.startsWith("🎉") && e.text.includes("送別鼓手") && e.text.includes("站上一次正式的舞台") && e.importance === "major"));
+  check("≥2 人:歡送會 notify 進歷史", state.noticeLog.some((n) => n.text.includes("歡送會") && n.text.includes("送別鼓手")));
+  // <2 人:僅剩離開者 → 獨白
+  delete state.runtimes["s_n1"]; delete state.runtimes["s_n2"];
+  farewellSendoff(leaver);
+  check("<2 人:改發離開者獨白 major 日誌", leaver.log.some((e) => e.text.startsWith("🕯️") && e.importance === "major"));
+}
+
+// --- 20. 紀念物家具(留房間 / 不可賣 / 招租後保留) ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const rtM = mkRt("m_grad", "紀念鼓手", "樂團鼓手"); // stage_dream → memorial_poster
+  state.occupancy["r304"] = "m_grad";
+  wishes.ensureWishes();
+  rtM.wish = { id: "stage_dream", progress: 100, fulfilledDay: day() - 6, graduateDay: day(), announced: true };
+  const g = wishes.wishPass().find((x) => x.id === "m_grad");
+  if (g) graduateFarewell(g.id, g.reason);
+  const mem = getPlacements().find((p) => p.room === "r304" && p.memorial);
+  check("畢業生在原房間留下紀念物(依軌別 = 簽名海報)", !!mem && mem.defId === "memorial_poster");
+  const posterDef = (await import("../src/furniture/catalog")).getDef("memorial_poster");
+  check("紀念物純裝飾(空屬性 → 不佔招租)", Object.keys(posterDef.attributes).length === 0 && posterDef.price === 0);
+  check("紀念物不可變賣(sellFurnitureAt 擋)", mem ? sellFurnitureAt(mem.c, mem.r).ok === false : false);
+  check("擋賣後紀念物仍在原房間", getPlacements().some((p) => p.room === "r304" && p.memorial));
+  // 空房招租新租客 → 紀念物仍保留(綁房間不綁租客)
+  moveIn("r304", generateApplicants("r304")[0]);
+  check("招租後仍在原房間(綁房間不綁租客)", getPlacements().some((p) => p.room === "r304" && p.memorial));
+}
+
+// --- 21. 🏛️ 名人堂(五位畢業生) ---
+{
+  check("四位畢業時名人堂未解", state.graduateCount === 4 && !state.achievements.includes("hall_of_fame"),
+    `graduateCount=${state.graduateCount}`);
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const rtH = mkRt("hof_grad", "名人堂咖啡師", "咖啡師", "303");
+  state.occupancy["r303"] = "hof_grad";
+  rtH.wish = { id: "open_shop", progress: 100, fulfilledDay: day() - 6, graduateDay: day(), announced: true };
+  const g = wishes.wishPass().find((x) => x.id === "hof_grad");
+  if (g) graduateFarewell(g.id, g.reason);
+  check("第五位畢業 → 解鎖名人堂", state.graduateCount === 5 && state.achievements.includes("hall_of_fame"),
+    `graduateCount=${state.graduateCount}`);
 }
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

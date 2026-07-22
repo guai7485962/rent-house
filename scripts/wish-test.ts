@@ -451,5 +451,95 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
     `graduateCount=${state.graduateCount}`);
 }
 
+// ============================================================
+// 心願獎勵說明 + 中途劇情(達成後可見化 / 里程碑句庫 / wishBrief 階段)
+// ============================================================
+
+// --- 22. wishOutcomeBrief:兩軌走向 + 成長特質正確 ---
+{
+  const { WISH_DEFS, wishOutcomeBrief } = wishes;
+  const { GROWTH_TAGS } = await import("../src/sim/growth");
+  const { REP_GRADUATE, REP_SETTLE } = await import("../src/sim/reputation");
+
+  const grad = wishOutcomeBrief(WISH_DEFS.open_shop); // 畢業型
+  check("畢業型 outcome.graduates=true 且走向提到搬離",
+    grad.graduates === true && grad.headline.includes("搬離"));
+  check("畢業型走向如實含歡送會/告別信/紀念物/紅包/押金/口碑+8",
+    grad.lines.join("").includes("歡送會") && grad.lines.join("").includes("告別信")
+      && grad.lines.join("").includes("紀念物") && grad.lines.join("").includes("紅包")
+      && grad.lines.join("").includes("押金") && grad.lines.join("").includes(`+${REP_GRADUATE}`));
+
+  const settle = wishOutcomeBrief(WISH_DEFS.career_step); // 安居型
+  check("安居型 outcome.graduates=false 且走向提到模範/長住",
+    settle.graduates === false && settle.headline.includes("模範") && settle.headline.includes("長住"));
+  check("安居型走向如實含 3% 月租 / 全樓心情 / 口碑+3",
+    settle.lines.join("").includes("3% 月租") && settle.lines.join("").includes("全樓")
+      && settle.lines.join("").includes(`+${REP_SETTLE}`));
+
+  // 成長特質 label(去括號)與 hint 對應各心願 growthTag
+  check("outcome 成長特質對應 def.growthTag(open_shop→decisive)",
+    grad.growthLabel === GROWTH_TAGS.decisive.label.replace(/[[\]【】]/g, "")
+      && grad.growthHint === GROWTH_TAGS.decisive.hint);
+  check("outcome 成長 label 已去除括號",
+    !grad.growthLabel.includes("[") && !grad.growthLabel.includes("]"));
+
+  // 八條心願都能產出非空走向與成長特質
+  check("八條心願 wishOutcomeBrief 皆非空且軌別與 def.graduates 一致",
+    (Object.keys(WISH_DEFS) as (keyof typeof WISH_DEFS)[]).every((id) => {
+      const o = wishOutcomeBrief(WISH_DEFS[id]);
+      return o.lines.length > 0 && o.growthLabel.length > 0 && o.growthHint.length > 0
+        && o.graduates === WISH_DEFS[id].graduates;
+    }));
+}
+
+// --- 23. 里程碑句庫:依心願分流且涵蓋 8 條 × 3 節點 ---
+{
+  const { WISH_MILESTONES, WISH_DEFS } = wishes;
+  const ids = Object.keys(WISH_DEFS) as (keyof typeof WISH_DEFS)[];
+  check("里程碑句庫涵蓋 8 條心願,每條 25/50/75 皆非空",
+    ids.length === 8 && ids.every((id) =>
+      [25, 50, 75].every((m) => (WISH_MILESTONES[id] as any)[m]?.length > 0)));
+  // 分流:不同心願的同一節點文字不同
+  const at25 = ids.map((id) => (WISH_MILESTONES[id] as any)[25]);
+  check("里程碑依心願分流(各條 25% 文字互異)", new Set(at25).size === at25.length);
+  check("open_shop 25% 是開店專屬劇情(記帳/開店)",
+    (WISH_MILESTONES.open_shop as any)[25].includes("記帳"));
+  check("finish_masterwork 75% 是代表作專屬劇情(章節/收尾)",
+    (WISH_MILESTONES.finish_masterwork as any)[75].includes("章節"));
+
+  // 實跑:跨里程碑時日誌採用該心願專屬句
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_ms"; seed.name = "里程測試"; seed.occupation = "咖啡師"; // open_shop
+  const rtMs = makeRuntime(seed, "303", 70, []);
+  state.runtimes["t_ms"] = rtMs;
+  wishes.ensureWishes();
+  rtMs.wish!.progress = 48;
+  rtMs.wallet = rtMs.tenant.finance.monthlyRent; rtMs.hardshipUntilDay = -99; rtMs.arrears = 0;
+  wishes.wishPass(); // 48 → 52,跨 50
+  check("里程碑日誌採該心願專屬句(open_shop 50%)",
+    rtMs.log.some((e) => e.text.startsWith("🎯") && e.text.includes("空店面")));
+  delete state.runtimes["t_ms"];
+}
+
+// --- 24. wishBrief 帶追夢階段語氣(起步 / 過半 / 接近) ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_wb"; seed.name = "階段測試"; seed.occupation = "咖啡師";
+  const rtWb = makeRuntime(seed, "303", 70, []);
+  state.runtimes["t_wb"] = rtWb;
+  wishes.ensureWishes();
+  const brief = (p: number) => {
+    rtWb.wish!.progress = p; rtWb.wish!.fulfilledDay = -99;
+    return buildNarrateCtx(rtWb, "第 N 天").wish ?? "";
+  };
+  check("進度仍如實帶入(相容既有格式:進度約 X%)", brief(60).includes("進度約 60%"));
+  check("起步階段(<34)語氣:剛起步/靠近", brief(10).includes("起步"));
+  check("過半階段(34~66)語氣:走了一半", brief(50).includes("一半"));
+  check("接近實現(≥67)語氣:格外投入", brief(80).includes("格外投入"));
+  delete state.runtimes["t_wb"];
+}
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

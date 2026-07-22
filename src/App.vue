@@ -24,7 +24,7 @@ import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
-import { WISH_DEFS } from "./sim/wishes";
+import { WISH_DEFS, wishOutcomeBrief } from "./sim/wishes";
 import { KINDNESS_ACTS, giveKindness, caredToday, type KindnessId } from "./sim/kindness";
 import { inHardship } from "./sim/economy";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
@@ -333,11 +333,14 @@ const wishChip = computed(() => {
   if (!w) return null;
   const def = WISH_DEFS[w.id];
   if (!def) return null;
+  const outcome = wishOutcomeBrief(def);
   return {
     text: w.fulfilledDay !== -99 ? `${def.icon} ${def.label} ✓` : `${def.icon} ${def.label} · ${w.progress}%`,
     hint: def.hint,
     progress: w.progress,
     done: w.fulfilledDay !== -99,
+    outcome, // 「達成後」走向 + 成長特質(未達成時就先讓玩家看到)
+    outcomeTip: `${outcome.headline}｜${outcome.lines.join("")}🌱 ${outcome.growthLabel}——${outcome.growthHint}`,
   };
 });
 
@@ -583,7 +586,7 @@ function onGroupResolve(choiceId: string) {
     <section class="tags">
       <span v-if="financeChip" class="chip warn-chip">{{ financeChip }}</span>
       <span v-if="modelChip" class="chip model" title="圓夢後宣告長住:自願多付 3% 月租,在住期間全樓住戶每天心情 +0.5">{{ modelChip }}</span>
-      <span v-if="wishChip" class="chip wish" :title="wishChip.hint">{{ wishChip.text }}</span>
+      <span v-if="wishChip" class="chip wish" :title="wishChip.hint + '\n' + wishChip.outcomeTip">{{ wishChip.text }}</span>
       <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
       <span v-for="t in allTags" :key="t.label" class="chip" :class="{ mem: !t.core && !t.growth, growth: t.growth }" :style="{ opacity: t.fade }" :title="t.hint">{{ t.label }}</span>
@@ -596,6 +599,12 @@ function onGroupResolve(choiceId: string) {
       </div>
       <div class="wish-progress"><div :style="{ width: wishChip.progress + '%' }"></div></div>
       <p>{{ wishChip.done ? "這個心願已經實現；完成帶來的成長會保留在房客身上。" : wishChip.hint }}</p>
+      <div v-if="!wishChip.done" class="wish-outcome">
+        <div class="wish-outcome-head">🎁 達成後</div>
+        <p class="wish-outcome-line">{{ wishChip.outcome.headline }}</p>
+        <p v-for="(ln, i) in wishChip.outcome.lines" :key="i" class="wish-outcome-sub">{{ ln }}</p>
+        <p class="wish-outcome-growth">🌱 習得「{{ wishChip.outcome.growthLabel }}」——{{ wishChip.outcome.growthHint }}</p>
+      </div>
     </section>
 
     <section v-if="roomAttrs.length" class="attrs">
@@ -815,6 +824,11 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .wish-progress > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9b72cf, #d4a7f5); transition: width 0.5s ease; }
 .wish-guide.done .wish-progress > div { background: linear-gradient(90deg, #4fb779, #8ce8ae); }
 .wish-guide p { margin: 8px 0 0; color: var(--text-dim); font-size: 11.5px; line-height: 1.6; }
+.wish-outcome { margin-top: 10px; padding-top: 9px; border-top: 1px dashed rgba(196, 138, 245, 0.35); }
+.wish-outcome-head { color: #ecd6ff; font-size: 11.5px; font-weight: 600; }
+.wish-outcome-line { margin: 5px 0 0 !important; color: #e6d2ff !important; font-size: 11.5px; }
+.wish-outcome-sub { margin: 3px 0 0 !important; color: var(--text-dim); font-size: 11px !important; line-height: 1.55 !important; }
+.wish-outcome-growth { margin: 6px 0 0 !important; color: #b9f6ce !important; font-size: 11px !important; line-height: 1.55 !important; }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

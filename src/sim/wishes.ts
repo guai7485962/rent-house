@@ -22,10 +22,10 @@ import {
   pushSocialLog,
   type TenantRuntime,
 } from "./gameState";
-import { grantGrowthTag, type GrowthTagId } from "./growth";
+import { grantGrowthTag, GROWTH_TAGS, type GrowthTagId } from "./growth";
 import { relationships } from "./social";
 import { unlock } from "./legacy";
-import { addReputation, REP_SETTLE } from "./reputation";
+import { addReputation, REP_SETTLE, REP_GRADUATE } from "./reputation";
 import type { EventDef } from "./events";
 
 /** 同 economy.inHardship;不 import economy,避免 wishes→economy→tick→wishes 循環鏈 */
@@ -59,11 +59,7 @@ const GAIN_SLOW = 2; // 勉強有進展
 const SETBACK = -2; // 困頓的一天(進度小幅倒退)
 export const GRADUATE_AFTER_DAYS = 6; // 實現後幾天圓夢離開
 const MILESTONES = [25, 50, 75] as const;
-const MILESTONE_TEXT: Record<number, string> = {
-  25: "起了個頭,方向越來越清楚",
-  50: "進展過半,越來越有模樣",
-  75: "只差最後一哩路了",
-};
+type Milestone = (typeof MILESTONES)[number];
 
 /** 同棟在住者中最好的關係值(把樓住成家的量尺) */
 function bestNeighborRel(tenantId: string): number {
@@ -199,6 +195,87 @@ export const WISH_DEFS = {
 
 export type WishId = keyof typeof WISH_DEFS;
 
+/** 每條心願專屬的 25/50/75 里程碑劇情句——描述該租客為「這個具體夢想」做的努力。
+ *  沿用既有里程碑日誌槽(每條心願一生最多 3 筆 notable),不新增日誌條目數 → 零 balance 影響。 */
+export const WISH_MILESTONES: Record<WishId, Record<Milestone, string>> = {
+  open_shop: {
+    25: "開始偷偷記帳,研究開一家店要備多少本",
+    50: "存款有了雛形,趁休假去看了幾處空店面",
+    75: "連菜單和招牌樣式都擬好了,只差臨門一腳",
+  },
+  finish_masterwork: {
+    25: "把擱置很久的點子重新翻出來,鋪出故事的骨架",
+    50: "主線寫到過半,筆下的人物慢慢活了起來",
+    75: "收尾的章節攤在桌上,反覆打磨每個細節",
+  },
+  graduate_thesis: {
+    25: "文獻讀過一輪,研究方向總算清晰起來",
+    50: "實驗數據跑出過半,論文章節一格格填了上去",
+    75: "口委的意見都改完了,開始練習上台答辯",
+  },
+  career_step: {
+    25: "手邊的案子越接越順,漸漸摸清了工作節奏",
+    50: "同事開始把要緊的事交過來,擔子接得穩",
+    75: "主管口頭提了幾句,升遷或加薪似乎不遠了",
+  },
+  recover_rhythm: {
+    25: "開始固定早睡、三餐吃回正常,氣色好了些",
+    50: "作息穩住過半,回診時醫生也點頭說有進步",
+    75: "身體越來越輕盈,每週的運動重新排了回來",
+  },
+  stage_dream: {
+    25: "重新拾起樂器,把基本功一遍遍練了回來",
+    50: "排練進度過半,和團員的默契一次次對上拍子",
+    75: "演出曲目全都熟透,只等正式登台那一刻",
+  },
+  feel_at_home: {
+    25: "開始記得鄰居的名字,走廊上會停下來聊幾句",
+    50: "公共空間漸漸有了熟悉的身影,和誰都聊得上",
+    75: "樓裡的人都當成自己人,這裡越來越像家",
+  },
+  settle_life: {
+    25: "慢慢把房間整理成順手的樣子,日子有了頭緒",
+    50: "生活節奏抓穩過半,連假日都排得有滋有味",
+    75: "想要的樣子已有輪廓,日子過得越來越自在",
+  },
+};
+
+/** 心願「達成後」走向與成長特質(純函式;供房客頁「🎁 達成後」段與 chip tooltip 用)。
+ *  文字如實對應 fulfillWish/graduateFarewell/becomeModelTenant 的實際獎勵,不落任何狀態。 */
+export interface WishOutcome {
+  graduates: boolean;
+  headline: string; // 軌別走向標題
+  lines: readonly string[]; // 1~2 句走向說明
+  growthLabel: string; // 成長特質名(去括號,如「更敢做決定」)
+  growthHint: string; // 成長特質說明
+}
+export function wishOutcomeBrief(def: WishDef): WishOutcome {
+  const tag = GROWTH_TAGS[def.growthTag];
+  const growthLabel = tag.label.replace(/[[\]【】]/g, "");
+  if (def.graduates) {
+    return {
+      graduates: true,
+      headline: "📦 圓夢後風光搬離,展開新生活",
+      lines: [
+        "實現當下心情大振、習得永久成長特質。",
+        `${GRADUATE_AFTER_DAYS} 天後全樓辦一場歡送會,留下告別信與專屬紀念物家具在房間,並奉上謝禮紅包(約半個月租×好感)與退還押金,房東口碑 +${REP_GRADUATE}。`,
+      ],
+      growthLabel,
+      growthHint: tag.hint,
+    };
+  }
+  return {
+    graduates: false,
+    headline: "🏠 留下成為模範房客長住",
+    lines: [
+      "實現當下心情大振、習得永久成長特質。",
+      `之後自願多付 3% 月租,在住期間帶動全樓每天心情微升,房東口碑 +${REP_SETTLE}。`,
+    ],
+    growthLabel,
+    growthHint: tag.hint,
+  };
+}
+
 /** 依職業指派心願 id(完全比對;比不到 → settle_life) */
 export function wishIdForOccupation(occupation: string): WishId {
   for (const [id, def] of Object.entries(WISH_DEFS)) {
@@ -235,7 +312,7 @@ function advanceWish(rt: TenantRuntime, delta: number) {
   if (w.progress >= 100) {
     fulfillWish(rt, def);
   } else if (crossed) {
-    pushSocialLog(rt, `🎯 心願「${def.label}」${MILESTONE_TEXT[crossed]}。`, "notable");
+    pushSocialLog(rt, `🎯 朝「${def.label}」邁進:${WISH_MILESTONES[w.id][crossed]}。`, "notable");
   }
 }
 
@@ -363,7 +440,16 @@ export function wishBrief(rt: TenantRuntime): string | undefined {
   if (!w) return undefined;
   const def = WISH_DEFS[w.id] as WishDef | undefined;
   if (!def) return undefined;
-  if (w.fulfilledDay === -99) return `${def.label}(進度約 ${w.progress}%)`;
+  if (w.fulfilledDay === -99) {
+    const p = w.progress;
+    // 帶追夢階段語氣(剛起步 / 過半 / 接近實現);進度數值與判定仍由系統決定
+    const stage = p < 34
+      ? "還在起步,正一點一點往這個夢想靠近"
+      : p < 67
+        ? "已經走了一半,越來越有勁"
+        : "接近實現了,為此格外投入";
+    return `${def.label}(進度約 ${p}%,${stage})`;
+  }
   const day = gameDayIndex();
   if (w.graduateDay !== -99 && w.announced) return `${def.label}(已實現,正在打包準備搬離)`;
   if (day - w.fulfilledDay <= 3) return `${def.label}(剛實現,還沉浸在成就感裡)`;

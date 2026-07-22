@@ -276,6 +276,79 @@ export function wishOutcomeBrief(def: WishDef): WishOutcome {
   };
 }
 
+/** 心願「結果」的三種階段:
+ *  preview  = 尚未達成,預告圓夢後會搬離 / 會留下;
+ *  leaving  = 已達成畢業型,打包倒數中(N 天後搬離);
+ *  stayed   = 已達成安居型,已成模範房客長住(不會離開)。 */
+export type WishResultPhase = "preview" | "leaving" | "stayed";
+export interface WishResult {
+  phase: WishResultPhase;
+  graduates: boolean; // 這條心願的種類會不會離開(= def.graduates)
+  leaves: boolean; // 一眼結論:這房客最終會不會離開這棟樓
+  headline: string; // 段落標題(帶 emoji)
+  verdict: string; // 最醒目的一句「會不會離開」結論
+  lines: readonly string[]; // 走向細節
+  daysLeft?: number; // leaving 才有:距離搬離還有幾天(≥0)
+  growthLabel?: string; // preview 才附:將習得的成長特質名
+  growthHint?: string;
+}
+
+/** 依租客當前 wish runtime 狀態回傳結構化「結果」(純函式、零副作用)。
+ *  不管達成與否都給結論,重點是「這房客會不會離開」,讓玩家一眼知道怎麼處理。
+ *  種類的「會/不會離開」以 def.graduates 判定;階段以 fulfilledDay/graduateDay/modelTenant 判定。 */
+export function wishResult(rt: TenantRuntime): WishResult | null {
+  const w = rt.wish;
+  if (!w) return null;
+  const def = WISH_DEFS[w.id] as WishDef | undefined;
+  if (!def) return null;
+  const base = wishOutcomeBrief(def);
+
+  // 尚未達成:預告圓夢後的去留(附走向 + 將習得的成長特質)
+  if (w.fulfilledDay === -99) {
+    return {
+      phase: "preview",
+      graduates: def.graduates,
+      leaves: def.graduates,
+      headline: "🎁 達成後會怎樣",
+      verdict: def.graduates ? "圓夢後會搬離公寓,展開新生活" : "圓夢後會留下,成為模範房客長住",
+      lines: base.lines,
+      growthLabel: base.growthLabel,
+      growthHint: base.growthHint,
+    };
+  }
+
+  // 已達成 · 畢業型:打包倒數中,N 天後搬離(邊角/當天 → N=0 顯示即將搬離)
+  if (def.graduates) {
+    const target = w.graduateDay === -99 ? gameDayIndex() + GRADUATE_AFTER_DAYS : w.graduateDay;
+    const daysLeft = Math.max(0, target - gameDayIndex());
+    return {
+      phase: "leaving",
+      graduates: true,
+      leaves: true,
+      daysLeft,
+      headline: "📦 即將搬離",
+      verdict: daysLeft > 0 ? `已圓夢,將於 ${daysLeft} 天後搬離` : "已圓夢,即將搬離",
+      lines: [
+        "他要離開這棟樓,展開新生活了。",
+        "把握最後這幾天:全樓會辦一場歡送會,他會在房間留下專屬紀念物,你也會奉上謝禮紅包並退還押金。",
+      ],
+    };
+  }
+
+  // 已達成 · 安居型:成為模範房客長住,不會離開
+  return {
+    phase: "stayed",
+    graduates: false,
+    leaves: false,
+    headline: "🏠 已長住(模範房客)",
+    verdict: "已圓夢,留下成為模範房客長住",
+    lines: [
+      "他決定在這裡長長久久住下去,不會離開。",
+      "自願多付 3% 月租,在住期間帶動全樓每天心情微升。",
+    ],
+  };
+}
+
 /** 依職業指派心願 id(完全比對;比不到 → settle_life) */
 export function wishIdForOccupation(occupation: string): WishId {
   for (const [id, def] of Object.entries(WISH_DEFS)) {

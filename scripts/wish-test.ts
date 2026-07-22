@@ -25,7 +25,7 @@ Math.random = () => {
 
 const { state, SAVE_KEY } = await import("../src/store");
 const wishes = await import("../src/sim/wishes");
-const { gameDayIndex, makeRuntime, tenants } = await import("../src/sim/gameState");
+const { gameDayIndex, makeRuntime, tenants, GAME_START } = await import("../src/sim/gameState");
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { save, load } = await import("../src/sim/persistence");
 const { moveOut, graduateFarewell, decide, farewellSendoff, moveIn } = await import("../src/sim/tenancy");
@@ -539,6 +539,77 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   check("過半階段(34~66)語氣:走了一半", brief(50).includes("一半"));
   check("接近實現(≥67)語氣:格外投入", brief(80).includes("格外投入"));
   delete state.runtimes["t_wb"];
+}
+
+// --- 25. wishResult:三態(preview / leaving / stayed)常駐結果 + 會不會離開 ---
+{
+  const { wishResult } = wishes;
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  // 固定注入 gameMs = 開場 +30 天,讓 gameDayIndex 可預期
+  const DAY = 24 * 3600 * 1000;
+  state.gameMs = GAME_START.getTime() + 30 * DAY;
+  const today = gameDayIndex();
+  check("注入固定 gameMs → gameDayIndex 為 30", today === 30);
+
+  const mk = (id: string, occ: string, room: string) => {
+    const seed = JSON.parse(JSON.stringify(tenants[0]));
+    seed.id = id; seed.name = id; seed.occupation = occ;
+    const rt = makeRuntime(seed, room, 70, []);
+    state.runtimes[id] = rt;
+    wishes.ensureWishes();
+    return rt;
+  };
+
+  // preview · 畢業型(open_shop):未達成 → 會離開
+  const rtPg = mk("t_pg", "咖啡師", "303");
+  rtPg.wish!.progress = 40; rtPg.wish!.fulfilledDay = -99;
+  const pg = wishResult(rtPg)!;
+  check("preview 畢業型:phase=preview 且結論會離開(leaves=true)",
+    pg.phase === "preview" && pg.leaves === true && pg.graduates === true);
+  check("preview 畢業型 verdict 明說『搬離』且附成長特質與走向細節",
+    pg.verdict.includes("搬離") && !!pg.growthLabel && pg.lines.length > 0);
+
+  // preview · 安居型(career_step):未達成 → 會留下
+  const rtPs = mk("t_ps", "後端工程師", "304");
+  rtPs.wish!.progress = 40; rtPs.wish!.fulfilledDay = -99;
+  const ps = wishResult(rtPs)!;
+  check("preview 安居型:phase=preview 且結論會留下(leaves=false)",
+    ps.phase === "preview" && ps.leaves === false && ps.graduates === false);
+  check("preview 安居型 verdict 明說『留下/模範』", ps.verdict.includes("留下") && ps.verdict.includes("模範"));
+
+  // leaving · 已達成畢業型打包倒數:graduateDay = today+4 → 4 天後搬離
+  const rtL = mk("t_l", "咖啡師", "303");
+  rtL.wish!.progress = 100; rtL.wish!.fulfilledDay = today; rtL.wish!.graduateDay = today + 4;
+  const lv = wishResult(rtL)!;
+  check("leaving:phase=leaving、leaves=true、daysLeft 依 graduateDay-gameDayIndex 為 4",
+    lv.phase === "leaving" && lv.leaves === true && lv.daysLeft === 4);
+  check("leaving verdict 明說『4 天後搬離』且提醒歡送會/紀念物/謝禮",
+    lv.verdict.includes("4 天後搬離")
+      && lv.lines.join("").includes("歡送會") && lv.lines.join("").includes("紀念物"));
+
+  // leaving 邊角:到期當天 graduateDay = today → daysLeft=0、即將搬離
+  rtL.wish!.graduateDay = today;
+  const lv0 = wishResult(rtL)!;
+  check("leaving 邊角:當天到期 daysLeft=0 顯示『即將搬離』",
+    lv0.daysLeft === 0 && lv0.verdict.includes("即將搬離"));
+
+  // stayed · 安居型已圓夢成模範房客:不會離開
+  const rtS = mk("t_s", "後端工程師", "304");
+  rtS.wish!.progress = 100; rtS.wish!.fulfilledDay = today; rtS.modelTenant = true;
+  const st = wishResult(rtS)!;
+  check("stayed:phase=stayed、leaves=false、verdict 明說長住模範",
+    st.phase === "stayed" && st.leaves === false
+      && st.verdict.includes("長住") && st.verdict.includes("模範"));
+  check("stayed 走向含 3% 月租 / 不會離開",
+    st.lines.join("").includes("3% 月租") && st.lines.join("").includes("不會離開"));
+
+  // 種類判斷用 def.graduates:同一 phase 下畢業 vs 安居的 leaves 旗標相反
+  check("『會離開』旗標由 def.graduates 決定(畢業 true / 安居 false)",
+    pg.leaves === wishes.WISH_DEFS.open_shop.graduates
+      && ps.leaves === wishes.WISH_DEFS.career_step.graduates);
+
+  for (const id of ["t_pg", "t_ps", "t_l", "t_s"]) delete state.runtimes[id];
+  state.gameMs = GAME_START.getTime();
 }
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

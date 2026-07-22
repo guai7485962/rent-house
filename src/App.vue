@@ -24,7 +24,7 @@ import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
-import { WISH_DEFS, wishOutcomeBrief } from "./sim/wishes";
+import { WISH_DEFS, wishOutcomeBrief, wishResult } from "./sim/wishes";
 import { KINDNESS_ACTS, giveKindness, caredToday, type KindnessId } from "./sim/kindness";
 import { inHardship } from "./sim/economy";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
@@ -341,6 +341,7 @@ const wishChip = computed(() => {
     done: w.fulfilledDay !== -99,
     outcome, // 「達成後」走向 + 成長特質(未達成時就先讓玩家看到)
     outcomeTip: `${outcome.headline}｜${outcome.lines.join("")}🌱 ${outcome.growthLabel}——${outcome.growthHint}`,
+    result: wishResult(rt.value!), // 常駐「結果」段:會不會離開(依 preview/leaving/stayed 切換)
   };
 });
 
@@ -598,12 +599,14 @@ function onGroupResolve(choiceId: string) {
         <span>{{ wishChip.progress }}%</span>
       </div>
       <div class="wish-progress"><div :style="{ width: wishChip.progress + '%' }"></div></div>
-      <p>{{ wishChip.done ? "這個心願已經實現；完成帶來的成長會保留在房客身上。" : wishChip.hint }}</p>
-      <div v-if="!wishChip.done" class="wish-outcome">
-        <div class="wish-outcome-head">🎁 達成後</div>
-        <p class="wish-outcome-line">{{ wishChip.outcome.headline }}</p>
-        <p v-for="(ln, i) in wishChip.outcome.lines" :key="i" class="wish-outcome-sub">{{ ln }}</p>
-        <p class="wish-outcome-growth">🌱 習得「{{ wishChip.outcome.growthLabel }}」——{{ wishChip.outcome.growthHint }}</p>
+      <p v-if="!wishChip.done">{{ wishChip.hint }}</p>
+      <div v-if="wishChip.result" class="wish-outcome" :class="'phase-' + wishChip.result.phase">
+        <div class="wish-outcome-head">{{ wishChip.result.headline }}</div>
+        <p class="wish-outcome-verdict" :class="wishChip.result.leaves ? 'leave' : 'stay'">
+          {{ wishChip.result.leaves ? "🚪 會離開" : "🏠 會留下" }}：{{ wishChip.result.verdict }}
+        </p>
+        <p v-for="(ln, i) in wishChip.result.lines" :key="i" class="wish-outcome-sub">{{ ln }}</p>
+        <p v-if="wishChip.result.growthLabel" class="wish-outcome-growth">🌱 習得「{{ wishChip.result.growthLabel }}」——{{ wishChip.result.growthHint }}</p>
       </div>
     </section>
 
@@ -825,8 +828,12 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .wish-guide.done .wish-progress > div { background: linear-gradient(90deg, #4fb779, #8ce8ae); }
 .wish-guide p { margin: 8px 0 0; color: var(--text-dim); font-size: 11.5px; line-height: 1.6; }
 .wish-outcome { margin-top: 10px; padding-top: 9px; border-top: 1px dashed rgba(196, 138, 245, 0.35); }
+.wish-guide.done .wish-outcome { border-top-color: rgba(103, 211, 145, 0.4); }
 .wish-outcome-head { color: #ecd6ff; font-size: 11.5px; font-weight: 600; }
-.wish-outcome-line { margin: 5px 0 0 !important; color: #e6d2ff !important; font-size: 11.5px; }
+.wish-guide.done .wish-outcome-head { color: #b9f6ce; }
+.wish-outcome-verdict { margin: 6px 0 0 !important; font-size: 12.5px !important; font-weight: 700; line-height: 1.5 !important; }
+.wish-outcome-verdict.leave { color: #ffcb8a !important; }
+.wish-outcome-verdict.stay { color: #8ce8ae !important; }
 .wish-outcome-sub { margin: 3px 0 0 !important; color: var(--text-dim); font-size: 11px !important; line-height: 1.55 !important; }
 .wish-outcome-growth { margin: 6px 0 0 !important; color: #b9f6ce !important; font-size: 11px !important; line-height: 1.55 !important; }
 

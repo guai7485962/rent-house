@@ -324,18 +324,23 @@ export interface LandlordDecision {
 
 export type PetKind = "cat" | "dog";
 
+export type PetPairAction =
+  | "chase" | "groom" | "nap" | "territory" | "mischief"
+  | "fetch" | "sniff"
+  | "greet" | "avoid";
+
 export interface Pet {
   name: string;
   kind: PetKind;
   /** 花色索引:貓=橘/黑/白/三花;狗=柴/黑/白棕/灰 */
   color: number;
   ownerId: string;
-  /** 這個遊戲小時貓待的區域(r301/lounge…;渲染層讓貓走過去遊蕩) */
+  /** 這個遊戲小時寵物待的區域(r301/lounge…;渲染層讓牠走過去遊蕩) */
   hangout: string;
-  /** 雙貓互動中的另一隻貓(record key);狗第一批不使用。 */
+  /** 寵物互動中的另一隻寵物(record key)。 */
   pairWith?: string;
-  /** 當前雙貓演出,供樓層 agent 同步追逐、靠近或一起睡。 */
-  pairAction?: "chase" | "groom" | "nap" | "territory" | "mischief";
+  /** 當前雙寵物演出,供樓層 agent 同步追逐、靠近、退避或一起睡。 */
+  pairAction?: PetPairAction;
   pairUntilMs?: number;
   sinceMs: number;
 }

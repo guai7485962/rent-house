@@ -149,6 +149,54 @@ for (let i = 0; i < actions.length; i++) {
   }));
 }
 
+// 三種雙狗互動：追球、互聞、共眠。
+const dogActions = ["fetch", "sniff", "nap"] as const;
+for (let i = 0; i < dogActions.length; i++) {
+  const petA = `dog_pair_${i}_a`;
+  const petB = `dog_pair_${i}_b`;
+  const r = 15 + i * 2;
+  cats.push(petAgent("dog", 0, 11, r, {
+    petId: petA,
+    pairAction: dogActions[i],
+    pairWith: petB,
+    pairLeader: true,
+    moving: dogActions[i] === "fetch",
+    sleeping: dogActions[i] === "nap",
+  }));
+  cats.push(petAgent("dog", 2, 12, r, {
+    petId: petB,
+    pairAction: dogActions[i],
+    pairWith: petA,
+    pairLeader: false,
+    moving: dogActions[i] === "fetch",
+    sleeping: dogActions[i] === "nap",
+    facing: -1,
+  }));
+}
+
+// 貓狗相遇：友善靠近與各自退避。
+const crossActions = ["greet", "avoid"] as const;
+for (let i = 0; i < crossActions.length; i++) {
+  const catId = `cross_${i}_cat`;
+  const dogId = `cross_${i}_dog`;
+  const r = 15 + i * 2;
+  const gap = crossActions[i] === "avoid" ? 3 : 1;
+  cats.push(petAgent("cat", 3, 8, r, {
+    petId: catId,
+    pairAction: crossActions[i],
+    pairWith: dogId,
+    pairLeader: true,
+    facing: crossActions[i] === "avoid" ? -1 : 1,
+  }));
+  cats.push(petAgent("dog", 1, 8 + gap, r, {
+    petId: dogId,
+    pairAction: crossActions[i],
+    pairWith: catId,
+    pairLeader: false,
+    facing: crossActions[i] === "avoid" ? 1 : -1,
+  }));
+}
+
 const ctx = new FakeCtx(FLOOR_W, FLOOR_H);
 composeFloor(ctx as any, 0, undefined, undefined, undefined, cats);
 

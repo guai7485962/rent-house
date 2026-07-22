@@ -74,7 +74,7 @@ export function petAgentSignature(): string {
     .join("|");
 }
 
-/** 找一格緊鄰另一隻貓、且仍在同區域的可走格。 */
+/** 找一格緊鄰另一隻寵物、且仍在同區域的可走格。 */
 function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Tile | null {
   const candidates = [
     { c: partner.c - 1, r: partner.r }, { c: partner.c + 1, r: partner.r },
@@ -82,6 +82,25 @@ function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Ti
   ];
   return candidates.find((t) => blocked[t.r]?.[t.c] === false && GRID[t.r]?.[t.c] === (region as Region)) ?? null;
 }
+
+/** 貓狗互相退避時，挑同區域內距離對方最遠的安全格。 */
+function tileAwayFrom(partner: PetAgent, region: string, blocked: boolean[][]): Tile | null {
+  let best: Tile | null = null;
+  let bestDistance = -1;
+  for (let r = 0; r < GRID_H; r++) {
+    for (let c = 0; c < GRID_W; c++) {
+      if (blocked[r]?.[c] || GRID[r]?.[c] !== (region as Region)) continue;
+      const distance = Math.abs(c - partner.c) + Math.abs(r - partner.r);
+      if (distance > bestDistance) {
+        best = { c, r };
+        bestDistance = distance;
+      }
+    }
+  }
+  return best;
+}
+
+const isMovingPairAction = (action: Pet["pairAction"]) => action === "chase" || action === "fetch";
 
 export function tickPetAgents(agents: PetAgent[], dt: number) {
   const now = Date.now();
@@ -99,20 +118,33 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
       let tgt: Tile | null = null;
       if (partner) {
         const follower = !a.pairLeader;
-        if (follower) tgt = tileBeside(partner, pet.hangout, blocked);
-        if (!follower && pet.pairAction !== "chase") {
+        if (pet.pairAction === "avoid") {
+          if (follower) tgt = tileAwayFrom(partner, pet.hangout, blocked);
+          if (!follower) {
+            a.facing = a.px <= partner.px ? -1 : 1;
+            a.sleeping = false;
+            a.restUntil = now + 1200;
+            continue;
+          }
+        } else if (follower) {
+          tgt = tileBeside(partner, pet.hangout, blocked);
+        }
+        if (!follower && pet.pairAction !== "avoid" && !isMovingPairAction(pet.pairAction)) {
           a.sleeping = pet.pairAction === "nap";
+          a.facing = a.px <= partner.px ? 1 : -1;
           a.restUntil = now + 1200;
           continue;
         }
-        if (follower && tgt && Math.abs(tgt.c - a.c) + Math.abs(tgt.r - a.r) <= 1) {
+        if (follower && pet.pairAction !== "avoid" && tgt && Math.abs(tgt.c - a.c) + Math.abs(tgt.r - a.r) <= 1) {
           a.sleeping = pet.pairAction === "nap";
           partner.sleeping = pet.pairAction === "nap";
+          a.facing = a.px <= partner.px ? 1 : -1;
+          partner.facing = a.facing === 1 ? -1 : 1;
           a.restUntil = partner.restUntil = now + 3500;
           continue;
         }
       }
-      // 一般遊蕩；追逐時領頭貓繼續跑,另一隻追向牠身邊。
+      // 一般遊蕩；追逐／追球時領頭寵物繼續跑,另一隻追向牠身邊。
       tgt ??= tileInRegion(pet.hangout, blocked);
       const path = tgt && !(tgt.c === a.c && tgt.r === a.r) ? findPath({ c: a.c, r: a.r }, tgt, blocked) : null;
       if (path && path.length > 1) {
@@ -144,7 +176,7 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
       a.path.shift();
       if (a.path.length === 0) {
         a.moving = false;
-        a.sleeping = Math.random() < 0.35; // 到點後偶爾捲成一團睡
+        a.sleeping = pet.pairAction === "nap" || (!pet.pairAction && Math.random() < 0.35);
         a.restUntil = now + (a.sleeping ? 12000 + Math.random() * 10000 : 3000 + Math.random() * 5000);
       }
     } else {

@@ -1,19 +1,19 @@
 /**
  * 寵物系統:租客養的貓或狗會在樓層遊走,並引發寵物事件。
  *
- * 模擬層(無頭可測):每遊戲小時 petsPass() 決定貓這小時待哪個區域(hangout),
- * 並擲骰事件——溜進別的房客房裡(親貓的人被療癒、怕貓/潔癖的人被嚇到)、
- * 打破東西、隨地大小便。渲染層(floor/petAgents)只負責讓貓「走去 hangout 遊蕩」。
+ * 模擬層(無頭可測):每遊戲小時 petsPass() 決定寵物這小時待哪個區域(hangout),
+ * 並擲骰串門、搗蛋與同區域寵物互動。渲染層(floor/petAgents)負責讓貓狗走去
+ * hangout 遊蕩，並同步追逐、追球、靠近、共眠或退避。
  *
  * 取得途徑:種子(陳家豪的橘貓「橘子」,他的作息本來就有逗貓時段)、
- * AI/規則事件的 adopt_cat 行為指令(指令到期後貓留下,成為永久寵物)。
+ * AI/規則事件的 adopt_cat 行為指令，以及自帶貓狗入住的應徵者。
  *
  * 樓貓(圓夢畢業批):飼主圓夢離開時可把貓「留下成樓貓」——pet.ownerId 改為
  * 哨兵值 "landlord"(Pet.ownerId 型別是 string,合法;不新增欄位、舊存檔零遷移)。
  * 樓貓沒有飼主 runtime:遊蕩錨點改為交誼廳,串門/搗蛋/貓週記照常(文案改「樓貓」)。
  * state.pets 的 key 維持原飼主 id(唯一,不會撞 key);貓的識別一律用 record key(catId)。
  */
-import type { Pet, PetKind } from "../types";
+import type { Pet, PetKind, PetPairAction } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
 import { adjustRelationship } from "./social";
 import { unlock } from "./legacy";
@@ -77,6 +77,8 @@ export const repairOrphanCats = repairOrphanPets;
 /** 種子寵物補登:陳家豪的作息本來就有「逗貓」時段——把那隻貓變成真的。
  *  也順手做孤兒貓修復(persistence 載入時呼叫本函式)。 */
 export function ensurePets() {
+  // 舊存檔沒有 kind；在所有 resolver 前一次正規化，避免舊貓被配對系統漏掉。
+  for (const pet of Object.values(state.pets)) pet.kind ??= "cat";
   const chen = state.runtimes["tenant_chen_engineer"];
   if (chen && !state.pets[chen.tenant.id]) {
     state.pets[chen.tenant.id] = {
@@ -220,13 +222,20 @@ export function petsPass() {
     rollVisit(petId, pet, owner);
     rollMischief(petId, pet, owner);
   }
-  resolveCatPairs();
+  // 每個遊戲小時最多開一場寵物互動；同物種優先，未觸發才嘗試貓狗相遇。
+  if (resolveCatPairs()) return;
+  if (resolveDogPairs()) return;
+  resolveCrossSpeciesPairs();
 }
 
-type CatPairAction = NonNullable<Pet["pairAction"]>;
+type CatPairAction = Extract<PetPairAction, "chase" | "groom" | "nap" | "territory" | "mischief">;
+type DogPairAction = Extract<PetPairAction, "fetch" | "sniff" | "nap">;
+type CrossPairAction = Extract<PetPairAction, "greet" | "avoid">;
 const CAT_PAIR_ACTIONS: CatPairAction[] = ["chase", "groom", "nap", "territory", "mischief"];
+const DOG_PAIR_ACTIONS: DogPairAction[] = ["fetch", "sniff", "nap"];
+const CROSS_PAIR_ACTIONS: CrossPairAction[] = ["greet", "avoid"];
 
-function clearExpiredCatPairs() {
+function clearExpiredPetPairs() {
   for (const pet of Object.values(state.pets)) {
     if (pet.pairUntilMs != null && pet.pairUntilMs <= state.gameMs) {
       delete pet.pairWith;
@@ -240,7 +249,7 @@ function clearExpiredCatPairs() {
  *  貓一律以 state.pets 的 record key(catId)識別——樓貓的 ownerId 都是 "landlord",
  *  不能拿來配對;一般貓的 catId === ownerId,舊存檔的 pairWith/冷卻 key 完全相容。 */
 export function resolveCatPairs(random: () => number = Math.random, force = false): CatPairAction | null {
-  clearExpiredCatPairs();
+  clearExpiredPetPairs();
   const entries = Object.entries(state.pets).filter(([, pet]) => pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
@@ -311,6 +320,124 @@ function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 5, 0, 100);
     logBoth(`${a.name} 和 ${b.name} 聯手把小東西推下來,聽見聲音後還一起裝無辜。`);
     fxAt(a.hangout, "anger");
+  }
+}
+
+/** 同區域的兩隻狗會追球、互聞或靠著午睡；force 僅供測試與美術預覽。 */
+export function resolveDogPairs(random: () => number = Math.random, force = false): DogPairAction | null {
+  clearExpiredPetPairs();
+  const entries = Object.entries(state.pets).filter(([, pet]) => pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  let arrangedKey = "";
+  const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
+  if (!force && !alreadyTogether && entries.length >= 2 && random() < 0.16) {
+    const i = Math.floor(random() * entries.length);
+    let j = Math.floor(random() * (entries.length - 1));
+    if (j >= i) j++;
+    entries[j][1].hangout = entries[i][1].hangout;
+    arrangedKey = [entries[i][0], entries[j][0]].sort().join("|");
+  }
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const [aId, a] = entries[i];
+      const [bId, b] = entries[j];
+      if (a.hangout !== b.hangout || a.pairWith || b.pairWith) continue;
+      const ids = [aId, bId].sort();
+      const key = `dogpair|${ids[0]}|${ids[1]}`;
+      if (onCooldown(key, CD.pair)) continue;
+      if (!force && arrangedKey !== ids.join("|") && random() > 0.3) continue;
+      const action = DOG_PAIR_ACTIONS[Math.min(DOG_PAIR_ACTIONS.length - 1, Math.floor(random() * DOG_PAIR_ACTIONS.length))];
+      startPetPair(aId, a, bId, b, action, key);
+      applyDogPairEvent(a, b, action);
+      return action;
+    }
+  }
+  return null;
+}
+
+/** 同區域的一貓一狗會友善打招呼或互相保持距離。 */
+export function resolveCrossSpeciesPairs(random: () => number = Math.random, force = false): CrossPairAction | null {
+  clearExpiredPetPairs();
+  const cats = Object.entries(state.pets).filter(([, pet]) => pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const dogs = Object.entries(state.pets).filter(([, pet]) => pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  let arrangedKey = "";
+  const alreadyTogether = cats.some(([, cat]) => dogs.some(([, dog]) => cat.hangout === dog.hangout));
+  if (!force && !alreadyTogether && cats.length > 0 && dogs.length > 0 && random() < 0.1) {
+    const cat = cats[Math.floor(random() * cats.length)];
+    const dog = dogs[Math.floor(random() * dogs.length)];
+    dog[1].hangout = cat[1].hangout;
+    arrangedKey = [cat[0], dog[0]].sort().join("|");
+  }
+  for (const [catId, cat] of cats) {
+    for (const [dogId, dog] of dogs) {
+      if (cat.hangout !== dog.hangout || cat.pairWith || dog.pairWith) continue;
+      const ids = [catId, dogId].sort();
+      const key = `crosspet|${ids[0]}|${ids[1]}`;
+      if (onCooldown(key, CD.pair)) continue;
+      if (!force && arrangedKey !== ids.join("|") && random() > 0.22) continue;
+      const action = CROSS_PAIR_ACTIONS[Math.min(CROSS_PAIR_ACTIONS.length - 1, Math.floor(random() * CROSS_PAIR_ACTIONS.length))];
+      startPetPair(catId, cat, dogId, dog, action, key);
+      applyCrossPairEvent(cat, dog, action);
+      return action;
+    }
+  }
+  return null;
+}
+
+function startPetPair(aId: string, a: Pet, bId: string, b: Pet, action: PetPairAction, cooldownKey: string) {
+  a.pairWith = bId;
+  b.pairWith = aId;
+  a.pairAction = b.pairAction = action;
+  a.pairUntilMs = b.pairUntilMs = state.gameMs + 2 * 3600 * 1000;
+  markCooldown(cooldownKey);
+}
+
+function pairOwners(a: Pet, b: Pet): TenantRuntime[] {
+  const runtimes = [a, b]
+    .map((pet) => isHousePet(pet) ? null : state.runtimes[pet.ownerId] ?? null)
+    .filter((rt): rt is TenantRuntime => !!rt);
+  return [...new Map(runtimes.map((rt) => [rt.tenant.id, rt])).values()];
+}
+
+function logPetPair(a: Pet, b: Pet, prefix: string, text: string) {
+  const owners = pairOwners(a, b);
+  for (const rt of owners) pushSocialLog(rt, `🐾 ${prefix}:${text}`, "notable");
+  if (owners.length === 0) notify(`🐾 ${text}`);
+}
+
+function applyDogPairEvent(a: Pet, b: Pet, action: DogPairAction) {
+  const owners = pairOwners(a, b);
+  const place = a.hangout === "lounge" ? "交誼廳" : "房間裡";
+  if (action === "fetch") {
+    for (const rt of owners) rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 3, 0, 100);
+    logPetPair(a, b, "雙狗互動", `${a.name} 和 ${b.name} 在${place}輪流追球,叼回來後又搶著先出發。`);
+    fxAt(a.hangout, "chat");
+  } else if (action === "sniff") {
+    for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 2, 0, 100);
+    logPetPair(a, b, "雙狗互動", `${a.name} 和 ${b.name} 小心靠近互聞,很快就搖著尾巴一起巡樓。`);
+    if (a.ownerId !== b.ownerId && !isHousePet(a) && !isHousePet(b)) adjustRelationship(a.ownerId, b.ownerId, 1);
+    fxAt(a.hangout, "hearts");
+  } else {
+    for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 4, 0, 100);
+    logPetPair(a, b, "雙狗互動", `${a.name} 和 ${b.name} 在${place}背靠著背睡著,尾巴偶爾一起拍地板。`);
+    fxAt(a.hangout, "chat");
+  }
+}
+
+function applyCrossPairEvent(cat: Pet, dog: Pet, action: CrossPairAction) {
+  const owners = pairOwners(cat, dog);
+  if (action === "greet") {
+    for (const rt of owners) {
+      rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 2, 0, 100);
+      rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 2, 0, 100);
+    }
+    logPetPair(cat, dog, "貓狗相遇", `${dog.name} 伏低身子慢慢靠近,${cat.name} 聞了聞牠的鼻尖,最後和平地並肩坐下。`);
+    if (cat.ownerId !== dog.ownerId && !isHousePet(cat) && !isHousePet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, 1);
+    fxAt(cat.hangout, "hearts");
+  } else {
+    for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress + 1, 0, 100);
+    logPetPair(cat, dog, "貓狗相遇", `${cat.name} 豎起尾巴退到高處,${dog.name} 也停下腳步轉開視線,彼此保留安全距離。`);
+    if (cat.ownerId !== dog.ownerId && !isHousePet(cat) && !isHousePet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, -1);
+    fxAt(cat.hangout, "chat");
   }
 }
 

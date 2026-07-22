@@ -23,7 +23,7 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { petsPass, adoptCat, adoptPet, catAttitude, petAttitude, ensurePets, mischiefRelief, resolveCatPairs } = await import("../src/sim/pets");
+const { petsPass, adoptCat, adoptPet, catAttitude, petAttitude, ensurePets, mischiefRelief, resolveCatPairs, resolveDogPairs, resolveCrossSpeciesPairs } = await import("../src/sim/pets");
 const { produceDailyDiaries, setNarrateImplForTest, diaryTiming } = await import("../src/sim/narration");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
@@ -201,6 +201,53 @@ state.pets[LIN] = savedLinDog;
 if (dog) dog.hangout = chenPet.hangout = "lounge";
 state.gameMs += 11 * 3600 * 1000;
 check("狗不會觸發雙貓互動", resolveCatPairs(() => 0, true) === null);
+
+// --- 雙狗互動:追球／互聞／共眠 ---
+const savedChenCatForPairs = state.pets[CHEN];
+state.pets[CHEN] = { ...savedChenCatForPairs, name: "阿福", kind: "dog", color: 0, ownerId: CHEN };
+const dogPairActions = ["fetch", "sniff", "nap"] as const;
+const seenDogPairActions = new Set<string>();
+state.runtimes[CHEN].log.splice(0);
+state.runtimes[LIN].log.splice(0);
+for (let i = 0; i < dogPairActions.length; i++) {
+  state.gameMs += 11 * 3600 * 1000;
+  state.pets[CHEN].hangout = state.pets[LIN].hangout = "lounge";
+  const action = resolveDogPairs(() => (i + 0.1) / dogPairActions.length, true);
+  if (action) seenDogPairActions.add(action);
+}
+check("雙狗互動:追球／互聞／共眠都可觸發", dogPairActions.every((a) => seenDogPairActions.has(a)), JSON.stringify([...seenDogPairActions]));
+check("雙狗互動:雙方飼主都有日誌", state.runtimes[CHEN].log.some((e) => e.text.includes("雙狗互動")) && state.runtimes[LIN].log.some((e) => e.text.includes("雙狗互動")));
+check("雙狗互動:兩隻狗保存同一場同步演出", state.pets[CHEN].pairWith === LIN && state.pets[LIN].pairWith === CHEN && state.pets[CHEN].pairAction === state.pets[LIN].pairAction);
+const dogPairAgents = createPetAgents();
+tickPetAgents(dogPairAgents, 0.016);
+check("雙狗互動:樓層 agent 收到共眠狀態", dogPairAgents.filter((a) => a.pairAction === "nap").length === 2 && dogPairAgents.some((a) => a.sleeping));
+delete state.pets[CHEN].pairWith; delete state.pets[CHEN].pairAction; delete state.pets[CHEN].pairUntilMs;
+delete state.pets[LIN].pairWith; delete state.pets[LIN].pairAction; delete state.pets[LIN].pairUntilMs;
+check("雙狗互動:同一對冷卻內不連發", resolveDogPairs(() => 0, true) === null);
+
+// --- 舊存檔 kind fallback + 貓狗友善／退避 ---
+state.gameMs += 11 * 3600 * 1000;
+state.pets[CHEN] = { ...savedChenCatForPairs, kind: undefined as any };
+ensurePets();
+check("舊存檔寵物缺 kind → ensurePets 正規化為貓", state.pets[CHEN].kind === "cat");
+const crossActions = ["greet", "avoid"] as const;
+const seenCrossActions = new Set<string>();
+state.runtimes[CHEN].log.splice(0);
+state.runtimes[LIN].log.splice(0);
+for (let i = 0; i < crossActions.length; i++) {
+  state.gameMs += 11 * 3600 * 1000;
+  state.pets[CHEN].hangout = state.pets[LIN].hangout = "lounge";
+  const action = resolveCrossSpeciesPairs(() => (i + 0.1) / crossActions.length, true);
+  if (action) seenCrossActions.add(action);
+}
+check("貓狗相遇:友善／退避都可觸發", crossActions.every((a) => seenCrossActions.has(a)), JSON.stringify([...seenCrossActions]));
+check("貓狗相遇:雙方飼主都有日誌", state.runtimes[CHEN].log.some((e) => e.text.includes("貓狗相遇")) && state.runtimes[LIN].log.some((e) => e.text.includes("貓狗相遇")));
+const crossAgents = createPetAgents();
+tickPetAgents(crossAgents, 0.016);
+check("貓狗退避:樓層 agent 同步狀態且至少一方開始拉開距離", crossAgents.filter((a) => a.pairAction === "avoid").length === 2 && crossAgents.some((a) => a.pairAction === "avoid" && a.moving));
+delete state.pets[CHEN].pairWith; delete state.pets[CHEN].pairAction; delete state.pets[CHEN].pairUntilMs;
+delete state.pets[LIN].pairWith; delete state.pets[LIN].pairAction; delete state.pets[LIN].pairUntilMs;
+
 delete state.pets[LIN];
 adoptPet(LIN, { name: "舊池貓", color: 1 });
 check("舊 applicant preset 缺 kind → 視為貓", state.pets[LIN]?.kind === "cat");

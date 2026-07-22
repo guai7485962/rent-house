@@ -99,9 +99,9 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   if (agents || pets) {
     // 人與寵物依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
     const items: { y: number; draw: () => void }[] = [];
-    const catPairs = activeCatPairs(pets ?? []);
-    for (const [a, b] of catPairs) {
-      items.push({ y: Math.min(a.py, b.py) + 2, draw: () => drawCatPairGround(ctx, a, b, frame) });
+    const petPairs = activePetPairs(pets ?? []);
+    for (const [a, b] of petPairs) {
+      items.push({ y: Math.min(a.py, b.py) + 2, draw: () => drawPetPairGround(ctx, a, b, frame) });
     }
     for (const a of agents ?? []) {
       if (a.hidden) continue;
@@ -109,7 +109,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     }
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
-    for (const [a, b] of catPairs) drawCatPairAction(ctx, a, b, frame);
+    for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
     // 離線預覽:靜態站立
@@ -504,19 +504,19 @@ function drawDog(ctx: Ctx, a: PetAgent, frame: number) {
   if (pal.patch) rect(ctx, fx(5, 3), y + 7 - bob, 3, 3, pal.dark);
 }
 
-function activeCatPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {
-  const byOwner = new Map(pets.map((p) => [p.petId, p]));
+function activePetPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {
+  const byId = new Map(pets.map((p) => [p.petId, p]));
   const pairs: [PetAgent, PetAgent][] = [];
   for (const leader of pets) {
     if (!leader.pairLeader || !leader.pairAction || !leader.pairWith) continue;
-    const partner = byOwner.get(leader.pairWith);
+    const partner = byId.get(leader.pairWith);
     if (partner) pairs.push([leader, partner]);
   }
   return pairs;
 }
 
-/** 共眠與搗蛋先鋪共享道具，讓互動看起來是同一幕而非兩隻碰巧站附近。 */
-function drawCatPairGround(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
+/** 共眠、搗蛋與追球先鋪共享道具，讓互動看起來是同一幕。 */
+function drawPetPairGround(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
   if (!a.pairAction) return;
   const minX = Math.min(a.px, b.px);
   const maxX = Math.max(a.px, b.px) + TILE;
@@ -539,11 +539,17 @@ function drawCatPairGround(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
     const hop = frame % 2;
     rect(ctx, cx - 9, cy + 9 - hop, 2, 1, "#d7ae72");
     rect(ctx, cx + 8, cy + 7 + hop, 2, 2, "#d7ae72");
+  } else if (a.pairAction === "fetch") {
+    // 橘色小球在兩隻狗之間彈跳，白點保留球面高光。
+    const hop = frame % 2;
+    rect(ctx, cx - 2 + hop, cy + 5 - hop, 5, 5, "#8f442c");
+    rect(ctx, cx - 1 + hop, cy + 4 - hop, 4, 4, "#e46d3f");
+    rect(ctx, cx + hop, cy + 4 - hop, 1, 1, "#ffd6a2");
   }
 }
 
-/** 五種雙貓事件各有獨立、無文字的像素演出。 */
-function drawCatPairAction(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
+/** 所有雙寵物事件都有獨立、無文字的像素演出。 */
+function drawPetPairAction(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
   if (!a.pairAction) return;
   const ax = a.px + TILE / 2, ay = a.py + 5;
   const bx = b.px + TILE / 2, by = b.py + 5;
@@ -574,11 +580,33 @@ function drawCatPairAction(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
     rect(ctx, cx + 2, cy - 1 - bob, 2, 2, "#d95454");
     rect(ctx, Math.floor(ax) - 7, Math.floor(ay) - 3, 3, 1, "#f4e9da");
     rect(ctx, Math.floor(bx) + 4, Math.floor(by) - 3, 3, 1, "#f4e9da");
-  } else {
+  } else if (a.pairAction === "mischief") {
     // 紙箱上方跳動的驚嘆星芒，強調「一起闖禍」。
     rect(ctx, cx, cy - 7 - bob, 1, 5, "#ffd66e");
     rect(ctx, cx - 2, cy - 5 - bob, 5, 1, "#ffd66e");
     rect(ctx, cx - 1, cy - 6 - bob, 3, 3, "#fff0a8");
+  } else if (a.pairAction === "fetch") {
+    // 球後方的短速度線，配合兩隻狗的小跑步形成追球方向。
+    rect(ctx, cx - 8, cy + 4 + bob, 4, 1, "#f1d5a1");
+    rect(ctx, cx + 5, cy + 1 - bob, 3, 1, "#f1d5a1");
+  } else if (a.pairAction === "sniff") {
+    // 鼻尖間的嗅聞點與兩側搖尾線。
+    rect(ctx, cx - 1, cy, 3, 1, "#d9c7aa");
+    rect(ctx, cx, cy - 2 - bob, 1, 1, "#f3e5cb");
+    rect(ctx, Math.floor(ax) - 7, Math.floor(ay) - 1 - bob, 3, 1, "#f1d5a1");
+    rect(ctx, Math.floor(bx) + 4, Math.floor(by) - 1 + bob, 3, 1, "#f1d5a1");
+  } else if (a.pairAction === "greet") {
+    // 貓狗鼻尖上方浮起一顆小愛心。
+    rect(ctx, cx - 1, cy - 7 - bob, 1, 1, "#ff8fac");
+    rect(ctx, cx + 1, cy - 7 - bob, 1, 1, "#ff8fac");
+    rect(ctx, cx, cy - 6 - bob, 1, 2, "#e95783");
+  } else if (a.pairAction === "avoid") {
+    // 兩側各自的警覺線，中間留下清楚的安全距離。
+    rect(ctx, Math.floor(ax) - 1, Math.floor(ay) - 7 - bob, 1, 4, "#ffd66e");
+    rect(ctx, Math.floor(ax) - 1, Math.floor(ay) - 2, 1, 1, "#ffd66e");
+    rect(ctx, Math.floor(bx), Math.floor(by) - 7 + bob, 1, 4, "#9fc4da");
+    rect(ctx, Math.floor(bx), Math.floor(by) - 2, 1, 1, "#9fc4da");
+    for (let x = cx - 4; x <= cx + 4; x += 4) rect(ctx, x, cy + 3, 2, 1, "#817b91");
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * 寵物貓系統驗證:
+ * 貓狗寵物系統驗證:
  * - 種子貓:陳家豪的橘貓「橘子」開局就在
  * - hangout 每小時輪換且都是合法區域(飼主房/交誼廳/別人的房)
  * - 串門子:親貓的人被療癒(心情↑、關係↑)、怕貓/潔癖的人被嚇到(壓力↑、關係↓)
@@ -23,7 +23,7 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { petsPass, adoptCat, catAttitude, ensurePets, mischiefRelief, resolveCatPairs } = await import("../src/sim/pets");
+const { petsPass, adoptCat, adoptPet, catAttitude, petAttitude, ensurePets, mischiefRelief, resolveCatPairs } = await import("../src/sim/pets");
 const { produceDailyDiaries, setNarrateImplForTest, diaryTiming } = await import("../src/sim/narration");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
@@ -54,6 +54,8 @@ const tenantMeh = { ...state.runtimes[LIN].tenant, coreTags: [mk("樂觀")], mem
 check("態度:貓奴 → like", catAttitude(tenantLike) === "like");
 check("態度:潔癖 → dislike", catAttitude(tenantHate) === "dislike");
 check("態度:無關標籤 → neutral", catAttitude(tenantMeh) === "neutral");
+check("物種態度:狗派只親狗、不會被誤判親貓", petAttitude({ ...tenantMeh, coreTags: [mk("狗派")] }, "dog") === "like" && petAttitude({ ...tenantMeh, coreTags: [mk("狗派")] }, "cat") === "neutral");
+check("物種態度:怕狗只排斥狗", petAttitude({ ...tenantMeh, coreTags: [mk("怕狗")] }, "dog") === "dislike" && petAttitude({ ...tenantMeh, coreTags: [mk("怕狗")] }, "cat") === "neutral");
 
 // --- hangout 輪換:全是合法區域,且逛得夠廣 ---
 const chenRoom = "r301";
@@ -168,25 +170,54 @@ check("雙貓互動:雙方飼主都有日誌", state.runtimes[CHEN].log.some((e)
 check("雙貓互動:兩隻貓保存同一場配對演出", chenPet.pairWith === LIN && linPet.pairWith === CHEN && chenPet.pairAction === linPet.pairAction);
 const blockedByPairCooldown = resolveCatPairs(() => 0, true);
 check("雙貓互動:同一對冷卻內不連發", blockedByPairCooldown === null);
-const { createPetAgents, tickPetAgents } = await import("../src/floor/petAgents");
+const { createPetAgents, petAgentSignature, tickPetAgents } = await import("../src/floor/petAgents");
 const pairedAgents = createPetAgents();
 tickPetAgents(pairedAgents, 0.016);
 check("雙貓互動:樓層 agent 收到同步演出狀態", pairedAgents.filter((a) => a.pairAction === chenPet.pairAction).length === 2 && pairedAgents.filter((a) => a.pairLeader).length === 1);
 
-// --- 招租:應徵者約兩成自帶貓(統計)---
+// --- 狗:領養、渲染 agent、貓配對隔離、舊 preset 相容 ---
+delete chenPet.pairWith; delete chenPet.pairAction; delete chenPet.pairUntilMs;
+delete state.pets[LIN];
+const dog = adoptPet(LIN, { name: "可樂", color: 2, kind: "dog" });
+check("adoptPet:可領養指定名字/花色的狗", dog?.kind === "dog" && dog.name === "可樂" && dog.color === 2);
+check("adoptPet:狗使用狗圖示通知", state.noticeLog.some((n) => n.text.includes("🐕") && n.text.includes("可樂")));
+check("狗不誤吃貓跳台/貓砂盆減免", !!dog && mischiefRelief(dog).break === 1 && mischiefRelief(dog).poop === 1);
+const dogAgents = createPetAgents();
+check("樓層 agent 保留狗物種與四花色", dogAgents.some((a) => a.petId === LIN && a.kind === "dog" && a.color === 2));
+const dogSignature = petAgentSignature();
+const savedLinDog = state.pets[LIN];
+delete state.pets[LIN];
+state.pets["same_count_dog"] = { ...savedLinDog, ownerId: CHEN };
+check("寵物一進一出但總數不變 → agent signature 仍會變", petAgentSignature() !== dogSignature);
+delete state.pets["same_count_dog"];
+state.pets[LIN] = savedLinDog;
+if (dog) dog.hangout = chenPet.hangout = "lounge";
+state.gameMs += 11 * 3600 * 1000;
+check("狗不會觸發雙貓互動", resolveCatPairs(() => 0, true) === null);
+delete state.pets[LIN];
+adoptPet(LIN, { name: "舊池貓", color: 1 });
+check("舊 applicant preset 缺 kind → 視為貓", state.pets[LIN]?.kind === "cat");
+delete state.pets[LIN];
+adoptPet(LIN, { name: "可樂", color: 2, kind: "dog" });
+
+// --- 招租:總寵物率維持約兩成,其中同時有貓與狗 ---
 const { generateApplicants: genApp } = await import("../src/sim/recruit");
 let withPet = 0;
+let withCat = 0;
+let withDog = 0;
 let sampled = 0;
 for (let i = 0; i < 120; i++) {
   for (const a of genApp("r304")) {
     sampled++;
     if (a.pet) {
       withPet++;
-      if (!(typeof a.pet.name === "string" && a.pet.color >= 1 && a.pet.color <= 3)) { withPet = -999; break; }
+      if (a.pet.kind === "dog") withDog++; else withCat++;
+      if (!(typeof a.pet.name === "string" && a.pet.color >= 0 && a.pet.color <= 3)) { withPet = -999; break; }
     }
   }
 }
-check("應徵者帶貓:比例落在合理區間(5%~40%)", withPet > 0 && withPet / sampled >= 0.05 && withPet / sampled <= 0.4, `${withPet}/${sampled}`);
+check("應徵者自帶寵物:總比例落在合理區間(5%~40%)", withPet > 0 && withPet / sampled >= 0.05 && withPet / sampled <= 0.4, `${withPet}/${sampled}`);
+check("應徵者自帶寵物:貓狗都會出現", withCat > 0 && withDog > 0, `cat=${withCat}, dog=${withDog}`);
 
 // --- 貓咪觀察筆記(彩蛋):7 遊戲日一篇,進 Feed ---
 const { catJournalPass } = await import("../src/sim/pets");
@@ -206,6 +237,7 @@ save();
 const petCountBefore = Object.keys(state.pets).length;
 state.pets[CHEN].name = "被改壞的名字";
 check("存檔往返:load 還原貓資料", load() && state.pets[CHEN]?.name === "橘子" && Object.keys(state.pets).length === petCountBefore);
+check("存檔往返:保留狗的物種/名字/花色", state.pets[LIN]?.kind === "dog" && state.pets[LIN]?.name === "可樂" && state.pets[LIN]?.color === 2);
 
 // --- 備份提醒:匯出即記下 lastBackupMs,並存檔往返保留 ---
 const { exportSave } = await import("../src/sim/persistence");
@@ -220,22 +252,25 @@ check("lastBackupMs 存檔往返保留", state.lastBackupMs === bk);
 // --- 飼主退租 → 貓跟著走 ---
 moveIn("r303", generateApplicants("r303")[0]);
 const newId = state.occupancy.r303;
-adoptCat(newId);
-check("新住戶領養成功", !!state.pets[newId]);
+adoptPet(newId, { name: "搬家狗", color: 0, kind: "dog" });
+check("新住戶領養狗成功", state.pets[newId]?.kind === "dog");
 moveOut(newId, "測試退租");
 petsPass();
-check("飼主退租:貓跟著搬走", !state.pets[newId]);
+check("飼主退租:狗跟著搬走", !state.pets[newId]);
 
 // --- 日記整合:narrate ctx 帶養貓 flag ---
 diaryTiming.gapMs = 1;
 let chenCtx: NarrateCtx | null = null;
+let linCtx: NarrateCtx | null = null;
 setNarrateImplForTest(async (ctx) => {
   if (ctx.name === state.runtimes[CHEN].tenant.name) chenCtx = ctx;
+  if (ctx.name === state.runtimes[LIN].tenant.name) linCtx = ctx;
   const r: NarrateResult = { diary: `AI:${ctx.name}`, newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: true };
   return r;
 });
 await produceDailyDiaries(true);
 check("日記 ctx:飼主帶「養了一隻貓」flag", !!chenCtx && (chenCtx as NarrateCtx).flags.some((f) => f.includes("養了一隻貓「橘子」")));
+check("日記 ctx:狗飼主帶「養了一隻狗」flag", !!linCtx && (linCtx as NarrateCtx).flags.some((f) => f.includes("養了一隻狗「可樂」")));
 
 // --- ensurePets 冪等 ---
 ensurePets();

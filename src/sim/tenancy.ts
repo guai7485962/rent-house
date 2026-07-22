@@ -17,7 +17,7 @@ import type { EventEffect } from "./events";
 import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
-import { adoptCat, resolveCatFarewell } from "./pets";
+import { adoptCat, adoptPet, petIcon, resolvePetFarewell } from "./pets";
 import { recordAlumnus, unlock } from "./legacy";
 import { ensureWishes } from "./wishes";
 import { addReputation, REP_GRADUATE } from "./reputation";
@@ -102,7 +102,7 @@ export function moveIn(roomId: string, ap: Applicant) {
   if (tenant.appearance) setCustomAppearance(tenant.id, tenant.appearance); // 部件化外觀登錄(髮型/配件/衣色)
   refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
-  if (ap.pet) adoptCat(ap.id, ap.pet); // 自帶寵物 → 入住即成為飼主(§A-1)
+  if (ap.pet) adoptPet(ap.id, ap.pet); // 舊池缺 kind 會在 adoptPet 視為貓
   ensureWishes(); // 依職業指派人生心願(入住當下就看得到,不用等換日)
   const deposit = ap.monthlyRent * DEPOSIT_MONTHS; // 入住押金:招租一次性收入
   if (deposit > 0) addMoney(deposit, `${ap.name} 入住押金`, "other");
@@ -150,7 +150,7 @@ export function moveOut(tenantId: string, reason: string) {
   const ownPet = state.pets[tenantId];
   if (ownPet && ownPet.ownerId === tenantId) {
     delete state.pets[tenantId];
-    notify(`🐈 「${ownPet.name}」也跟著 ${name} 一起搬走了`);
+    notify(`${petIcon(ownPet)} 「${ownPet.name}」也跟著 ${name} 一起搬走了`);
   }
   // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
   const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
@@ -501,7 +501,7 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
     // 打架事件(§10-2):房東出面調解成功 → 冷戰直接解除
     if (eventId === "fight_decision" && choiceId === "mediate" && withId) endFeud(tenantId, withId, "mediated");
     // 圓夢畢業的貓去留(wishes.maybeAttachCatFarewell):留下 → 轉樓貓;帶走 → 離開日隨主人走
-    if (eventId === "wish_cat_farewell") resolveCatFarewell(rt, choiceId);
+    if (eventId === "wish_cat_farewell" || eventId === "wish_pet_farewell") resolvePetFarewell(rt, choiceId);
     // AI 提議互動(§10-3):玩家拍板 → 白名單+門檻把關後在畫面上演出來;不放行就靜默略過
     if (withId && choice.effect.interaction) forceInteraction(tenantId, withId, choice.effect.interaction);
   }

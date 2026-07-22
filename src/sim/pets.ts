@@ -1,5 +1,5 @@
 /**
- * 寵物貓系統:租客養的貓會在樓層遊走,並引發貓咪事件。
+ * 寵物系統:租客養的貓或狗會在樓層遊走,並引發寵物事件。
  *
  * 模擬層(無頭可測):每遊戲小時 petsPass() 決定貓這小時待哪個區域(hangout),
  * 並擲骰事件——溜進別的房客房裡(親貓的人被療癒、怕貓/潔癖的人被嚇到)、
@@ -13,7 +13,7 @@
  * 樓貓沒有飼主 runtime:遊蕩錨點改為交誼廳,串門/搗蛋/貓週記照常(文案改「樓貓」)。
  * state.pets 的 key 維持原飼主 id(唯一,不會撞 key);貓的識別一律用 record key(catId)。
  */
-import type { Pet } from "../types";
+import type { Pet, PetKind } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
 import { adjustRelationship } from "./social";
 import { unlock } from "./legacy";
@@ -23,6 +23,20 @@ import { spawnFx } from "../floor/fx";
 
 /** 領養時的隨機貓名池(種子貓固定叫「橘子」) */
 const CAT_NAMES = ["麻糬", "煤球", "湯圓", "布丁", "芝麻", "奶茶", "花捲", "豆花"];
+const DOG_NAMES = ["旺財", "豆豆", "可樂", "阿福", "饅頭", "奶油", "小虎", "球球"];
+
+export interface PetPreset {
+  name: string;
+  color: number;
+  /** 舊 applicant pool 沒有此欄位時一律視為貓。 */
+  kind?: PetKind;
+}
+
+export const petIcon = (petOrKind: Pet | PetKind) =>
+  (typeof petOrKind === "string" ? petOrKind : petOrKind.kind) === "dog" ? "🐕" : "🐈";
+export const petSpecies = (petOrKind: Pet | PetKind) =>
+  (typeof petOrKind === "string" ? petOrKind : petOrKind.kind) === "dog" ? "狗" : "貓";
+const housePetLabel = (pet: Pet) => pet.kind === "dog" ? "公寓犬" : "樓貓";
 
 /** 事件冷卻(遊戲毫秒);借用 interactionCooldowns 儲存(入存檔) */
 const CD = {
@@ -41,19 +55,24 @@ function markCooldown(key: string) {
 }
 
 /** 樓貓的哨兵飼主 id(型別上 ownerId 是 string;不對應任何 runtime) */
-export const HOUSE_CAT_OWNER = "landlord";
-const isHouseCat = (pet: Pet) => pet.ownerId === HOUSE_CAT_OWNER;
+export const HOUSE_PET_OWNER = "landlord";
+/** 舊測試與存檔語意相容。 */
+export const HOUSE_CAT_OWNER = HOUSE_PET_OWNER;
+const isHousePet = (pet: Pet) => pet.ownerId === HOUSE_PET_OWNER;
 
 /** 孤兒貓修復:飼主已不在 runtime 的貓一律轉為樓貓(補一則通知;冪等)。
  *  正常流程 moveOut 會刪貓或事先轉樓貓,這裡是舊存檔載入與防禦性的安全網。 */
-export function repairOrphanCats() {
+export function repairOrphanPets() {
   for (const pet of Object.values(state.pets)) {
-    if (isHouseCat(pet) || state.runtimes[pet.ownerId]) continue;
-    pet.ownerId = HOUSE_CAT_OWNER;
+    if (isHousePet(pet) || state.runtimes[pet.ownerId]) continue;
+    pet.ownerId = HOUSE_PET_OWNER;
     pet.hangout = "lounge";
-    notify(`🐈 「${pet.name}」的主人已經搬走,公寓接手照顧,牠成了樓貓`);
+    notify(`${petIcon(pet)} 「${pet.name}」的主人已經搬走,公寓接手照顧,牠成了${housePetLabel(pet)}`);
   }
 }
+
+/** 向後相容名稱。 */
+export const repairOrphanCats = repairOrphanPets;
 
 /** 種子寵物補登:陳家豪的作息本來就有「逗貓」時段——把那隻貓變成真的。
  *  也順手做孤兒貓修復(persistence 載入時呼叫本函式)。 */
@@ -69,46 +88,65 @@ export function ensurePets() {
       sinceMs: state.gameMs,
     };
   }
-  repairOrphanCats();
+  repairOrphanPets();
 }
 
 /** 圓夢畢業「貓的去留」抉擇的套用(tenancy.decide 呼叫):
  *  stay → 立即轉樓貓(ownerId="landlord",錨點交誼廳);take → 只留日誌,離開日隨 moveOut 帶走。 */
-export function resolveCatFarewell(rt: TenantRuntime, choiceId: string) {
+export function resolvePetFarewell(rt: TenantRuntime, choiceId: string) {
   const pet = state.pets[rt.tenant.id];
   if (!pet || pet.ownerId !== rt.tenant.id) return;
+  const icon = petIcon(pet);
   if (choiceId === "stay") {
-    pet.ownerId = HOUSE_CAT_OWNER;
+    pet.ownerId = HOUSE_PET_OWNER;
     pet.hangout = "lounge";
-    pushSocialLog(rt, `🐈 他把「${pet.name}」托付給了公寓:「牠在這裡比跟著我奔波幸福。」`, "major");
-    notify(`🐈 「${pet.name}」留了下來,成為公寓的樓貓`);
+    pushSocialLog(rt, `${icon} 他把「${pet.name}」托付給了公寓:「牠在這裡比跟著我奔波幸福。」`, "major");
+    notify(`${icon} 「${pet.name}」留了下來,成為公寓的${housePetLabel(pet)}`);
   } else {
-    pushSocialLog(rt, `🐈 決定帶「${pet.name}」一起走,連貓籠都提前買好了。`, "notable");
+    const carrier = pet.kind === "dog" ? "牽繩和外出水壺" : "貓籠";
+    pushSocialLog(rt, `${icon} 決定帶「${pet.name}」一起走,連${carrier}都提前準備好了。`, "notable");
   }
 }
 
+/** 向後相容名稱。 */
+export const resolveCatFarewell = resolvePetFarewell;
+
 /** 領養一隻貓(adopt_cat 指令生效 / 帶寵物入住時呼叫;已有貓則不重複)。
  *  preset:指定名字/花色(應徵者自帶的貓);省略則隨機。回傳新貓或 null。 */
-export function adoptCat(tenantId: string, preset?: { name: string; color: number }): Pet | null {
+export function adoptPet(tenantId: string, preset?: PetPreset): Pet | null {
   if (state.pets[tenantId]) return null;
   const rt = state.runtimes[tenantId];
   if (!rt) return null;
+  const kind = preset?.kind ?? "cat";
+  const names = kind === "dog" ? DOG_NAMES : CAT_NAMES;
   const pet: Pet = {
-    name: preset?.name ?? CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)],
-    kind: "cat",
-    color: preset?.color ?? 1 + Math.floor(Math.random() * 3), // 黑/白/三花(橘子是種子專屬)
+    name: preset?.name ?? names[Math.floor(Math.random() * names.length)],
+    kind,
+    color: preset?.color ?? Math.floor(Math.random() * 4),
     ownerId: tenantId,
     hangout: roomOfTenant(tenantId) ?? "lounge",
     sinceMs: state.gameMs,
   };
   state.pets[tenantId] = pet;
-  notify(`🐈 ${rt.tenant.name} 養了一隻貓「${pet.name}」`);
+  notify(`${petIcon(pet)} ${rt.tenant.name} 養了一隻${petSpecies(pet)}「${pet.name}」`);
   return pet;
 }
 
+export function adoptCat(tenantId: string, preset?: Omit<PetPreset, "kind">): Pet | null {
+  return adoptPet(tenantId, preset ? { ...preset, kind: "cat" } : randomCatPreset());
+}
+
 /** 隨機挑一組貓名/花色(給應徵者自帶的貓;花色 1~3,橘色是種子專屬) */
-export function randomCatPreset(): { name: string; color: number } {
-  return { name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)], color: 1 + Math.floor(Math.random() * 3) };
+export function randomCatPreset(): PetPreset {
+  return { name: CAT_NAMES[Math.floor(Math.random() * CAT_NAMES.length)], color: 1 + Math.floor(Math.random() * 3), kind: "cat" };
+}
+
+export function randomDogPreset(): PetPreset {
+  return { name: DOG_NAMES[Math.floor(Math.random() * DOG_NAMES.length)], color: Math.floor(Math.random() * 4), kind: "dog" };
+}
+
+export function randomPetPreset(): PetPreset {
+  return Math.random() < 0.65 ? randomCatPreset() : randomDogPreset();
 }
 
 /** 飼主房間是否擺了某件貓咪家具(貓砂盆/貓跳台 → 降低對應搗蛋機率;樓貓無飼主房 → 無減免) */
@@ -119,6 +157,7 @@ function ownerRoomHas(pet: Pet, defId: string): boolean {
 
 /** 貓咪家具對搗蛋機率的乘數:貓跳台壓低破壞、貓砂盆壓低隨地大小便(§A-2) */
 export function mischiefRelief(pet: Pet): { break: number; poop: number } {
+  if (pet.kind === "dog") return { break: 1, poop: 1 };
   return {
     break: ownerRoomHas(pet, "cat_tower") ? 0.3 : 1,
     poop: ownerRoomHas(pet, "litter_box") ? 0.15 : 1,
@@ -127,17 +166,21 @@ export function mischiefRelief(pet: Pet): { break: number; poop: number } {
 
 /** 對貓的態度:標籤/職業裡有貓狗動物 → 喜歡;潔癖/過敏/怕貓 → 排斥;其餘中立。
  *  接受結構子集(租客或應徵者都適用;memoryTags 可省略) */
-export function catAttitude(t: {
+export function petAttitude(t: {
   coreTags: { label: string }[];
   memoryTags?: { label: string }[];
   occupation: string;
   bio: string;
-}): "like" | "dislike" | "neutral" {
+}, kind: PetKind): "like" | "dislike" | "neutral" {
   const text = [...t.coreTags.map((x) => x.label), ...(t.memoryTags ?? []).map((x) => x.label), t.occupation, t.bio].join(" ");
-  if (/怕貓|過敏|潔癖|討厭動物/.test(text)) return "dislike";
-  if (/貓|狗|動物|寵物|療癒/.test(text)) return "like";
+  const dislikes = kind === "dog" ? /怕狗|狗毛過敏|過敏|潔癖|討厭動物/ : /怕貓|貓毛過敏|過敏|潔癖|討厭動物/;
+  const likes = kind === "dog" ? /狗|動物|寵物|療癒/ : /貓|動物|寵物|療癒/;
+  if (dislikes.test(text)) return "dislike";
+  if (likes.test(text)) return "like";
   return "neutral";
 }
+
+export const catAttitude = (t: Parameters<typeof petAttitude>[0]) => petAttitude(t, "cat");
 
 /** 住在某房的租客(承租者優先,否則同居者);沒有回 null */
 function residentOf(roomId: string): TenantRuntime | null {
@@ -145,13 +188,14 @@ function residentOf(roomId: string): TenantRuntime | null {
   return tid ? state.runtimes[tid] ?? null : null;
 }
 
-/** 這小時貓要待的區域:飼主房 55%、交誼廳 20%、別人的房 25%。
- *  樓貓沒有飼主房 → roomOfTenant 回 null,錨點自然落在交誼廳(75% 交誼廳、25% 串門)。 */
+/** 這小時寵物要待的區域。狗比貓更常待在交誼廳,讓兩種動物的生活感不同。 */
 function pickHangout(pet: Pet): string {
   const home = roomOfTenant(pet.ownerId) ?? "lounge";
   const roll = Math.random();
-  if (roll < 0.55) return home;
-  if (roll < 0.75) return "lounge";
+  const homeCut = pet.kind === "dog" ? 0.45 : 0.55;
+  const loungeCut = pet.kind === "dog" ? 0.80 : 0.75;
+  if (roll < homeCut) return home;
+  if (roll < loungeCut) return "lounge";
   const others = Object.keys(state.occupancy).filter((r) => r !== home && state.runtimes[state.occupancy[r]]);
   return others.length > 0 ? others[Math.floor(Math.random() * others.length)] : home;
 }
@@ -164,12 +208,12 @@ function fxAt(roomId: string, kind: Parameters<typeof spawnFx>[0], dur = 10000) 
 
 /** 每遊戲小時:每隻貓換去處 + 擲骰貓咪事件(owner=null 代表樓貓) */
 export function petsPass() {
-  repairOrphanCats(); // 防禦:意外殘留的無主貓轉樓貓,不再無聲消失
-  for (const [catId, pet] of Object.entries(state.pets)) {
-    const owner = isHouseCat(pet) ? null : state.runtimes[pet.ownerId] ?? null;
+  repairOrphanPets();
+  for (const [petId, pet] of Object.entries(state.pets)) {
+    const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId] ?? null;
     pet.hangout = pickHangout(pet);
-    rollVisit(catId, pet, owner);
-    rollMischief(catId, pet, owner);
+    rollVisit(petId, pet, owner);
+    rollMischief(petId, pet, owner);
   }
   resolveCatPairs();
 }
@@ -192,7 +236,7 @@ function clearExpiredCatPairs() {
  *  不能拿來配對;一般貓的 catId === ownerId,舊存檔的 pairWith/冷卻 key 完全相容。 */
 export function resolveCatPairs(random: () => number = Math.random, force = false): CatPairAction | null {
   clearExpiredCatPairs();
-  const entries = Object.entries(state.pets).filter(([, pet]) => isHouseCat(pet) || !!state.runtimes[pet.ownerId]);
+  const entries = Object.entries(state.pets).filter(([, pet]) => pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
   // 兩隻貓原本沒碰面時,偶爾主動去找貓伴；避免「雙貓互動」只能靠兩次獨立亂數巧遇。
@@ -227,8 +271,8 @@ export function resolveCatPairs(random: () => number = Math.random, force = fals
 }
 
 function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
-  const A = isHouseCat(a) ? null : state.runtimes[a.ownerId] ?? null;
-  const B = isHouseCat(b) ? null : state.runtimes[b.ownerId] ?? null;
+  const A = isHousePet(a) ? null : state.runtimes[a.ownerId] ?? null;
+  const B = isHousePet(b) ? null : state.runtimes[b.ownerId] ?? null;
   const owners = [A, B].filter((rt): rt is TenantRuntime => !!rt);
   const place = a.hangout === "lounge" ? "交誼廳" : "房間裡";
   const logBoth = (text: string) => {
@@ -287,65 +331,81 @@ function catJournalLines(petName: string, ownerName: string, neighbor: string): 
   ];
 }
 
+function dogJournalLines(petName: string, ownerName: string, neighbor: string): string[] {
+  return [
+    `這週我記住了整層樓每一道腳步聲,只要有人回來我都第一個知道。`,
+    `${neighbor} 經過門口時摸了摸我的頭,我決定下次也把球叼給他。`,
+    `${ownerName} 說散步要等一下,我把牽繩叼來三次,「等一下」還是沒有結束。`,
+    `交誼廳的沙發底下藏著半塊餅乾,這是本週最重要的調查成果。`,
+    `今天成功忍住沒有對門外的聲音叫,應該值得兩塊零食。`,
+    `午睡夢到在走廊追球,醒來時尾巴還在拍地板。`,
+    `${ownerName} 心情不好時抱了我很久,我沒有亂動,因為這也是工作。`,
+    `巡完每一扇門後回到自己的墊子,確認大家都平安在家。`,
+  ];
+}
+
 /** 每遊戲日呼叫(自帶 7 日冷卻):輪到的貓發一篇觀察筆記進 Feed。
  *  樓貓沒有飼主 → 筆記掛在任一位在住租客的日誌上(Feed 彙整全樓日誌,玩家都看得到)。 */
 export function catJournalPass() {
-  for (const [catId, pet] of Object.entries(state.pets)) {
-    const owner = isHouseCat(pet) ? null : state.runtimes[pet.ownerId];
+  for (const [petId, pet] of Object.entries(state.pets)) {
+    const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId];
     const host = owner ?? Object.values(state.runtimes)[0]; // 樓貓筆記的落點
-    if (!host || (!owner && !isHouseCat(pet))) continue;
-    const ck = `pet|${catId}|journal`;
+    if (!host || (!owner && !isHousePet(pet))) continue;
+    const ck = `pet|${petId}|journal`;
     if (onCooldown(ck, JOURNAL_CD)) continue;
     markCooldown(ck);
     const ownerName = owner ? owner.tenant.name : "房東";
-    const pool = catJournalLines(pet.name, ownerName, randomNeighborName(pet.ownerId));
+    const pool = (pet.kind === "dog" ? dogJournalLines : catJournalLines)(pet.name, ownerName, randomNeighborName(pet.ownerId));
     const i = Math.floor(Math.random() * pool.length);
     const j = (i + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length; // 另一句、不重複
-    pushSocialLog(host, `🐾 ${owner ? "" : "樓貓"}「${pet.name}」的觀察筆記:${pool[i]}${pool[j]}`, "notable");
+    pushSocialLog(host, `🐾 ${owner ? "" : housePetLabel(pet)}「${pet.name}」的觀察筆記:${pool[i]}${pool[j]}`, "notable");
   }
 }
 
 /** 串門子:貓溜進別的房客房裡(對方在家才成立;owner=null 代表樓貓,文案改口、不動關係) */
-function rollVisit(catId: string, pet: Pet, owner: TenantRuntime | null) {
+function rollVisit(petId: string, pet: Pet, owner: TenantRuntime | null) {
   const home = owner ? roomOfTenant(pet.ownerId) : "lounge";
   if (pet.hangout === home || pet.hangout === "lounge") return;
   const victim = residentOf(pet.hangout);
   if (!victim || victim.tenant.id === pet.ownerId || victim.tenant.visualState === "away") return;
   if (Math.random() > 0.5) return;
-  const cdKey = `pet|${catId}|visit|${victim.tenant.id}`;
+  const cdKey = `pet|${petId}|visit|${victim.tenant.id}`;
   if (onCooldown(cdKey, CD.visit)) return;
   markCooldown(cdKey);
 
-  const catLabel = owner ? `${owner.tenant.name} 的貓「${pet.name}」` : `樓貓「${pet.name}」`;
+  const icon = petIcon(pet);
+  const label = owner ? `${owner.tenant.name} 的${petSpecies(pet)}「${pet.name}」` : `${housePetLabel(pet)}「${pet.name}」`;
   const s = victim.tenant.stats;
-  const att = catAttitude(victim.tenant);
+  const att = petAttitude(victim.tenant, pet.kind);
   if (att === "dislike") {
     s.stress = clamp(s.stress + 6, 0, 100);
-    pushSocialLog(victim, `🐈 ${catLabel}突然竄進房裡,嚇了他一大跳——趕緊把牠請了出去。`, "notable");
+    const action = pet.kind === "dog" ? "搖著尾巴衝進" : "突然竄進";
+    pushSocialLog(victim, `${icon} ${label}${action}房裡,嚇了他一大跳——趕緊把牠請了出去。`, "notable");
     if (owner) {
-      pushSocialLog(owner, `🐈 「${pet.name}」又溜進 ${victim.tenant.name} 的房間闖禍,被抱著送回來,對方臉色不太好看。`, "notable");
+      pushSocialLog(owner, `${icon} 「${pet.name}」又溜進 ${victim.tenant.name} 的房間闖禍,被送回來時對方臉色不太好看。`, "notable");
       adjustRelationship(pet.ownerId, victim.tenant.id, -3);
     }
     fxAt(pet.hangout, "anger");
   } else if (att === "like") {
     s.mood = clamp(s.mood + 6, 0, 100);
     s.stress = clamp(s.stress - 4, 0, 100);
-    pushSocialLog(victim, `🐈 ${catLabel}溜進房裡蹭他的腳邊,忍不住揉了牠好一陣子,整個人都被療癒了。`, "notable");
+    const greeting = pet.kind === "dog" ? "叼著球來找他,尾巴搖得停不下來" : "溜進房裡蹭他的腳邊";
+    pushSocialLog(victim, `${icon} ${label}${greeting},忍不住陪牠玩了好一陣子,整個人都被療癒了。`, "notable");
     if (owner) {
-      pushSocialLog(owner, `🐈 「${pet.name}」跑去 ${victim.tenant.name} 那裡串門子,被寵得不想回來。`, "notable");
+      pushSocialLog(owner, `${icon} 「${pet.name}」跑去 ${victim.tenant.name} 那裡串門子,被寵得不想回來。`, "notable");
       adjustRelationship(pet.ownerId, victim.tenant.id, 3);
     }
     fxAt(pet.hangout, "hearts");
   } else {
     s.mood = clamp(s.mood + 2, 0, 100);
-    pushSocialLog(victim, `🐈 門沒關好,${catLabel}晃了進來,巡視一圈又晃了出去。`, "minor");
+    pushSocialLog(victim, `${icon} 門沒關好,${label}晃了進來,巡視一圈又晃了出去。`, "minor");
   }
 }
 
 /** 搗蛋:打破東西 / 隨地大小便(在貓當下待的區域結算)。
  *  貓咪家具(飼主房)會壓低對應機率:貓跳台 → 有地方磨爪攀爬、少破壞;貓砂盆 → 幾乎不隨地大小便。
  *  owner=null 代表樓貓:苦主日誌照留,飼主端改成房東通知、不動關係。 */
-function rollMischief(catId: string, pet: Pet, owner: TenantRuntime | null) {
+function rollMischief(petId: string, pet: Pet, owner: TenantRuntime | null) {
   const here = pet.hangout;
   const victim = here === "lounge" ? null : residentOf(here);
   const place = here === "lounge" ? "交誼廳" : victim && victim.tenant.id !== pet.ownerId ? `${victim.tenant.name} 的房間` : "房間";
@@ -354,17 +414,19 @@ function rollMischief(catId: string, pet: Pet, owner: TenantRuntime | null) {
   const poopChance = 0.03 * relief.poop; // 貓砂盆:隨地大小便降到 15%
 
   // 打破東西:碎裂聲 + 清潔度掉、在場的人壓力上升
-  if (Math.random() < breakChance && !onCooldown(`pet|${catId}|break`, CD.break)) {
-    markCooldown(`pet|${catId}|break`);
-    unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
+  const icon = petIcon(pet);
+  if (Math.random() < breakChance && !onCooldown(`pet|${petId}|break`, CD.break)) {
+    markCooldown(`pet|${petId}|break`);
+    if (pet.kind === "cat") unlock("cat_burglar");
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 8, 0, 100);
-    if (owner) pushSocialLog(owner, `🐈💥 「${pet.name}」在${place}把東西掃下桌,摔得粉碎……只好默默去收拾殘局。`, "notable");
-    else notify(`🐈💥 樓貓「${pet.name}」在${place}把東西掃下桌,摔得粉碎`);
+    const damage = pet.kind === "dog" ? "把靠墊咬開,棉花散了一地" : "把東西掃下桌,摔得粉碎";
+    if (owner) pushSocialLog(owner, `${icon}💥 「${pet.name}」在${place}${damage}……只好默默去收拾殘局。`, "notable");
+    else notify(`${icon}💥 ${housePetLabel(pet)}「${pet.name}」在${place}${damage}`);
     if (victim && victim.tenant.id !== pet.ownerId) {
       victim.tenant.stats.stress = clamp(victim.tenant.stats.stress + 5, 0, 100);
       pushSocialLog(victim, owner
         ? `💥 「${pet.name}」打破了他房裡的東西,${owner.tenant.name} 一邊道歉一邊收拾。`
-        : `💥 樓貓「${pet.name}」打破了他房裡的東西,只好一邊嘆氣一邊收拾。`, "notable");
+        : `💥 ${housePetLabel(pet)}「${pet.name}」弄壞了他房裡的東西,只好一邊嘆氣一邊收拾。`, "notable");
       if (owner) adjustRelationship(pet.ownerId, victim.tenant.id, -2);
     }
     fxAt(here, "anger");
@@ -372,21 +434,22 @@ function rollMischief(catId: string, pet: Pet, owner: TenantRuntime | null) {
   }
 
   // 隨地大小便:清潔度大掉,苦主壓力上升
-  if (Math.random() < poopChance && !onCooldown(`pet|${catId}|poop`, CD.poop)) {
-    markCooldown(`pet|${catId}|poop`);
-    unlock("cat_burglar"); // 成就:貓生大鬧(§G-7)
+  if (Math.random() < poopChance && !onCooldown(`pet|${petId}|poop`, CD.poop)) {
+    markCooldown(`pet|${petId}|poop`);
+    if (pet.kind === "cat") unlock("cat_burglar");
     if (victim) victim.cleanliness = clamp(victim.cleanliness - 10, 0, 100);
     if (victim && victim.tenant.id !== pet.ownerId) {
       victim.tenant.stats.stress = clamp(victim.tenant.stats.stress + 4, 0, 100);
-      pushSocialLog(victim, `🐈💩 在${place}角落發現了「${pet.name}」留下的不可言說的『驚喜』……氣到說不出話。`, "notable");
+      pushSocialLog(victim, `${icon}💩 在${place}角落發現了「${pet.name}」留下的不可言說的『驚喜』……氣到說不出話。`, "notable");
       if (owner) {
-        pushSocialLog(owner, `🐈💩 「${pet.name}」在 ${victim.tenant.name} 那裡隨地大小便,只好提著清潔用品登門謝罪。`, "notable");
+        pushSocialLog(owner, `${icon}💩 「${pet.name}」在 ${victim.tenant.name} 那裡隨地大小便,只好提著清潔用品登門謝罪。`, "notable");
         adjustRelationship(pet.ownerId, victim.tenant.id, -2);
       }
     } else if (owner) {
-      pushSocialLog(owner, `🐈💩 「${pet.name}」沒用貓砂盆,在${place}留下了『驚喜』,捏著鼻子清了半天。`, "minor");
+      const missed = pet.kind === "dog" ? "沒忍到外出時間" : "沒用貓砂盆";
+      pushSocialLog(owner, `${icon}💩 「${pet.name}」${missed},在${place}留下了『驚喜』,捏著鼻子清了半天。`, "minor");
     } else {
-      notify(`🐈💩 樓貓「${pet.name}」在${place}留下了『驚喜』,只好自己捏著鼻子清乾淨`);
+      notify(`${icon}💩 ${housePetLabel(pet)}「${pet.name}」在${place}留下了『驚喜』,只好自己捏著鼻子清乾淨`);
     }
   }
 }

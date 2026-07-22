@@ -507,7 +507,7 @@ function onGroupResolve(choiceId: string) {
       <span class="rjob">{{ rt.tenant.occupation }}</span>
       <span class="rgender" :class="{ miss: !rt.tenant.gender }">{{ genderText }}</span>
       <span v-if="partnerLine" class="rbond">{{ partnerLine }}</span>
-      <span v-if="state.pets[rt.tenant.id]" class="rpet">🐈 {{ state.pets[rt.tenant.id].name }}</span>
+      <span v-if="state.pets[rt.tenant.id]" class="rpet">{{ state.pets[rt.tenant.id].kind === "dog" ? "🐕" : "🐈" }} {{ state.pets[rt.tenant.id].name }}</span>
     </div>
     <div class="room-tools">
       <span class="rent-now">月租 ${{ rt.tenant.finance.monthlyRent.toLocaleString() }}</span>

@@ -4,7 +4,7 @@
  * 實現(成長特質/記憶/成就/計數/不再推進)、圓夢離開(預告 → moveOut → 名冊)、
  * AI context 心願行、存檔往返;
  * 圓夢畢業批:兩軌分流、模範房客(+3% 租金/每日光環/封頂)、謝禮紅包+押金退還記帳、
- * 口碑增長與招租星等/開價效果、貓去留(留下成樓貓/預設帶走)、孤兒貓修復、新成就。
+  * 口碑增長與招租星等/開價效果、寵物去留(留下/預設帶走)、孤兒寵物修復、新成就。
  * 心願邏輯本身不使用 RNG;貓名等外圍用 mulberry32 固定種子。
  */
 const mem: Record<string, string> = {};
@@ -30,7 +30,7 @@ const { buildNarrateCtx } = await import("../src/sim/narration");
 const { save, load } = await import("../src/sim/persistence");
 const { moveOut, graduateFarewell, decide } = await import("../src/sim/tenancy");
 const { DEPOSIT_MONTHS } = await import("../src/sim/economy");
-const { adoptCat, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
+const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
 const { rescoreApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { REP_GRADUATE, REP_SETTLE } = await import("../src/sim/reputation");
@@ -292,7 +292,7 @@ const chenRent0 = chen.tenant.finance.monthlyRent; // 模範房客 +3% 的比較
   good(rtD);
   rtD.wish!.progress = 98;
   wishes.wishPass(); // 實現 → 排定離開 + 掛貓去留抉擇
-  check("實現當下掛上「貓的去留」抉擇(不經 AI)", rtD.pendingEvent?.id === "wish_cat_farewell" && rtD.pendingEvent!.choices.length === 2);
+  check("實現當下掛上「寵物去留」抉擇(不經 AI)", rtD.pendingEvent?.id === "wish_pet_farewell" && rtD.pendingEvent!.choices.length === 2);
   decide("t_drummer", "stay", "把牠留下當樓貓");
   const cat = state.pets["t_drummer"];
   check("留下 → ownerId 轉 landlord、錨點交誼廳", cat?.ownerId === HOUSE_CAT_OWNER && cat?.hangout === "lounge");
@@ -312,17 +312,17 @@ const chenRent0 = chen.tenant.finance.monthlyRent; // 模範房客 +3% 的比較
   state.runtimes["t_thesis"] = rtT;
   state.occupancy["r304"] = "t_thesis";
   wishes.ensureWishes();
-  adoptCat("t_thesis", { name: "論文", color: 2 });
+  adoptPet("t_thesis", { name: "論文", color: 2, kind: "dog" });
   good(rtT);
   rtT.wish!.progress = 98;
   wishes.wishPass();
-  check("研究生也掛上貓去留抉擇", rtT.pendingEvent?.id === "wish_cat_farewell");
-  // 不 decide(玩家未決) → 到期直接離開,貓預設帶走
+  check("養狗的研究生也掛上寵物去留抉擇", rtT.pendingEvent?.id === "wish_pet_farewell" && rtT.pendingEvent.description.includes("養狗"));
+  // 不 decide(玩家未決) → 到期直接離開,狗預設帶走
   rtT.wish!.graduateDay = day();
   const gT = wishes.wishPass().find((x) => x.id === "t_thesis");
   if (gT) graduateFarewell(gT.id, gT.reason);
-  check("未決 → 預設帶走(貓移除)", !state.runtimes["t_thesis"] && !state.pets["t_thesis"]);
-  check("名冊 memory 提到帶貓離開", state.alumni[0]?.memory.includes("帶著愛貓「論文」") === true);
+  check("未決 → 預設帶走(狗移除)", !state.runtimes["t_thesis"] && !state.pets["t_thesis"]);
+  check("名冊 memory 提到帶狗離開", state.alumni[0]?.memory.includes("帶著愛狗「論文」") === true);
   check("3 位畢業 → 成就「桃李天下」", state.graduateCount === 3 && state.achievements.includes("graduate_3"));
 }
 
@@ -334,6 +334,10 @@ const chenRent0 = chen.tenant.finance.monthlyRent; // 模範房客 +3% 的比較
   check("飼主不存在的貓 → 轉樓貓 + 錨點交誼廳", ghost?.ownerId === HOUSE_CAT_OWNER && ghost?.hangout === "lounge");
   check("修復時補了通知", state.noticeLog.some((n) => n.text.includes("阿飄") && n.text.includes("樓貓")));
   delete state.pets["t_ghost"];
+  state.pets["t_ghost_dog"] = { name: "小福", kind: "dog", color: 0, ownerId: "t_ghost_dog", hangout: "r303", sinceMs: state.gameMs };
+  ensurePets();
+  check("飼主不存在的狗 → 轉公寓犬", state.pets["t_ghost_dog"]?.ownerId === HOUSE_CAT_OWNER && state.noticeLog.some((n) => n.text.includes("小福") && n.text.includes("公寓犬")));
+  delete state.pets["t_ghost_dog"];
 }
 
 // --- 17. 💑 雙雙圓夢(隱藏成就) ---

@@ -319,18 +319,20 @@ export interface LandlordDecision {
 }
 
 // ---------------------------------------------------------------------------
-// 寵物(貓咪系統):租客養的貓,會在樓層遊走、引發事件
+// 寵物系統:租客養的貓或狗,會在樓層遊走、引發事件
 // ---------------------------------------------------------------------------
+
+export type PetKind = "cat" | "dog";
 
 export interface Pet {
   name: string;
-  kind: "cat";
-  /** 花色索引:0 橘貓、1 黑貓、2 白貓、3 三花 */
+  kind: PetKind;
+  /** 花色索引:貓=橘/黑/白/三花;狗=柴/黑/白棕/灰 */
   color: number;
   ownerId: string;
   /** 這個遊戲小時貓待的區域(r301/lounge…;渲染層讓貓走過去遊蕩) */
   hangout: string;
-  /** 雙貓互動中的另一隻貓(飼主 id);到期後由 petsPass 清掉。 */
+  /** 雙貓互動中的另一隻貓(record key);狗第一批不使用。 */
   pairWith?: string;
   /** 當前雙貓演出,供樓層 agent 同步追逐、靠近或一起睡。 */
   pairAction?: "chase" | "groom" | "nap" | "territory" | "mischief";

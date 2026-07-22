@@ -2,12 +2,12 @@
  * 招租系統:依房間屬性產生「應徵租客」,並算出契合度。
  * 房東裝潢空房 → 屬性上升 → 吸引偏好相符的租客 → 選一位入住(store.moveIn)。
  */
-import type { Appearance, CoreTag, Gender, RoomAttribute } from "../types";
+import type { Appearance, CoreTag, Gender, PetKind, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 import { upgradeRentBonus } from "./upgrades";
 import { reputationStarBonus, reputationRentBonus } from "./reputation";
 import { randomAppearance } from "../pixel/parts";
-import { randomCatPreset } from "./pets";
+import { randomPetPreset } from "./pets";
 
 interface Archetype {
   key: string; // 對應 ARCHETYPE_ROUTINES 的作息
@@ -225,8 +225,8 @@ export interface Applicant {
   appearance?: Appearance;
   /** 是否成年(undefined = 是;特邀租客一律經 isAdult 檢查才會生成) */
   isAdult?: boolean;
-  /** 自帶的寵物貓(約兩成應徵者有;入住即成為飼主,§A-1) */
-  pet?: { name: string; color: number };
+  /** 自帶寵物(約兩成應徵者有;舊存檔缺 kind 時視為貓) */
+  pet?: { name: string; color: number; kind?: PetKind };
 }
 
 /** 應徵者實際開的月租:基礎租金 ×(房間升級行情 + 房東口碑)加成,取整到百位。
@@ -299,6 +299,7 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       stars: matchStars(a.preferences, attrs),
       ...randomIdentity(identities[i].gender),
       appearance: randomAppearance(),
-      ...(Math.random() < 0.22 ? { pet: randomCatPreset() } : {}), // 約兩成應徵者自帶貓
+      // 總寵物率維持約兩成,只把其中一部分分流成狗,避免無意提高事件密度。
+      ...(Math.random() < 0.22 ? { pet: randomPetPreset() } : {}),
     }));
 }

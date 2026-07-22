@@ -63,7 +63,10 @@ export {
 
 export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } from "./sim/feed";
 
-export { adoptCat, catAttitude, petsPass, ensurePets, mischiefRelief, randomCatPreset, catJournalPass } from "./sim/pets";
+export {
+  adoptCat, adoptPet, catAttitude, petAttitude, petsPass, ensurePets, mischiefRelief,
+  randomCatPreset, randomDogPreset, randomPetPreset, catJournalPass, petIcon, petSpecies,
+} from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";

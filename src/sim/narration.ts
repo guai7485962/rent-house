@@ -402,7 +402,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     arc: rt.arc
       ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
       : null,
-    flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻貓「${state.pets[id].name}」`] : [])],
+    flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻${state.pets[id].kind === "dog" ? "狗" : "貓"}「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),
     weekday: weekdayLabel(state.gameMs),

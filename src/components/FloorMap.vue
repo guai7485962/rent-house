@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
-import { createPetAgents, tickPetAgents, type PetAgent } from "../floor/petAgents";
+import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { layoutFloorTags } from "../floor/tagLayout";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
@@ -27,6 +27,7 @@ const placing = computed(() => state.pendingPlace !== null || state.pendingMove 
 const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
 let petAgents: PetAgent[] = [];
+let petSignature = "";
 let raf = 0;
 let last = 0;
 
@@ -41,7 +42,11 @@ function loop(t: number) {
     if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
     tickAgents(agents, dt);
     // 寵物貓(領養/退租時數量會變 → 重建)
-    if (petAgents.length !== Object.keys(state.pets).length) petAgents = createPetAgents();
+    const nextPetSignature = petAgentSignature();
+    if (nextPetSignature !== petSignature) {
+      petAgents = createPetAgents();
+      petSignature = nextPetSignature;
+    }
     tickPetAgents(petAgents, dt);
     const el = canvas.value;
     if (el) {
@@ -68,12 +73,12 @@ function loop(t: number) {
             color: getTheme(a.tenantId).shirt,
           })),
         ...petAgents.map((p) => ({
-          id: `pet_${p.catId}`,
-          name: `🐈${p.name}`,
+          id: `pet_${p.petId}`,
+          name: `${p.kind === "dog" ? "🐕" : "🐈"}${p.name}`,
           x: p.px + TILE / 2,
           y: p.py + 2,
           kind: "pet" as const,
-          color: "#e0913f",
+          color: p.kind === "dog" ? "#c9823d" : "#e0913f",
         })),
     ];
     agentTags.value = layoutFloorTags(rawTags, FLOOR_W, FLOOR_H).map((tag) => ({

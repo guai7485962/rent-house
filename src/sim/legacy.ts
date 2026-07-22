@@ -78,7 +78,7 @@ export function recordAlumnus(rt: TenantRuntime, reason: string) {
   const moveInMs = rt.moveInMs ?? GAME_START.getTime();
   const daysLived = Math.max(0, Math.floor((state.gameMs - moveInMs) / (24 * 3600 * 1000)));
   const pet = state.pets[rt.tenant.id];
-  const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛貓「${pet.name}」一起離開。` : "";
+  const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛${pet.kind === "dog" ? "狗" : "貓"}「${pet.name}」一起離開。` : "";
   const entry: AlumniEntry = {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,

@@ -97,7 +97,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   for (const p of sorted) drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
 
   if (agents || pets) {
-    // 人與貓依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
+    // 人與寵物依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
     const items: { y: number; draw: () => void }[] = [];
     const catPairs = activeCatPairs(pets ?? []);
     for (const [a, b] of catPairs) {
@@ -107,7 +107,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       if (a.hidden) continue;
       items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
     }
-    for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => drawCat(ctx, p, frame) });
+    for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
     for (const [a, b] of catPairs) drawCatPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
@@ -440,8 +440,72 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
   }
 }
 
+// 狗維持 16px tile 尺寸,但輪廓比貓更厚、耳朵下垂、口鼻向前,四種毛色。
+const DOG_PALS = [
+  { body: "#c9823d", dark: "#8d4f27", light: "#f0c18b", eye: "#26232f", patch: false }, // 柴色
+  { body: "#3c3842", dark: "#24212a", light: "#8d7a72", eye: "#f3ca52", patch: false }, // 黑犬
+  { body: "#eee4d2", dark: "#a7653f", light: "#fff6e7", eye: "#26232f", patch: true },  // 白棕
+  { body: "#8b9199", dark: "#5d6269", light: "#d5d8da", eye: "#26232f", patch: false }, // 灰犬
+];
+
+function drawDog(ctx: Ctx, a: PetAgent, frame: number) {
+  const pal = DOG_PALS[a.color] ?? DOG_PALS[0];
+  const x = a.px + 1;
+  const y = a.py;
+  const f = a.facing;
+  const fx = (off: number, w = 1) => x + (f > 0 ? off : 14 - off - w);
+  groundShadow(ctx, x + 7, y + TILE - 2, 9);
+
+  if (a.sleeping) {
+    // 側躺:長身、前伸的口鼻、收在身旁的腳與尾巴。
+    rect(ctx, fx(2, 8), y + 8, 8, 4, pal.body);
+    rect(ctx, fx(8, 4), y + 7, 4, 4, pal.body);
+    rect(ctx, fx(11, 3), y + 9, 3, 2, pal.light);
+    rect(ctx, fx(8, 2), y + 6, 2, 2, pal.dark); // 垂耳
+    rect(ctx, fx(12, 1), y + 9, 1, 1, pal.dark); // 鼻
+    rect(ctx, fx(3, 5), y + 12, 5, 1, pal.dark);
+    rect(ctx, fx(1, 2), y + 7, 2, 2, pal.dark); // 尾巴
+    if (pal.patch) rect(ctx, fx(7, 3), y + 8, 3, 3, pal.dark);
+    pxPat(ctx, PAT_Z, fx(12, 2), y + 2 - (frame % 2), "#cfd6ff", 0.8);
+    return;
+  }
+
+  if (!a.moving) {
+    // 坐姿:寬胸、兩隻前腳、朝前上方抬起的頭。
+    rect(ctx, x + 4, y + 8, 7, 5, pal.body);
+    rect(ctx, x + 5, y + 9, 3, 4, pal.light);
+    rect(ctx, fx(6, 6), y + 4, 6, 5, pal.body);
+    rect(ctx, fx(10, 3), y + 7, 3, 2, pal.light); // 口鼻
+    rect(ctx, fx(6, 2), y + 4, 2, 3, pal.dark); // 垂耳
+    rect(ctx, fx(11, 1), y + 7, 1, 1, pal.dark);
+    rect(ctx, fx(9, 1), y + 5, 1, 1, frame % 7 === 3 ? pal.body : pal.eye);
+    rect(ctx, x + 5, y + 12, 2, 2, pal.dark);
+    rect(ctx, x + 9, y + 12, 2, 2, pal.dark);
+    rect(ctx, fx(2, 3), y + 10, 3, 2, pal.dark); // 捲尾
+    if (pal.patch) {
+      rect(ctx, fx(7, 3), y + 4, 3, 3, pal.dark);
+      rect(ctx, x + 8, y + 9, 3, 2, pal.dark);
+    }
+    return;
+  }
+
+  // 小跑步:厚實水平身體、前伸口鼻、垂耳與高舉尾巴。
+  const bob = Math.floor(a.walkPhase) % 2;
+  rect(ctx, fx(2, 8), y + 7 - bob, 8, 4, pal.body);
+  rect(ctx, fx(8, 5), y + 5 - bob, 5, 5, pal.body);
+  rect(ctx, fx(11, 3), y + 8 - bob, 3, 2, pal.light);
+  rect(ctx, fx(8, 2), y + 5 - bob, 2, 3, pal.dark);
+  rect(ctx, fx(13, 1), y + 8 - bob, 1, 1, pal.dark);
+  rect(ctx, fx(11, 1), y + 6 - bob, 1, 1, pal.eye);
+  const legs = bob ? [3, 8] : [4, 7];
+  for (const off of legs) rect(ctx, fx(off, 1), y + 11, 1, 3, pal.dark);
+  rect(ctx, fx(1, 1), y + 4 - bob, 1, 3, pal.dark);
+  rect(ctx, fx(2, 1), y + 6 - bob, 1, 1, pal.dark);
+  if (pal.patch) rect(ctx, fx(5, 3), y + 7 - bob, 3, 3, pal.dark);
+}
+
 function activeCatPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {
-  const byOwner = new Map(pets.map((p) => [p.catId, p]));
+  const byOwner = new Map(pets.map((p) => [p.petId, p]));
   const pairs: [PetAgent, PetAgent][] = [];
   for (const leader of pets) {
     if (!leader.pairLeader || !leader.pairAction || !leader.pairWith) continue;

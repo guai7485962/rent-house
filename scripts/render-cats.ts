@@ -90,10 +90,11 @@ function encodePNG(rgba: Uint8ClampedArray, w: number, h: number) {
   ]);
 }
 
-// 四種花色 × 走(右)/走(左)/坐/睡,擺在交誼廳大廳一帶
-const cat = (color: number, c: number, r: number, o: Partial<PetAgent>): PetAgent => ({
-  ownerId: `demo${color}_${c}_${r}`,
+// 貓狗各四種花色 × 走(右)/走(左)/坐/睡,集中輸出成寵物 contact sheet。
+const petAgent = (kind: "cat" | "dog", color: number, c: number, r: number, o: Partial<PetAgent>): PetAgent => ({
+  petId: `${kind}_demo${color}_${c}_${r}`,
   name: "demo",
+  kind,
   color,
   c, r,
   px: c * 16,
@@ -109,10 +110,18 @@ const cat = (color: number, c: number, r: number, o: Partial<PetAgent>): PetAgen
 const cats: PetAgent[] = [];
 for (let color = 0; color < 4; color++) {
   const r = 10 + color;
-  cats.push(cat(color, 2, r, { moving: true, facing: 1 }));
-  cats.push(cat(color, 4, r, { moving: true, facing: -1, walkPhase: 1 }));
-  cats.push(cat(color, 6, r, {}));
-  cats.push(cat(color, 10, r, { sleeping: true }));
+  cats.push(petAgent("cat", color, 2, r, { moving: true, facing: 1 }));
+  cats.push(petAgent("cat", color, 4, r, { moving: true, facing: -1, walkPhase: 1 }));
+  cats.push(petAgent("cat", color, 6, r, {}));
+  cats.push(petAgent("cat", color, 7, r, { sleeping: true }));
+}
+
+for (let color = 0; color < 4; color++) {
+  const r = 10 + color;
+  cats.push(petAgent("dog", color, 9, r, { moving: true, facing: 1 }));
+  cats.push(petAgent("dog", color, 11, r, { moving: true, facing: -1, walkPhase: 1 }));
+  cats.push(petAgent("dog", color, 13, r, {}));
+  cats.push(petAgent("dog", color, 15, r, { sleeping: true }));
 }
 
 // 五種雙貓互動演出；每對固定相鄰，方便一次目檢共享道具與前景特效。
@@ -121,16 +130,16 @@ for (let i = 0; i < actions.length; i++) {
   const ownerA = `pair_${i}_a`;
   const ownerB = `pair_${i}_b`;
   const r = 15 + i * 2;
-  cats.push(cat(0, 5, r, {
-    ownerId: ownerA,
+  cats.push(petAgent("cat", 0, 5, r, {
+    petId: ownerA,
     pairAction: actions[i],
     pairWith: ownerB,
     pairLeader: true,
     moving: actions[i] === "chase",
     sleeping: actions[i] === "nap",
   }));
-  cats.push(cat(1, 6, r, {
-    ownerId: ownerB,
+  cats.push(petAgent("cat", 1, 6, r, {
+    petId: ownerB,
     pairAction: actions[i],
     pairWith: ownerA,
     pairLeader: false,
@@ -156,6 +165,6 @@ for (let y = 0; y < outH; y++)
     out[dst + 2] = ctx.buf[src + 2];
     out[dst + 3] = 255;
   }
-const outPath = process.argv[2] ?? "cats.png";
+const outPath = process.argv[2] ?? "pets.png";
 writeFileSync(outPath, encodePNG(out, outW, outH));
 console.log(`寫出 ${outPath} (${outW}x${outH})`);

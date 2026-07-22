@@ -299,13 +299,15 @@ function becomeModelTenant(rt: TenantRuntime) {
 function maybeAttachCatFarewell(rt: TenantRuntime) {
   const pet = state.pets[rt.tenant.id];
   if (!pet || pet.ownerId !== rt.tenant.id || rt.pendingEvent) return;
+  const species = pet.kind === "dog" ? "狗" : "貓";
+  const houseSpecies = pet.kind === "dog" ? "公寓犬" : "樓貓";
   const ev: EventDef = {
-    id: "wish_cat_farewell",
+    id: "wish_pet_farewell",
     title: `「${pet.name}」的去留`,
-    description: `${rt.tenant.name} 抱著「${pet.name}」來找你:「新住處還不確定能不能養貓……牠在這棟樓有熟悉的角落,我可以帶牠走,也可以拜託你收留牠。」`,
+    description: `${rt.tenant.name} 帶著「${pet.name}」來找你:「新住處還不確定能不能養${species}……牠在這棟樓有熟悉的角落,我可以帶牠走,也可以拜託你收留牠。」`,
     choices: [
-      { id: "take", label: "讓他帶牠一起走", hint: "貓跟著主人開始新生活", effect: {} },
-      { id: "stay", label: "把牠留下當樓貓", hint: "由公寓接手照顧,牠會繼續在樓裡遊蕩", effect: {} },
+      { id: "take", label: "讓他帶牠一起走", hint: `${species}跟著主人開始新生活`, effect: {} },
+      { id: "stay", label: `留下當${houseSpecies}`, hint: "由公寓接手照顧,牠會繼續在樓裡遊蕩", effect: {} },
     ],
   };
   rt.pendingEvent = ev;

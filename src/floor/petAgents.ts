@@ -1,17 +1,18 @@
 /**
- * 寵物貓行為體(渲染層):讀 sim 層 state.pets 的 hangout(這小時貓待的區域),
+ * 寵物行為體(渲染層):讀 sim 層 state.pets 的 hangout,
  * 在該區域內隨機遊蕩——走幾步、停下來、偶爾睡一覺。
  * 與 agents.ts 同款移動邏輯(尋路 + 逐格插值),但更慢、更隨性。
  */
 import { TILE, GRID_W, GRID_H, buildGrid, type Region } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
-import type { Pet } from "../types";
+import type { Pet, PetKind } from "../types";
 
 export interface PetAgent {
-  /** state.pets 的 record key(一般貓 = 飼主 id;樓貓 ownerId 是 "landlord" 哨兵,不能當 key) */
-  catId: string;
+  /** state.pets 的 record key(一般寵物 = 飼主 id;公寓寵物 ownerId 是 landlord) */
+  petId: string;
   name: string;
+  kind: PetKind;
   color: number;
   c: number;
   r: number;
@@ -43,11 +44,12 @@ function tileInRegion(region: string, blocked: boolean[][]): Tile | null {
 
 export function createPetAgents(): PetAgent[] {
   const blocked = currentBlocked();
-  return Object.entries(state.pets).map(([catId, pet]) => {
+  return Object.entries(state.pets).map(([petId, pet]) => {
     const t = tileInRegion(pet.hangout, blocked) ?? { c: 7, r: 10 };
     return {
-      catId,
+      petId,
       name: pet.name,
+      kind: pet.kind ?? "cat",
       color: pet.color,
       c: t.c,
       r: t.r,
@@ -64,6 +66,14 @@ export function createPetAgents(): PetAgent[] {
   });
 }
 
+/** 寵物名單換人／換物種時重建渲染 agent；只看數量會漏掉「一進一出、總數不變」。 */
+export function petAgentSignature(): string {
+  return Object.entries(state.pets)
+    .map(([petId, pet]) => `${petId}:${pet.kind ?? "cat"}:${pet.color}:${pet.name}`)
+    .sort()
+    .join("|");
+}
+
 /** 找一格緊鄰另一隻貓、且仍在同區域的可走格。 */
 function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Tile | null {
   const candidates = [
@@ -76,13 +86,13 @@ function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Ti
 export function tickPetAgents(agents: PetAgent[], dt: number) {
   const now = Date.now();
   for (const a of agents) {
-    const pet = state.pets[a.catId];
-    if (!pet) continue; // 貓已離開(呼叫端靠數量變化重建)
+    const pet = state.pets[a.petId];
+    if (!pet) continue;
     const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > state.gameMs;
-    const partner = pairActive ? agents.find((x) => x.catId === pet.pairWith) : undefined;
+    const partner = pairActive ? agents.find((x) => x.petId === pet.pairWith) : undefined;
     a.pairAction = partner ? pet.pairAction : undefined;
-    a.pairWith = partner?.catId;
-    a.pairLeader = !!partner && a.catId.localeCompare(partner.catId) < 0;
+    a.pairWith = partner?.petId;
+    a.pairLeader = !!partner && a.petId.localeCompare(partner.petId) < 0;
     if (!a.moving) {
       if (now < a.restUntil) continue;
       const blocked = currentBlocked();

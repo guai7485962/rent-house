@@ -5,17 +5,20 @@ import { roomAttributes } from "../sim/placements";
 import { requestInvite, sanitizeInvited, looksMinor } from "../sim/invite";
 import { moveIn, getApplicants } from "../store";
 import { relistApplicants, RELIST_COST } from "../sim/tenancy";
-import { catAttitude } from "../sim/pets";
+import { petAttitude } from "../sim/pets";
 import { state } from "../sim/gameState";
-import type { Gender } from "../types";
+import type { Gender, PetKind } from "../types";
 
-// 這層樓已經有貓時,才需要提醒應徵者的「貓緣」(方便房東配房,避免把怕貓的人放進有貓的環境)
-const floorHasCat = computed(() => Object.keys(state.pets).length > 0);
-const ATT = { like: "🐈 親貓", dislike: "🙀 怕貓/潔癖", neutral: "" } as const;
-function catNote(a: Applicant): string {
-  if (a.pet) return "🐈 自帶貓";
-  if (!floorHasCat.value) return "";
-  return ATT[catAttitude(a)];
+// 樓內已有該物種時才提示相性；自帶寵物優先顯示。
+const floorPetKinds = computed(() => [...new Set(Object.values(state.pets).map((pet) => pet.kind ?? "cat"))] as PetKind[]);
+function petNote(a: Applicant): string {
+  if (a.pet) return `${(a.pet.kind ?? "cat") === "dog" ? "🐕 自帶狗" : "🐈 自帶貓"}`;
+  return floorPetKinds.value.map((kind) => {
+    const attitude = petAttitude(a, kind);
+    if (attitude === "neutral") return "";
+    if (kind === "dog") return attitude === "like" ? "🐕 親狗" : "😰 怕狗/潔癖";
+    return attitude === "like" ? "🐈 親貓" : "🙀 怕貓/潔癖";
+  }).filter(Boolean).join(" · ");
 }
 
 const props = defineProps<{ roomId: string }>();
@@ -119,7 +122,7 @@ function stars(n: number) {
             <span class="name">{{ a.name }}</span>
             <span class="gender">{{ GENDER_LABEL[a.gender] }}</span>
             <span class="job">{{ a.occupation }}</span>
-            <span v-if="catNote(a)" class="catnote" :class="{ warn: catNote(a).includes('怕貓') }">{{ catNote(a) }}</span>
+            <span v-if="petNote(a)" class="catnote" :class="{ warn: petNote(a).includes('怕') }">{{ petNote(a) }}</span>
             <span class="stars">{{ stars(a.stars) }}</span>
           </div>
           <p class="bio">{{ a.bio }}</p>

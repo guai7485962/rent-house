@@ -49,6 +49,9 @@ export type FurnKind =
   | "wardrobe"
   | "dresser"
   | "cat_tower"
+  | "dog_bed"
+  | "chew_toy"
+  | "pee_pad"
   | "plant"
   | "lamp"
   | "aroma"
@@ -89,6 +92,8 @@ export interface FurnitureDef {
   unlocksStates: TenantVisualState[];
   /** 是否為交誼廳的跨租客社交碰撞點 */
   social: boolean;
+  /** 商店與家具資訊卡顯示的特殊機制說明 */
+  effectHint?: string;
   /** 給後台 AI 的敘事鉤子 */
   promptHints: string[];
   /** 外觀 */
@@ -306,6 +311,7 @@ export const CATALOG: FurnitureDef[] = [
     fitsTags: ["偷養浪貓", "光明正大養貓"],
     unlocksStates: ["playing_with_cat"],
     social: false,
+    effectHint: "貓咪破壞機率 -70%",
     promptHints: ["貓佔領跳台頂端", "貓抓痕成為查房破綻"],
     sprite: { kind: "cat_tower" },
   },
@@ -321,6 +327,7 @@ export const CATALOG: FurnitureDef[] = [
     fitsTags: ["偷養浪貓", "光明正大養貓"],
     unlocksStates: [],
     social: false,
+    effectHint: "貓咪如廁意外 -85%",
     promptHints: ["貓砂盆藏在角落", "剷屎官的日常"],
     sprite: {
       recipe: [
@@ -329,6 +336,53 @@ export const CATALOG: FurnitureDef[] = [
         { shape: "rect", x: 4, y: 9, w: 8, h: 3, color: "#d8cdb4" }, // 貓砂
       ],
     },
+  },
+  {
+    id: "dog_bed",
+    name: "狗狗睡墊",
+    category: "sleep",
+    placement: "room",
+    price: 2600,
+    footprint: { w: 2, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: { cozy: 5 },
+    fitsTags: ["喜歡狗", "喜歡寵物"],
+    unlocksStates: [],
+    social: false,
+    promptHints: ["狗狗把睡墊踩成一個剛好的窩", "半夜傳來安心的小呼聲"],
+    sprite: { kind: "dog_bed" },
+  },
+  {
+    id: "chew_toy",
+    name: "耐咬玩具",
+    category: "ambiance",
+    placement: "room",
+    price: 900,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: { cozy: 1 },
+    fitsTags: ["喜歡狗", "喜歡寵物"],
+    unlocksStates: [],
+    social: false,
+    effectHint: "狗狗破壞機率 -75%",
+    promptHints: ["耐咬玩具成功救下桌腳", "狗狗叼著玩具到處找人玩"],
+    sprite: { kind: "chew_toy" },
+  },
+  {
+    id: "pee_pad",
+    name: "寵物尿墊",
+    category: "utility",
+    placement: "room",
+    price: 600,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: ["喜歡狗", "喜歡寵物"],
+    unlocksStates: [],
+    social: false,
+    effectHint: "狗狗如廁意外 -85%",
+    promptHints: ["狗狗乖乖走到尿墊上", "記得定時更換尿墊"],
+    sprite: { kind: "pee_pad" },
   },
   {
     id: "plant",

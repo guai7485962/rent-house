@@ -49,7 +49,22 @@ const cases = [
   { id: "beanbag", width: 16, height: 16 },
   { id: "tv_console", width: 32, height: 16 },
   { id: "cat_tower", width: 16, height: 32 },
+  { id: "dog_bed", width: 32, height: 16 },
+  { id: "chew_toy", width: 16, height: 16 },
+  { id: "pee_pad", width: 16, height: 16 },
 ] as const;
+
+check("三件狗狗家具的價格、尺寸與房內擺放設定正確",
+  getDef("dog_bed").price === 2600
+  && getDef("dog_bed").footprint.w === 2
+  && getDef("dog_bed").placement === "room"
+  && getDef("chew_toy").price === 900
+  && getDef("pee_pad").price === 600);
+check("功能型寵物家具會向玩家揭露實際效果",
+  getDef("cat_tower").effectHint === "貓咪破壞機率 -70%"
+  && getDef("litter_box").effectHint === "貓咪如廁意外 -85%"
+  && getDef("chew_toy").effectHint === "狗狗破壞機率 -75%"
+  && getDef("pee_pad").effectHint === "狗狗如廁意外 -85%");
 
 for (const item of cases) {
   const ctx = new RecorderCtx();
@@ -94,6 +109,24 @@ check("貓跳台具有貓洞而非書架輪廓",
   && catTower.fills.some((call) => call.x === 10 && call.y === 5 && call.w === 3 && call.h === 22));
 check("貓跳台具有垂掛玩具",
   hasFill(catTower.fills, "#d28b63", 1, 20, 3, 3));
+
+const dogBed = new RecorderCtx();
+drawDef(dogBed as any, getDef("dog_bed"), 0, 0);
+check("狗狗睡墊有柔軟內墊與骨頭徽記",
+  hasFill(dogBed.fills, "#ead0ae", 8, 7, 16, 6)
+  && hasFill(dogBed.fills, "#f5ead3", 14, 8, 4, 2));
+
+const chewToy = new RecorderCtx();
+drawDef(chewToy as any, getDef("chew_toy"), 0, 0);
+check("耐咬玩具有紅色橡膠骨頭輪廓",
+  hasFill(chewToy.fills, "#70352c", 5, 7, 7, 3)
+  && chewToy.fills.some((call) => call.x === 2 && call.y === 8));
+
+const peePad = new RecorderCtx();
+drawDef(peePad as any, getDef("pee_pad"), 0, 0);
+check("寵物尿墊有藍邊與吸水內層",
+  hasFill(peePad.fills, "#a9c6d2", 2, 5, 12, 8)
+  && hasFill(peePad.fills, "#eef3ea", 3, 6, 10, 6));
 
 console.log(`\n${passed}/${passed + failed} passed`);
 if (failed > 0) process.exit(1);

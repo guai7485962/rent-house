@@ -155,9 +155,14 @@ function ownerRoomHas(pet: Pet, defId: string): boolean {
   return !!room && getPlacements().some((p) => p.room === room && p.defId === defId);
 }
 
-/** 貓咪家具對搗蛋機率的乘數:貓跳台壓低破壞、貓砂盆壓低隨地大小便(§A-2) */
+/** 物種專屬家具對搗蛋機率的乘數；只計入飼主房內且不跨物種套用。 */
 export function mischiefRelief(pet: Pet): { break: number; poop: number } {
-  if (pet.kind === "dog") return { break: 1, poop: 1 };
+  if (pet.kind === "dog") {
+    return {
+      break: ownerRoomHas(pet, "chew_toy") ? 0.25 : 1,
+      poop: ownerRoomHas(pet, "pee_pad") ? 0.15 : 1,
+    };
+  }
   return {
     break: ownerRoomHas(pet, "cat_tower") ? 0.3 : 1,
     poop: ownerRoomHas(pet, "litter_box") ? 0.15 : 1,

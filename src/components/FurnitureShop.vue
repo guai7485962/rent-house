@@ -76,6 +76,7 @@ function attrs(d: (typeof CATALOG)[number]) {
                 <span class="fp">{{ d.footprint.w }}×{{ d.footprint.h }}</span>
                 <span v-for="[k, v] in attrs(d)" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
                 <span v-for="n in unlocks(d.id)" :key="n" class="u">💞 {{ n }}</span>
+                <span v-if="d.effectHint" class="effect">🐾 {{ d.effectHint }}</span>
               </div>
             </div>
             <button class="buy" :disabled="state.money < d.price" @click="buy(d.id)">
@@ -130,6 +131,7 @@ function attrs(d: (typeof CATALOG)[number]) {
 .fp { font-size: 10px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
 .a { font-size: 10px; color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
 .u { font-size: 10px; color: #f0a8c6; border: 1px solid #d9548a; border-radius: 999px; padding: 0 6px; }
+.effect { font-size: 10px; color: #9ddfc4; border: 1px solid #4f9b7d; border-radius: 999px; padding: 0 6px; }
 .buy {
   background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05;
   font-weight: 700; font-size: 12.5px; border-radius: 8px; padding: 8px 12px; white-space: nowrap;

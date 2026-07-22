@@ -215,6 +215,42 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
     rect(ctx, x + 1, y + 20, 3, 3, "#d28b63");
     rect(ctx, x + 2, y + 19, 1, 1, "#e6ad7f");
   },
+  dog_bed(ctx, x, y, w, h) {
+    groundShadow(ctx, x + w / 2, y + h - 1, w - 5);
+    const rim = ramp("#8d5962");
+    rect(ctx, x + 3, y + 5, w - 6, h - 4, rim.out);
+    rect(ctx, x + 4, y + 4, w - 8, h - 5, rim.dark);
+    rect(ctx, x + 6, y + 6, w - 12, h - 8, "#d7b796");
+    rect(ctx, x + 8, y + 7, w - 16, h - 10, "#ead0ae");
+    rect(ctx, x + 5, y + 5, 4, 2, rim.light);
+    rect(ctx, x + w - 9, y + 5, 4, 2, rim.mid);
+    // 小骨頭徽記，讓俯視圖仍能一眼辨識為狗狗家具。
+    rect(ctx, x + 14, y + 8, 4, 2, "#f5ead3");
+    rect(ctx, x + 13, y + 7, 2, 2, "#f5ead3");
+    rect(ctx, x + 17, y + 7, 2, 2, "#f5ead3");
+  },
+  chew_toy(ctx, x, y) {
+    groundShadow(ctx, x + TILE / 2, y + TILE - 2, 10);
+    const rubber = ramp("#d76555");
+    // 紅色橡膠骨頭：兩端較寬、中間收窄。
+    rect(ctx, x + 3, y + 6, 3, 3, rubber.out);
+    rect(ctx, x + 10, y + 8, 3, 3, rubber.out);
+    rect(ctx, x + 5, y + 7, 7, 3, rubber.out);
+    rect(ctx, x + 4, y + 5, 2, 2, rubber.light);
+    rect(ctx, x + 2, y + 8, 2, 2, rubber.dark);
+    rect(ctx, x + 11, y + 6, 2, 2, rubber.light);
+    rect(ctx, x + 12, y + 10, 2, 2, rubber.dark);
+    rect(ctx, x + 6, y + 7, 5, 1, rubber.hi);
+  },
+  pee_pad(ctx, x, y) {
+    groundShadow(ctx, x + TILE / 2, y + TILE - 2, 12);
+    rect(ctx, x + 2, y + 5, 12, 8, "#a9c6d2");
+    rect(ctx, x + 3, y + 6, 10, 6, "#eef3ea");
+    rect(ctx, x + 4, y + 7, 8, 4, "#dfe9df");
+    rect(ctx, x + 3, y + 6, 8, 1, "#ffffff");
+    rect(ctx, x + 11, y + 7, 1, 4, "#c9d9d1");
+    rect(ctx, x + 4, y + 11, 8, 1, "#c9d9d1");
+  },
   plant(ctx, x, y) {
     groundShadow(ctx, x + TILE / 2, y + TILE - 1, 8);
     rect(ctx, x + 5, y + 10, 6, 5, "#8a5a3a");

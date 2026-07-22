@@ -33,6 +33,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
         <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>
+        <span v-if="def.effectHint" class="effect">🐾 {{ def.effectHint }}</span>
       </div>
 
       <p v-if="def.promptHints.length" class="hint">「{{ def.promptHints[0] }}」</p>
@@ -60,6 +61,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 .fp { font-size: 11px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
 .a { font-size: 11px; color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
 .social { font-size: 11px; color: var(--accent-2); border: 1px solid var(--accent-2); border-radius: 999px; padding: 1px 8px; }
+.effect { font-size: 11px; color: #9ddfc4; border: 1px solid #4f9b7d; border-radius: 999px; padding: 1px 8px; }
 .hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; margin-bottom: 12px; }
 
 .actions { display: flex; gap: 8px; }

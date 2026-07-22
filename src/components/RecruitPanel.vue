@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { rescoreApplicants, type Applicant } from "../sim/recruit";
 import { roomAttributes } from "../sim/placements";
-import { requestInvite, sanitizeInvited, looksMinor } from "../sim/invite";
+import { requestInvite, sanitizeInvited, looksMinor, type InvitedPetChoice } from "../sim/invite";
 import { moveIn, getApplicants } from "../store";
 import { relistApplicants, RELIST_COST } from "../sim/tenancy";
 import { petAttitude } from "../sim/pets";
@@ -32,6 +32,7 @@ const showInvite = ref(false);
 const invName = ref("");
 const invDesc = ref("");
 const invGender = ref<Gender>("male");
+const invPet = ref<InvitedPetChoice>("none");
 const invBusy = ref(false);
 const invError = ref("");
 
@@ -55,7 +56,7 @@ async function submitInvite() {
       res.reason === "quota" ? "今日 AI 額度已用完,明天再試。" : res.reason === "offline" ? "連不上伺服器,稍後再試。" : "AI 生成失敗,換個描述再試一次。";
     return;
   }
-  const s = sanitizeInvited(name, res.raw, invGender.value);
+  const s = sanitizeInvited(name, res.raw, invGender.value, invPet.value);
   if (!s.ok || !s.applicant) {
     invError.value = s.reason ?? "生成的角色資料不完整。";
     return;
@@ -147,6 +148,14 @@ function stars(n: number) {
                 <option value="nonbinary">非二元</option>
               </select>
             </label>
+            <label class="inv-gender">
+              <span>寵物</span>
+              <select v-model="invPet" aria-label="特邀租客寵物">
+                <option value="none">不帶寵物</option>
+                <option value="cat">🐈 帶一隻貓</option>
+                <option value="dog">🐕 帶一隻狗</option>
+              </select>
+            </label>
             <textarea
               v-model="invDesc"
               class="inv-desc"
@@ -154,7 +163,7 @@ function stars(n: number) {
               rows="3"
               placeholder="個性描述(例:沉默寡言的狙擊手,觀察力極強,愛喝黑咖啡,晝伏夜出)"
             ></textarea>
-            <p class="inv-note">僅接受成年角色;你指定的性別會直接採用,AI 只生成職業/性格/作息/外觀,消毒後入住本房。</p>
+            <p class="inv-note">僅接受成年角色;你指定的性別與寵物會直接採用,寵物名字與花色自動產生。AI 只生成職業/性格/作息/外觀,消毒後入住本房。</p>
             <p v-if="invError" class="inv-err">{{ invError }}</p>
             <div class="inv-actions">
               <button class="inv-cancel" :disabled="invBusy" @click="showInvite = false">取消</button>

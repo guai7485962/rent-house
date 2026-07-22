@@ -6,9 +6,10 @@
  * 2. AI 依描述如實判定 isAdult;isAdult !== true → 拒絕入住(不會被「轉成成人」)。
  * 3. 全欄位白名單/夾值:作息原型、外觀部件、數值、租金、偏好——AI 只能在既有枚舉裡挑。
  */
-import type { Appearance, Gender, HairStyle, AccessoryKind, CoreTag, RoomAttribute } from "../types";
+import type { Appearance, Gender, HairStyle, AccessoryKind, CoreTag, PetKind, RoomAttribute } from "../types";
 import type { Applicant } from "./recruit";
 import { ARCHETYPE_ROUTINES } from "./routine";
+import { randomCatPreset, randomDogPreset } from "./pets";
 import { ALL_HAIR_STYLES, ALL_ACCESSORIES, HAIR_COLORS, SHIRT_COLORS, PANTS_COLORS, SKIN_TONES } from "../pixel/parts";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -53,6 +54,8 @@ export interface SanitizeResult {
   reason?: string;
 }
 
+export type InvitedPetChoice = PetKind | "none";
+
 const GENDERS: Gender[] = ["male", "female", "nonbinary"];
 const ATTRS: RoomAttribute[] = ["tech", "cozy", "noise", "soundproof", "storage", "style"];
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -60,8 +63,13 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const pickColor = (v: unknown, pool: string[]): string =>
   typeof v === "string" && HEX.test(v) ? v : pool[Math.floor(Math.random() * pool.length)];
 
-/** 消毒 AI 回傳的角色資料 → 應徵者;isAdult !== true 一律拒絕 */
-export function sanitizeInvited(name: string, raw: unknown, selectedGender?: Gender): SanitizeResult {
+/** 消毒 AI 回傳的角色資料 → 應徵者;性別與寵物以玩家選擇為準,isAdult !== true 一律拒絕 */
+export function sanitizeInvited(
+  name: string,
+  raw: unknown,
+  selectedGender?: Gender,
+  selectedPet: InvitedPetChoice = "none",
+): SanitizeResult {
   const r = raw as Record<string, any>;
   if (!r || typeof r !== "object") return { ok: false, reason: "AI 回傳的資料無法解析" };
 
@@ -106,6 +114,7 @@ export function sanitizeInvited(name: string, raw: unknown, selectedGender?: Gen
     skin: pickColor(apRaw.skin, SKIN_TONES),
     accessory: ALL_ACCESSORIES.includes(apRaw.accessory) ? (apRaw.accessory as AccessoryKind) : "none",
   };
+  const pet = selectedPet === "cat" ? randomCatPreset() : selectedPet === "dog" ? randomDogPreset() : undefined;
 
   const applicant: Applicant = {
     id: `tenant_invite_${Date.now()}`,
@@ -121,6 +130,7 @@ export function sanitizeInvited(name: string, raw: unknown, selectedGender?: Gen
     attractedTo,
     appearance,
     isAdult: true,
+    ...(pet ? { pet } : {}),
   };
   return { ok: true, applicant };
 }

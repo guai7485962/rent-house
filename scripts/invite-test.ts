@@ -43,14 +43,20 @@ const validRaw = {
 };
 
 // --- 1. 正常消毒 ---
-const ok1 = sanitizeInvited("赤井秀一", validRaw);
+const ok1 = sanitizeInvited("赤井秀一", validRaw, undefined, "dog");
 check("合法角色通過消毒", ok1.ok && !!ok1.applicant);
 check("租金取整到百位且夾範圍", ok1.applicant!.monthlyRent === 17800);
 check("作息原型合法沿用", ok1.applicant!.archetypeKey === "freelancer");
 check("外觀部件沿用", ok1.applicant!.appearance!.accessory === "cap");
 check("isAdult = true", ok1.applicant!.isAdult === true);
+check("玩家指定特邀租客帶狗", ok1.applicant!.pet?.kind === "dog");
 const playerGender = sanitizeInvited("花木蘭", { ...validRaw, gender: "male" }, "female");
 check("建立畫面指定的性別優先於 AI 猜測", playerGender.applicant?.gender === "female");
+check("預設不帶寵物", !playerGender.applicant?.pet);
+const invitedCat = sanitizeInvited("貓奴店長", validRaw, "nonbinary", "cat");
+check("玩家指定特邀租客帶貓", invitedCat.applicant?.pet?.kind === "cat");
+const invalidPet = sanitizeInvited("奇獸愛好者", validRaw, "male", "rabbit" as any);
+check("未知寵物選項安全回退為不帶寵物", !invalidPet.applicant?.pet);
 
 // --- 2. 未成年拒收 ---
 check("isAdult:false → 拒收", !sanitizeInvited("某角色", { ...validRaw, isAdult: false }).ok);
@@ -95,6 +101,8 @@ const rt = state.runtimes[ok1.applicant!.id];
 check("特邀租客入住 r304", !!rt && state.occupancy.r304 === ok1.applicant!.id);
 check("Tenant.isAdult = true", rt!.tenant.isAdult === true);
 check("外觀已登錄渲染層", getCustomAppearance(ok1.applicant!.id)?.accessory === "cap");
+check("指定的狗隨特邀租客入住", state.pets[ok1.applicant!.id]?.kind === "dog");
+check("入住狗的飼主正確", state.pets[ok1.applicant!.id]?.ownerId === ok1.applicant!.id);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

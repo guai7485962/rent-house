@@ -17,9 +17,10 @@ import type { EventEffect } from "./events";
 import { DIRECTIVES } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
-import { adoptCat } from "./pets";
+import { adoptCat, resolveCatFarewell } from "./pets";
 import { recordAlumnus, unlock } from "./legacy";
 import { ensureWishes } from "./wishes";
+import { addReputation, REP_GRADUATE } from "./reputation";
 import {
   state,
   clamp,
@@ -108,6 +109,34 @@ export function moveIn(roomId: string, ap: Applicant) {
   save();
 }
 
+/**
+ * 圓夢畢業離開(只走 wishPass 排定的離開;房東請離/分手搬走不適用):
+ * 謝禮紅包(0.5×月租×(1+好感/100),上限 1×月租)+ 退還入住押金(以離開時月租計)
+ * + 口碑 +8 + 畢業成就,最後執行通用 moveOut。
+ */
+export function graduateFarewell(tenantId: string, reason: string) {
+  const rt = state.runtimes[tenantId];
+  if (!rt) return;
+  const name = rt.tenant.name;
+  const rent = rt.tenant.finance.monthlyRent;
+  const gift = Math.min(rent, Math.round(0.5 * rent * (1 + rt.tenant.stats.affinity / 100)));
+  const deposit = rent * DEPOSIT_MONTHS;
+  if (gift > 0) {
+    addMoney(gift, `${name} 圓夢謝禮紅包`, "other");
+    pushSocialLog(rt, `🧧 臨走前塞給你一個紅包($${gift.toLocaleString()}):「謝謝你,這裡是我圓夢的地方。」`, "major");
+  }
+  if (deposit > 0) {
+    addMoney(-deposit, `退還 ${name} 押金`, "other");
+    pushSocialLog(rt, `💵 你把 $${deposit.toLocaleString()} 押金如數退還,兩人握了握手,好聚好散。`, "major");
+  }
+  notify(`🧧 ${name} 圓夢離開:留下 $${gift.toLocaleString()} 謝禮紅包,押金 $${deposit.toLocaleString()} 已退還`);
+  addReputation(REP_GRADUATE, `${name} 在這裡圓夢畢業`);
+  state.graduateCount += 1;
+  unlock("first_graduate");
+  if (state.graduateCount >= 3) unlock("graduate_3");
+  moveOut(tenantId, reason);
+}
+
 /** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶 */
 export function moveOut(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
@@ -115,7 +144,14 @@ export function moveOut(tenantId: string, reason: string) {
   const name = rt.tenant.name;
   // 帶著欠款離開:這筆收不回來了,至少讓房東知道(名冊原因不變)
   if ((rt.arrears ?? 0) > 0) notify(`💸 ${name} 帶著 $${rt.arrears} 的未繳欠租搬走了`);
-  recordAlumnus(rt, reason); // 進歷任房客名冊(趁 runtime 還在;§G-8)
+  recordAlumnus(rt, reason); // 進歷任房客名冊(趁 runtime 還在;§G-8;會順帶記下貓一起走)
+  // 通用路徑(含請離/分手):自己養的貓一律跟著走,根治「飼主走了貓還在」的殘留。
+  // 已托付成樓貓的(ownerId="landlord")不在此列,牠留下來歸公寓照顧。
+  const ownPet = state.pets[tenantId];
+  if (ownPet && ownPet.ownerId === tenantId) {
+    delete state.pets[tenantId];
+    notify(`🐈 「${ownPet.name}」也跟著 ${name} 一起搬走了`);
+  }
   // 在清除關係前,先記下誰跟他親近(留一筆「搬走了」的記憶給留下的人)
   const bonds = listRelationships().filter((r) => r.aId === tenantId || r.bId === tenantId);
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
@@ -464,6 +500,8 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
     if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
     // 打架事件(§10-2):房東出面調解成功 → 冷戰直接解除
     if (eventId === "fight_decision" && choiceId === "mediate" && withId) endFeud(tenantId, withId, "mediated");
+    // 圓夢畢業的貓去留(wishes.maybeAttachCatFarewell):留下 → 轉樓貓;帶走 → 離開日隨主人走
+    if (eventId === "wish_cat_farewell") resolveCatFarewell(rt, choiceId);
     // AI 提議互動(§10-3):玩家拍板 → 白名單+門檻把關後在畫面上演出來;不放行就靜默略過
     if (withId && choice.effect.interaction) forceInteraction(tenantId, withId, choice.effect.interaction);
   }

@@ -74,6 +74,12 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
         <span class="amt">${{ state.money.toLocaleString() }}</span>
       </div>
 
+      <!-- 房東口碑(圓夢畢業批):租客在這裡圓夢,好房東的名聲會吸引更好的應徵者 -->
+      <div class="rep" title="口碑來源:租客圓夢畢業離開 +8、安居圓夢成為模範房客 +3(上限 100)。口碑越高,新應徵者的契合星等越高、願意開的月租也更高(滿口碑 +5%)。">
+        <span class="rep-lbl">⭐ 房東口碑</span>
+        <span class="rep-val">{{ state.reputation }}<i>/ 100</i></span>
+      </div>
+
       <!-- 預估每日淨現金流(好感/滿意提升會即時反映在這) -->
       <div class="daily" :class="daily.net >= 0 ? 'pos-bg' : 'neg-bg'">
         <div class="daily-main">
@@ -151,6 +157,11 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 .balance { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 6px; }
 .balance .lbl { font-size: 12px; color: var(--text-dim); }
 .balance .amt { font-size: 26px; font-weight: 800; color: var(--accent); }
+
+.rep { display: flex; align-items: baseline; justify-content: space-between; margin: 0 16px 8px; border: 1px solid rgba(227, 179, 65, 0.35); background: rgba(227, 179, 65, 0.08); border-radius: 10px; padding: 7px 12px; }
+.rep-lbl { font-size: 12px; color: #ffe9b0; }
+.rep-val { font-size: 15px; font-weight: 800; color: #e3b341; }
+.rep-val i { font-style: normal; font-weight: 500; font-size: 10px; color: var(--text-dim); margin-left: 2px; }
 
 .daily { margin: 4px 16px 10px; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
 .daily.pos-bg { background: rgba(90, 208, 106, 0.08); border-color: rgba(90, 208, 106, 0.3); }

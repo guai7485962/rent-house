@@ -68,7 +68,7 @@ function loop(t: number) {
             color: getTheme(a.tenantId).shirt,
           })),
         ...petAgents.map((p) => ({
-          id: `pet_${p.ownerId}`,
+          id: `pet_${p.catId}`,
           name: `🐈${p.name}`,
           x: p.px + TILE / 2,
           y: p.py + 2,

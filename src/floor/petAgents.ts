@@ -9,7 +9,8 @@ import { state } from "../store";
 import type { Pet } from "../types";
 
 export interface PetAgent {
-  ownerId: string;
+  /** state.pets 的 record key(一般貓 = 飼主 id;樓貓 ownerId 是 "landlord" 哨兵,不能當 key) */
+  catId: string;
   name: string;
   color: number;
   c: number;
@@ -42,10 +43,10 @@ function tileInRegion(region: string, blocked: boolean[][]): Tile | null {
 
 export function createPetAgents(): PetAgent[] {
   const blocked = currentBlocked();
-  return Object.values(state.pets).map((pet) => {
+  return Object.entries(state.pets).map(([catId, pet]) => {
     const t = tileInRegion(pet.hangout, blocked) ?? { c: 7, r: 10 };
     return {
-      ownerId: pet.ownerId,
+      catId,
       name: pet.name,
       color: pet.color,
       c: t.c,
@@ -75,13 +76,13 @@ function tileBeside(partner: PetAgent, region: string, blocked: boolean[][]): Ti
 export function tickPetAgents(agents: PetAgent[], dt: number) {
   const now = Date.now();
   for (const a of agents) {
-    const pet = state.pets[a.ownerId];
-    if (!pet) continue; // 飼主退租(呼叫端靠數量變化重建)
+    const pet = state.pets[a.catId];
+    if (!pet) continue; // 貓已離開(呼叫端靠數量變化重建)
     const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > state.gameMs;
-    const partner = pairActive ? agents.find((x) => x.ownerId === pet.pairWith) : undefined;
+    const partner = pairActive ? agents.find((x) => x.catId === pet.pairWith) : undefined;
     a.pairAction = partner ? pet.pairAction : undefined;
-    a.pairWith = partner?.ownerId;
-    a.pairLeader = !!partner && a.ownerId.localeCompare(partner.ownerId) < 0;
+    a.pairWith = partner?.catId;
+    a.pairLeader = !!partner && a.catId.localeCompare(partner.catId) < 0;
     if (!a.moving) {
       if (now < a.restUntil) continue;
       const blocked = currentBlocked();

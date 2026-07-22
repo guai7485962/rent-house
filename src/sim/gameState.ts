@@ -104,6 +104,8 @@ export interface TenantRuntime {
   lastRentPleaDay?: number;
   /** 人生心願(長期目標;缺省由 ensureWishes 依職業指派) */
   wish?: TenantWish | null;
+  /** 🏠 模範房客:安居型心願實現後宣告長住(自願 +3% 租金、全樓每日 mood 微加成;入存檔) */
+  modelTenant?: boolean;
   /** 上次收到房東心意的遊戲日(每人每日一次;kindness.ts) */
   lastCareDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
@@ -227,6 +229,10 @@ export const state = reactive({
   achievements: [] as string[],
   /** 累計實現的人生心願數(成就「夢想孵化器」用;入存檔) */
   wishesFulfilled: 0,
+  /** 房東口碑 0~100(圓夢畢業/安居圓夢累積;影響招租星等與開價,見 reputation.ts;入存檔) */
+  reputation: 0,
+  /** 累計圓夢畢業離開的租客數(成就「桃李天下」用;入存檔) */
+  graduateCount: 0,
   /** 累計心意互動次數(成就「暖心房東」用;入存檔) */
   careGiven: 0,
   /** 歷任房客名冊:退租者的紀錄,最新在前(§G-8;入存檔) */

@@ -89,6 +89,7 @@ export function save() {
         rentGraceUntilDay: rt.rentGraceUntilDay,
         lastRentPleaDay: rt.lastRentPleaDay,
         wish: rt.wish,
+        modelTenant: rt.modelTenant,
         lastCareDay: rt.lastCareDay,
         arc: rt.arc,
         flags: rt.flags,
@@ -126,6 +127,8 @@ export function save() {
         pets: state.pets,
         achievements: state.achievements,
         wishesFulfilled: state.wishesFulfilled,
+        reputation: state.reputation,
+        graduateCount: state.graduateCount,
         careGiven: state.careGiven,
         alumni: state.alumni,
         pendingGroupEvent: state.pendingGroupEvent,
@@ -203,6 +206,8 @@ export function load(): boolean {
     Object.assign(state.pets, s.pets ?? {}); // 舊檔沒有 → ensurePets 會補種子貓
     state.achievements.splice(0, state.achievements.length, ...((s.achievements ?? []) as string[]));
     state.wishesFulfilled = typeof s.wishesFulfilled === "number" ? s.wishesFulfilled : 0; // 舊檔沒有 → 0
+    state.reputation = typeof s.reputation === "number" ? s.reputation : 0; // 舊檔沒有 → 口碑從 0 累積
+    state.graduateCount = typeof s.graduateCount === "number" ? s.graduateCount : 0; // 舊檔沒有 → 0
     state.careGiven = typeof s.careGiven === "number" ? s.careGiven : 0; // 舊檔沒有 → 0
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
     state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
@@ -245,6 +250,7 @@ export function load(): boolean {
         rentGraceUntilDay: saved.rentGraceUntilDay ?? -99,
         lastRentPleaDay: saved.lastRentPleaDay ?? -99,
         wish: saved.wish ?? null, // 舊檔沒有 → ensureWishes 依職業指派
+        modelTenant: saved.modelTenant === true, // 舊檔沒有 → 不是模範房客
         lastCareDay: saved.lastCareDay ?? -99,
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],

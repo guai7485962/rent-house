@@ -45,6 +45,11 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "growth_full", icon: "🎓", label: "桃李滿樓", desc: "同一位房客集滿 4 個成長特質", hidden: true },
   { id: "pair_arc", icon: "👥", label: "共同篇章", desc: "見證第一條雙人劇情弧圓滿落幕" },
   { id: "rainy_day", icon: "☔", label: "雨天的交誼廳", desc: "雨天午後,房客們擠在交誼廳取暖", hidden: true },
+  // --- 圓夢畢業批:兩軌制心願 + 房東口碑 ---
+  { id: "first_graduate", icon: "🎓", label: "首位畢業生", desc: "第一位租客圓夢畢業,從這裡走向新的人生" },
+  { id: "graduate_3", icon: "🎓", label: "桃李天下", desc: "三位租客從這裡圓夢畢業" },
+  { id: "first_model_tenant", icon: "🏠", label: "第一位模範房客", desc: "有租客圓夢後宣告長住,成為模範房客" },
+  { id: "couple_wish", icon: "💑", label: "雙雙圓夢", desc: "一對情侶先後實現了各自的人生心願", hidden: true },
 ];
 
 const ACH_MAP: Record<string, AchievementDef> = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
@@ -68,17 +73,19 @@ function representativeMemory(rt: TenantRuntime): string {
   return tag ? `是個${tag.replace(/[[\]]/g, "")}的人。` : "來去匆匆,沒留下太多痕跡。";
 }
 
-/** 退租時把房客存進名冊(moveOut 在刪除 runtime 前呼叫) */
+/** 退租時把房客存進名冊(moveOut 在刪除 runtime 前呼叫);自己養的貓一起走時在記憶裡提一筆 */
 export function recordAlumnus(rt: TenantRuntime, reason: string) {
   const moveInMs = rt.moveInMs ?? GAME_START.getTime();
   const daysLived = Math.max(0, Math.floor((state.gameMs - moveInMs) / (24 * 3600 * 1000)));
+  const pet = state.pets[rt.tenant.id];
+  const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛貓「${pet.name}」一起離開。` : "";
   const entry: AlumniEntry = {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
     daysLived,
     reason,
     leftMs: state.gameMs,
-    memory: representativeMemory(rt).slice(0, 120),
+    memory: (petNote + representativeMemory(rt)).slice(0, 120),
   };
   state.alumni.unshift(entry); // 最新的排前面
   if (state.alumni.length > 50) state.alumni.length = 50;

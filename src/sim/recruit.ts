@@ -5,6 +5,7 @@
 import type { Appearance, CoreTag, Gender, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 import { upgradeRentBonus } from "./upgrades";
+import { reputationStarBonus, reputationRentBonus } from "./reputation";
 import { randomAppearance } from "../pixel/parts";
 import { randomCatPreset } from "./pets";
 
@@ -228,9 +229,10 @@ export interface Applicant {
   pet?: { name: string; color: number };
 }
 
-/** 應徵者實際開的月租:基礎租金 × 房間升級行情加成,取整到百位 */
+/** 應徵者實際開的月租:基礎租金 ×(房間升級行情 + 房東口碑)加成,取整到百位。
+ *  口碑加成 = reputation×0.05%(滿口碑 +5%):好房東名聲在外,租客願意多出一點。 */
 function offeredRent(base: number, roomId: string): number {
-  return Math.round((base * (1 + upgradeRentBonus(roomId))) / 100) * 100;
+  return Math.round((base * (1 + upgradeRentBonus(roomId) + reputationRentBonus())) / 100) * 100;
 }
 
 /** 依已決定的性別隨機生成戀愛取向；性別不再與姓名分開亂抽。 */
@@ -245,9 +247,9 @@ function randomIdentity(gender: Gender): { gender: Gender; attractedTo: Gender[]
   return { gender, attractedTo };
 }
 
-/** 契合度:房間屬性 × 偏好權重 */
+/** 契合度:房間屬性 × 偏好權重 + 房東口碑(reputation×0.3,滿口碑約提升一個星等區間) */
 function matchStars(prefs: Partial<Record<RoomAttribute, number>>, attrs: Partial<Record<RoomAttribute, number>>): number {
-  let raw = 0;
+  let raw = reputationStarBonus();
   for (const [k, p] of Object.entries(prefs)) {
     raw += (attrs[k as RoomAttribute] ?? 0) * (p ?? 0);
   }

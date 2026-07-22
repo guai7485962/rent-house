@@ -5,8 +5,12 @@
  * 進度完全由本地規則每日推進——租客當天過得好(條件依心願而異)進度就前進,
  * 困頓時小幅倒退;AI 只拿到一句進度描述當寫作素材,不能決定進度或宣布實現。
  *
- * 完成時:慶祝日誌 + 記憶 + 永久成長特質 + 成就;部分心願(開店/畢業)會在幾天後
- * 「圓夢離開」——由 tick 換日呼叫 wishPass() 取回名單執行 moveOut(避免循環 import)。
+ * 完成時:慶祝日誌 + 記憶 + 永久成長特質 + 成就;之後走兩軌(圓夢畢業批):
+ *   - 畢業型(graduates:開店/論文/舞台/代表作):幾天後「圓夢離開」——由 tick 換日
+ *     呼叫 wishPass() 取回名單執行 graduateFarewell(謝禮紅包+押金退還+口碑,再 moveOut;
+ *     wishes 不 import tenancy/economy,避免循環依賴)。有貓的會先掛「貓的去留」抉擇。
+ *   - 安居型(career_step/recover_rhythm/feel_at_home/settle_life):留下成為
+ *     「🏠 模範房客」——自願 +3% 租金、在住期間全樓其他租客每日 mood +0.5(多位不疊超過 +1)。
  * 全程不消耗 Math.random,不影響其他系統的 RNG 次序。
  */
 import {
@@ -21,6 +25,8 @@ import {
 import { grantGrowthTag, type GrowthTagId } from "./growth";
 import { relationships } from "./social";
 import { unlock } from "./legacy";
+import { addReputation, REP_SETTLE } from "./reputation";
+import type { EventDef } from "./events";
 
 /** 同 economy.inHardship;不 import economy,避免 wishes→economy→tick→wishes 循環鏈 */
 const inHardship = (rt: TenantRuntime) => gameDayIndex() <= (rt.hardshipUntilDay ?? -99);
@@ -96,10 +102,10 @@ export const WISH_DEFS = {
       if (s.stress >= 85) return SETBACK;
       return s.stress <= 65 && s.energy >= 35 ? GAIN_GOOD : GAIN_SLOW;
     },
-    graduates: false,
+    graduates: true,
     growthTag: "more_confident",
     doneText: "代表作完成了!他把成品看了一遍又一遍,笑得像個孩子。",
-    farewellText: "",
+    farewellText: "代表作打開了新的門,他租下了自己的工作室,正一箱一箱把作品和心血搬過去。",
   },
   graduate_thesis: {
     icon: "🎓",
@@ -156,10 +162,10 @@ export const WISH_DEFS = {
       if (s.mood <= 30) return SETBACK;
       return s.mood >= 55 && s.energy >= 40 ? GAIN_GOOD : GAIN_SLOW;
     },
-    graduates: false,
+    graduates: true,
     growthTag: "hopeful",
     doneText: "正式登台了!他回家時嗓子都啞了,臉上的興奮藏都藏不住。",
-    farewellText: "",
+    farewellText: "那晚的演出被劇團看上,簽約巡演的邀請來了——他一邊打包一邊哼著歌,整個人在發光。",
   },
   feel_at_home: {
     icon: "🏡",
@@ -233,7 +239,7 @@ function advanceWish(rt: TenantRuntime, delta: number) {
   }
 }
 
-/** 心願實現:慶祝脈衝 + 記憶 + 永久成長 + 成就;會圓夢離開的排定日期 */
+/** 心願實現:慶祝脈衝 + 記憶 + 永久成長 + 成就;之後兩軌分流(畢業排離開/安居成模範) */
 function fulfillWish(rt: TenantRuntime, def: WishDef) {
   const w = rt.wish!;
   const day = gameDayIndex();
@@ -250,7 +256,60 @@ function fulfillWish(rt: TenantRuntime, def: WishDef) {
   state.wishesFulfilled += 1;
   unlock("wish_fulfilled");
   if (state.wishesFulfilled >= 3) unlock("wish_collector");
-  if (def.graduates) w.graduateDay = day + GRADUATE_AFTER_DAYS;
+  if (def.graduates) {
+    w.graduateDay = day + GRADUATE_AFTER_DAYS;
+    maybeAttachCatFarewell(rt); // 有貓的:告別週先讓玩家決定貓的去留
+  } else {
+    becomeModelTenant(rt); // 安居型:留下來,成為模範房客
+  }
+  // 💑 雙雙圓夢(隱藏成就):情侶兩人都把心願住成真了
+  const id = rt.tenant.id;
+  for (const [key, rel] of Object.entries(relationships)) {
+    if (!rel.romantic) continue;
+    const [a, b] = key.split("|");
+    if (a !== id && b !== id) continue;
+    const other = state.runtimes[a === id ? b : a];
+    if (other?.wish && other.wish.fulfilledDay !== -99) {
+      unlock("couple_wish");
+      break;
+    }
+  }
+}
+
+/** 安居型心願實現 → 模範房客:自願 +3% 租金 + 續住宣言 + 口碑 +3(冪等) */
+function becomeModelTenant(rt: TenantRuntime) {
+  if (rt.modelTenant) return;
+  rt.modelTenant = true;
+  const f = rt.tenant.finance;
+  // 租金自願 +3%:只有承租人才有租可加(同居者本來就不付租)
+  if (Object.values(state.occupancy).includes(rt.tenant.id)) {
+    const next = Math.round(f.monthlyRent * 1.03);
+    pushSocialLog(rt, `💲 他主動來找你:「這裡讓我把日子過成了想要的樣子,房租我想多付一點。」月租 $${f.monthlyRent.toLocaleString()} → $${next.toLocaleString()}。`, "major");
+    f.monthlyRent = next;
+  }
+  pushSocialLog(rt, `🏠 續住宣言:「我打算在這裡長長久久住下去。」他成了整棟樓安穩的底氣。`, "major");
+  notify(`🏠 ${rt.tenant.name} 圓夢後決定長住,成為模範房客!`);
+  unlock("first_model_tenant");
+  addReputation(REP_SETTLE, `${rt.tenant.name} 在這裡安居圓夢`);
+}
+
+/** 畢業型心願實現且租客有貓 → 立即掛規則式「貓的去留」抉擇(不經 AI;玩家未決 = 離開時帶走)。
+ *  「留下成樓貓」把 pet.ownerId 改為 "landlord"(Pet.ownerId 是 string,哨兵值型別合法;
+ *  pets.ts 各 pass 對它特判:錨點改交誼廳、不再找飼主 runtime),實際套用在 tenancy.decide。 */
+function maybeAttachCatFarewell(rt: TenantRuntime) {
+  const pet = state.pets[rt.tenant.id];
+  if (!pet || pet.ownerId !== rt.tenant.id || rt.pendingEvent) return;
+  const ev: EventDef = {
+    id: "wish_cat_farewell",
+    title: `「${pet.name}」的去留`,
+    description: `${rt.tenant.name} 抱著「${pet.name}」來找你:「新住處還不確定能不能養貓……牠在這棟樓有熟悉的角落,我可以帶牠走,也可以拜託你收留牠。」`,
+    choices: [
+      { id: "take", label: "讓他帶牠一起走", hint: "貓跟著主人開始新生活", effect: {} },
+      { id: "stay", label: "把牠留下當樓貓", hint: "由公寓接手照顧,牠會繼續在樓裡遊蕩", effect: {} },
+    ],
+  };
+  rt.pendingEvent = ev;
+  notify(`🐈 ${rt.tenant.name} 準備搬家,想和你談談「${pet.name}」的去留`);
 }
 
 /** 劇情弧收束的心願加成(narration.applyArcUpdate 呼叫):
@@ -261,9 +320,19 @@ export function boostWishFromArc(rt: TenantRuntime, tone?: string) {
 }
 
 /** 每日心願推進(tick 換日呼叫)。回傳今天該「圓夢離開」的名單,
- *  由呼叫端(tick)執行 moveOut——wishes 不 import tenancy,避免循環依賴。 */
+ *  由呼叫端(tick)執行 graduateFarewell/moveOut——wishes 不 import tenancy,避免循環依賴。 */
 export function wishPass(): { id: string; reason: string }[] {
   ensureWishes();
+  // 🏠 模範房客光環:在住期間全樓「其他」租客每日 mood +0.5;多位模範同住不疊超過 +1
+  const models = Object.values(state.runtimes).filter((r) => r.modelTenant).length;
+  if (models > 0) {
+    for (const rt of Object.values(state.runtimes)) {
+      const others = models - (rt.modelTenant ? 1 : 0);
+      if (others <= 0) continue;
+      const s = rt.tenant.stats;
+      s.mood = clamp(s.mood + Math.min(1, others * 0.5), 0, 100);
+    }
+  }
   const day = gameDayIndex();
   const graduates: { id: string; reason: string }[] = [];
   for (const rt of Object.values(state.runtimes)) {

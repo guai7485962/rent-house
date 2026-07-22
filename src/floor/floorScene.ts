@@ -441,7 +441,7 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
 }
 
 function activeCatPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {
-  const byOwner = new Map(pets.map((p) => [p.ownerId, p]));
+  const byOwner = new Map(pets.map((p) => [p.catId, p]));
   const pairs: [PetAgent, PetAgent][] = [];
   for (const leader of pets) {
     if (!leader.pairLeader || !leader.pairAction || !leader.pairWith) continue;

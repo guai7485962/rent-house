@@ -27,8 +27,8 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // --- unlock 基本行為 ---
-check("成就清單有 20 項(含心願 2 項+玩家目標批 8 項)", ACHIEVEMENTS.length === 20);
-check("隱藏成就有標記(鐵面/桃李/雨天)", ACHIEVEMENTS.filter((a) => a.hidden).length === 3);
+check("成就清單有 24 項(含心願 2 項+玩家目標批 8 項+圓夢畢業批 4 項)", ACHIEVEMENTS.length === 24);
+check("隱藏成就有標記(鐵面/桃李滿樓/雨天/雙雙圓夢)", ACHIEVEMENTS.filter((a) => a.hidden).length === 4);
 unlock("first_love");
 check("解鎖後進 achievements", state.achievements.includes("first_love"));
 check("解鎖彈了通知", state.noticeLog.some((n) => n.text.includes("成就解鎖")));

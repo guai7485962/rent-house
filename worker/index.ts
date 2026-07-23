@@ -25,10 +25,27 @@ interface NarrateCtx {
   dayLabel: string;
   coreTags: string[];
   memoryTags: string[];
+  tagDetails?: Array<{
+    label: string;
+    hint: string;
+    kind: "core" | "memory";
+    intensity: number;
+    source?: "ai_event" | "landlord_decision" | "system";
+  }>;
   growthTags?: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
   room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };
   todayLog: string[];
+  todayHighlights?: Array<{
+    text: string;
+    importance: "minor" | "notable" | "major";
+    source: "log" | "decision";
+  }>;
+  focus?: {
+    kind: "decision" | "major" | "arc" | "notable" | "flag" | "wish" | "daily";
+    headline: string;
+    reason: string;
+  };
   relationships: string[];
   events: string[];
   neighbors: string[];
@@ -62,19 +79,21 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - 繁體中文。diary 以 **3 個完整句子、120~220 字**為原則；只有重大轉折才可寫第 4 句。像房東在監視器前寫下的札記,冷靜、帶點窺看的趣味與人情味。
 - **敘事文字只能用自然繁體中文**:diary、summaryUpdate、newMemory、event 文案與 observation.reason 不得混入英文單字、拼音或羅馬化姓名；租客與鄰居姓名必須逐字照抄 context 的中文原名（例如「陳家豪」不可寫成「Chen 家豪」）。JSON key、白名單 id 與 enum 維持指定英文格式。
 - **不要寫成流水帳**:從今天片段中只挑 2~3 個最有意思、彼此能串成一條線的畫面；其餘素材可以捨棄,絕對不要逐條改寫。
+- **今日唯一主線是最高優先指令**:程式已依「房東抉擇 > 重大事件 > 進行中劇情弧 > 明顯變化 > 伏筆/心願 > 日常」選好主線。diary 必須圍繞它；其他片段最多只能補充主線，不得另開無關話題。
+- 角色標籤只決定角色「如何反應」，不能取代今日主線。優先使用標籤後的行為提示呈現具體動作；不得只把標籤名稱換句話說。
 - **每件事只能寫一次**:結尾不可再總結或重述開頭。輸出前自行刪除重複句、同義反覆及連續的「他還／她還／看起來」。
 - 用具體動作呈現變化,少用「沒有太大變化」「變得比較積極」「行為模式」等空泛結論。避免「聊天時態度」這類生硬搭配,句子要像自然繁體中文。
-- 必須延續角色的核心性格與既有記憶標籤,讓劇情有連貫感(例:有[偷養浪貓]就別忘了貓)。
-- **必須接續「此前的劇情摘要」**:昨天埋的線今天要有下文(伏筆推進、情緒延續、習慣持續),不要每天各寫各的。
+- 核心性格是表現方式；既有記憶只優先延續強度高、且與今日主線有關的項目(例:主線涉及房內動靜時，[偷養浪貓]可影響他的反應)。不要為了提到全部標籤而分散主線。
+- **參考「此前的劇情摘要」維持連續性**:只延續與今日主線相關的伏筆、情緒或習慣；若舊摘要與今天的重大事實競爭，以今天的重大事實為準。
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
 - **尊重房間聲學狀態**:若 context 顯示「室內噪音抗議已阻隔」,不得生成鄰居抗議該租客房內噪音的日記、記憶或事件；可以描寫隔音有效。外部施工等與房內隔音無關的噪音，只有今天日誌已實際提到時才可延續。
-- **summaryUpdate(必填)**:輸出 2 個完整句子、60~120 字的更新摘要:以舊摘要為底,只保留仍然重要的事實、未回收伏筆與今天真正的新變化；同一事實只寫一次。這段會在明天餵回給你,是劇情連續性的唯一載體。
-- **記憶標籤 newMemory:只要今天出現值得記住的變化(情緒明顯起伏、關係進展、養成新習慣、突發小事、心境轉變…),就給一個 newMemory,讓角色記憶隨時間累積、越玩越立體。不必每天給,但別太吝嗇;標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])。已經有的記憶就不要重複。**
+- **summaryUpdate(必填)**:輸出 2 個完整句子、60~120 字的更新摘要:以舊摘要為底,只保留仍然重要的事實、未回收伏筆與今天真正的新變化；同一事實只寫一次。這段會在明天餵回給你，是劇情連續性的摘要載體之一。
+- **記憶標籤 newMemory 要克制**:只有會延續數天以上的關係改變、固定習慣、重大心境轉折或房東抉擇後果才新增；一次性小事與普通情緒填 null。標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])，不得新增與既有記憶近義、重複或矛盾的標籤。
 
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
   - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
     **雙人弧**:若這條故事線自然是「他與某位鄰居兩個人」的(戀情發展、共同企劃、恩怨和解…),可加 "with":"鄰居名"(必須來自同棟其他租客清單)——兩人的日記會共同推進同一條線。對方已有進行中的弧或兩人還不夠熟時,系統會自動改成他的單人弧,不必自行判斷。
-  - 有進行中的弧:今天的日記與摘要要推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
+  - 有進行中的弧:若「今日唯一主線」就是這條弧、或今天證據與弧直接相關，日記與摘要才推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};若更高優先的房東抉擇/重大事件與弧無關，arcUpdate 填 null、不要硬把兩件事串在一起。推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
     若 context 顯示這是「與某位鄰居共同」的雙人弧:從**他自己的視角**寫,但劇情要與同一條線一致;收束時兩人會一起落幕。
   - 推進或收束時可附 "tone":這一步對他情緒的方向——"up"(順利/振奮)、"down"(受挫/低落)、"tense"(緊繃/懸念升高);收束時 up=如願以償、down=留下遺憾、tense=如釋重負。系統會轉成小幅數值起伏,讓玩家從數值曲線看到劇情;方向不明確就省略 tone。
   - **只有收束(done=true)時**，若這段經歷確實讓角色產生長期改變，可附 "growthTag"，id 只能從以下白名單選一個：${GROWTH_TAG_OPTIONS}。已在「永久成長」出現的不要重複；沒有明確成長就填 null。開弧或中途推進不得給 growthTag。
@@ -123,11 +142,35 @@ event 規則:
  "event":{"title":"標題","description":"情況","with":"鄰居名字(選填)","choices":[{"label":"選項","hint":"提示","effect":{"mood":0,"stress":0,"affinity":0,"satisfaction":0,"money":0,"memory":null,"directive":null,"other":{"mood":0,"stress":0,"affinity":0,"satisfaction":0},"rel":{"delta":0,"couple":false,"breakup":false},"interaction":null}}]} 或 null}`;
 
 function buildPrompt(c: NarrateCtx): string {
+  const tagDetails = c.tagDetails ?? [];
+  const coreDetails = tagDetails
+    .filter((tag) => tag.kind === "core")
+    .map((tag) => `${tag.label}：${tag.hint || "依標籤自然表現"}`);
+  const memoryDetails = tagDetails
+    .filter((tag) => tag.kind === "memory")
+    .map((tag) => {
+      const strength = tag.intensity >= 0.67 ? "強" : tag.intensity >= 0.34 ? "中" : "淡";
+      return `${tag.label}（${strength}）：${tag.hint || "依標籤自然延續"}`;
+    });
+  const baseHighlights = c.todayHighlights?.length
+    ? c.todayHighlights
+    : c.todayLog.map((text) => ({ text, importance: "minor" as const, source: "log" as const }));
+  // 舊分頁與舊 pending diary 只會把房東抉擇放在 events；滾動部署時仍須讓它成為最高優先證據。
+  const highlights = baseHighlights.some((item) => item.source === "decision")
+    ? baseHighlights
+    : [
+        ...c.events.map((text) => ({ text, importance: "major" as const, source: "decision" as const })),
+        ...baseHighlights,
+      ];
+  const derivedHeadline = highlights.find((item) => item.source === "decision")?.text
+    ?? highlights.find((item) => item.importance === "major")?.text
+    ?? highlights.at(-1)?.text
+    ?? "平靜的一天";
   const lines = [
     `租客:${c.name}(${c.occupation})`,
     `側寫:${c.bio}`,
-    `核心性格:${c.coreTags.join("、") || "無"}`,
-    `既有記憶:${c.memoryTags.join("、") || "無"}`,
+    `核心性格與行為方式:${coreDetails.join("；") || c.coreTags.join("、") || "無"}`,
+    `當前記憶與敘事強度:${memoryDetails.join("；") || c.memoryTags.join("、") || "無"}`,
     `永久成長:${(c.growthTags ?? []).join("、") || "無"}`,
     `目前狀態:心情 ${c.stats.mood} / 壓力 ${c.stats.stress} / 對房東好感 ${c.stats.affinity} / 滿意度 ${c.stats.satisfaction}`,
     ...(c.weather ? [`今天天氣:${c.weather}(可自然融入描寫,但不要每天都以天氣開頭)`] : []),
@@ -140,15 +183,16 @@ function buildPrompt(c: NarrateCtx): string {
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
     c.arc
-      ? `進行中的劇情弧(必須推進或收束):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
+      ? `進行中的劇情弧(${c.focus?.kind === "major" || c.focus?.kind === "decision" ? "若與今日主線無關就維持不動" : "主線相關時推進或收束"}):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
       : `進行中的劇情弧:無(適合的話可開新弧)`,
     `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
     `房東抉擇事件機會:${c.eventDue ? "已到(適合就產生 event)" : "冷卻中(event 必須為 null)"}`,
-    `[今天可寫素材—已去重,不必全部使用] 今天(${c.dayLabel})的觀察片段:`,
-    ...c.todayLog.map((l) => `  - ${l}`),
+    `[今日唯一主線—diary 必須以此為中心] ${c.focus?.headline || derivedHeadline}`,
+    `主線選擇理由:${c.focus?.reason || "沒有更高優先事件，採用今天最具體的畫面"}`,
+    `[支援證據—只可補充主線,最多採用兩項] 今天(${c.dayLabel})的觀察片段:`,
+    ...highlights.map((item) => `  - [${item.source === "decision" ? "房東抉擇" : item.importance}] ${item.text}`),
   ];
-  if (c.events.length) lines.push(`今天房東的介入/事件:${c.events.join("、")}`);
-  lines.push("", "請先在心中選出一條主線並檢查沒有重複句,再寫出當日觀察日記(只輸出 JSON)。");
+  lines.push("", "請先檢查 diary 的每一句都服務「今日唯一主線」、沒有虛構或重複，再只輸出 JSON。");
   return lines.join("\n");
 }
 
@@ -213,12 +257,65 @@ const clampArr = (v: unknown, n: number, itemLen: number): string[] =>
 const clampStat = (v: unknown): number => (Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v as number))) : 50);
 const clampInt = (v: unknown, lo: number, hi: number, dflt: number): number =>
   Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v as number))) : dflt;
+const clampUnit = (v: unknown, dflt = 1): number =>
+  Number.isFinite(v) ? Math.max(0, Math.min(1, v as number)) : dflt;
+
+function clampTagDetails(
+  value: unknown,
+  coreTags: string[],
+  memoryTags: string[],
+): NonNullable<NarrateCtx["tagDetails"]> {
+  if (!Array.isArray(value)) {
+    return [
+      ...coreTags.map((label) => ({ label, hint: "", kind: "core" as const, intensity: 1 })),
+      ...memoryTags.map((label) => ({ label, hint: "", kind: "memory" as const, intensity: 1 })),
+    ].slice(0, 12);
+  }
+  return value.slice(0, 12).flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const tag = raw as Record<string, unknown>;
+    const label = clampStr(tag.label, 40);
+    if (!label) return [];
+    const kind = tag.kind === "memory" ? "memory" as const : "core" as const;
+    const source = tag.source === "landlord_decision" || tag.source === "system" || tag.source === "ai_event"
+      ? tag.source
+      : undefined;
+    return [{
+      label,
+      hint: clampStr(tag.hint, 160),
+      kind,
+      intensity: kind === "core" ? 1 : clampUnit(tag.intensity),
+      ...(source ? { source } : {}),
+    }];
+  });
+}
+
+function clampHighlights(value: unknown, fallback: string[]): NonNullable<NarrateCtx["todayHighlights"]> {
+  if (!Array.isArray(value)) {
+    return fallback.map((text) => ({ text, importance: "minor" as const, source: "log" as const }));
+  }
+  return value.slice(0, 10).flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const item = raw as Record<string, unknown>;
+    const text = clampStr(item.text, 200);
+    if (!text) return [];
+    const importance = item.importance === "major" || item.importance === "notable" ? item.importance : "minor";
+    return [{
+      text,
+      importance,
+      source: item.source === "decision" ? "decision" as const : "log" as const,
+    }];
+  });
+}
 
 /** server 端把使用者送來的 context 夾到合理上限:防惡意 payload 灌爆 prompt(= 灌爆 token 成本) */
 function clampCtx(raw: unknown): NarrateCtx {
   const c = (raw ?? {}) as Record<string, any>;
   const name = clampStr(c.name, 24);
   const neighbors = clampArr(c.neighbors, 8, 24);
+  const coreTags = clampArr(c.coreTags, 8, 40);
+  const memoryTags = clampArr(c.memoryTags, 12, 40);
+  const todayLog = selectDiverseNarrativeLines(clampArr(c.todayLog, 20, 200), 10);
   const arc = c.arc && typeof c.arc === "object"
     ? {
         theme: clampStr(c.arc.theme, 40),
@@ -233,8 +330,9 @@ function clampCtx(raw: unknown): NarrateCtx {
     occupation: clampStr(c.occupation, 40),
     bio: clampStr(c.bio, 120),
     dayLabel: clampStr(c.dayLabel, 20),
-    coreTags: clampArr(c.coreTags, 8, 40),
-    memoryTags: clampArr(c.memoryTags, 12, 40),
+    coreTags,
+    memoryTags,
+    tagDetails: clampTagDetails(c.tagDetails, coreTags, memoryTags),
     growthTags: clampArr(c.growthTags, 4, 40),
     stats: {
       mood: clampStat(c.stats?.mood),
@@ -249,7 +347,15 @@ function clampCtx(raw: unknown): NarrateCtx {
       // 舊版前端／既有待補日記沒有此欄位時採「仍有風險」，避免誤把未知狀態當成已隔音。
       complaintRisk: c.room?.complaintRisk === false ? false : true,
     },
-    todayLog: selectDiverseNarrativeLines(clampArr(c.todayLog, 20, 200), 10),
+    todayLog,
+    todayHighlights: clampHighlights(c.todayHighlights, todayLog),
+    focus: c.focus && typeof c.focus === "object"
+      ? {
+          kind: ["decision", "major", "arc", "notable", "flag", "wish"].includes(c.focus.kind) ? c.focus.kind : "daily",
+          headline: clampStr(c.focus.headline, 200),
+          reason: clampStr(c.focus.reason, 120),
+        }
+      : undefined,
     relationships: clampArr(c.relationships, 12, 80),
     events: selectDiverseNarrativeLines(clampArr(c.events, 12, 200), 6),
     neighbors,
@@ -343,7 +449,8 @@ async function callWorkersAi(
       { role: "user", content: buildPrompt(ctx) },
     ],
     max_tokens: 1024,
-    temperature: 0.9,
+    // 這個呼叫同時產出多個結構化欄位；較低隨機度可減少離題與無關支線。
+    temperature: 0.65,
     // Qwen3 的官方模型頁雖接受 response_format，但不在 Workers AI 的 JSON Mode
     // 保證清單中；讓它照 prompt 回 JSON 即可。Llama fast 則是官方支援模型。
     ...(jsonMode ? { response_format: { type: "json_object" } } : {}),

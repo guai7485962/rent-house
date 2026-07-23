@@ -5,14 +5,21 @@
  * 自然拉開幾十分鐘,幾乎不會撞 Gemini 免費層限流)。
  * live 走 /api/narrate、否則模板;AI 回傳的新記憶/抉擇事件消毒後接進遊戲。
  */
-import { narrateDay, templateDiary, type AiFallbackReason, type NarrateCtx, type NarrateResult } from "./narrate";
+import {
+  narrateDay,
+  templateDiary,
+  type AiFallbackReason,
+  type NarrativeFocus,
+  type NarrateCtx,
+  type NarrateResult,
+} from "./narrate";
 import { sanitizeAiEvent } from "./events";
 import { ARC_TONE_PULSE, sanitizeArcUpdate, type ArcTone } from "./arcs";
 import { getRel, listRelationships } from "./social";
 import { state, clamp, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
-import { sanitizeSummaryText, selectDiverseNarrativeLines } from "./narrativeQuality";
+import { sanitizeSummaryText, selectDiverseNarrativeLines, selectImportantNarrativeLines } from "./narrativeQuality";
 import { applyObservation, sanitizeObservation } from "./observationEffects";
 import { todayWeather, weatherLabel } from "./weather";
 import { weekdayLabel } from "./week";
@@ -366,8 +373,28 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
   // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
   // 🔮/🌀/🌱 是系統回饋日誌:不能回流當素材,否則 AI 會摘要自己的回饋(同舊日報回灌問題)
   const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !/^[🔮🌀🌱]/u.test(e.text));
-  const todayLog = selectDiverseNarrativeLines(today.map((e) => e.text).filter((t) => t && t.length > 0), 8);
-  const events = selectDiverseNarrativeLines(today.map((e) => e.decisionNote).filter((t): t is string => !!t), 4);
+  const highlights = selectImportantNarrativeLines(
+    today.flatMap((entry) => [
+      ...(entry.text ? [{
+        text: entry.text,
+        importance: entry.importance,
+        gameMs: entry.gameMs,
+        source: "log" as const,
+      }] : []),
+      ...(entry.decisionNote ? [{
+        text: entry.decisionNote,
+        importance: "major" as const,
+        gameMs: entry.gameMs,
+        source: "decision" as const,
+      }] : []),
+    ]),
+    8,
+  );
+  const todayLog = highlights.map((entry) => entry.text);
+  const events = selectDiverseNarrativeLines(
+    highlights.filter((entry) => entry.source === "decision").map((entry) => entry.text),
+    4,
+  );
   const id = rt.tenant.id;
   const relationships = listRelationships((tenantId) => state.runtimes[tenantId]?.tenant)
     .filter((r) => (r.aId === id || r.bId === id) && state.runtimes[r.aId] && state.runtimes[r.bId])
@@ -379,6 +406,48 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     .filter((o) => o.tenant.id !== id)
     .map((o) => o.tenant.name);
   const acoustics = roomAcousticsForTenant(id);
+  const focusDecision = [...highlights].reverse().find((entry) => entry.source === "decision");
+  const focusMajor = [...highlights].reverse().find((entry) => entry.importance === "major");
+  const focusNotable = [...highlights].reverse().find((entry) => entry.importance === "notable");
+  // 這兩種旗標尾端是 tenant id，屬於系統配對鍵，不可直接餵給模型。
+  const narrativeFlags = rt.flags.filter(
+    (flag) => !flag.startsWith("冰箱食物失蹤:") && !flag.startsWith("被懷疑偷吃:"),
+  );
+  const narrativeFlag = narrativeFlags[0];
+  const currentWish = wishBrief(rt);
+  const focus: NarrativeFocus = focusDecision
+    ? { kind: "decision", headline: focusDecision.text, reason: "房東今天的介入或抉擇優先於其他素材" }
+    : focusMajor
+      ? { kind: "major", headline: focusMajor.text, reason: "這是今天最高重要性的實際事件" }
+      : rt.arc
+        ? { kind: "arc", headline: `${rt.arc.theme}：${rt.arc.summary}`, reason: "今天沒有更高優先事件，接續進行中的劇情弧" }
+        : focusNotable
+          ? { kind: "notable", headline: focusNotable.text, reason: "這是今天最值得發展的明顯變化" }
+          : narrativeFlag
+            ? { kind: "flag", headline: narrativeFlag, reason: "今天素材平淡，優先自然回收未完成伏筆" }
+            : currentWish
+              ? { kind: "wish", headline: currentWish, reason: "今天素材平淡，以長期心願作為人物方向" }
+              : { kind: "daily", headline: highlights.at(-1)?.text ?? "平靜的一天", reason: "沒有重大變化，只描寫一個具體日常畫面" };
+  const tagDetails = [
+    ...rt.tenant.coreTags.map((tag) => ({
+      label: tag.label,
+      hint: tag.behaviorHint,
+      kind: "core" as const,
+      intensity: 1,
+    })),
+    ...[...rt.tenant.memoryTags]
+      .sort((a, b) =>
+        (b.intensity ?? 1) - (a.intensity ?? 1)
+        || String(b.acquiredAt ?? "").localeCompare(String(a.acquiredAt ?? "")),
+      )
+      .map((tag) => ({
+        label: tag.label,
+        hint: tag.behaviorHint,
+        kind: "memory" as const,
+        intensity: tag.intensity ?? 1,
+        source: tag.source,
+      })),
+  ];
   return {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
@@ -386,6 +455,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     dayLabel,
     coreTags: rt.tenant.coreTags.map((t) => t.label),
     memoryTags: rt.tenant.memoryTags.map((t) => t.label),
+    tagDetails,
     growthTags: (rt.tenant.growthTags ?? []).map((id) => GROWTH_TAGS[id].label),
     stats: { mood: rt.tenant.stats.mood, stress: rt.tenant.stats.stress, affinity: rt.tenant.stats.affinity, satisfaction: Math.round(rt.satisfaction) },
     room: {
@@ -395,6 +465,8 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
       complaintRisk: noiseComplaintEligible(rt),
     },
     todayLog,
+    todayHighlights: highlights.map(({ text, importance, source }) => ({ text, importance, source })),
+    focus,
     relationships,
     events,
     neighbors,
@@ -402,11 +474,11 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     arc: rt.arc
       ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
       : null,
-    flags: [...rt.flags, ...(state.pets[id] ? [`養了一隻${state.pets[id].kind === "dog" ? "狗" : "貓"}「${state.pets[id].name}」`] : [])],
+    flags: [...narrativeFlags, ...(state.pets[id] ? [`養了一隻${state.pets[id].kind === "dog" ? "狗" : "貓"}「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),
     weekday: weekdayLabel(state.gameMs),
     finance: tenantFinanceBrief(rt) ?? undefined,
-    wish: wishBrief(rt),
+    wish: currentWish,
   };
 }

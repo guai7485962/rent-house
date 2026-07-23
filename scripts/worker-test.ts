@@ -48,6 +48,36 @@ check("clampCtx:todayLog 單條 ≤200", c.todayLog[0].length <= 200);
 check("clampCtx:stat 夾 0~100", c.stats.mood === 100 && c.stats.stress === 0);
 check("clampCtx:flags ≤16", c.flags.length <= 16);
 check("clampCtx:growthTags ≤4", clampCtx({ growthTags: Array(20).fill("[成長]") }).growthTags!.length <= 4);
+check("clampCtx:結構化 tag 夾值且不會變成 [object Object]", (() => {
+  const ctx = clampCtx({
+    coreTags: ["[舊核心]"],
+    memoryTags: [],
+    tagDetails: [{
+      label: "[社恐]",
+      hint: "聽到敲門會先裝作不在".repeat(30),
+      kind: "core",
+      intensity: -9,
+    }, {
+      label: "[低潮]",
+      hint: "最近會提早關燈",
+      kind: "memory",
+      intensity: 9,
+      source: "system",
+    }],
+  });
+  const prompt = buildPrompt(ctx);
+  return ctx.tagDetails?.[0].hint.length <= 160
+    && ctx.tagDetails?.[0].intensity === 1
+    && ctx.tagDetails?.[1].intensity === 1
+    && prompt.includes("聽到敲門")
+    && !prompt.includes("[object Object]");
+})());
+check("clampCtx:舊字串 tag context 仍可建立結構化 fallback", (() => {
+  const ctx = clampCtx({ coreTags: Array(8).fill("[工作狂]"), memoryTags: Array(12).fill("[開始熬夜]") });
+  return ctx.tagDetails?.some((tag) => tag.label === "[工作狂]" && tag.kind === "core")
+    && ctx.tagDetails?.some((tag) => tag.label === "[開始熬夜]" && tag.kind === "memory")
+    && ctx.tagDetails.length === 12;
+})());
 check("clampCtx:arc.stage/maxStage 夾值", (c.arc?.stage ?? 0) <= 9 && (c.arc?.maxStage ?? 0) >= 2);
 check("clampCtx:亂資料不炸", (() => { try { clampCtx(null); clampCtx("x"); clampCtx(123); return true; } catch { return false; } })());
 check("clampCtx:無 arc → null", clampCtx({ name: "a" }).arc === null);
@@ -61,10 +91,41 @@ check("隔音完成會明確限制 AI 不得生成室內噪音抗議", buildProm
   name: "夜貓租客", room: { noise: 8, soundproof: 12, treated: true, complaintRisk: false },
 })).includes("不得生成相關抗議"));
 check("日記 prompt 明定不可寫流水帳與重複總結", systemPrompt.includes("不要寫成流水帳") && systemPrompt.includes("每件事只能寫一次"));
+check("日記 prompt 明定 tag 只控制反應且 newMemory 必須克制", systemPrompt.includes("標籤只決定角色「如何反應」") && systemPrompt.includes("記憶標籤 newMemory 要克制"));
 check("日記 prompt 禁止英文混寫與姓名羅馬化", systemPrompt.includes("不得混入英文單字") && systemPrompt.includes("Chen 家豪"));
 check("背景與今日素材在 prompt 中明確分區", (() => {
   const prompt = buildPrompt(clampCtx({ name: "a", todayLog: ["今天片段"] }));
-  return prompt.includes("背景資料—只供理解") && prompt.includes("今天可寫素材—已去重");
+  return prompt.includes("背景資料—只供理解") && prompt.includes("今日唯一主線") && prompt.includes("支援證據");
+})());
+check("結構化 focus 與 evidence 會明確進 prompt", (() => {
+  const prompt = buildPrompt(clampCtx({
+    name: "a",
+    focus: { kind: "major", headline: "今天收到裁員通知。", reason: "今天最高重要性事件" },
+    todayHighlights: [
+      { text: "今天收到裁員通知。", importance: "major", source: "log" },
+      { text: "晚餐只吃了泡麵。", importance: "minor", source: "log" },
+    ],
+  }));
+  return prompt.includes("[今日唯一主線—diary 必須以此為中心] 今天收到裁員通知")
+    && prompt.includes("[major] 今天收到裁員通知")
+    && prompt.includes("只可補充主線");
+})());
+check("重大主線與舊 arc 無關時不強迫雙線並寫", (() => {
+  const prompt = buildPrompt(clampCtx({
+    name: "a",
+    focus: { kind: "major", headline: "今天收到裁員通知。", reason: "今天最高重要性事件" },
+    arc: { theme: "學做甜點", stage: 1, maxStage: 4, summary: "剛買材料" },
+  }));
+  return prompt.includes("若與今日主線無關就維持不動");
+})());
+check("舊 context 的 events 仍會成為最高優先房東抉擇", (() => {
+  const prompt = buildPrompt(clampCtx({
+    name: "a",
+    todayLog: ["晚上泡了一杯茶。"],
+    events: ["房東答應寬限三天房租。"],
+  }));
+  return prompt.includes("[今日唯一主線—diary 必須以此為中心] 房東答應寬限三天房租")
+    && prompt.includes("[房東抉擇] 房東答應寬限三天房租");
 })());
 
 // --- 免費模型分流:平淡日常用 Lite,事件/主線日用 Flash ---

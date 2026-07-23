@@ -15,6 +15,28 @@ import {
 } from "../content/observationLines";
 import { sanitizeDiaryText, sanitizeSummaryText } from "./narrativeQuality";
 
+export interface NarrativeTagDetail {
+  label: string;
+  hint: string;
+  kind: "core" | "memory";
+  /** 記憶強度；核心標籤固定視為 1。 */
+  intensity: number;
+  source?: "ai_event" | "landlord_decision" | "system";
+}
+
+export interface NarrativeHighlight {
+  text: string;
+  importance: "minor" | "notable" | "major";
+  source: "log" | "decision";
+}
+
+export interface NarrativeFocus {
+  kind: "decision" | "major" | "arc" | "notable" | "flag" | "wish" | "daily";
+  headline: string;
+  /** 說明為何這條線優先，讓模型不要自行改選次要素材。 */
+  reason: string;
+}
+
 export interface NarrateCtx {
   name: string;
   occupation: string;
@@ -22,12 +44,18 @@ export interface NarrateCtx {
   dayLabel: string;
   coreTags: string[];
   memoryTags: string[];
+  /** 給新版敘事模型的結構化標籤；字串陣列保留供舊 Worker 相容。 */
+  tagDetails?: NarrativeTagDetail[];
   /** 已獲得的永久成長特質(label)；讓 AI 避免重複授予。 */
   growthTags?: string[];
   stats: { mood: number; stress: number; affinity: number; satisfaction: number };
   /** 房間實際聲學狀態；讓 AI 不會在隔音完成後又捏造室內噪音抗議。 */
   room: { noise: number; soundproof: number; treated: boolean; complaintRisk: boolean };
   todayLog: string[];
+  /** 已依重要性選材、近似去重的今日證據。 */
+  todayHighlights?: NarrativeHighlight[];
+  /** 程式先決定的唯一敘事主線。 */
+  focus?: NarrativeFocus;
   relationships: string[];
   events: string[];
   /** 同棟其他在住租客的名字(讓 AI 能點名鄰居製造跨租客劇情) */

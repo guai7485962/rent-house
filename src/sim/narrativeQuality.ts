@@ -125,6 +125,37 @@ export function selectDiverseNarrativeLines(lines: string[], max = 8): string[] 
   return chosen;
 }
 
+export interface RankedNarrativeLine {
+  text: string;
+  importance: "minor" | "notable" | "major";
+  gameMs: number;
+  source: "log" | "decision";
+}
+
+const narrativeImportanceScore = (line: RankedNarrativeLine): number =>
+  (line.source === "decision" ? 400 : 0)
+  + (line.importance === "major" ? 300 : line.importance === "notable" ? 200 : 100);
+
+/**
+ * 先按敘事重要性挑選，近似內容只保留較重要者，再恢復時間順序。
+ * 專供 AI 日記 context 使用，不改變其他既有「最近且多樣」選材行為。
+ */
+export function selectImportantNarrativeLines(lines: RankedNarrativeLine[], max = 8): RankedNarrativeLine[] {
+  const ranked = lines
+    .map((line, index) => ({ ...line, text: line.text.replace(/\s+/g, " ").trim(), index }))
+    .filter((line) => line.text)
+    .sort((a, b) => narrativeImportanceScore(b) - narrativeImportanceScore(a) || b.gameMs - a.gameMs || a.index - b.index);
+  const chosen: typeof ranked = [];
+  for (const line of ranked) {
+    if (chosen.length >= max) break;
+    if (chosen.some((old) => isNarrativeDuplicate(line.text, old.text))) continue;
+    chosen.push(line);
+  }
+  return chosen
+    .sort((a, b) => a.gameMs - b.gameMs || a.index - b.index)
+    .map(({ index: _index, ...line }) => line);
+}
+
 export function splitNarrativeSentences(text: string, expectedNames: string[] = []): string[] {
   const normalized = normalizeNarrativeLanguage(text, expectedNames)
     .replace(/\r?\n+/g, " ")

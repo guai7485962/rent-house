@@ -12,6 +12,7 @@ const {
   sanitizeReasonText,
   normalizeNarrativeLanguage,
   selectDiverseNarrativeLines,
+  selectImportantNarrativeLines,
   splitNarrativeSentences,
   toTraditional,
 } = await import("../src/sim/narrativeQuality");
@@ -44,10 +45,46 @@ const diverse = selectDiverseNarrativeLines([
 ], 8);
 check("來源片段：完全相同事件只留一次", diverse.length === 3 && occurrences(diverse.join("|"), "檢查視力") === 1, JSON.stringify(diverse));
 
+const ranked = selectImportantNarrativeLines([
+  { text: "較早發生的重大轉折。", importance: "major", gameMs: 1, source: "log" },
+  ...Array.from({ length: 10 }, (_, i) => ({
+    text: `普通日常片段 ${i}。`,
+    importance: "minor" as const,
+    gameMs: i + 2,
+    source: "log" as const,
+  })),
+], 4);
+check("重要性選材：較早 major 不會被較新 minor 擠掉", ranked.some((line) => line.text.includes("重大轉折")), JSON.stringify(ranked));
+check("重要性選材：入選後恢復時間順序", ranked.every((line, i) => i === 0 || ranked[i - 1].gameMs <= line.gameMs), JSON.stringify(ranked));
+const crossImportanceDuplicate = selectImportantNarrativeLines([
+  { text: "他收到裁員通知後整晚沒睡。", importance: "major", gameMs: 1, source: "log" },
+  { text: "他收到裁員通知後整晚沒睡。", importance: "minor", gameMs: 2, source: "log" },
+], 8);
+check("重要性選材：近似重複保留較重要版本", crossImportanceDuplicate.length === 1 && crossImportanceDuplicate[0].importance === "major", JSON.stringify(crossImportanceDuplicate));
+
 const summary = sanitizeSummaryText("他開始主動聊天。整體來看，他開始主動聊天。他仍在適應新鄰居。總體來說，他開始主動聊天。");
 check("滾動摘要：同義重述不會繼續餵回下一天", occurrences(summary, "開始主動聊天") === 1, summary);
 
 const rt = Object.values(state.runtimes)[0];
+const originalCoreTags = rt.tenant.coreTags;
+const originalMemoryTags = rt.tenant.memoryTags;
+const originalFlags = rt.flags;
+rt.tenant.coreTags = [{ id: "focus_introvert", label: "[社恐]", behaviorHint: "聽到敲門會先裝作不在" }];
+rt.tenant.memoryTags = [{
+  id: "focus_tired",
+  label: "[連續加班]",
+  behaviorHint: "回家後仍盯著電腦，常忘記吃飯",
+  acquiredAt: "2026-07-23T00:00:00.000Z",
+  source: "system",
+  intensity: 0.82,
+}, {
+  id: "legacy_missing_time",
+  label: "[舊記憶]",
+  behaviorHint: "舊存檔沒有取得時間仍可使用",
+  source: "ai_event",
+  intensity: 0.4,
+} as any];
+rt.flags = ["冰箱食物失蹤:tenant_internal", "答應幫忙搬家", "房東提醒：下週回覆"];
 rt.log.splice(0);
 rt.tenant.recentSummary = "他喜歡和鄰居聊天。他喜歡和鄰居聊天。";
 const now = state.gameMs;
@@ -55,12 +92,28 @@ rt.log.push(
   { gameMs: now - 3_600_000, timeLabel: "", text: "舊 AI 流水帳不該再被摘要", visualState: "idle", importance: "major", daily: true, ai: true },
   { gameMs: now - 3_000_000, timeLabel: "", text: "把書湊得很近又拉遠。", visualState: "idle", importance: "minor" },
   { gameMs: now - 2_000_000, timeLabel: "", text: "把書湊得很近又拉遠。", visualState: "idle", importance: "minor" },
-  { gameMs: now - 1_000_000, timeLabel: "", text: "和鄰居交換外送名單。", visualState: "idle", importance: "notable" },
+  {
+    gameMs: now - 1_000_000,
+    timeLabel: "",
+    text: "和鄰居交換外送名單。",
+    visualState: "idle",
+    importance: "notable",
+    decisionNote: "房東答應替他延後三天收租。",
+  },
 );
 const ctx = buildNarrateCtx(rt, "測試日");
 check("Context：排除上一份 AI 當日觀察", !ctx.todayLog.some((line) => line.includes("舊 AI 流水帳")), JSON.stringify(ctx.todayLog));
 check("Context：同日重複片段先去重", ctx.todayLog.filter((line) => line.includes("把書湊得很近")).length === 1, JSON.stringify(ctx.todayLog));
 check("Context：舊摘要進 prompt 前先去重", occurrences(ctx.summary, "喜歡和鄰居聊天") === 1, ctx.summary);
+check("Context：核心 behaviorHint 會送進 AI", ctx.tagDetails?.some((tag) => tag.label === "[社恐]" && tag.hint.includes("裝作不在")) === true, JSON.stringify(ctx.tagDetails));
+check("Context：記憶強度與 behaviorHint 會送進 AI", ctx.tagDetails?.some((tag) => tag.label === "[連續加班]" && tag.intensity === 0.82 && tag.hint.includes("忘記吃飯")) === true, JSON.stringify(ctx.tagDetails));
+check("Context：髒存檔缺 acquiredAt 不會中斷建立", ctx.tagDetails?.some((tag) => tag.label === "[舊記憶]") === true, JSON.stringify(ctx.tagDetails));
+check("Context：房東抉擇固定成為唯一主線", ctx.focus?.kind === "decision" && ctx.focus.headline.includes("延後三天收租"), JSON.stringify(ctx.focus));
+check("Context：今日證據保留 importance/source", ctx.todayHighlights?.some((item) => item.source === "decision" && item.importance === "major") === true, JSON.stringify(ctx.todayHighlights));
+check("Context：只排除已知內部旗標，保留自然語言冒號", !ctx.flags.some((flag) => flag.includes("tenant_internal")) && ctx.flags.includes("答應幫忙搬家") && ctx.flags.includes("房東提醒：下週回覆"), JSON.stringify(ctx.flags));
+rt.tenant.coreTags = originalCoreTags;
+rt.tenant.memoryTags = originalMemoryTags;
+rt.flags = originalFlags;
 
 save();
 const saved = JSON.parse(mem[SAVE_KEY]);

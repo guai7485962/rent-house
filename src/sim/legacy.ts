@@ -131,11 +131,13 @@ function buildFarewellLetter(rt: TenantRuntime, daysLived: number, repMemory: st
 // ---------------------------------------------------------------------------
 
 /** 離開語氣類別:強制請離/AI 事件請走=forced、協議解約=agreement、分手搬走=breakup、
- *  長期不滿主動退租=unhappy、其餘未預期原因=generic 兜底。 */
-export type DepartureTone = "forced" | "agreement" | "breakup" | "unhappy" | "generic";
+ *  長期不滿主動退租=unhappy、跟隨同居伴侶正向離開=follow_partner、其餘未預期原因=generic 兜底。 */
+export type DepartureTone = "forced" | "agreement" | "breakup" | "unhappy" | "follow_partner" | "generic";
 
 /** 依 moveOut 傳入的 reason 字串把離開路徑歸到最貼近的語氣類(涵蓋所有 moveOut 呼叫來源)。 */
 export function classifyDeparture(reason: string): DepartureTone {
+  // 跟隨伴侶一起正向離開(graduateFarewell 帶同居伴侶走)——先判,語氣獨立於其他原因。
+  if (reason.includes("跟隨") || reason.includes("追隨")) return "follow_partner";
   if (reason.includes("強制") || reason.includes("請他搬走") || reason.includes("請你搬走") || reason.includes("請走")) return "forced";
   if (reason.includes("協議")) return "agreement";
   if (reason.includes("分手")) return "breakup";
@@ -166,6 +168,11 @@ const DEPARTURE_BODIES: Record<DepartureTone, Array<(d: number, nb: string, pers
     (d, nb, persona, mem) => `要走了。這 ${d} 天越住越覺得,這裡少了點當初讓我安心的東西。${persona ? `我這種${persona}的人,對住得順不順心本來就格外在意,` : ""}日子總得往舒坦的地方過。${mem}替我謝謝${nb}。`,
     (d, nb, _persona, mem) => `謝謝你這 ${d} 天的收留。只是有些不滿積著積著,終究讓我決定另尋住處。我不想帶著怨走,就記住好的那些吧。${mem}${nb},保重。`,
   ],
+  follow_partner: [
+    (d, nb, persona, mem) => `住了 ${d} 天,我在這裡遇見了最想牽手的人。${persona ? `我這種${persona}的個性,原以為會一個人過很久,` : ""}是他讓我決定跟著走。捨不得這棟樓,可我更想和他在一起。${mem}${nb},替我謝謝這裡的一切。`,
+    (d, nb, persona, mem) => `要走了,不是因為住得不好——這 ${d} 天我過得很暖。只是愛人要往新的地方生活,${persona ? `一向${persona}的我,這次也想任性一回,` : ""}跟著他一起展開新的日子。${mem}${nb},這棟樓是我們愛情開始的地方,我會一直記得。`,
+    (d, nb, _persona, mem) => `謝謝這棟樓,讓我在這 ${d} 天裡把一個人的日子過成了兩個人。他要走,我便跟著走;哪裡有他,哪裡才像家。${mem}${nb},後會有期,願你也遇見那個想追隨的人。`,
+  ],
   generic: [
     (d, nb, _persona, mem) => `住在這裡的 ${d} 天,說長不長,說短不短。要離開了,還是想好好跟你道個別。${mem}${nb},謝謝這段日子,後會有期。`,
     (d, nb, persona, mem) => `緣分就到這裡了。這 ${d} 天謝謝你的照顧,${persona ? `${persona}如我,` : ""}也在這棟樓留下了一點痕跡。${mem}${nb},保重,願你我都好。`,
@@ -178,6 +185,7 @@ const DEPARTURE_SIGN: Record<DepartureTone, string> = {
   agreement: "敬上",
   breakup: "字",
   unhappy: "留",
+  follow_partner: "敬上",
   generic: "敬上",
 };
 
@@ -212,7 +220,11 @@ export function recordAlumnus(rt: TenantRuntime, reason: string) {
   const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛${pet.kind === "dog" ? "狗" : "貓"}「${pet.name}」一起離開。` : "";
   const repMemory = representativeMemory(rt);
   // 圓夢畢業/安居軌先用專屬句庫(既有機制不動);非圓夢離開一律以被迫離開句庫兜底,保證非空。
-  const farewell = buildFarewellLetter(rt, daysLived, repMemory) ?? buildDepartureLetter(rt, daysLived, repMemory, reason);
+  // 例外:跟隨伴侶正向離開者即使自己也剛好圓夢,仍優先用 follow_partner 語氣(這趟是為了愛人而走)。
+  const tone = classifyDeparture(reason);
+  const farewell = tone === "follow_partner"
+    ? buildDepartureLetter(rt, daysLived, repMemory, reason)
+    : buildFarewellLetter(rt, daysLived, repMemory) ?? buildDepartureLetter(rt, daysLived, repMemory, reason);
   const entry: AlumniEntry = {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,

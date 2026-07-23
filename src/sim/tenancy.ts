@@ -37,6 +37,7 @@ import {
   makeRuntime,
   isVacant,
   canStartCohabit,
+  cohabitingPartnerId,
   ROOM_APPEARANCE,
   type TenantRuntime,
 } from "./gameState";
@@ -154,7 +155,19 @@ export function graduateFarewell(tenantId: string, reason: string) {
     if (state.graduateCount >= 3) unlock("graduate_3");
     if (state.graduateCount >= 5) unlock("hall_of_fame"); // 🏛️ 名人堂:五位畢業生
   }
-  moveOut(tenantId, reason);
+  // 正向離開(圓夢/安居圓滿)且有同居伴侶 → 伴侶追隨一起走(浪漫的追隨,不是被連坐):
+  // 兩人都離開、都進名冊、都有告別信;伴侶用 follow_partner 語氣。金錢(謝禮紅包/退押金)只按
+  // 主離開者算一次(上方已發),伴侶本就不另收租/押金,故不重複發。送別會只辦一場(上方 farewellSendoff)。
+  // 移除時把「這趟是伴侶一起走」透過 followPartnerId 告知 moveOut:略過「同居者轉正接手」與互相的
+  // 「被留下的失落」記憶(此分支只在正向離開走;被趕走/主動退租/分手仍走現行轉正接手,不受影響)。
+  const followId = cohabitingPartnerId(tenantId);
+  if (followId && state.runtimes[followId]) {
+    const followReason = `跟隨伴侶${name}離開,兩個人一起去展開新生活`;
+    moveOut(followId, followReason, { followPartnerId: tenantId });
+    moveOut(tenantId, reason, { followPartnerId: followId });
+  } else {
+    moveOut(tenantId, reason);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -258,11 +271,17 @@ function placeMemorial(rt: TenantRuntime) {
   notify(`🎁 ${rt.tenant.name} 在 ${rt.roomNo} 房留下了紀念物「${nm}」`);
 }
 
-/** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶 */
-export function moveOut(tenantId: string, reason: string) {
+/** 租客退租搬走:清空房間佔用、移除 runtime、清掉別人身上關於他的記憶。
+ *  opts.followPartnerId:同居伴侶正向離開時「一起走」的另一位——對這位略過「轉正接手」與
+ *  互相的「被留下的失落」記憶(兩人是一起離開,不是被留下)。 */
+export function moveOut(tenantId: string, reason: string, opts?: { followPartnerId?: string }) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
   const name = rt.tenant.name;
+  const followPartnerId = opts?.followPartnerId;
+  // 捕捉離開者當前的同居伴侶(在 occupancy/cohabits 被下面變動之前):用來把「未同居情侶」
+  // 的留下方(任務 B,中等難過)和「同居轉正接手」的那位(維持現行、不套 B)區分開。
+  const cohabitMateId = cohabitingPartnerId(tenantId);
   // 帶著欠款離開:這筆收不回來了,至少讓房東知道(名冊原因不變)
   if ((rt.arrears ?? 0) > 0) notify(`💸 ${name} 帶著 $${rt.arrears} 的未繳欠租搬走了`);
   recordAlumnus(rt, reason); // 進歷任房客名冊(趁 runtime 還在;§G-8;會順帶記下貓一起走)
@@ -278,9 +297,10 @@ export function moveOut(tenantId: string, reason: string) {
   const entry = Object.entries(state.occupancy).find(([, tid]) => tid === tenantId);
   if (entry) {
     delete state.occupancy[entry[0]];
-    // 若有同居者住在這間房 → 伴侶接手承租(轉正,開始付租)
+    // 若有同居者住在這間房 → 伴侶接手承租(轉正,開始付租)。
+    // 例外:followPartnerId(正向離開時一起走的伴侶)不接手——房間直接空出來,兩人一起離開。
     const mateId = Object.keys(state.cohabits).find((id) => state.cohabits[id] === entry[0]);
-    if (mateId && state.runtimes[mateId] && mateId !== tenantId) {
+    if (mateId && state.runtimes[mateId] && mateId !== tenantId && mateId !== followPartnerId) {
       delete state.cohabits[mateId];
       state.occupancy[entry[0]] = mateId;
       state.runtimes[mateId].roomNo = entry[0].replace(/^r/, "");
@@ -300,7 +320,21 @@ export function moveOut(tenantId: string, reason: string) {
     }
     t.memoryTags = t.memoryTags.filter((m) => !m.label.includes(name) && !m.behaviorHint.includes(name));
     const bond = bonds.find((b) => b.aId === t.id || b.bId === t.id);
-    if (bond && (bond.romantic || bond.value >= 50)) {
+    if (bond?.romantic && other.tenant.id !== cohabitMateId && other.tenant.id !== followPartnerId) {
+      // 任務 B:未同居情侶的留下方——中等難過(當下打擊 + 低落幾天 + 思念記憶,隨時間恢復)。
+      // 不打 satisfaction 永久值;mood/stress 夾值;思念記憶與 sulk 都被既有系統慢慢接住還原。
+      const s = t.stats;
+      s.mood = clamp(s.mood - 13, 0, 100);
+      s.stress = clamp(s.stress + 12, 0, 100);
+      // 低落 directive:2 遊戲日的 sulk;既有 directive 未過期時不覆蓋(尊重原本的行為狀態)。
+      if (!other.directive || other.directive.untilDay < gameDayIndex()) {
+        other.directive = { id: "sulk", untilDay: gameDayIndex() + 2 };
+        applyHour(other, new Date(state.gameMs).getHours(), false); // 立即依 sulk 重新定位
+      }
+      pushMemory(t, `[思念${name}]`, `情人 ${name} 搬走了,一個人的時候總會想念,心裡難過又空落落的。`, "ai_event");
+      pushSocialLog(other, `💔 ${name} 搬走了,望著空下來的位子,思念一下子湧了上來。`, "major");
+    } else if (bond && (bond.romantic || bond.value >= 50)) {
+      // 同居轉正接手方、或一般好朋友(value≥50 非情侶):維持現行的普通失落記憶,不升級。
       pushMemory(t, `[${name}搬走了]`, `親近的${bond.romantic ? "戀人" : "朋友"} ${name} 已退租離開,心裡有些失落。`, "ai_event");
     }
   }

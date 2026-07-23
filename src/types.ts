@@ -360,7 +360,8 @@ export interface AlumniEntry {
   leftMs: number;
   /** 一句代表性記憶(滾動摘要或最後的重要日誌) */
   memory: string;
-  /** 畢業生的告別信(模板生成,零 AI 成本);非畢業離開者沒有,舊存檔 ?? undefined 相容 */
+  /** 離開者留給房東的告別信(模板生成,零 AI 成本):圓夢畢業/安居用專屬句庫,被迫/非圓滿
+   *  離開依原因歸類挑語氣句庫。新存檔每位離開者必有;舊存檔早期非畢業條目 ?? undefined 相容。 */
   farewell?: string;
 }
 

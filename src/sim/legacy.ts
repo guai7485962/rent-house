@@ -114,7 +114,7 @@ function bestNeighborName(leaverId: string): string {
 }
 
 /** 畢業生的告別信(模板生成、零 AI):依畢業軌別語氣 + 住了幾天 + 最好鄰居 + 代表記憶。
- *  必過 toTraditional 防簡體;非畢業型或無句庫回 undefined。 */
+ *  必過 toTraditional 防簡體;非畢業型或無句庫回 undefined(交給被迫離開句庫兜底)。 */
 function buildFarewellLetter(rt: TenantRuntime, daysLived: number, repMemory: string): string | undefined {
   const w = rt.wish;
   if (!w || w.fulfilledDay === -99) return undefined;
@@ -126,14 +126,93 @@ function buildFarewellLetter(rt: TenantRuntime, daysLived: number, repMemory: st
   return toTraditional([body(daysLived, neighbor), memoryLine, `——${rt.tenant.name} 敬上`].filter(Boolean).join(""));
 }
 
+// ---------------------------------------------------------------------------
+// 被迫/非圓滿離開的告別信(使用者硬底線:每個離開的租客都要留一段話)
+// ---------------------------------------------------------------------------
+
+/** 離開語氣類別:強制請離/AI 事件請走=forced、協議解約=agreement、分手搬走=breakup、
+ *  長期不滿主動退租=unhappy、其餘未預期原因=generic 兜底。 */
+export type DepartureTone = "forced" | "agreement" | "breakup" | "unhappy" | "generic";
+
+/** 依 moveOut 傳入的 reason 字串把離開路徑歸到最貼近的語氣類(涵蓋所有 moveOut 呼叫來源)。 */
+export function classifyDeparture(reason: string): DepartureTone {
+  if (reason.includes("強制") || reason.includes("請他搬走") || reason.includes("請你搬走") || reason.includes("請走")) return "forced";
+  if (reason.includes("協議")) return "agreement";
+  if (reason.includes("分手")) return "breakup";
+  if (reason.includes("不滿") || reason.includes("品質")) return "unhappy";
+  return "generic"; // 未預期 reason 也有一句通用道別,保證告別信必為非空
+}
+
+/** 各語氣類別的句庫(每類 2~3 句變化);每句摻入住了幾天 d、最好鄰居 nb、性格 persona、
+ *  代表記憶 mem——同原因每人不同。措辭維持遊戲分級:被迫離開是失望與委屈,不辱罵、不含不當內容。 */
+const DEPARTURE_BODIES: Record<DepartureTone, Array<(d: number, nb: string, persona: string, mem: string) => string>> = {
+  forced: [
+    (d, nb, persona, mem) => `住了 ${d} 天,最後換來一句「請你搬走」。我不會賴著不走,只是心裡實在不甘——${persona ? `我${persona}又怎樣,` : ""}也不至於落得被這樣請出門。${mem}${nb},這棟樓還是有讓我捨不得的人,就這樣吧。`,
+    (d, nb, persona, mem) => `收到要我搬走的通知那一刻,我愣了很久。這 ${d} 天我把這裡當成家,${persona ? `一個${persona}的人也總算把心放了進來,` : ""}原來在你這兒,我只是個隨時能請走的房客。委屈是有的,怨也是有的,${mem}替我跟${nb}道聲別。`,
+    (d, nb, persona, mem) => `我承認我${persona ? `${persona},` : ""}不是最好相處的房客,可能真讓你為難了。可住了 ${d} 天說走就走,這口氣我一時嚥不下去。${mem}算了,${nb}待我不薄,就當我是為了他們才好好離開的。`,
+  ],
+  agreement: [
+    (d, nb, _persona, mem) => `謝謝你願意好好跟我談,讓我體面地離開。住在這裡的 ${d} 天,說真的我過得不差,是我自己的路要往別處去了。${mem}${nb},謝謝你陪我走過這段,有緣再會。`,
+    (d, nb, _persona, mem) => `雖然要搬走,但你把話說開、把補償算清,這份體面我記著。這 ${d} 天有過不少好時光,離開多少有些失落,卻不留遺憾。${mem}也代我謝謝${nb}。`,
+    (d, nb, persona, mem) => `能好聚好散,已經是最好的結局了。這 ${d} 天謝謝你的照顧,${persona ? `${persona}如我,` : ""}也在這裡被好好對待過。${mem}往後各自安好,${nb}我會想念的。`,
+  ],
+  breakup: [
+    (d, nb, _persona, mem) => `感情走到了頭,我也沒臉再住下去。這 ${d} 天有過最甜的日子,也在這裡碎了心。${mem}謝謝你這段時間的收留,${nb},替我好好活著,我先走了。`,
+    (d, nb, _persona, mem) => `分手了,房子也住不下去了。走的時候整個人是空的,但還是想跟你道一聲別——這 ${d} 天,謝謝你讓我有個能躲起來哭的地方。${mem}${nb},別為我擔心。`,
+    (d, nb, _persona, mem) => `帶著一段散了的感情離開,這 ${d} 天像做了一場長長的夢。謝謝你沒有多問,只是讓我安靜地把行李收好。${mem}${nb},這棟樓我不會忘。`,
+  ],
+  unhappy: [
+    (d, nb, _persona, mem) => `這 ${d} 天,我等過、忍過,也試著說服自己再住住看,可是心裡那點失望還是壓過了不捨,我還是走吧。${mem}${nb},謝謝你,是你讓我還願意笑著離開。`,
+    (d, nb, persona, mem) => `要走了。這 ${d} 天越住越覺得,這裡少了點當初讓我安心的東西。${persona ? `我這種${persona}的人,對住得順不順心本來就格外在意,` : ""}日子總得往舒坦的地方過。${mem}替我謝謝${nb}。`,
+    (d, nb, _persona, mem) => `謝謝你這 ${d} 天的收留。只是有些不滿積著積著,終究讓我決定另尋住處。我不想帶著怨走,就記住好的那些吧。${mem}${nb},保重。`,
+  ],
+  generic: [
+    (d, nb, _persona, mem) => `住在這裡的 ${d} 天,說長不長,說短不短。要離開了,還是想好好跟你道個別。${mem}${nb},謝謝這段日子,後會有期。`,
+    (d, nb, persona, mem) => `緣分就到這裡了。這 ${d} 天謝謝你的照顧,${persona ? `${persona}如我,` : ""}也在這棟樓留下了一點痕跡。${mem}${nb},保重,願你我都好。`,
+  ],
+};
+
+/** 各語氣的署名口吻。 */
+const DEPARTURE_SIGN: Record<DepartureTone, string> = {
+  forced: "留",
+  agreement: "敬上",
+  breakup: "字",
+  unhappy: "留",
+  generic: "敬上",
+};
+
+/** 決定性選句(不消耗 Math.random,避免擾動其他系統的 RNG 次序與平衡快照;以租客 id + 離開時間為種)。 */
+function departureIndex(rt: TenantRuntime): number {
+  const key = `farewell|${rt.tenant.id}|${state.gameMs}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  return Math.abs(hash);
+}
+
+/** 被迫/非圓滿離開的告別信:依 reason 歸類挑語氣句庫,摻入性格/代表記憶/住了幾天/最好鄰居,
+ *  必過 toTraditional 防簡體。保底保證回傳非空字串(即使 reason 未預期也走 generic)。 */
+function buildDepartureLetter(rt: TenantRuntime, daysLived: number, repMemory: string, reason: string): string {
+  const tone = classifyDeparture(reason);
+  const neighbor = bestNeighborName(rt.tenant.id);
+  const persona = (rt.tenant.coreTags?.[0]?.label ?? "").replace(/[[\]]/g, "");
+  const memoryLine = repMemory && !repMemory.includes("沒留下太多痕跡") ? `我會記得——${repMemory}` : "";
+  const bodies = DEPARTURE_BODIES[tone];
+  const body = bodies[departureIndex(rt) % bodies.length];
+  const letter = body(daysLived, neighbor, persona, memoryLine) + `——${rt.tenant.name} ${DEPARTURE_SIGN[tone]}`;
+  return toTraditional(letter);
+}
+
 /** 退租時把房客存進名冊(moveOut 在刪除 runtime 前呼叫);自己養的貓一起走時在記憶裡提一筆。
- *  畢業型離開者另附一封模板告別信(farewell)。 */
+ *  每位離開者都附一封模板告別信(farewell):圓夢畢業/安居用專屬句庫,被迫/非圓滿離開依
+ *  reason 歸類挑語氣句庫兜底——使用者硬底線「每個離開的都要有」,farewell 必為非空字串。 */
 export function recordAlumnus(rt: TenantRuntime, reason: string) {
   const moveInMs = rt.moveInMs ?? GAME_START.getTime();
   const daysLived = Math.max(0, Math.floor((state.gameMs - moveInMs) / (24 * 3600 * 1000)));
   const pet = state.pets[rt.tenant.id];
   const petNote = pet && pet.ownerId === rt.tenant.id ? `帶著愛${pet.kind === "dog" ? "狗" : "貓"}「${pet.name}」一起離開。` : "";
   const repMemory = representativeMemory(rt);
+  // 圓夢畢業/安居軌先用專屬句庫(既有機制不動);非圓夢離開一律以被迫離開句庫兜底,保證非空。
+  const farewell = buildFarewellLetter(rt, daysLived, repMemory) ?? buildDepartureLetter(rt, daysLived, repMemory, reason);
   const entry: AlumniEntry = {
     name: rt.tenant.name,
     occupation: rt.tenant.occupation,
@@ -141,7 +220,7 @@ export function recordAlumnus(rt: TenantRuntime, reason: string) {
     reason,
     leftMs: state.gameMs,
     memory: (petNote + repMemory).slice(0, 120),
-    farewell: buildFarewellLetter(rt, daysLived, repMemory),
+    farewell,
   };
   state.alumni.unshift(entry); // 最新的排前面
   if (state.alumni.length > 50) state.alumni.length = 50;

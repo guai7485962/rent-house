@@ -20,6 +20,10 @@ const { tryFight } = await import("../src/sim/conflicts");
 const { save, load } = await import("../src/sim/persistence");
 const { makeRuntime, tenants } = await import("../src/sim/gameState");
 const { toTraditional } = await import("../src/sim/narrativeQuality");
+const { classifyDeparture } = await import("../src/sim/legacy");
+
+// 簡體字偵測(比照事件消毒):告別信全部必須是繁體
+const SIMP_RE = /[们过这么后来东乐话说觉别买卖钱贝见风飞车专业欢兴学随写垃圾还惊场满门问间闻阔]/;
 
 let pass = 0;
 let fail = 0;
@@ -117,17 +121,53 @@ check("送走第一位 → farewell 成就", state.achievements.includes("farewe
   state.alumni.shift(); // 清掉這筆,不干擾後續存檔往返的名冊順序斷言
   delete state.runtimes["al_grad"];
 }
-// --- 非畢業離開者沒有告別信 ---
+// --- 所有離開原因都留告別留言(使用者硬底線:每個離開的都要有)---
+// reason → 語氣類別的分流(涵蓋所有 moveOut 呼叫來源)
+check("路徑分類:強制請離 → forced", classifyDeparture("遭房東強制請離") === "forced");
+check("路徑分類:AI 事件請走 → forced", classifyDeparture("你請他搬走了") === "forced");
+check("路徑分類:協議解約 → agreement", classifyDeparture("與房東協議解約(補償 $2,000)") === "agreement");
+check("路徑分類:分手搬走 → breakup", classifyDeparture("分手後無處可住,搬離公寓") === "breakup");
+check("路徑分類:長期不滿退租 → unhappy", classifyDeparture("對居住品質長期不滿") === "unhappy");
+check("路徑分類:未預期原因 → generic 兜底", classifyDeparture("測試退租") === "generic");
+
+// 每種離開原因都產生非空、繁體、個人化(住幾天/最好鄰居/代表記憶)的告別信
 {
-  const seed = JSON.parse(JSON.stringify(tenants[0]));
-  seed.id = "al_evict"; seed.name = "被請離者"; seed.occupation = "上班族";
-  const rtE = makeRuntime(seed, "304", 70, []);
-  rtE.moveInMs = state.gameMs - 3 * 24 * 3600 * 1000;
-  state.runtimes["al_evict"] = rtE; // 未指派/未實現心願 → 無告別信
-  recordAlumnus(rtE, "遭房東強制請離");
-  check("非畢業離開者 → 無告別信", state.alumni[0].farewell === undefined);
-  state.alumni.shift(); // 清掉這筆,還原名冊順序
-  delete state.runtimes["al_evict"];
+  // 建一位有性格與代表記憶的離開者,錄進名冊後取回條目再清掉(還原名冊順序)
+  const recordDeparture = (id: string, reason: string) => {
+    const seed = JSON.parse(JSON.stringify(tenants[0]));
+    seed.id = id; seed.name = "離開者阿明"; seed.occupation = "上班族";
+    seed.coreTags = [{ id: "perfectionist", label: "[完美主義]", behaviorHint: "" }];
+    const rt = makeRuntime(seed, "304", 70, []);
+    rt.moveInMs = state.gameMs - 4 * 24 * 3600 * 1000; // 假裝住了 4 天
+    rt.tenant.recentSummary = "總把公共廚房擦得發亮的可靠房客。";
+    rt.wish = undefined; // 未圓夢 → 走被迫離開句庫
+    state.runtimes[id] = rt;
+    recordAlumnus(rt, reason);
+    const entry = state.alumni[0];
+    state.alumni.shift();
+    delete state.runtimes[id];
+    return entry;
+  };
+  const reasons: Array<[string, string]> = [
+    ["forced", "遭房東強制請離"],
+    ["ai_evict", "你請他搬走了"],
+    ["agreement", "與房東協議解約(補償 $2,000)"],
+    ["breakup", "分手後無處可住,搬離公寓"],
+    ["unhappy", "對居住品質長期不滿"],
+    ["unexpected", "某種沒預料到的離開"],
+  ];
+  for (const [tag, reason] of reasons) {
+    const e = recordDeparture(`al_dep_${tag}`, reason);
+    const fw = e.farewell;
+    check(`「${reason}」→ 告別信非空`, typeof fw === "string" && fw!.length > 20, `farewell=${fw}`);
+    check(`「${reason}」→ 已轉繁(無簡體、toTraditional 冪等)`, !!fw && !SIMP_RE.test(fw) && fw === toTraditional(fw));
+    check(`「${reason}」→ 摻入住了幾天`, !!fw && fw.includes("4 天"));
+    check(`「${reason}」→ 摻入代表記憶`, !!fw && fw.includes("擦得發亮"));
+    check(`「${reason}」→ 摻入最好鄰居(無鄰居時回退全樓)`, !!fw && fw.includes("這棟樓的每一個人"));
+  }
+  // 強制離開句庫必摻性格(coreTags):forced 三句都用到 persona
+  const forcedE = recordDeparture("al_dep_persona", "遭房東強制請離");
+  check("被迫離開信摻入性格 coreTags(完美主義)", !!forcedE.farewell && forcedE.farewell.includes("完美主義"));
 }
 
 // --- 存檔往返 ---

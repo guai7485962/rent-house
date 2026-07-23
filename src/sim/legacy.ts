@@ -78,7 +78,9 @@ function representativeMemory(rt: TenantRuntime): string {
   return tag ? `是個${tag.replace(/[[\]]/g, "")}的人。` : "來去匆匆,沒留下太多痕跡。";
 }
 
-/** 畢業軌別語氣的告別信句庫:住了幾天 × 最好鄰居;各軌各一種口吻(登台/開店/論文/代表作)。 */
+/** 心願軌別語氣的告別信句庫:住了幾天 × 最好鄰居。
+ *  畢業型(登台/開店/論文/代表作)各一種口吻;安居型(站穩/養身/住成家/過成喜歡的樣子)
+ *  另一種口吻——感謝這段像家的時光、帶著這裡的溫暖前往人生的下一步。 */
 const FAREWELL_BODY: Partial<Record<WishId, (days: number, neighbor: string) => string>> = {
   stage_dream: (days, neighbor) =>
     `在這棟樓住的這 ${days} 天,是我從後台一路走向聚光燈的日子。謝謝你願意收留一個追著舞台跑的人,也謝謝${neighbor}在我排練到深夜時,總幫我留著一盞燈。下次布幕拉開,我會記得這裡是我的第一排觀眾。`,
@@ -88,6 +90,14 @@ const FAREWELL_BODY: Partial<Record<WishId, (days: number, neighbor: string) => 
     `在這裡熬過論文的這 ${days} 天,是我最狼狽也最踏實的一段路。謝謝你沒在我焦頭爛額時催促,也謝謝${neighbor}在我快撐不住時遞來的那杯咖啡。我要去新的城市報到了,但這裡永遠是我畢業的起點。`,
   finish_masterwork: (days, neighbor) =>
     `這 ${days} 天,我把心裡的東西在這個房間裡一筆一筆畫了出來。謝謝這棟樓給了我一個能安靜創作的角落,也謝謝${neighbor}——你成了我作品裡偷偷藏著的靈感。代表作完成了,我也該翻往下一頁了。`,
+  career_step: (days, neighbor) =>
+    `在這裡安穩住下的這 ${days} 天,我把工作和生活都站成了踏實的樣子。謝謝你把這裡守成一個能安心回來的地方,也謝謝${neighbor}陪我聊過那些高低起伏的日子。要往人生的下一步走了,我會帶著這份踏實出發。`,
+  recover_rhythm: (days, neighbor) =>
+    `這 ${days} 天,我在這裡把身體和作息一點一點養了回來。謝謝你讓這棟樓成了我喘口氣的地方,也謝謝${neighbor}總記得提醒我早點休息。現在的我已經好好的了,帶著這份被照顧過的暖,去迎接下一段人生。`,
+  feel_at_home: (days, neighbor) =>
+    `住在這裡的這 ${days} 天,我是真的把這棟樓住成了家。謝謝你,也謝謝${neighbor}——是你們讓我記得每個人的作息與口味,把日子過成了彼此的牽掛。要往下一步去了,但這裡永遠是我心裡的家。`,
+  settle_life: (days, neighbor) =>
+    `這 ${days} 天,我終於把日子過成了自己喜歡的樣子。謝謝這棟樓給了我一段這麼安穩的時光,也謝謝${neighbor}讓平凡的每一天都有了滋味。帶著這份安穩,我要去展開人生的下一步了。`,
 };
 
 /** 同棟在住者中與離開者關係最好的一位的名字(告別信裡的「最好鄰居」);沒有則回退。 */
@@ -110,7 +120,7 @@ function buildFarewellLetter(rt: TenantRuntime, daysLived: number, repMemory: st
   if (!w || w.fulfilledDay === -99) return undefined;
   const def = WISH_DEFS[w.id] as WishDef | undefined;
   const body = FAREWELL_BODY[w.id];
-  if (!def?.graduates || !body) return undefined;
+  if (!def || !body) return undefined; // 有句庫的軌別(畢業型 + 安居型)才生成告別信
   const neighbor = bestNeighborName(rt.tenant.id);
   const memoryLine = repMemory && !repMemory.includes("沒留下太多痕跡") ? `我會一直記得——${repMemory}` : "";
   return toTraditional([body(daysLived, neighbor), memoryLine, `——${rt.tenant.name} 敬上`].filter(Boolean).join(""));

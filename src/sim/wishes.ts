@@ -25,7 +25,7 @@ import {
 import { grantGrowthTag, GROWTH_TAGS, type GrowthTagId } from "./growth";
 import { relationships } from "./social";
 import { unlock } from "./legacy";
-import { addReputation, REP_SETTLE, REP_GRADUATE } from "./reputation";
+import { addReputation, REP_SETTLE, REP_GRADUATE, REP_SETTLE_GRADUATE } from "./reputation";
 import type { EventDef } from "./events";
 
 /** 同 economy.inHardship;不 import economy,避免 wishes→economy→tick→wishes 循環鏈 */
@@ -58,8 +58,45 @@ const GAIN_GOOD = 4; // 順利的一天
 const GAIN_SLOW = 2; // 勉強有進展
 const SETBACK = -2; // 困頓的一天(進度小幅倒退)
 export const GRADUATE_AFTER_DAYS = 6; // 實現後幾天圓夢離開
+/** 安居型模範房客的安居期(遊戲日):明顯長於畢業型的 6 天,體現忠誠與「像家」的價值;
+ *  安居期滿後因人生下一步(成家/外派/買房)圓滿搬離,釋出房間讓新租客流入。
+ *  設 20 天(> balance-test 的 10 天快照窗 → 快照期間不會觸發搬離,理論零漂移)。 */
+export const SETTLE_TENURE_DAYS = 20;
 const MILESTONES = [25, 50, 75] as const;
 type Milestone = (typeof MILESTONES)[number];
+
+/** 決定性索引(不消耗 Math.random,避免擾動其他系統的 RNG 次序與 balance 快照)。 */
+function settleIndex(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** 安居圓滿搬離的離開原因(2~3 種:成家/外派/買房),進 alumni 名冊;依 id 決定性挑選。 */
+const SETTLE_DEPART_REASONS = [
+  "安居圓滿搬離:和另一半決定成家,搬去兩人的新居",
+  "安居圓滿搬離:工作外派他鄉,帶著這裡的溫暖赴任",
+  "安居圓滿搬離:存夠了頭期款,買下屬於自己的房子",
+] as const;
+export function settleDepartReason(id: string): string {
+  return SETTLE_DEPART_REASONS[settleIndex(id) % SETTLE_DEPART_REASONS.length];
+}
+
+/** 安居圓滿搬離前 2 天的打包預告文案(比照畢業型 farewellText);依 id 決定性挑選。 */
+const SETTLE_FAREWELL_TEXTS = [
+  "他把這些年的日子一箱箱打包,笑著說要帶著這裡的溫暖,去人生的下一站。",
+  "行李慢慢堆到門口,他一邊收拾一邊回頭望——這裡把日子過成了家,如今要帶著這份踏實往前走。",
+  "他把住成家的這段時光仔細收好,準備啟程,眼裡是安穩,也有不捨。",
+] as const;
+function settleFarewellText(id: string): string {
+  return SETTLE_FAREWELL_TEXTS[settleIndex(id) % SETTLE_FAREWELL_TEXTS.length];
+}
+
+/** 模範房客的安居期滿搬離日(= 成為模範日 + 安居期);缺 modelSinceDay 時退回當前日(給滿安居期)。 */
+export function settleDepartDay(rt: TenantRuntime): number {
+  const since = typeof rt.modelSinceDay === "number" ? rt.modelSinceDay : gameDayIndex();
+  return since + SETTLE_TENURE_DAYS;
+}
 
 /** 同棟在住者中最好的關係值(把樓住成家的量尺) */
 function bestNeighborRel(tenantId: string): number {
@@ -266,10 +303,11 @@ export function wishOutcomeBrief(def: WishDef): WishOutcome {
   }
   return {
     graduates: false,
-    headline: "🏠 留下成為模範房客長住",
+    headline: "🏠 先安居成模範房客,之後圓滿搬離",
     lines: [
       "實現當下心情大振、習得永久成長特質。",
-      `之後自願多付 3% 月租,在住期間帶動全樓每天心情微升,房東口碑 +${REP_SETTLE}。`,
+      `之後自願多付 3% 月租、在住期間帶動全樓每天心情微升,房東口碑 +${REP_SETTLE}。`,
+      `安居約 ${SETTLE_TENURE_DAYS} 天後,會帶著這裡的溫暖圓滿搬離、展開人生下一步(成家/外派/買房),釋出房間——離開時同樣有全樓歡送會、告別信、專屬紀念物、謝禮紅包與退還押金,房東口碑 +${REP_SETTLE_GRADUATE}。`,
     ],
     growthLabel,
     growthHint: tag.hint,
@@ -283,12 +321,13 @@ export function wishOutcomeBrief(def: WishDef): WishOutcome {
 export type WishResultPhase = "preview" | "leaving" | "stayed";
 export interface WishResult {
   phase: WishResultPhase;
-  graduates: boolean; // 這條心願的種類會不會離開(= def.graduates)
-  leaves: boolean; // 一眼結論:這房客最終會不會離開這棟樓
+  graduates: boolean; // 這條心願是「畢業型」(圓夢後很快搬離)還是「安居型」(先安居再圓滿搬離)
+  leaves: boolean; // 一眼結論:這房客最終會不會離開這棟樓(兩軌如今都會離開,恆為 true)
   headline: string; // 段落標題(帶 emoji)
-  verdict: string; // 最醒目的一句「會不會離開」結論
+  verdictTag: string; // 最醒目的短標(🚪 即將搬離 / 🏠 安居後圓滿搬離…);顏色依 graduates 分流
+  verdict: string; // 最醒目的一句「會不會離開/何時離開」結論
   lines: readonly string[]; // 走向細節
-  daysLeft?: number; // leaving 才有:距離搬離還有幾天(≥0)
+  daysLeft?: number; // leaving/stayed 才有:距離搬離還有幾天(≥0)
   growthLabel?: string; // preview 才附:將習得的成長特質名
   growthHint?: string;
 }
@@ -308,9 +347,12 @@ export function wishResult(rt: TenantRuntime): WishResult | null {
     return {
       phase: "preview",
       graduates: def.graduates,
-      leaves: def.graduates,
+      leaves: true, // 兩軌最終都會離開
       headline: "🎁 達成後會怎樣",
-      verdict: def.graduates ? "圓夢後會搬離公寓,展開新生活" : "圓夢後會留下,成為模範房客長住",
+      verdictTag: def.graduates ? "🚪 圓夢後搬離" : "🏠 安居後圓滿搬離",
+      verdict: def.graduates
+        ? "圓夢後會搬離公寓,展開新生活"
+        : "先當一陣子模範房客安居,之後圓滿搬離、展開人生下一步",
       lines: base.lines,
       growthLabel: base.growthLabel,
       growthHint: base.growthHint,
@@ -327,6 +369,7 @@ export function wishResult(rt: TenantRuntime): WishResult | null {
       leaves: true,
       daysLeft,
       headline: "📦 即將搬離",
+      verdictTag: "🚪 即將搬離",
       verdict: daysLeft > 0 ? `已圓夢,將於 ${daysLeft} 天後搬離` : "已圓夢,即將搬離",
       lines: [
         "他要離開這棟樓,展開新生活了。",
@@ -335,16 +378,22 @@ export function wishResult(rt: TenantRuntime): WishResult | null {
     };
   }
 
-  // 已達成 · 安居型:成為模範房客長住,不會離開
+  // 已達成 · 安居型:成為模範房客安居中,安居期滿後圓滿搬離(顯示剩餘 N 天)
+  const daysLeft = Math.max(0, settleDepartDay(rt) - gameDayIndex());
   return {
     phase: "stayed",
     graduates: false,
-    leaves: false,
-    headline: "🏠 已長住(模範房客)",
-    verdict: "已圓夢,留下成為模範房客長住",
+    leaves: true,
+    daysLeft,
+    headline: "🏠 安居中(模範房客)",
+    verdictTag: "🏠 安居後圓滿搬離",
+    verdict: daysLeft > 0
+      ? `安居中,將於 ${daysLeft} 天後圓滿展開人生下一步`
+      : "安居圓滿,即將展開人生下一步",
     lines: [
-      "他決定在這裡長長久久住下去,不會離開。",
-      "自願多付 3% 月租,在住期間帶動全樓每天心情微升。",
+      "他把這裡住成了家,正享受一段安穩的安居時光,自願多付 3% 月租、帶動全樓每天心情微升。",
+      "安居期滿後會帶著這裡的溫暖圓滿搬離,前往人生下一步(成家/外派/買房),釋出房間。",
+      "離開時同樣有全樓歡送會、告別信、專屬紀念物、謝禮紅包與退還押金。",
     ],
   };
 }
@@ -430,6 +479,7 @@ function fulfillWish(rt: TenantRuntime, def: WishDef) {
 function becomeModelTenant(rt: TenantRuntime) {
   if (rt.modelTenant) return;
   rt.modelTenant = true;
+  rt.modelSinceDay = gameDayIndex(); // 安居期計時起點(SETTLE_TENURE_DAYS 天後圓滿搬離)
   const f = rt.tenant.finance;
   // 租金自願 +3%:只有承租人才有租可加(同居者本來就不付租)
   if (Object.values(state.occupancy).includes(rt.tenant.id)) {
@@ -494,6 +544,19 @@ export function wishPass(): { id: string; reason: string }[] {
       advanceWish(rt, def.gain(rt));
       continue;
     }
+    // 🏠 安居型模範房客:安居期滿 → 圓滿搬離(複用畢業型的離開儀式,情境文案不同)。
+    //    不寫進 w.graduateDay(那是畢業型專用;留 -99 讓房東主動送別鍵能判斷「尚未排定」)。
+    if (rt.modelTenant && !def.graduates) {
+      const departDay = settleDepartDay(rt);
+      if (!w.announced && day >= departDay - 2) {
+        w.announced = true; // 前 2 天打包預告(比照畢業型)+ 掛貓去留抉擇
+        pushSocialLog(rt, `📦 ${settleFarewellText(rt.tenant.id)}`, "major");
+        maybeAttachCatFarewell(rt);
+        notify(`🏠 ${rt.tenant.name} 安居圓滿,正準備搬離公寓,展開人生下一步…`);
+      }
+      if (day >= departDay) graduates.push({ id: rt.tenant.id, reason: settleDepartReason(rt.tenant.id) });
+      continue;
+    }
     if (w.graduateDay === -99) continue;
     // 圓夢離開:前兩天先預告(打包日誌),到期日搬走
     if (!w.announced && day >= w.graduateDay - 2) {
@@ -504,6 +567,24 @@ export function wishPass(): { id: string; reason: string }[] {
     if (day >= w.graduateDay) graduates.push({ id: rt.tenant.id, reason: `圓夢離開:${def.label}` });
   }
   return graduates;
+}
+
+/** 房東主動送別鍵(App.vue 模範房客頁):玩家提前請模範房客圓滿搬離,走同一套離開儀式。
+ *  作法:把安居期提前到只剩 2 天 → 未來 2 個遊戲日內由 wishPass 自然走完「打包預告 → 搬離」,
+ *  紅包/退押金/口碑/紀念物/貓去留全部比照自然到期。已在打包中則拒絕(避免誤觸重複觸發)。 */
+export function proactiveSettleFarewell(tenantId: string): { ok: boolean; text: string } {
+  const rt = state.runtimes[tenantId];
+  if (!rt || !rt.modelTenant) return { ok: false, text: "只有模範房客可以這樣送別" };
+  const w = rt.wish;
+  if (!w || w.fulfilledDay === -99) return { ok: false, text: "他還沒圓夢安居,先別急著送別" };
+  if (w.announced) return { ok: false, text: "他已經在打包準備搬離了" };
+  // 安居期提前到只剩 2 天(把成為模範日往前挪),讓 wishPass 的打包預告/搬離自然接手
+  rt.modelSinceDay = gameDayIndex() - SETTLE_TENURE_DAYS + 2;
+  w.announced = true;
+  pushSocialLog(rt, `🎓 你主動祝福 ${rt.tenant.name} 展開新生活。${settleFarewellText(rt.tenant.id)}`, "major");
+  maybeAttachCatFarewell(rt);
+  notify(`🎓 你祝福 ${rt.tenant.name} 圓滿搬離,他開始打包了,兩天後啟程`);
+  return { ok: true, text: `已祝福 ${rt.tenant.name} 展開新生活,兩天後圓滿搬離` };
 }
 
 /** AI 敘事 context 用的一句話心願描述(undefined = 不進 prompt):

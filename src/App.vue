@@ -24,7 +24,7 @@ import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
-import { WISH_DEFS, wishOutcomeBrief, wishResult } from "./sim/wishes";
+import { WISH_DEFS, wishOutcomeBrief, wishResult, proactiveSettleFarewell } from "./sim/wishes";
 import { KINDNESS_ACTS, giveKindness, caredToday, type KindnessId } from "./sim/kindness";
 import { inHardship } from "./sim/economy";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
@@ -327,6 +327,22 @@ function doCare(id: KindnessId) {
 /** 🏠 模範房客 chip(安居型心願實現後宣告長住;金色系) */
 const modelChip = computed(() => (rt.value?.modelTenant ? "🏠 模範房客" : null));
 
+/** 房東主動送別鍵:二次點擊確認,避免誤觸;5 秒未確認自動復位。 */
+const settleFarewellArmed = ref(false);
+let settleFarewellTimer: ReturnType<typeof setTimeout> | null = null;
+function onSettleFarewell() {
+  if (!settleFarewellArmed.value) {
+    settleFarewellArmed.value = true;
+    if (settleFarewellTimer) clearTimeout(settleFarewellTimer);
+    settleFarewellTimer = setTimeout(() => { settleFarewellArmed.value = false; }, 5000);
+    return;
+  }
+  settleFarewellArmed.value = false;
+  if (settleFarewellTimer) { clearTimeout(settleFarewellTimer); settleFarewellTimer = null; }
+  const res = proactiveSettleFarewell(state.activeId);
+  toast(res.text);
+}
+
 /** 人生心願：chip 顯示進度，並提供手機上直接可讀的達成方式卡片。 */
 const wishChip = computed(() => {
   const w = rt.value?.wish;
@@ -586,7 +602,7 @@ function onGroupResolve(choiceId: string) {
 
     <section class="tags">
       <span v-if="financeChip" class="chip warn-chip">{{ financeChip }}</span>
-      <span v-if="modelChip" class="chip model" title="圓夢後宣告長住:自願多付 3% 月租,在住期間全樓住戶每天心情 +0.5">{{ modelChip }}</span>
+      <span v-if="modelChip" class="chip model" title="圓夢後安居成模範房客:自願多付 3% 月租、全樓住戶每天心情 +0.5;安居一段時間後會圓滿搬離,展開人生下一步">{{ modelChip }}</span>
       <span v-if="wishChip" class="chip wish" :title="wishChip.hint + '\n' + wishChip.outcomeTip">{{ wishChip.text }}</span>
       <span v-if="arcChip" class="chip arc">{{ arcChip }}</span>
       <span v-if="directiveChip" class="chip dir">{{ directiveChip }}</span>
@@ -602,9 +618,17 @@ function onGroupResolve(choiceId: string) {
       <p v-if="!wishChip.done">{{ wishChip.hint }}</p>
       <div v-if="wishChip.result" class="wish-outcome" :class="'phase-' + wishChip.result.phase">
         <div class="wish-outcome-head">{{ wishChip.result.headline }}</div>
-        <p class="wish-outcome-verdict" :class="wishChip.result.leaves ? 'leave' : 'stay'">
-          {{ wishChip.result.leaves ? "🚪 會離開" : "🏠 會留下" }}：{{ wishChip.result.verdict }}
+        <p class="wish-outcome-verdict" :class="wishChip.result.graduates ? 'leave' : 'stay'">
+          {{ wishChip.result.verdictTag }}：{{ wishChip.result.verdict }}
         </p>
+        <button
+          v-if="wishChip.result.phase === 'stayed'"
+          class="settle-farewell-btn"
+          :class="{ armed: settleFarewellArmed }"
+          @click="onSettleFarewell"
+        >
+          {{ settleFarewellArmed ? "⚠️ 再按一次確認:提前請他圓滿搬離" : "🎓 祝福他展開新生活" }}
+        </button>
         <p v-for="(ln, i) in wishChip.result.lines" :key="i" class="wish-outcome-sub">{{ ln }}</p>
         <p v-if="wishChip.result.growthLabel" class="wish-outcome-growth">🌱 習得「{{ wishChip.result.growthLabel }}」——{{ wishChip.result.growthHint }}</p>
       </div>
@@ -836,6 +860,9 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .wish-outcome-verdict.stay { color: #8ce8ae !important; }
 .wish-outcome-sub { margin: 3px 0 0 !important; color: var(--text-dim); font-size: 11px !important; line-height: 1.55 !important; }
 .wish-outcome-growth { margin: 6px 0 0 !important; color: #b9f6ce !important; font-size: 11px !important; line-height: 1.55 !important; }
+.settle-farewell-btn { margin-top: 9px; width: 100%; padding: 7px 10px; border: 1px solid rgba(227, 179, 65, 0.5); border-radius: var(--radius); background: rgba(227, 179, 65, 0.1); color: #ffe9b0; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
+.settle-farewell-btn:hover { background: rgba(227, 179, 65, 0.18); }
+.settle-farewell-btn.armed { border-color: #ff9b6a; background: rgba(255, 155, 106, 0.16); color: #ffcb8a; }
 
 .summary { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; cursor: pointer; font-size: 12.5px; }
 .summary-head { display: flex; justify-content: space-between; color: var(--text-dim); }

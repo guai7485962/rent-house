@@ -16,6 +16,11 @@ import { state, clamp, notify } from "./gameState";
 export const REP_GRADUATE = 8;
 /** 安居型心願實現(成為模範房客)的口碑增量 */
 export const REP_SETTLE = 3;
+/** 模範房客安居期滿「圓滿搬離」的口碑增量。
+ *  取 = REP_GRADUATE(8):圓滿收尾與畢業同樣是好房東的口碑印記;
+ *  且安居軌一生累計(成為模範 +3 → 圓滿搬離 +8 = 11)刻意高於畢業軌(+8),
+ *  獎勵這段更長、更忠誠的居住關係。 */
+export const REP_SETTLE_GRADUATE = 8;
 
 /** 口碑異動唯一入口:夾 0~100,實際有升才通知(標明來源) */
 export function addReputation(amount: number, reason: string) {

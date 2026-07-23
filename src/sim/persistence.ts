@@ -90,6 +90,7 @@ export function save() {
         lastRentPleaDay: rt.lastRentPleaDay,
         wish: rt.wish,
         modelTenant: rt.modelTenant,
+        modelSinceDay: rt.modelSinceDay,
         lastCareDay: rt.lastCareDay,
         arc: rt.arc,
         flags: rt.flags,
@@ -251,6 +252,10 @@ export function load(): boolean {
         lastRentPleaDay: saved.lastRentPleaDay ?? -99,
         wish: saved.wish ?? null, // 舊檔沒有 → ensureWishes 依職業指派
         modelTenant: saved.modelTenant === true, // 舊檔沒有 → 不是模範房客
+        // 安居期起點:舊檔已是模範但缺此欄位 → 補當前遊戲日(給滿安居期,不立刻踢走既有模範房客)
+        modelSinceDay: typeof saved.modelSinceDay === "number"
+          ? saved.modelSinceDay
+          : (saved.modelTenant === true ? gameDayIndex() : undefined),
         lastCareDay: saved.lastCareDay ?? -99,
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],

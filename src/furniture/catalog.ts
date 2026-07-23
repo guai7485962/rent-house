@@ -561,6 +561,32 @@ export const CATALOG: FurnitureDef[] = [
       ],
     },
   },
+  {
+    id: "memorial_frame",
+    name: "全家福相框",
+    category: "ambiance",
+    placement: "room",
+    price: 0,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "安居圓滿搬離的模範房客留下的紀念物 · 不可變賣",
+    promptHints: ["桌上那張全家福,是曾把這裡住成家的人,留下的一段安穩時光"],
+    sprite: {
+      recipe: [
+        { shape: "rect", x: 2, y: 3, w: 12, h: 10, color: "#8a5a3a" }, // 木相框
+        { shape: "rect", x: 3, y: 4, w: 10, h: 8, color: "#b98a5a" }, // 框內襯
+        { shape: "rect", x: 4, y: 5, w: 8, h: 6, color: "#dfeaf2" }, // 相片底
+        { shape: "rect", x: 5, y: 7, w: 2, h: 3, color: "#c98aa0" }, // 家人一
+        { shape: "rect", x: 7, y: 6, w: 2, h: 4, color: "#7aa0c9" }, // 家人二
+        { shape: "rect", x: 9, y: 7, w: 2, h: 3, color: "#8ac9a0" }, // 家人三(孩子/寵物)
+        { shape: "rect", x: 6, y: 13, w: 4, h: 1, color: "#6d4630" }, // 相框立架
+      ],
+    },
+  },
 
   // =========================================================================
   // 交誼廳共用家具(社交碰撞點 ★)

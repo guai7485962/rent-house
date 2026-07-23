@@ -20,7 +20,7 @@ import { forceInteraction } from "./interactions";
 import { adoptCat, adoptPet, petIcon, resolvePetFarewell } from "./pets";
 import { recordAlumnus, unlock } from "./legacy";
 import { ensureWishes, WISH_DEFS, type WishId, type WishDef } from "./wishes";
-import { addReputation, REP_GRADUATE } from "./reputation";
+import { addReputation, REP_GRADUATE, REP_SETTLE_GRADUATE } from "./reputation";
 import { addPlacement, findFreeSlot } from "./placements";
 import { getDef } from "../furniture/catalog";
 import {
@@ -112,13 +112,21 @@ export function moveIn(roomId: string, ap: Applicant) {
 }
 
 /**
- * 圓夢畢業離開(只走 wishPass 排定的離開;房東請離/分手搬走不適用):
+ * 圓夢離開離場儀式(只走 wishPass 排定的離開;房東請離/分手搬走不適用):
  * 謝禮紅包(0.5×月租×(1+好感/100),上限 1×月租)+ 退還入住押金(以離開時月租計)
- * + 口碑 +8 + 畢業成就,最後執行通用 moveOut。
+ * + 口碑 + 紀念物 + 送別會,最後執行通用 moveOut。
+ *
+ * 兩軌共用一套儀式,情境不同:
+ *   - 畢業型(def.graduates):圓夢後很快搬離,口碑 +REP_GRADUATE,計入畢業成就(首位畢業生/名人堂)。
+ *   - 安居型(模範房客安居期滿):圓滿搬離,口碑 +REP_SETTLE_GRADUATE;不計畢業成就
+ *     (安居圓滿不是「畢業」;仍透過 recordAlumnus 觸發送走 N 位房客的通用成就)。
  */
 export function graduateFarewell(tenantId: string, reason: string) {
   const rt = state.runtimes[tenantId];
   if (!rt) return;
+  const w = rt.wish;
+  const def = w ? (WISH_DEFS[w.id] as WishDef | undefined) : undefined;
+  const isSettle = rt.modelTenant === true && !!def && !def.graduates; // 安居型圓滿搬離
   farewellSendoff(rt); // 送別會/獨白:離開者仍在名單時演出(結算之前)
   placeMemorial(rt); // 紀念物留在原房間(occupancy 尚未清除,綁房間不綁租客)
   const name = rt.tenant.name;
@@ -126,19 +134,26 @@ export function graduateFarewell(tenantId: string, reason: string) {
   const gift = Math.min(rent, Math.round(0.5 * rent * (1 + rt.tenant.stats.affinity / 100)));
   const deposit = rent * DEPOSIT_MONTHS;
   if (gift > 0) {
-    addMoney(gift, `${name} 圓夢謝禮紅包`, "other");
-    pushSocialLog(rt, `🧧 臨走前塞給你一個紅包($${gift.toLocaleString()}):「謝謝你,這裡是我圓夢的地方。」`, "major");
+    addMoney(gift, `${name} ${isSettle ? "圓滿謝禮紅包" : "圓夢謝禮紅包"}`, "other");
+    const giftLine = isSettle
+      ? `🧧 臨走前塞給你一個紅包($${gift.toLocaleString()}):「謝謝你,這裡是我住成家的地方。」`
+      : `🧧 臨走前塞給你一個紅包($${gift.toLocaleString()}):「謝謝你,這裡是我圓夢的地方。」`;
+    pushSocialLog(rt, giftLine, "major");
   }
   if (deposit > 0) {
     addMoney(-deposit, `退還 ${name} 押金`, "other");
     pushSocialLog(rt, `💵 你把 $${deposit.toLocaleString()} 押金如數退還,兩人握了握手,好聚好散。`, "major");
   }
-  notify(`🧧 ${name} 圓夢離開:留下 $${gift.toLocaleString()} 謝禮紅包,押金 $${deposit.toLocaleString()} 已退還`);
-  addReputation(REP_GRADUATE, `${name} 在這裡圓夢畢業`);
-  state.graduateCount += 1;
-  unlock("first_graduate");
-  if (state.graduateCount >= 3) unlock("graduate_3");
-  if (state.graduateCount >= 5) unlock("hall_of_fame"); // 🏛️ 名人堂:五位畢業生
+  notify(`🧧 ${name} ${isSettle ? "安居圓滿搬離" : "圓夢離開"}:留下 $${gift.toLocaleString()} 謝禮紅包,押金 $${deposit.toLocaleString()} 已退還`);
+  if (isSettle) {
+    addReputation(REP_SETTLE_GRADUATE, `${name} 在這裡安居圓滿,展開人生下一步`);
+  } else {
+    addReputation(REP_GRADUATE, `${name} 在這裡圓夢畢業`);
+    state.graduateCount += 1;
+    unlock("first_graduate");
+    if (state.graduateCount >= 3) unlock("graduate_3");
+    if (state.graduateCount >= 5) unlock("hall_of_fame"); // 🏛️ 名人堂:五位畢業生
+  }
   moveOut(tenantId, reason);
 }
 
@@ -212,12 +227,17 @@ export function farewellSendoff(rt: TenantRuntime) {
   notify(`🎉 全樓在交誼廳為 ${name} 辦了一場歡送會`);
 }
 
-/** 圓夢畢業軌別 → 專屬紀念物家具 id(只有畢業型 4 條有;安居型不留紀念物)。 */
+/** 心願軌別 → 專屬紀念物家具 id。畢業型 4 款各異;安居型 4 條共用一款「全家福相框」
+ *  (安居圓滿搬離時同樣在原房間留下紀念物)。 */
 const MEMORIAL_DEF: Partial<Record<WishId, string>> = {
   stage_dream: "memorial_poster", // 🎭 登台 → 簽名海報
   open_shop: "memorial_sign", // 🏪 開店 → 小招牌
   graduate_thesis: "memorial_cert", // 🎓 論文 → 裱框證書
   finish_masterwork: "memorial_book", // 📖 代表作 → 簽名書
+  career_step: "memorial_frame", // 💼 站穩工作 ┐
+  recover_rhythm: "memorial_frame", // 🌿 養回健康 ┤ 安居型圓滿搬離 → 🏠 全家福相框
+  feel_at_home: "memorial_frame", // 🏡 住成家 ┤
+  settle_life: "memorial_frame", // 🌤️ 過成喜歡的樣子 ┘
 };
 
 /** 在畢業生的原房間留一件紀念物(綁房間不綁租客);occupancy 尚未清除時呼叫。

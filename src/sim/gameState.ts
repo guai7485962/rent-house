@@ -106,6 +106,9 @@ export interface TenantRuntime {
   wish?: TenantWish | null;
   /** 🏠 模範房客:安居型心願實現後宣告長住(自願 +3% 租金、全樓每日 mood 微加成;入存檔) */
   modelTenant?: boolean;
+  /** 成為模範房客的遊戲日(安居期計時起點;入存檔)。安居約 SETTLE_TENURE_DAYS 天後圓滿搬離。
+   *  舊存檔已是模範但缺此欄位 → 載入時補為當前遊戲日(給滿安居期,不立刻踢走既有模範房客)。 */
+  modelSinceDay?: number;
   /** 上次收到房東心意的遊戲日(每人每日一次;kindness.ts) */
   lastCareDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */

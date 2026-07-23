@@ -34,7 +34,7 @@ const { getPlacements } = await import("../src/sim/placements");
 const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
 const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
-const { REP_GRADUATE, REP_SETTLE } = await import("../src/sim/reputation");
+const { REP_GRADUATE, REP_SETTLE, REP_SETTLE_GRADUATE } = await import("../src/sim/reputation");
 
 let pass = 0;
 let fail = 0;
@@ -459,7 +459,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
 {
   const { WISH_DEFS, wishOutcomeBrief } = wishes;
   const { GROWTH_TAGS } = await import("../src/sim/growth");
-  const { REP_GRADUATE, REP_SETTLE } = await import("../src/sim/reputation");
+  const { REP_GRADUATE, REP_SETTLE, REP_SETTLE_GRADUATE } = await import("../src/sim/reputation");
 
   const grad = wishOutcomeBrief(WISH_DEFS.open_shop); // 畢業型
   check("畢業型 outcome.graduates=true 且走向提到搬離",
@@ -470,11 +470,11 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
       && grad.lines.join("").includes("押金") && grad.lines.join("").includes(`+${REP_GRADUATE}`));
 
   const settle = wishOutcomeBrief(WISH_DEFS.career_step); // 安居型
-  check("安居型 outcome.graduates=false 且走向提到模範/長住",
-    settle.graduates === false && settle.headline.includes("模範") && settle.headline.includes("長住"));
-  check("安居型走向如實含 3% 月租 / 全樓心情 / 口碑+3",
+  check("安居型 outcome.graduates=false 且走向提到模範/圓滿搬離",
+    settle.graduates === false && settle.headline.includes("模範") && settle.headline.includes("圓滿搬離"));
+  check("安居型走向如實含 3% 月租 / 全樓心情 / 口碑+3 / 安居後圓滿搬離",
     settle.lines.join("").includes("3% 月租") && settle.lines.join("").includes("全樓")
-      && settle.lines.join("").includes(`+${REP_SETTLE}`));
+      && settle.lines.join("").includes(`+${REP_SETTLE}`) && settle.lines.join("").includes("圓滿搬離"));
 
   // 成長特質 label(去括號)與 hint 對應各心願 growthTag
   check("outcome 成長特質對應 def.growthTag(open_shop→decisive)",
@@ -560,22 +560,23 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
     return rt;
   };
 
-  // preview · 畢業型(open_shop):未達成 → 會離開
+  // preview · 畢業型(open_shop):未達成 → 會離開(圓夢後搬離)
   const rtPg = mk("t_pg", "咖啡師", "303");
   rtPg.wish!.progress = 40; rtPg.wish!.fulfilledDay = -99;
   const pg = wishResult(rtPg)!;
-  check("preview 畢業型:phase=preview 且結論會離開(leaves=true)",
-    pg.phase === "preview" && pg.leaves === true && pg.graduates === true);
+  check("preview 畢業型:phase=preview、graduates=true、leaves=true、tag 走離開色",
+    pg.phase === "preview" && pg.leaves === true && pg.graduates === true && pg.verdictTag.includes("🚪"));
   check("preview 畢業型 verdict 明說『搬離』且附成長特質與走向細節",
     pg.verdict.includes("搬離") && !!pg.growthLabel && pg.lines.length > 0);
 
-  // preview · 安居型(career_step):未達成 → 會留下
+  // preview · 安居型(career_step):未達成 → 先安居再圓滿搬離(不再說永久留下)
   const rtPs = mk("t_ps", "後端工程師", "304");
   rtPs.wish!.progress = 40; rtPs.wish!.fulfilledDay = -99;
   const ps = wishResult(rtPs)!;
-  check("preview 安居型:phase=preview 且結論會留下(leaves=false)",
-    ps.phase === "preview" && ps.leaves === false && ps.graduates === false);
-  check("preview 安居型 verdict 明說『留下/模範』", ps.verdict.includes("留下") && ps.verdict.includes("模範"));
+  check("preview 安居型:phase=preview、graduates=false、leaves=true(兩軌都會離開)",
+    ps.phase === "preview" && ps.graduates === false && ps.leaves === true);
+  check("preview 安居型 verdict 明說『模範/圓滿搬離』且不再說永久留下",
+    ps.verdict.includes("模範") && ps.verdict.includes("圓滿搬離") && ps.verdictTag.includes("🏠"));
 
   // leaving · 已達成畢業型打包倒數:graduateDay = today+4 → 4 天後搬離
   const rtL = mk("t_l", "咖啡師", "303");
@@ -593,22 +594,157 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   check("leaving 邊角:當天到期 daysLeft=0 顯示『即將搬離』",
     lv0.daysLeft === 0 && lv0.verdict.includes("即將搬離"));
 
-  // stayed · 安居型已圓夢成模範房客:不會離開
+  // stayed · 安居型已圓夢成模範房客:安居中,安居期滿後圓滿搬離(顯示剩餘天數)
   const rtS = mk("t_s", "後端工程師", "304");
   rtS.wish!.progress = 100; rtS.wish!.fulfilledDay = today; rtS.modelTenant = true;
+  rtS.modelSinceDay = today - 5; // 安居第 5 天 → 剩 SETTLE_TENURE_DAYS-5 天
   const st = wishResult(rtS)!;
-  check("stayed:phase=stayed、leaves=false、verdict 明說長住模範",
-    st.phase === "stayed" && st.leaves === false
-      && st.verdict.includes("長住") && st.verdict.includes("模範"));
-  check("stayed 走向含 3% 月租 / 不會離開",
-    st.lines.join("").includes("3% 月租") && st.lines.join("").includes("不會離開"));
+  const expectLeft = wishes.SETTLE_TENURE_DAYS - 5;
+  check("stayed:phase=stayed、leaves=true、daysLeft = 安居期 - 已住天數",
+    st.phase === "stayed" && st.leaves === true && st.daysLeft === expectLeft, `daysLeft=${st.daysLeft}`);
+  check("stayed verdict 明說『N 天後圓滿展開人生下一步』且 tag 為安居後圓滿搬離",
+    st.verdict.includes(`${expectLeft} 天後`) && st.verdict.includes("圓滿") && st.verdictTag.includes("圓滿搬離"));
+  check("stayed 走向含 3% 月租 / 圓滿搬離 / 釋出房間(不再說不會離開)",
+    st.lines.join("").includes("3% 月租") && st.lines.join("").includes("圓滿搬離")
+      && st.lines.join("").includes("釋出房間") && !st.lines.join("").includes("不會離開"));
 
-  // 種類判斷用 def.graduates:同一 phase 下畢業 vs 安居的 leaves 旗標相反
-  check("『會離開』旗標由 def.graduates 決定(畢業 true / 安居 false)",
-    pg.leaves === wishes.WISH_DEFS.open_shop.graduates
-      && ps.leaves === wishes.WISH_DEFS.career_step.graduates);
+  // stayed 邊角:安居期已滿(modelSinceDay 很早)→ daysLeft=0、即將搬離
+  rtS.modelSinceDay = today - wishes.SETTLE_TENURE_DAYS;
+  const st0 = wishResult(rtS)!;
+  check("stayed 邊角:安居期滿 daysLeft=0 顯示『即將展開人生下一步』",
+    st0.daysLeft === 0 && st0.verdict.includes("即將"));
+
+  // 種類判斷:graduates 欄位對應 def.graduates(畢業 true / 安居 false),決定 UI 顏色
+  check("graduates 欄位由 def.graduates 決定(畢業 true / 安居 false)",
+    pg.graduates === wishes.WISH_DEFS.open_shop.graduates
+      && ps.graduates === wishes.WISH_DEFS.career_step.graduates);
 
   for (const id of ["t_pg", "t_ps", "t_l", "t_s"]) delete state.runtimes[id];
+  state.gameMs = GAME_START.getTime();
+}
+
+// ============================================================
+// 安居型模範房客圓滿搬離(安居期滿離開 / modelSinceDay / 主動送別)
+// ============================================================
+
+// --- 26. modelSinceDay:成為模範房客時記錄 + 存檔往返 + 舊存檔補值 ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_since"; seed.name = "安居測試"; seed.occupation = "後端工程師"; // career_step(安居)
+  const rt = makeRuntime(seed, "303", 70, []);
+  state.runtimes["t_since"] = rt;
+  state.occupancy["r303"] = "t_since";
+  wishes.ensureWishes();
+  good(rt);
+  rt.wish!.progress = 98;
+  wishes.wishPass(); // 實現 → becomeModelTenant
+  check("成為模範房客時記錄 modelSinceDay = 當前遊戲日",
+    rt.modelTenant === true && rt.modelSinceDay === day(), `modelSinceDay=${rt.modelSinceDay}`);
+
+  save();
+  const s = JSON.parse(mem[SAVE_KEY]);
+  check("存檔含 modelSinceDay", s.runtimes["t_since"].modelSinceDay === day());
+
+  // 舊存檔:已是模範但缺 modelSinceDay → 載入時補為當前遊戲日(給滿安居期)
+  delete s.runtimes["t_since"].modelSinceDay;
+  mem[SAVE_KEY] = JSON.stringify(s);
+  load();
+  check("舊存檔缺 modelSinceDay 但仍是模範 → 補為當前遊戲日",
+    state.runtimes["t_since"].modelTenant === true && state.runtimes["t_since"].modelSinceDay === day(),
+    `modelSinceDay=${state.runtimes["t_since"].modelSinceDay}`);
+}
+
+// --- 27. 安居期滿 → 圓滿搬離(前 2 天預告 + 儀式 + 口碑 + 名冊安居告別信 + 紀念物) ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_settle"; seed.name = "圓滿工程師"; seed.occupation = "後端工程師"; // career_step
+  const rt = makeRuntime(seed, "303", 70, []);
+  state.runtimes["t_settle"] = rt;
+  state.occupancy["r303"] = "t_settle";
+  rt.tenant.finance.monthlyRent = 15000;
+  rt.tenant.stats.affinity = 60;
+  wishes.ensureWishes();
+  rt.wish!.progress = 100; rt.wish!.fulfilledDay = day(); rt.modelTenant = true;
+  rt.modelSinceDay = day() - (wishes.SETTLE_TENURE_DAYS - 2); // 安居只剩 2 天 → 進預告窗
+
+  // 前 2 天:打包預告(只一次)
+  wishes.wishPass();
+  check("安居期滿前 2 天 → 📦 打包預告(只一次)",
+    rt.wish!.announced && rt.log.filter((e) => e.text.startsWith("📦")).length === 1);
+  const before = wishes.wishPass();
+  check("未到安居期滿 → 不在搬離名單", !before.some((g) => g.id === "t_settle"));
+
+  // 到安居期滿:進圓滿搬離名單(離開原因是安居圓滿搬離之一)
+  rt.modelSinceDay = day() - wishes.SETTLE_TENURE_DAYS;
+  const grads = wishes.wishPass();
+  const g = grads.find((x) => x.id === "t_settle");
+  check("安居期滿 → 進圓滿搬離名單(原因為安居圓滿搬離)",
+    !!g && g!.reason.includes("安居圓滿搬離"));
+
+  const money0 = state.money;
+  const rep0 = state.reputation;
+  const gradCount0 = state.graduateCount;
+  if (g) graduateFarewell(g.id, g.reason);
+  const gift = Math.min(15000, Math.round(0.5 * 15000 * 1.6)); // 12000
+  const deposit = 15000 * DEPOSIT_MONTHS;
+  check("圓滿搬離:紅包進帳 + 押金退還(比照畢業)",
+    state.ledger.some((t) => t.label.includes("圓滿謝禮紅包") && t.amount === gift)
+      && state.ledger.some((t) => t.label.includes("退還") && t.amount === -deposit));
+  check("圓滿搬離:餘額淨變化 = 紅包 − 押金", state.money === money0 + gift - deposit, `money=${state.money}`);
+  check(`圓滿搬離:口碑 +${REP_SETTLE_GRADUATE}`, state.reputation === rep0 + REP_SETTLE_GRADUATE, `rep=${state.reputation}`);
+  check("圓滿搬離不計畢業成就(graduateCount 不變)", state.graduateCount === gradCount0);
+  check("runtime 移除、名冊記下安居圓滿搬離",
+    !state.runtimes["t_settle"] && state.alumni[0]?.reason.includes("安居圓滿搬離"));
+  check("名冊附安居軌告別信(繁體、感謝像家的時光)",
+    typeof state.alumni[0]?.farewell === "string"
+      && (state.alumni[0]!.farewell as string).includes("踏實")
+      && !/[这过样门]/.test(state.alumni[0]!.farewell as string));
+  check("原房間留下安居專屬紀念物(全家福相框)",
+    getPlacements().some((p) => p.room === "r303" && p.memorial && p.defId === "memorial_frame"));
+}
+
+// --- 28. 房東主動送別鍵:提前請模範房客圓滿搬離(走同一套儀式 + 貓去留) ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_proactive"; seed.name = "提前送別"; seed.occupation = "退休教師"; // feel_at_home(安居)
+  const rt = makeRuntime(seed, "303", 70, []);
+  state.runtimes["t_proactive"] = rt;
+  state.occupancy["r303"] = "t_proactive";
+  wishes.ensureWishes();
+  rt.wish!.progress = 100; rt.wish!.fulfilledDay = day(); rt.modelTenant = true;
+  rt.modelSinceDay = day(); // 才剛安居,離自然到期還很久
+  adoptCat("t_proactive", { name: "教書", color: 1 });
+
+  // 非模範房客不能用(先測一個非模範者)
+  const seed2 = JSON.parse(JSON.stringify(tenants[0]));
+  seed2.id = "t_normal"; seed2.name = "一般房客"; seed2.occupation = "上班族";
+  const rt2 = makeRuntime(seed2, "304", 70, []);
+  state.runtimes["t_normal"] = rt2;
+  wishes.ensureWishes();
+  check("非模範房客 → 主動送別被拒", wishes.proactiveSettleFarewell("t_normal").ok === false);
+
+  const r1 = wishes.proactiveSettleFarewell("t_proactive");
+  check("模範房客 → 主動送別成功並排定 2 天後搬離", r1.ok === true);
+  check("主動送別:立即掛上貓去留抉擇",
+    rt.pendingEvent?.id === "wish_pet_farewell" && rt.pendingEvent!.choices.length === 2);
+  check("主動送別:重複點擊被拒(已在打包)", wishes.proactiveSettleFarewell("t_proactive").ok === false);
+  decide("t_proactive", "stay", "留下當樓貓");
+
+  // 提前後:當下未到期(還有 2 天)→ 尚不在名單
+  check("主動送別後當日尚未到期", !wishes.wishPass().some((g) => g.id === "t_proactive"));
+  // 快轉 2 個遊戲日 → 到期圓滿搬離
+  state.gameMs += 2 * 24 * 3600 * 1000;
+  const g = wishes.wishPass().find((x) => x.id === "t_proactive");
+  check("快轉 2 天 → 圓滿搬離名單(安居圓滿搬離)", !!g && g!.reason.includes("安居圓滿搬離"));
+  if (g) graduateFarewell(g.id, g.reason);
+  check("主動送別搬離後 runtime 移除、貓留成樓貓",
+    !state.runtimes["t_proactive"] && state.pets["t_proactive"]?.ownerId === HOUSE_CAT_OWNER);
   state.gameMs = GAME_START.getTime();
 }
 

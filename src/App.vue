@@ -19,6 +19,7 @@ import FeedPanel from "./components/FeedPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
+import { roomComfort, comfortHints } from "./sim/comfort";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
@@ -424,6 +425,17 @@ const roomAttrs = computed(() => {
     .map(([k, v]) => ({ label: ATTR_LABEL[k] ?? k, value: v as number }));
 });
 
+// 🛋️ 房間舒適度(佈置齊全/療癒/乾淨 → 慢慢墊高租客心情與健康)+ 改善提示
+const roomComfortScore = computed(() =>
+  Math.round(roomComfort(activeRoomId.value, activeRuntime.value?.cleanliness ?? 100)),
+);
+const roomComfortHints = computed(() =>
+  comfortHints(activeRoomId.value, activeRuntime.value?.cleanliness ?? 100),
+);
+function comfortColor(v: number) {
+  return v < 35 ? "var(--bad)" : v > 60 ? "var(--good)" : "var(--accent)";
+}
+
 /** 點數值名稱 → 一句話說明(8-5) */
 const STAT_HELP: Record<string, string> = {
   心情: "心情:短期情緒,會自然回到這個人的性格基準;戀愛/朋友會墊高基準。",
@@ -431,7 +443,8 @@ const STAT_HELP: Record<string, string> = {
   精力: "精力:睡覺充電、工作直播消耗;太低會累到壓力上升、健康變差。",
   健康: "健康:身心狀態,慢慢變化;長期高壓/透支會生病(要花錢處理!)。",
   好感: "好感:對你(房東)的信任,影響繳租意願;你的抉擇會改變它。",
-  整潔: "整潔:房間狀態,反映租客的生活習慣。",
+  整潔: "整潔:房間狀態,反映租客的生活習慣;收納家具能常保整潔。",
+  舒適: "舒適:房間佈置齊全度+療癒感×整潔;越舒適,會「慢慢」墊高租客的心情與健康。佈置一次長期受益。",
   滿意: "滿意:綜合心情/好感/壓力/健康/精力/房間裝潢;長期過低會退租!",
 };
 function explainStat(key: string) {
@@ -634,6 +647,17 @@ function onGroupResolve(choiceId: string) {
       </div>
     </section>
 
+    <section v-if="activeRoomId" class="comfort">
+      <div class="comfort-head">
+        <label @click="explainStat('舒適')">🛋️ 舒適度</label>
+        <div class="bar"><div :style="{ width: roomComfortScore + '%', background: comfortColor(roomComfortScore) }"></div></div>
+        <span>{{ roomComfortScore }}</span>
+      </div>
+      <div v-if="roomComfortHints.length" class="comfort-hints">
+        <span v-for="h in roomComfortHints" :key="h" class="chint">{{ h }}</span>
+      </div>
+    </section>
+
     <section v-if="roomAttrs.length" class="attrs">
       <span class="attrs-title">房間屬性</span>
       <span v-for="a in roomAttrs" :key="a.label" class="attr" :class="{ neg: a.value < 0 }">
@@ -826,6 +850,13 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .bar > div { height: 100%; border-radius: 4px; transition: width 0.6s ease, background 0.6s; }
 .stat.span2 { grid-column: 1 / -1; }
 .warn { font-size: 12px; color: var(--bad); }
+
+.comfort { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+.comfort-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.comfort-head label { color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
+.comfort-head span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.comfort-hints { display: flex; flex-wrap: wrap; gap: 6px; }
+.chint { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(143, 123, 255, 0.08); border: 1px solid var(--accent-2); color: #c9befc; }
 
 .attrs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .attrs-title { font-size: 11px; color: var(--text-dim); }

@@ -46,6 +46,7 @@ import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
 import { placementFootprint, placementRotation } from "./placements";
+import { roomComfort, comfortBaselineDelta, cleanlinessBaseline } from "./comfort";
 import type { Placement } from "../floor/map";
 import { nextRotation } from "../furniture/rotation";
 
@@ -211,13 +212,16 @@ function deriveProps(rt: TenantRuntime, st: TenantVisualState, hour: number): Ro
 /** 每小時朝基準回歸的比例(6%:極端值一天內明顯回落,但擋不住持續的事件/作息推力) */
 const HOMEOSTASIS_K = 0.06;
 
+/** 整潔朝自然水位回歸的比例(1.5%/h:非常慢,約一週才收斂;體現「慢變環境品質」) */
+const CLEANLINESS_K = 0.015;
+
 /**
  * 性格決定的心情/壓力基準值(homeostasis 的「回到哪」),再疊三個回饋:
  * - 社交(socialFulfillment 簡版):有戀人/朋友 → 心情基準↑;完全孤立 → ↓
  * - 身心健康後果:wellbeing 低 → 心情基準大幅下修(病懨懨開心不起來)
  * - 精力後果:energy 低 → 壓力基準上修(累到什麼都煩)
  */
-export function baselines(rt: TenantRuntime): { mood: number; stress: number } {
+export function baselines(rt: TenantRuntime, comfort?: number): { mood: number; stress: number } {
   let mood = 62;
   let stress = 38;
   for (const tag of rt.tenant.coreTags) {
@@ -243,21 +247,33 @@ export function baselines(rt: TenantRuntime): { mood: number; stress: number } {
   if (s.wellbeing < 30) mood -= 10;
   else if (s.wellbeing >= 80) mood += 3;
   if (s.energy < 25) stress += 10;
+  // 房間舒適度慢變環境品質:溫和改心情/壓力基準(舒適房加成、簡陋/髒房懲罰)。
+  // comfort 未帶入時就地計算(外部呼叫如 arc-test 用);applyStat 會傳入避免重算。
+  const cft = comfort ?? roomComfort(roomOfTenant(rt.tenant.id), rt.cleanliness);
+  const cdelta = comfortBaselineDelta(cft);
+  mood += cdelta.mood;
+  stress += cdelta.stress;
   return { mood: clamp(mood, 10, 90), stress: clamp(stress, 10, 90) };
 }
 
 function applyStat(rt: TenantRuntime, d: StatDeltas) {
   const s = rt.tenant.stats;
-  const base = baselines(rt);
+  const roomId = roomOfTenant(rt.tenant.id);
+  const comfort = roomComfort(roomId, rt.cleanliness);
+  const base = baselines(rt, comfort);
   // homeostasis:mood/stress 先朝性格基準回歸,再吃這小時的活動增量 → 不再黏死 0/100
   s.mood = clamp(s.mood + (base.mood - s.mood) * HOMEOSTASIS_K + clampDelta(d.mood), 0, 100);
   s.stress = clamp(s.stress + (base.stress - s.stress) * HOMEOSTASIS_K + clampDelta(d.stress), 0, 100);
   // affinity 是「關係的累積」不是情緒,不回歸;energy 是資源(睡覺充、活動耗);wellbeing 慢變
   s.affinity = clamp(s.affinity + clampDelta(d.affinity), 0, 100);
   s.energy = clamp(s.energy + clampDelta(d.energy), 0, 100);
-  // wellbeing 也給極弱回歸(1%/h 朝 65),避免黏死 100;事件/高壓的推力仍遠大於它
-  s.wellbeing = clamp(s.wellbeing + (65 - s.wellbeing) * 0.01 + clampDelta(d.wellbeing), 0, 100);
-  rt.cleanliness = clamp(rt.cleanliness + clampDelta(d.cleanliness), 0, 100);
+  // wellbeing 也給極弱回歸(1%/h),避免黏死 100;舒適房把回歸錨點微微墊高、髒/簡陋房下修
+  const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing;
+  s.wellbeing = clamp(s.wellbeing + (wbAnchor - s.wellbeing) * 0.01 + clampDelta(d.wellbeing), 0, 100);
+  // 整潔慢變環境品質:朝「收納決定的自然水位」極慢回歸(生活會變髒/收納常保整潔),
+  // 再吃本小時活動增量(煮飯/洗澡等)。收納家具墊高基準 = 減緩衰減,不逼玩家一直打掃。
+  const cleanBase = cleanlinessBaseline(roomId);
+  rt.cleanliness = clamp(rt.cleanliness + (cleanBase - rt.cleanliness) * CLEANLINESS_K + clampDelta(d.cleanliness), 0, 100);
   // 後果迴路:長期高壓/精力透支會慢慢蛀掉身心健康(每小時小量,累積才會生病)
   if (s.stress >= 80) s.wellbeing = clamp(s.wellbeing - 0.4, 0, 100);
   if (s.energy < 20) s.wellbeing = clamp(s.wellbeing - 0.3, 0, 100);
@@ -514,6 +530,7 @@ export function hourlyTick(live = false) {
   diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
+    dirtyComplaintPass(day); // 整潔太低 → 抱怨髒亂(每 2 日一次,壓力小升)
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     collectRent();
@@ -523,6 +540,26 @@ export function hourlyTick(live = false) {
     communityPass(); // 群體事件:洗衣房口角/揪團/噪音公審/頂樓乘涼(牽動 3+ 人,§C-7)
     catJournalPass(); // 貓咪觀察筆記:每 7 遊戲日一篇,以貓口吻進 Feed(彩蛋)
     weeklyReportPass(); // 每 7 遊戲日彙整收支、大事與關係變化,進動態頁週報卡
+  }
+}
+
+/** 整潔太低的抱怨冷卻(tenantId → 上次抱怨的遊戲日;模組層,不入存檔,純敘事) */
+const dirtyComplaintDay = new Map<string, number>();
+
+/**
+ * 整潔翻身的「太低後果」:房間 < 40 → 每 2 遊戲日抱怨一次髒亂(壓力小升 + 社交日誌)。
+ * 舒適度已在基準線拉低心情/健康,這裡再補一筆可見的抱怨,讓玩家知道該打掃/加收納。
+ * 用日數冷卻(不擲 RNG,避免打亂模擬亂數序列與 balance)。
+ */
+function dirtyComplaintPass(day: number) {
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.pendingEvent || rt.cleanliness >= 40) continue;
+    if (!roomOfTenant(rt.tenant.id)) continue;
+    const last = dirtyComplaintDay.get(rt.tenant.id) ?? -99;
+    if (day - last < 2) continue;
+    dirtyComplaintDay.set(rt.tenant.id, day);
+    rt.tenant.stats.stress = clamp(rt.tenant.stats.stress + 2, 0, 100);
+    pushSocialLog(rt, "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。", "notable");
   }
 }
 

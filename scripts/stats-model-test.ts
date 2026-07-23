@@ -5,6 +5,8 @@
  * - energy 為資源:整體保持在 0~100 且會變動
  */
 import { state, debugStepHour, decide } from "../src/store";
+import { baselines } from "../src/sim/tick";
+import { roomComfort } from "../src/sim/comfort";
 
 let pass = 0;
 let fail = 0;
@@ -82,6 +84,18 @@ lin.tenant.stats.energy = 5;
 const sat0 = lin.satisfaction;
 for (let i = 0; i < 8; i++) debugStepHour();
 check(`健康/精力崩掉拖低滿意度(${sat0.toFixed(0)} → ${lin.satisfaction.toFixed(0)})`, lin.satisfaction < sat0);
+
+// --- 7. 房間舒適度接基準線:同一租客,乾淨舒適房的心情基準高於髒房(慢變環境品質) ---
+chen.tenant.growthTags = [];
+chen.cleanliness = 100;
+const cftClean = roomComfort("r301", chen.cleanliness);
+const moodBaseClean = baselines(chen).mood;
+chen.cleanliness = 5;
+const cftDirty = roomComfort("r301", chen.cleanliness);
+const moodBaseDirty = baselines(chen).mood;
+check(`髒房舒適度低於乾淨房(clean ${cftClean.toFixed(1)} > dirty ${cftDirty.toFixed(1)})`, cftClean > cftDirty);
+check(`舒適度墊高心情 homeostasis 基準(clean ${moodBaseClean.toFixed(1)} > dirty ${moodBaseDirty.toFixed(1)})`,
+  moodBaseClean > moodBaseDirty);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

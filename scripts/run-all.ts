@@ -30,7 +30,7 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const REGRESSION = [
   "acoustics-laundry-test.ts", "ai-event-quality-test.ts", "ai-interaction-test.ts", "appearance-test.ts", "arc-test.ts", "archetypes-test.ts",
   "balance-test.ts", "bathroom-life-test.ts", "bugfix2-test.ts", "cohabit-integrity-test.ts", "community-test.ts", "conflict-test.ts", "content-variety-test.ts", "data-catalog-test.ts",
-  "daynight-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "diary-upgrade-test.ts", "directive-test.ts",
+  "daynight-test.ts", "debug-export-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "diary-upgrade-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "eviction-test.ts", "feed-test.ts", "finance-test.ts", "fixes-test.ts", "fx-test.ts", "gender-rel-test.ts",
   "furniture-art-test.ts", "interactions-test.ts", "invite-test.ts", "kindness-test.ts", "kitchen-life-test.ts", "legacy-test.ts", "limezu-art-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts",
   "move-test.ts", "narrative-quality-test.ts", "observation-test.ts", "pair-session-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts", "romance-integrity-test.ts",

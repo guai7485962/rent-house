@@ -77,6 +77,7 @@ export { weeklyReportPass, currentRelationshipSnapshot, WEEKLY_REPORT_CAP, type 
 export type { StoryArc } from "./sim/arcs";
 
 export { SAVE_KEY, SAVE_VERSION, exportSave, importSave, clearSave } from "./sim/persistence";
+export { DEBUG_LOG_VERSION, buildDebugLog, exportDebugLog } from "./sim/debugExport";
 
 export { initGame, stopGame, resume, debugInit, debugStepHour, debugClock } from "./sim/lifecycle";
 

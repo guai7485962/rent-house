@@ -363,6 +363,21 @@ export interface AlumniEntry {
   /** 離開者留給房東的告別信(模板生成,零 AI 成本):圓夢畢業/安居用專屬句庫,被迫/非圓滿
    *  離開依原因歸類挑語氣句庫。新存檔每位離開者必有;舊存檔早期非畢業條目 ?? undefined 相容。 */
   farewell?: string;
+  /** 供玩家匯出除錯 Log 的離場快照。2026-07-23 前建立的舊名冊沒有此欄位。 */
+  debugSnapshot?: {
+    tenantId: string;
+    roomNo: string;
+    coreTags: CoreTag[];
+    memoryTags: MemoryTag[];
+    growthTags: NonNullable<Tenant["growthTags"]>;
+    stats: Tenant["stats"];
+    finance: Tenant["finance"];
+    recentSummary: string;
+    cleanliness: number;
+    satisfaction: number;
+    decisions: string[];
+    log: import("./sim/gameState").LogEntry[];
+  };
 }
 
 // ---------------------------------------------------------------------------

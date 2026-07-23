@@ -221,6 +221,22 @@ export function recordAlumnus(rt: TenantRuntime, reason: string) {
     leftMs: state.gameMs,
     memory: (petNote + repMemory).slice(0, 120),
     farewell,
+    // runtime 下一步就會被刪掉；在這裡留下玩家可匯出的診斷資料。
+    // 每個陣列／物件都複製，確保名冊保存的是「離開當下」而不是活的參照。
+    debugSnapshot: {
+      tenantId: rt.tenant.id,
+      roomNo: rt.roomNo,
+      coreTags: rt.tenant.coreTags.map((tag) => ({ ...tag })),
+      memoryTags: rt.tenant.memoryTags.map((tag) => ({ ...tag })),
+      growthTags: [...(rt.tenant.growthTags ?? [])],
+      stats: { ...rt.tenant.stats },
+      finance: { ...rt.tenant.finance },
+      recentSummary: rt.tenant.recentSummary,
+      cleanliness: rt.cleanliness,
+      satisfaction: rt.satisfaction,
+      decisions: [...rt.decisions],
+      log: rt.log.map((entry) => ({ ...entry })),
+    },
   };
   state.alumni.unshift(entry); // 最新的排前面
   if (state.alumni.length > 50) state.alumni.length = 50;

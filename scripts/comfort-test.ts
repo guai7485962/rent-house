@@ -26,7 +26,7 @@ const { state, debugStepHour } = await import("../src/store");
 const { roomComfort, comfortBaselineDelta, cleanlinessBaseline, comfortHints, cleanlinessMultiplier } =
   await import("../src/sim/comfort");
 const { addPlacement } = await import("../src/sim/placements");
-const { baselines } = await import("../src/sim/tick");
+const { baselines, cozyHomePass, resetCozyHomeCooldown } = await import("../src/sim/tick");
 
 let pass = 0;
 let fail = 0;
@@ -97,6 +97,31 @@ const dirtyHints = comfortHints("r301", 20);
 check("太髒 → 提示打掃", dirtyHints.some((h) => h.includes("打掃")));
 const r304Hints = comfortHints("r304", 100); // 只有床 → 缺很多類別
 check("缺家具類別 → 給對應建議且至多 3 條", r304Hints.length > 0 && r304Hints.length <= 3);
+
+// --- 8. 舒適乾淨房的正向慶祝(cozyHomePass,與 dirtyComplaintPass 對稱) ---
+const cozyCount = (rt: any) => rt.log.filter((e: any) => e.text.startsWith("🏡")).length;
+const lin = state.runtimes["tenant_lin_asmr"];
+lin.pendingEvent = null;
+lin.cleanliness = 95; // 乾淨 + 佈置齊全 → 舒適度過門檻
+resetCozyHomeCooldown();
+const linBefore = cozyCount(lin);
+const linMoodBefore = lin.tenant.stats.mood;
+cozyHomePass(500);
+check("舒適又乾淨的房間會慶祝(🏡 正向日誌)", cozyCount(lin) === linBefore + 1);
+check("慶祝給極小正向加成(心情微升)", lin.tenant.stats.mood >= linMoodBefore);
+
+// 冷卻:3 遊戲日內同一天再呼叫不重複
+cozyHomePass(500);
+check("慶祝有日數冷卻(同段時間不重複)", cozyCount(lin) === linBefore + 1);
+
+// 低舒適/髒房保持沉默(用陳家豪髒亂房:cleanliness 低 → 兩道門檻都不過)
+const chen2 = state.runtimes["tenant_chen_engineer"];
+chen2.pendingEvent = null;
+chen2.cleanliness = 20;
+resetCozyHomeCooldown();
+const chenBefore = cozyCount(chen2);
+cozyHomePass(600);
+check("髒亂/低舒適房不會慶祝(保持沉默)", cozyCount(chen2) === chenBefore);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

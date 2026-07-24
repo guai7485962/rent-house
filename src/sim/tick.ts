@@ -531,6 +531,7 @@ export function hourlyTick(live = false) {
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     dirtyComplaintPass(day); // 整潔太低 → 抱怨髒亂(每 2 日一次,壓力小升)
+    cozyHomePass(day); // 整潔舒適房 → 偶爾正向慶祝(每 3 日一次,心情/滿意小升;dirtyComplaint 的對稱正向鉤子)
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     collectRent();
@@ -560,6 +561,53 @@ function dirtyComplaintPass(day: number) {
     dirtyComplaintDay.set(rt.tenant.id, day);
     rt.tenant.stats.stress = clamp(rt.tenant.stats.stress + 2, 0, 100);
     pushSocialLog(rt, "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。", "notable");
+  }
+}
+
+/** 舒適乾淨房的正向冷卻(tenantId → 上次慶祝的遊戲日;模組層,不入存檔,純敘事) */
+const cozyHomeDay = new Map<string, number>();
+/** 房間既舒適(≥52)又乾淨(≥80)才慶祝——與 dirtyComplaintPass(髒亂<40)對稱的正向鉤子 */
+const COZY_COMFORT = 52;
+const COZY_CLEAN = 80;
+/** 慶祝文案(正向、慢變環境品質語氣);索引用日期+租客雜湊決定,不擲 RNG。 */
+const COZY_HOME_LINES = [
+  "🏡 房間收拾得舒服又乾淨,窩在裡頭莫名地安心。",
+  "🏡 陽光灑進整潔的房間,連呼吸都覺得順暢了些。",
+  "🏡 一切都擺得剛剛好,待在這個空間讓人打從心底放鬆。",
+  "🏡 房間乾淨得發亮,今天的心情也跟著明亮了起來。",
+];
+
+/** 依遊戲日 + 租客 id 穩定選文案(不用 Math.random,避免純文字擴充改變 balance RNG)。 */
+function cozyHomeIndex(day: number, tenantId: string, size: number): number {
+  const key = `cozy|${day}|${tenantId}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  return Math.abs(hash) % size;
+}
+
+/** 測試用:清掉慶祝冷卻(模組層 Map,跨測試會殘留)。 */
+export function resetCozyHomeCooldown() {
+  cozyHomeDay.clear();
+}
+
+/**
+ * 整潔翻身的「夠好後果」:房間既舒適又乾淨 → 每 3 遊戲日偶爾一句正向日誌 + 極小加成
+ * (心情 +2、滿意 +1)。與 dirtyComplaintPass 對稱:一個懲罰髒亂、一個獎勵用心佈置維持,
+ * 都用日數冷卻(不擲 RNG),稀疏不洗版,符合「慢變環境品質、不需 Sims 式照顧」的定位。
+ */
+export function cozyHomePass(day: number) {
+  for (const rt of Object.values(state.runtimes)) {
+    if (rt.pendingEvent) continue;
+    const roomId = roomOfTenant(rt.tenant.id);
+    if (!roomId) continue;
+    if (rt.cleanliness < COZY_CLEAN) continue;
+    if (roomComfort(roomId, rt.cleanliness) < COZY_COMFORT) continue;
+    const last = cozyHomeDay.get(rt.tenant.id) ?? -99;
+    if (day - last < 3) continue;
+    cozyHomeDay.set(rt.tenant.id, day);
+    rt.tenant.stats.mood = clamp(rt.tenant.stats.mood + 2, 0, 100);
+    rt.satisfaction = clamp(rt.satisfaction + 1, 0, 100);
+    pushSocialLog(rt, COZY_HOME_LINES[cozyHomeIndex(day, rt.tenant.id, COZY_HOME_LINES.length)], "notable");
   }
 }
 

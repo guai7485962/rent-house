@@ -44,6 +44,11 @@ const STATE_MAP: Record<TenantVisualState, { spot: SpotKey; emoji: string; label
   waiting_for_bathroom: { spot: "door", emoji: "⏳", label: "排隊等浴室" },
   cleaning: { spot: "center", emoji: "🧹", label: "打掃中" },
   talking_on_phone: { spot: "center", emoji: "📱", label: "講電話" },
+  watching_tv: { spot: "sofa", emoji: "📺", label: "看電視" },
+  eating_at_table: { spot: "kitchen", emoji: "🍽️", label: "用餐中" },
+  reading: { spot: "sofa", emoji: "📖", label: "看書中" },
+  painting: { spot: "desk", emoji: "🎨", label: "作畫中" },
+  using_appliance: { spot: "kitchen", emoji: "🧺", label: "使用家電" },
 };
 
 /** 房間小物件 → 定位點 / 圖示 */

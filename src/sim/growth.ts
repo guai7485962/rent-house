@@ -54,8 +54,9 @@ export function growthBaselineDelta(raw: unknown): { mood: number; stress: numbe
   let mood = 0;
   let stress = 0;
   for (const id of sanitizeGrowthTags(raw)) {
-    mood += GROWTH_TAGS[id].baseline.mood ?? 0;
-    stress += GROWTH_TAGS[id].baseline.stress ?? 0;
+    const baseline: GrowthTagDefinition["baseline"] = GROWTH_TAGS[id].baseline;
+    mood += baseline.mood ?? 0;
+    stress += baseline.stress ?? 0;
   }
   return { mood, stress };
 }

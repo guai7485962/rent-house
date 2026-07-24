@@ -2,7 +2,8 @@
  * Cloudflare Worker:同時服務靜態網站(env.ASSETS)與 AI 敘事端點。
  * /api/narrate 依租客當天歷史生成「當日觀察日記」+ 可能的新記憶/事件;
  * /api/invite 由名字+個性描述生成特邀租客資料。
- * 日記 provider = Cloudflare Workers AI 免費額度 → Gemini 備援；房東抉擇事件只採 Gemini。
+ * 日記 provider:平日 Cloudflare Workers AI 免費額度優先、Gemini 備援；事件機會日(eventDue)改 Gemini 優先。
+ * 房東抉擇事件只採 Gemini 生成(Workers AI 僅供無事件日記);/api/invite 則 Gemini 優先、Claude 備援。
  * API key 存在 Worker secret,前端同源 fetch,金鑰不外洩。
  * 端點防護:同源檢查 + 請求體上限 + server 端 context 夾值(見 guardRequest / clampCtx),
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
     "test": "tsx scripts/run-all.ts"
   },
   "dependencies": {
@@ -17,6 +18,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "tsx": "^4.23.0",
     "typescript": "~5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vue-tsc": "^3.3.8"
   }
 }

@@ -516,7 +516,7 @@ function maybeAttachCatFarewell(rt: TenantRuntime) {
 
 /** 劇情弧收束的心願加成(narration.applyArcUpdate 呼叫):
  *  一段篇章好好落幕 = 人生也往前走了一步(基調 down 的失落收場不加)。 */
-export function boostWishFromArc(rt: TenantRuntime, tone?: string) {
+export function boostWishFromArc(rt: TenantRuntime, tone?: string | null) {
   if (tone === "down") return;
   advanceWish(rt, 6);
 }

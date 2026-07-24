@@ -20,6 +20,11 @@ const CAT_LABEL: Record<FurnCategory, string> = {
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
+const TIER_INFO: Record<string, { label: string; stars: string }> = {
+  budget: { label: "平價", stars: "★" },
+  standard: { label: "標準", stars: "★★" },
+  premium: { label: "精品", stars: "★★★" },
+};
 const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v]) => v));
 </script>
 
@@ -33,6 +38,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
       </div>
 
       <div class="chips">
+        <span v-if="def.tier" class="tier" :class="def.tier">{{ TIER_INFO[def.tier].stars }} {{ TIER_INFO[def.tier].label }}</span>
         <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>
@@ -65,6 +71,10 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 
 .chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
 .fp { font-size: 11px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.tier { font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.tier.budget { color: #9fb0c4; }
+.tier.standard { color: #7fc6a8; border-color: #4f9b7d; }
+.tier.premium { color: #f0c674; border-color: #c79a3a; }
 .a { font-size: 11px; color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
 .social { font-size: 11px; color: var(--accent-2); border: 1px solid var(--accent-2); border-radius: 999px; padding: 1px 8px; }
 .effect { font-size: 11px; color: #9ddfc4; border: 1px solid #4f9b7d; border-radius: 999px; padding: 1px 8px; }

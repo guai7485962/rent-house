@@ -26,6 +26,12 @@ const CAT_LABEL: Record<FurnCategory, string> = {
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
+/** 品質層級的一眼標示(星數 + 中文;純標示,不影響數值) */
+const TIER_INFO: Record<string, { label: string; stars: string }> = {
+  budget: { label: "平價", stars: "★" },
+  standard: { label: "標準", stars: "★★" },
+  premium: { label: "精品", stars: "★★★" },
+};
 
 /** 只賣可放地板的家具(牆面家具略過),依類別分組 */
 const groups = computed(() => {
@@ -71,7 +77,10 @@ function attrs(d: (typeof CATALOG)[number]) {
           <div class="cat">{{ g.label }}</div>
           <div v-for="d in g.items" :key="d.id" class="item">
             <div class="info">
-              <div class="name">{{ d.name }}</div>
+              <div class="name">
+                {{ d.name }}
+                <span v-if="d.tier" class="tier" :class="d.tier">{{ TIER_INFO[d.tier].stars }} {{ TIER_INFO[d.tier].label }}</span>
+              </div>
               <div class="chips">
                 <span class="fp">{{ d.footprint.w }}×{{ d.footprint.h }}</span>
                 <span v-for="[k, v] in attrs(d)" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
@@ -127,6 +136,10 @@ function attrs(d: (typeof CATALOG)[number]) {
 }
 .info { flex: 1; min-width: 0; }
 .name { font-size: 13.5px; }
+.tier { font-size: 10px; margin-left: 6px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.tier.budget { color: #9fb0c4; }
+.tier.standard { color: #7fc6a8; border-color: #4f9b7d; }
+.tier.premium { color: #f0c674; border-color: #c79a3a; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .fp { font-size: 10px; color: var(--text-dim); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
 .a { font-size: 10px; color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }

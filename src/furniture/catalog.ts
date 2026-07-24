@@ -23,6 +23,13 @@ export type FurnCategory =
 /** 擺放位置:房內 / 交誼廳 / 牆面(牆面家具不在地板格上,由房間細看呈現) */
 export type Placement = "room" | "communal" | "wall";
 
+/**
+ * 品質層級(選配):budget=平價入門(便宜、低屬性,給手頭緊的早期玩家)、
+ * standard=標準、premium=精品(貴、高屬性)。純標示用,不影響任何模擬數值——
+ * 舒適度/招租星等仍只看 attributes,tier 只是商店/資訊卡的一眼分級。
+ */
+export type FurnTier = "budget" | "standard" | "premium";
+
 /** 零件清單的單一零件(座標相對於家具左上角,單位:px) */
 export interface SpritePart {
   shape: "block" | "rect";
@@ -79,6 +86,8 @@ export interface FurnitureDef {
   name: string;
   category: FurnCategory;
   placement: Placement;
+  /** 品質層級(選配;純標示,不影響模擬)。同型家具用它區分平價/標準/精品版。 */
+  tier?: FurnTier;
   price: number;
   /** 佔用格數(walkable=false) */
   footprint: { w: number; h: number };
@@ -106,6 +115,7 @@ export const CATALOG: FurnitureDef[] = [
   // =========================================================================
   {
     id: "gaming_desk",
+    tier: "premium",
     name: "電競桌(多螢幕)",
     category: "work",
     placement: "room",
@@ -121,6 +131,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "mic_desk",
+    tier: "premium",
     name: "直播設備台",
     category: "work",
     placement: "room",
@@ -136,6 +147,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "tv_console",
+    tier: "standard",
     name: "電視 + 遊戲主機",
     category: "av",
     placement: "room",
@@ -151,6 +163,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "single_bed",
+    tier: "budget",
     name: "單人床",
     category: "sleep",
     placement: "room",
@@ -166,6 +179,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "double_bed",
+    tier: "standard",
     name: "雙人床",
     category: "sleep",
     placement: "room",
@@ -181,6 +195,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "canopy_bed",
+    tier: "premium",
     name: "帷幔雙人床",
     category: "sleep",
     placement: "room",
@@ -196,6 +211,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "wood_chair",
+    tier: "budget",
     name: "木質單椅",
     category: "seating",
     placement: "room",
@@ -211,6 +227,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "beanbag",
+    tier: "budget",
     name: "懶骨頭",
     category: "seating",
     placement: "room",
@@ -226,6 +243,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "loveseat",
+    tier: "premium",
     name: "戀人雙人沙發",
     category: "seating",
     placement: "room",
@@ -241,6 +259,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "romantic_table",
+    tier: "premium",
     name: "雙人約會餐桌",
     category: "kitchen",
     placement: "room",
@@ -256,6 +275,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "bookshelf",
+    tier: "standard",
     name: "高書架",
     category: "storage",
     placement: "room",
@@ -271,6 +291,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "wardrobe",
+    tier: "standard",
     name: "衣櫃",
     category: "storage",
     placement: "room",
@@ -286,6 +307,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "dresser",
+    tier: "budget",
     name: "抽屜櫃",
     category: "storage",
     placement: "room",
@@ -301,6 +323,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "cat_tower",
+    tier: "standard",
     name: "貓跳台",
     category: "ambiance",
     placement: "room",
@@ -317,6 +340,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "litter_box",
+    tier: "budget",
     name: "貓砂盆",
     category: "utility",
     placement: "room",
@@ -339,6 +363,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "dog_bed",
+    tier: "standard",
     name: "狗狗睡墊",
     category: "sleep",
     placement: "room",
@@ -354,6 +379,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "chew_toy",
+    tier: "budget",
     name: "耐咬玩具",
     category: "ambiance",
     placement: "room",
@@ -370,6 +396,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "pee_pad",
+    tier: "budget",
     name: "寵物尿墊",
     category: "utility",
     placement: "room",
@@ -386,6 +413,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "plant",
+    tier: "budget",
     name: "觀葉盆栽",
     category: "ambiance",
     placement: "room",
@@ -401,6 +429,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "floor_lamp",
+    tier: "standard",
     name: "落地燈",
     category: "ambiance",
     placement: "room",
@@ -416,6 +445,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "aroma",
+    tier: "standard",
     name: "香氛擴香機",
     category: "ambiance",
     placement: "room",
@@ -431,6 +461,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "easel",
+    tier: "standard",
     name: "畫架",
     category: "work",
     placement: "room",
@@ -446,6 +477,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "blackout_curtain",
+    tier: "premium",
     name: "隔音遮光窗簾",
     category: "utility",
     placement: "wall",
@@ -458,6 +490,63 @@ export const CATALOG: FurnitureDef[] = [
     social: false,
     promptHints: ["白天也拉得像深夜", "隔壁裝修聲仍穿透"],
     sprite: { recipe: [] }, // 牆面家具:由房間細看呈現,不畫在地板
+  },
+
+  // =========================================================================
+  // 平價入門變體(budget tier):便宜、低屬性,給手頭緊的早期玩家先撐著。
+  //   噪音是唯一的負屬性通道;這裡的「差」是「屬性低/便宜」而非負分。
+  //   刻意不放進種子房(r301~r304),不影響 balance 快照。沿用既有 kind 繪圖。
+  // =========================================================================
+  {
+    id: "folding_bed",
+    tier: "budget",
+    name: "折疊床",
+    category: "sleep",
+    placement: "room",
+    price: 2800,
+    footprint: { w: 2, h: 2 },
+    interact: { dc: 2, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: ["sleeping_on_bed"],
+    social: false,
+    effectHint: "平價入門款 · 睡得著但不特別舒服",
+    promptHints: ["折疊床睡久了腰有點痠", "省下來的錢先擺別的"],
+    sprite: { kind: "bed" },
+  },
+  {
+    id: "plastic_stool",
+    tier: "budget",
+    name: "塑膠椅凳",
+    category: "seating",
+    placement: "room",
+    price: 400,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    fitsTags: [],
+    unlocksStates: ["idle"],
+    social: false,
+    effectHint: "平價入門款 · 有得坐就好",
+    promptHints: ["隨手拉過來的塑膠椅凳", "便宜堪用的過渡款"],
+    sprite: { kind: "chair" },
+  },
+  {
+    id: "bare_bulb",
+    tier: "budget",
+    name: "裸燈泡",
+    category: "ambiance",
+    placement: "room",
+    price: 500,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: { cozy: 1 },
+    fitsTags: [],
+    unlocksStates: [],
+    social: false,
+    effectHint: "平價入門款 · 亮度夠但氣氛普通",
+    promptHints: ["天花板垂下的一顆裸燈泡", "還沒錢換好看的燈"],
+    sprite: { kind: "lamp" },
   },
 
   // =========================================================================
@@ -593,6 +682,7 @@ export const CATALOG: FurnitureDef[] = [
   // =========================================================================
   {
     id: "lounge_tv",
+    tier: "premium",
     name: "大電視",
     category: "av",
     placement: "communal",
@@ -608,6 +698,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "dining_table",
+    tier: "standard",
     name: "四人餐桌",
     category: "kitchen",
     placement: "communal",
@@ -623,6 +714,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "coffee_machine",
+    tier: "standard",
     name: "咖啡機",
     category: "kitchen",
     placement: "communal",
@@ -638,6 +730,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "bar_counter",
+    tier: "premium",
     name: "吧台 + 高腳椅",
     category: "kitchen",
     placement: "communal",
@@ -653,6 +746,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "lounge_console",
+    tier: "standard",
     name: "體感遊戲機",
     category: "av",
     placement: "communal",
@@ -668,6 +762,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "washing_machine",
+    tier: "standard",
     name: "共用洗衣機",
     category: "utility",
     placement: "communal",
@@ -683,6 +778,7 @@ export const CATALOG: FurnitureDef[] = [
   },
   {
     id: "shared_sofa",
+    tier: "premium",
     name: "共用沙發",
     category: "seating",
     placement: "communal",
@@ -700,30 +796,30 @@ export const CATALOG: FurnitureDef[] = [
   // =========================================================================
   // 交誼廳基礎機能(既有)
   // =========================================================================
-  { id: "stove", name: "瓦斯爐", category: "kitchen", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["cooking"], social: true, promptHints: ["半夜煮泡麵的香味"], sprite: { kind: "stove" } },
-  { id: "counter", name: "流理臺", category: "kitchen", placement: "communal", price: 4000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { storage: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "counter" } },
-  { id: "fridge", name: "冰箱", category: "kitchen", placement: "communal", price: 9000, footprint: { w: 1, h: 2 }, interact: { dc: 1, dr: 1 }, attributes: { storage: 4 }, fitsTags: [], unlocksStates: [], social: true, promptHints: ["貼在冰箱上的紙條戰爭"], sprite: { kind: "fridge" } },
-  { id: "coffee_table", name: "茶几", category: "seating", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { style: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "table" } },
-  { id: "lounge_rug", name: "大地毯", category: "ambiance", placement: "communal", price: 4000, footprint: { w: 4, h: 3 }, interact: { dc: 0, dr: 0 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "rug" } },
-  { id: "entrance_mat", name: "門口地墊", category: "utility", placement: "communal", price: 500, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: -1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["包裹代收/漏收的日常"], sprite: { kind: "mat" } },
-  { id: "lounge_plant", name: "角落盆栽", category: "ambiance", placement: "communal", price: 1500, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 2, style: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "plant" } },
+  { id: "stove", tier: "budget", name: "瓦斯爐", category: "kitchen", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["cooking"], social: true, promptHints: ["半夜煮泡麵的香味"], sprite: { kind: "stove" } },
+  { id: "counter", tier: "budget", name: "流理臺", category: "kitchen", placement: "communal", price: 4000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { storage: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "counter" } },
+  { id: "fridge", tier: "standard", name: "冰箱", category: "kitchen", placement: "communal", price: 9000, footprint: { w: 1, h: 2 }, interact: { dc: 1, dr: 1 }, attributes: { storage: 4 }, fitsTags: [], unlocksStates: [], social: true, promptHints: ["貼在冰箱上的紙條戰爭"], sprite: { kind: "fridge" } },
+  { id: "coffee_table", tier: "budget", name: "茶几", category: "seating", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { style: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "table" } },
+  { id: "lounge_rug", tier: "standard", name: "大地毯", category: "ambiance", placement: "communal", price: 4000, footprint: { w: 4, h: 3 }, interact: { dc: 0, dr: 0 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "rug" } },
+  { id: "entrance_mat", tier: "budget", name: "門口地墊", category: "utility", placement: "communal", price: 500, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: -1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["包裹代收/漏收的日常"], sprite: { kind: "mat" } },
+  { id: "lounge_plant", tier: "budget", name: "角落盆栽", category: "ambiance", placement: "communal", price: 1500, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 2, style: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "plant" } },
 
   // =========================================================================
   // 共用設施:廁所 + 浴室
   // =========================================================================
-  { id: "bathtub", name: "浴缸", category: "utility", placement: "communal", price: 12000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: ["taking_bath"], social: true, promptHints: ["泡澡泡到睡著", "誰又忘了放掉水"], sprite: { kind: "bathtub" } },
-  { id: "shower", name: "淋浴間(玻璃隔間)", category: "utility", placement: "communal", price: 9000, footprint: { w: 2, h: 2 }, interact: { dc: 2, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["showering"], social: true, promptHints: ["淋浴間的歌聲", "熱水被用光了"], sprite: { kind: "shower" } },
-  { id: "toilet", name: "馬桶", category: "utility", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["using_toilet"], social: true, promptHints: ["半夜排隊等廁所"], sprite: { kind: "toilet" } },
-  { id: "bath_sink", name: "洗手台", category: "utility", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["washing_at_sink"], social: false, promptHints: ["對著鏡子發呆刷牙"], sprite: { kind: "sink" } },
-  { id: "bath_plant", name: "浴室小盆栽", category: "ambiance", placement: "communal", price: 1200, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "plant" } },
+  { id: "bathtub", tier: "premium", name: "浴缸", category: "utility", placement: "communal", price: 12000, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 3 }, fitsTags: [], unlocksStates: ["taking_bath"], social: true, promptHints: ["泡澡泡到睡著", "誰又忘了放掉水"], sprite: { kind: "bathtub" } },
+  { id: "shower", tier: "standard", name: "淋浴間(玻璃隔間)", category: "utility", placement: "communal", price: 9000, footprint: { w: 2, h: 2 }, interact: { dc: 2, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["showering"], social: true, promptHints: ["淋浴間的歌聲", "熱水被用光了"], sprite: { kind: "shower" } },
+  { id: "toilet", tier: "budget", name: "馬桶", category: "utility", placement: "communal", price: 5000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["using_toilet"], social: true, promptHints: ["半夜排隊等廁所"], sprite: { kind: "toilet" } },
+  { id: "bath_sink", tier: "budget", name: "洗手台", category: "utility", placement: "communal", price: 3000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["washing_at_sink"], social: false, promptHints: ["對著鏡子發呆刷牙"], sprite: { kind: "sink" } },
+  { id: "bath_plant", tier: "budget", name: "浴室小盆栽", category: "ambiance", placement: "communal", price: 1200, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: { cozy: 2 }, fitsTags: [], unlocksStates: [], social: false, promptHints: [], sprite: { kind: "plant" } },
 
   // =========================================================================
   // 共用設施:洗衣晾衣間
   // =========================================================================
-  { id: "laundry_washer", name: "投幣洗衣機", category: "utility", placement: "communal", price: 8000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["using_appliance"], social: true, promptHints: ["搶最後一台空機", "洗到一半沒零錢"], sprite: { kind: "washer" } },
-  { id: "drying_rack", name: "曬衣架", category: "utility", placement: "communal", price: 2500, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: true, promptHints: ["晾了三天沒收的衣服", "誰的衣服佔滿了整排"], sprite: { kind: "drying_rack" } },
-  { id: "utility_sink", name: "水槽", category: "utility", placement: "communal", price: 2000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["手洗貼身衣物"], sprite: { kind: "sink" } },
-  { id: "laundry_basket", name: "洗衣籃", category: "utility", placement: "communal", price: 600, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["堆成小山的待洗衣物"], sprite: { kind: "laundry_basket" } },
+  { id: "laundry_washer", tier: "standard", name: "投幣洗衣機", category: "utility", placement: "communal", price: 8000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: ["using_appliance"], social: true, promptHints: ["搶最後一台空機", "洗到一半沒零錢"], sprite: { kind: "washer" } },
+  { id: "drying_rack", tier: "budget", name: "曬衣架", category: "utility", placement: "communal", price: 2500, footprint: { w: 2, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: true, promptHints: ["晾了三天沒收的衣服", "誰的衣服佔滿了整排"], sprite: { kind: "drying_rack" } },
+  { id: "utility_sink", tier: "budget", name: "水槽", category: "utility", placement: "communal", price: 2000, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["手洗貼身衣物"], sprite: { kind: "sink" } },
+  { id: "laundry_basket", tier: "budget", name: "洗衣籃", category: "utility", placement: "communal", price: 600, footprint: { w: 1, h: 1 }, interact: { dc: 0, dr: 1 }, attributes: {}, fitsTags: [], unlocksStates: [], social: false, promptHints: ["堆成小山的待洗衣物"], sprite: { kind: "laundry_basket" } },
 ];
 
 const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));

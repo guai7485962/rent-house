@@ -16,6 +16,7 @@ const mem: Record<string, string> = {};
 };
 
 const { state } = await import("../src/store");
+const { CATALOG, getDef: getFurnDef } = await import("../src/furniture/catalog");
 const { routineSlot, routineRoles, ARCHETYPE_ROUTINES } = await import("../src/sim/routine");
 const { rollEvent } = await import("../src/sim/events");
 const { decide } = await import("../src/store");
@@ -95,6 +96,42 @@ lin.lastEventDay = -99; // 解除事件冷卻
 hourlyTick(false);
 check("整合:康復日觸發 sick_aftermath", lin.pendingEvent?.id === "sick_aftermath");
 check("整合:旗標已消耗(不會重複觸發)", !lin.flags.includes("病中沒人管"));
+
+// --- 5. 家具品質層級(tier):值域合法 + 平價變體比精品同胞便宜/低屬性 ---
+const VALID_TIERS = new Set(["budget", "standard", "premium"]);
+const attrSum = (id: string) => Object.values(getFurnDef(id).attributes).reduce((a, v) => a + (v ?? 0), 0);
+check(
+  "每件家具的 tier 若有值必為 budget/standard/premium(選配但合法)",
+  CATALOG.every((d) => d.tier === undefined || VALID_TIERS.has(d.tier)),
+);
+check(
+  "床鋪三階:single=budget、double=standard、canopy=premium",
+  getFurnDef("single_bed").tier === "budget"
+    && getFurnDef("double_bed").tier === "standard"
+    && getFurnDef("canopy_bed").tier === "premium",
+);
+check(
+  "床鋪三階價格遞增(budget < standard < premium)",
+  getFurnDef("single_bed").price < getFurnDef("double_bed").price
+    && getFurnDef("double_bed").price < getFurnDef("canopy_bed").price,
+);
+check(
+  "床鋪三階屬性遞增(budget ≤ standard ≤ premium)",
+  attrSum("single_bed") <= attrSum("double_bed") && attrSum("double_bed") <= attrSum("canopy_bed"),
+);
+// 新增平價入門變體:tier=budget,且比同類精品/較貴同胞更便宜、屬性不高於它
+const BUDGET_VS_PRICIER: Array<[string, string]> = [
+  ["folding_bed", "canopy_bed"],   // 折疊床 vs 帷幔床(premium)
+  ["plastic_stool", "loveseat"],   // 塑膠椅凳 vs 戀人沙發(premium)
+  ["bare_bulb", "floor_lamp"],     // 裸燈泡 vs 落地燈(standard)
+];
+check("新增三件平價變體 tier 皆為 budget",
+  ["folding_bed", "plastic_stool", "bare_bulb"].every((id) => getFurnDef(id).tier === "budget"));
+check(
+  "平價變體比其較貴同胞便宜且屬性不高於它",
+  BUDGET_VS_PRICIER.every(([cheap, pricy]) =>
+    getFurnDef(cheap).price < getFurnDef(pricy).price && attrSum(cheap) <= attrSum(pricy)),
+);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

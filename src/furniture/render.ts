@@ -426,6 +426,21 @@ const KIND_DRAWERS: Partial<Record<FurnKind, Drawer>> = {
       rect(ctx, cx, y + 4, 3, 1, "#e9e4f2");
     }
   },
+  robot_vacuum(ctx, x, y) {
+    groundShadow(ctx, x + TILE / 2, y + TILE - 2, 11);
+    const body = ramp("#3a3f4c");
+    // 圓盤機身(方塊近似圓)
+    block(ctx, x + 3, y + 6, 10, 7, body, 1);
+    rect(ctx, x + 4, y + 5, 8, 1, "#565c6e"); // 頂緣高光
+    // 面板 + 感應燈
+    rect(ctx, x + 6, y + 7, 4, 3, "#2a2e39");
+    rect(ctx, x + 7, y + 8, 1, 1, "#6fd08c");
+    rect(ctx, x + 9, y + 8, 1, 1, "#7db4ff");
+    // 前緣掃刷與輪子
+    rect(ctx, x + 4, y + 12, 2, 1, "#20232c");
+    rect(ctx, x + 10, y + 12, 2, 1, "#20232c");
+    rect(ctx, x + 6, y + 12, 4, 1, "#c9a05a"); // 掃刷
+  },
   laundry_basket(ctx, x, y) {
     groundShadow(ctx, x + TILE / 2, y + TILE - 1, 8);
     block(ctx, x + 3, y + 7, 10, 7, ramp("#c8a878"), 2);

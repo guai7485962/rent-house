@@ -52,6 +52,16 @@ function roomCategories(roomId: string): Set<FurnCategory> {
   return set;
 }
 
+/** 房內自動清潔家具(掃地機器人等)的清潔力總和(墊高整潔基準用) */
+function roomCleanPower(roomId: string): number {
+  let power = 0;
+  for (const p of getPlacements()) {
+    if (p.room !== roomId) continue;
+    power += getDef(p.defId).cleanPower ?? 0;
+  }
+  return power;
+}
+
 /** 整潔乘子:髒→打折。clean 100→×1、50→×0.75、0→×0.5(下限保護,不歸零) */
 export function cleanlinessMultiplier(cleanliness: number): number {
   return clamp(0.5 + 0.5 * (cleanliness / 100), 0.5, 1);
@@ -108,14 +118,16 @@ export function comfortBaselineDelta(comfort: number): { mood: number; stress: n
 
 /**
  * 整潔的自然回歸目標(homeostasis 錨點):生活會慢慢變髒回到這個水位,
- * 收納家具(storage)墊高「常保整潔」的基準 = 減緩實際衰減。
+ * 收納家具(storage)墊高「常保整潔」的基準 = 減緩實際衰減;
+ * 自動清潔家具(掃地機器人的 cleanPower)再往上墊,體現「買了會自動維持乾淨」。
  *   無收納:錨 50(略髒,dirt 會微微顯現,提示玩家買收納)
- *   收納充足:最高錨 80。
+ *   收納充足:最高錨 80;加掃地機器人可再上探,總上限夾到 90。
  */
 export function cleanlinessBaseline(roomId: string | null): number {
   if (!roomId) return 50;
   const storage = roomAttributes(roomId).storage ?? 0;
-  return clamp(50 + storage * 2, 50, 80);
+  const cleanPower = roomCleanPower(roomId);
+  return clamp(50 + storage * 2 + cleanPower, 50, 90);
 }
 
 /** 房間細看的改善提示(依太髒/缺哪類家具/不夠療癒,最多 3 條;手機直式勿擠) */

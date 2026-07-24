@@ -79,7 +79,8 @@ export type FurnKind =
   | "bathtub"
   | "shower"
   | "drying_rack"
-  | "laundry_basket";
+  | "laundry_basket"
+  | "robot_vacuum";
 
 export interface FurnitureDef {
   id: string;
@@ -95,6 +96,11 @@ export interface FurnitureDef {
   interact: { dc: number; dr: number };
   /** 對房間屬性的加成 */
   attributes: Partial<Record<RoomAttribute, number>>;
+  /**
+   * 清潔力(選配):自動打掃型家具(掃地機器人)墊高房間「常保整潔」的自然回歸目標
+   * (cleanlinessBaseline),不是瞬間清潔——符合「慢變環境品質、不需照顧」的定位。
+   */
+  cleanPower?: number;
   /** 適合的性格標籤(租客帶這些標籤時會偏好此家具) */
   fitsTags: string[];
   /** 解鎖的可觀察狀態 */
@@ -547,6 +553,28 @@ export const CATALOG: FurnitureDef[] = [
     effectHint: "平價入門款 · 亮度夠但氣氛普通",
     promptHints: ["天花板垂下的一顆裸燈泡", "還沒錢換好看的燈"],
     sprite: { kind: "lamp" },
+  },
+
+  // =========================================================================
+  // 自動清潔家具:墊高房間整潔基準(慢變,非瞬間清潔)
+  // =========================================================================
+  {
+    id: "robot_vacuum",
+    tier: "standard",
+    name: "掃地機器人",
+    category: "utility",
+    placement: "room",
+    price: 6000,
+    footprint: { w: 1, h: 1 },
+    interact: { dc: 0, dr: 1 },
+    attributes: {},
+    cleanPower: 25, // 墊高整潔基準(cleanlinessBaseline),讓房間慢慢常保乾淨
+    fitsTags: ["高度自律", "科技"],
+    unlocksStates: [],
+    social: false,
+    effectHint: "每天自動打掃 · 房間常保整潔(整潔基準提高,慢慢維持乾淨)",
+    promptHints: ["掃地機器人嗡嗡地繞著房間跑", "回到家地板總是乾乾淨淨"],
+    sprite: { kind: "robot_vacuum" },
   },
 
   // =========================================================================

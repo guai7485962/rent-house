@@ -123,5 +123,22 @@ const chenBefore = cozyCount(chen2);
 cozyHomePass(600);
 check("髒亂/低舒適房不會慶祝(保持沉默)", cozyCount(chen2) === chenBefore);
 
+// --- 9. 掃地機器人:墊高整潔基準 → 整潔隨時間收斂到更高水位 ---
+const baseNoVac = cleanlinessBaseline("r301"); // r301 無收納無機器人 → 50
+addPlacement({ defId: "robot_vacuum", room: "r301", c: 3, r: 3 } as any);
+const baseVac = cleanlinessBaseline("r301");
+check(`掃地機器人墊高整潔基準(r301 ${baseNoVac} → ${baseVac})`, baseVac > baseNoVac);
+check("整潔基準仍有上限保護(夾 ≤ 90)", cleanlinessBaseline("r301") <= 90);
+
+const chen3 = state.runtimes["tenant_chen_engineer"];
+chen3.pendingEvent = null;
+chen3.lastEventDay = 99999; // 擋事件,免得 pendingEvent 卡住模擬
+chen3.cleanliness = 40; // 從低於兩種基準的水位起步
+for (let i = 0; i < 96; i++) debugStepHour();
+// 無機器人時 r301 基準只有 50,加上日常活動把整潔往下拖,不可能爬過 50;
+// 有機器人把基準墊到 75,整潔才收斂到明顯更高的水位並越過 50。
+check(`有掃地機器人 → 整潔慢慢爬過舊基準(40 → ${chen3.cleanliness.toFixed(1)},> 50)`,
+  chen3.cleanliness > 50 && chen3.cleanliness <= 90);
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

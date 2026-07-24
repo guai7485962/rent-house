@@ -4,6 +4,7 @@ import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } 
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
+import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
 import { layoutFloorTags } from "../floor/tagLayout";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
@@ -28,6 +29,8 @@ const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
 let petAgents: PetAgent[] = [];
 let petSignature = "";
+let vacuumAgents: VacuumAgent[] = [];
+let vacuumSignature = "";
 let raf = 0;
 let last = 0;
 
@@ -38,9 +41,18 @@ function loop(t: number) {
   try {
     const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
     last = t;
+    // 掃地機器人(買/賣/移動時位置會變 → 重建);先算出它們當下所在格,讓租客避讓不疊格
+    const nextVacuumSignature = vacuumAgentSignature();
+    if (nextVacuumSignature !== vacuumSignature) {
+      vacuumAgents = createVacuumAgents();
+      vacuumSignature = nextVacuumSignature;
+    }
+    const vacuumBlocked = vacuumCellKeys(vacuumAgents);
     // 有新租客入住(runtime 數量改變)→ 重建 agents
     if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
-    tickAgents(agents, dt);
+    tickAgents(agents, dt, vacuumBlocked);
+    // 掃地機避讓租客(讀租客當幀座標);純外觀,不動任何模擬
+    tickVacuumAgents(vacuumAgents, dt, agents);
     // 寵物貓(領養/退租時數量會變 → 重建)
     const nextPetSignature = petAgentSignature();
     if (nextPetSignature !== petSignature) {
@@ -57,7 +69,7 @@ function loop(t: number) {
         const rect = roomRect(roomId);
         if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
       }
-      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents);
+      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
       const pv = props.preview;
       if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
     }

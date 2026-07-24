@@ -20,6 +20,7 @@ import {
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
 import type { PetAgent } from "./petAgents";
+import { isVacuumDef, type VacuumAgent } from "./vacuumAgents";
 import { activeFx, type Fx } from "./fx";
 import { getTheme, getCustomAppearance } from "../pixel/scene";
 import { drawAppearanceOverlay } from "../pixel/parts";
@@ -83,7 +84,7 @@ export function dayNightTint(hour: number): { color: string; alpha: number } | n
   return { color: "#141840", alpha: 0.24 }; // 入夜
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[]) {
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[]) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -93,11 +94,17 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
 
   // 家具:讀 PLACEMENTS(id+座標)→ 查目錄 → drawDef。
   // 由上而下(r 由小到大)繪製,讓前方物件蓋住後方。
+  // 有傳 vacuums(遊走的掃地機)時,略過靜態 robot_vacuum 家具——改由下方會動的 sprite 取代,
+  // 避免同一台掃地機出現兩份(基地一份 + 遊走一份)。離線預覽/房間鏡頭未傳時照舊畫靜態。
+  const drawVacuums = vacuums !== undefined;
   const sorted = [...getPlacements()].sort((a, b) => a.r - b.r);
-  for (const p of sorted) drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
+  for (const p of sorted) {
+    if (drawVacuums && isVacuumDef(p.defId)) continue;
+    drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
+  }
 
-  if (agents || pets) {
-    // 人與寵物依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
+  if (agents || pets || vacuums) {
+    // 人、寵物與掃地機依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
     const items: { y: number; draw: () => void }[] = [];
     const petPairs = activePetPairs(pets ?? []);
     for (const [a, b] of petPairs) {
@@ -107,6 +114,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       if (a.hidden) continue;
       items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
     }
+    for (const v of vacuums ?? []) items.push({ y: v.py + 6, draw: () => drawVacuum(ctx, v, frame) });
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
     for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
@@ -502,6 +510,29 @@ function drawDog(ctx: Ctx, a: PetAgent, frame: number) {
   rect(ctx, fx(1, 1), y + 4 - bob, 1, 3, pal.dark);
   rect(ctx, fx(2, 1), y + 6 - bob, 1, 1, pal.dark);
   if (pal.patch) rect(ctx, fx(5, 3), y + 7 - bob, 3, 3, pal.dark);
+}
+
+/**
+ * 遊走的掃地機:沿用 render.ts 的 robot_vacuum 家具原圖(drawDef),
+ * 再加一點「活著」的細節——輕微上下晃動 + 感應燈閃爍。純外觀,不影響任何模擬。
+ */
+function drawVacuum(ctx: Ctx, v: VacuumAgent, frame: number) {
+  // 1px 晃動:移動中前後微擺,靜止時上下小呼吸,像機器在運轉
+  const wobbleY = frame % 2 === 0 ? 0 : -1;
+  const wobbleX = v.moving ? (Math.floor(frame / 2) % 2 === 0 ? 0 : v.facing) : 0;
+  const x = Math.round(v.px) + wobbleX;
+  const y = Math.round(v.py) + wobbleY;
+  drawDef(ctx, getDef(v.defId), x, y, 0);
+  // 感應燈閃爍(疊在原圖的燈位上):亮兩拍暗一拍,綠/藍交替呼吸
+  const on = frame % 3 !== 2;
+  if (on) {
+    const blue = Math.floor(frame / 3) % 2 === 0;
+    rect(ctx, x + 7, y + 8, 1, 1, "#9dffc0");
+    rect(ctx, x + 9, y + 8, 1, 1, blue ? "#bcdcff" : "#7db4ff");
+    // 機身頂緣一顆掃描光點,隨方向左右移,強化「在運轉」的感覺
+    const scan = v.facing > 0 ? x + 10 + (frame % 2) : x + 4 - (frame % 2);
+    rect(ctx, scan, y + 6, 1, 1, "#cfe6ff");
+  }
 }
 
 function activePetPairs(pets: PetAgent[]): [PetAgent, PetAgent][] {

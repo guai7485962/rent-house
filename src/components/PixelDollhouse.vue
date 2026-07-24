@@ -11,6 +11,7 @@ import type { TenantVisualState } from "../types";
 import { composeFloor, FLOOR_W, FLOOR_H } from "../floor/floorScene";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
+import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
 import { TILE } from "../floor/map";
 import { roomRect } from "../sim/placements";
 import { state, roomOfTenant } from "../store";
@@ -62,6 +63,8 @@ const canvas = ref<HTMLCanvasElement | null>(null);
 let agents: Agent[] = [];
 let petAgents: PetAgent[] = [];
 let petSignature = "";
+let vacuumAgents: VacuumAgent[] = [];
+let vacuumSignature = "";
 let raf = 0;
 let last = 0;
 let camX = -1; // 相機左上(px);-1 = 尚未定位,首幀直接跳到位
@@ -82,8 +85,15 @@ function loop(t: number) {
   try {
     const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
     last = t;
+    const nextVacuumSignature = vacuumAgentSignature();
+    if (nextVacuumSignature !== vacuumSignature) {
+      vacuumAgents = createVacuumAgents();
+      vacuumSignature = nextVacuumSignature;
+    }
+    const vacuumBlocked = vacuumCellKeys(vacuumAgents);
     if (agents.length !== Object.keys(state.runtimes).length) agents = createAgents();
-    tickAgents(agents, dt);
+    tickAgents(agents, dt, vacuumBlocked);
+    tickVacuumAgents(vacuumAgents, dt, agents); // 掃地機也會巡進房間鏡頭裡,並避讓租客
     const nextPetSignature = petAgentSignature();
     if (nextPetSignature !== petSignature) {
       petAgents = createPetAgents();
@@ -109,7 +119,7 @@ function loop(t: number) {
       ctx.imageSmoothingEnabled = false;
       // 把整張樓層以 3 倍縮放、平移到相機角落畫進來;canvas 只露出相機窗格
       ctx.setTransform(SCALE, 0, 0, SCALE, -Math.round(camX * SCALE), -Math.round(camY * SCALE));
-      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours(), petAgents);
+      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
   } finally {

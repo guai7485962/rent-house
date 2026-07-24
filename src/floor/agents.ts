@@ -40,6 +40,7 @@ export interface Agent {
 }
 
 const SPEED = 44; // px / 秒
+const EMPTY_BLOCKED: ReadonlySet<string> = new Set();
 
 function sameTile(a: Tile | null, b: Tile | null) {
   return (!a && !b) || (!!a && !!b && a.c === b.c && a.r === b.r);
@@ -76,7 +77,12 @@ export function createAgents(): Agent[] {
   });
 }
 
-export function tickAgents(agents: Agent[], dt: number) {
+/**
+ * @param blockedCells 額外「不可踏入」的格(key = "c,r")。目前用於掃地機器人:
+ *   租客不會走上掃地機當下所在格(避免視覺疊格)。等掃地機離開,下一幀自然續走。
+ *   純外觀避讓,不影響任何作息/模擬邏輯;預設空集合 → 對既有行為零改變。
+ */
+export function tickAgents(agents: Agent[], dt: number, blockedCells: ReadonlySet<string> = EMPTY_BLOCKED) {
   const blocked = currentBlocked();
   const claimedTargets = new Set<string>();
   const occupied = new Map<string, Agent>();
@@ -158,7 +164,7 @@ export function tickAgents(agents: Agent[], dt: number) {
       // 另一人仍站在下一格時先讓一步；角色離開後下一幀自然繼續。
       // 這也封住兩條路徑在窄走道同時進入同一格的視覺穿模。
       const nextKey = tileKey(next);
-      if (occupiedByOther(next, a, occupied) || reservedSteps.has(nextKey)) continue;
+      if (occupiedByOther(next, a, occupied) || reservedSteps.has(nextKey) || blockedCells.has(nextKey)) continue;
       reservedSteps.add(nextKey);
       const nx = next.c * TILE;
       const ny = next.r * TILE;

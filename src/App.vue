@@ -908,18 +908,20 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .stat.span2 { grid-column: 1 / -1; }
 .warn { font-size: 12px; color: var(--bad); }
 
-.comfort { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+/* 總分與拆解共用同一條長條軌道:標籤欄與數值欄都固定同寬,
+   讓「舒適度」「家具屬性」「種類齊全」三條 .bar 的左右端精確對齊(可跨虛線比對) */
+.comfort { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; --cbar-label-w: 58px; --cbar-value-w: 36px; }
 .comfort-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.comfort-head label { color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
-.comfort-head span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.comfort-head label { flex: 0 0 var(--cbar-label-w); color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
+.comfort-head span { flex: 0 0 var(--cbar-value-w); text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .comfort-hints { display: flex; flex-wrap: wrap; gap: 6px; }
 .chint { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(143, 123, 255, 0.08); border: 1px solid var(--accent-2); color: #c9befc; }
 
 /* 舒適度拆解:窄螢幕(360px)一律直式堆疊,不用表格,避免橫向溢出 */
 .cbd { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .cbd-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
-.cbd-row label { color: var(--text-dim); white-space: nowrap; }
-.cbd-row > span { min-width: 46px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); }
+.cbd-row label { flex: 0 0 var(--cbar-label-w); color: var(--text-dim); white-space: nowrap; }
+.cbd-row > span { flex: 0 0 var(--cbar-value-w); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); }
 .cbd-row > span i { font-style: normal; color: var(--text-dim); }
 .cbd-attr { height: 100%; border-radius: 4px; background: var(--accent-2); transition: width 0.5s ease; }
 .cbd-cat { height: 100%; border-radius: 4px; background: #58a6ff; transition: width 0.5s ease; }

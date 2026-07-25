@@ -19,7 +19,7 @@ import FeedPanel from "./components/FeedPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
-import { roomComfort, comfortHints } from "./sim/comfort";
+import { roomComfortBreakdown, comfortHints, COMFORT_LIMITS, COMFORT_BUCKET_LABELS } from "./sim/comfort";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
@@ -426,15 +426,41 @@ const roomAttrs = computed(() => {
 });
 
 // 🛋️ 房間舒適度(佈置齊全/療癒/乾淨 → 慢慢墊高租客心情與健康)+ 改善提示
-const roomComfortScore = computed(() =>
-  Math.round(roomComfort(activeRoomId.value, activeRuntime.value?.cleanliness ?? 100)),
+const comfortBd = computed(() =>
+  roomComfortBreakdown(activeRoomId.value, activeRuntime.value?.cleanliness ?? 100),
 );
+const roomComfortScore = computed(() => Math.round(comfortBd.value.comfort));
 const roomComfortHints = computed(() =>
   comfortHints(activeRoomId.value, activeRuntime.value?.cleanliness ?? 100),
 );
 function comfortColor(v: number) {
   return v < 35 ? "var(--bad)" : v > 60 ? "var(--good)" : "var(--accent)";
 }
+
+/**
+ * 舒適度拆解(**純呈現**:只把 sim 已算好的 breakdown 攤開,不做任何舒適度數學)。
+ * 讓玩家看懂三件事:家具屬性離上限多遠、五大類缺哪幾類、整潔正在打幾折。
+ * 小計刻意用「已四捨五入的兩部分相加」,玩家看到的加法才對得起來。
+ */
+const comfortParts = computed(() => {
+  const bd = comfortBd.value;
+  const missing = new Set(bd.missing);
+  const attr = Math.round(bd.attrPart);
+  const cat = Math.round(bd.categoryPart);
+  return {
+    attr,
+    attrMax: COMFORT_LIMITS.attrMax,
+    attrPct: Math.min(100, (bd.attrPart / COMFORT_LIMITS.attrMax) * 100),
+    cat,
+    catMax: COMFORT_LIMITS.categoryMax,
+    catPct: Math.min(100, (bd.categoryPart / COMFORT_LIMITS.categoryMax) * 100),
+    buckets: COMFORT_BUCKET_LABELS.map((label) => ({ label, has: !missing.has(label) })),
+    multText: `×${bd.cleanMult.toFixed(2)}`,
+    subtotal: attr + cat,
+    discounted: bd.cleanMult < 0.995,
+    multColor: bd.cleanMult < 0.7 ? "var(--bad)" : bd.cleanMult > 0.94 ? "var(--good)" : "var(--accent)",
+  };
+});
 
 /** 點數值名稱 → 一句話說明(8-5) */
 const STAT_HELP: Record<string, string> = {
@@ -653,6 +679,37 @@ function onGroupResolve(choiceId: string) {
         <div class="bar"><div :style="{ width: roomComfortScore + '%', background: comfortColor(roomComfortScore) }"></div></div>
         <span>{{ roomComfortScore }}</span>
       </div>
+
+      <!-- 舒適度拆解:純呈現 sim 已算好的 breakdown,讓玩家看懂分數被什麼拖住 -->
+      <div class="cbd">
+        <div class="cbd-row">
+          <label>家具屬性</label>
+          <div class="bar"><div class="cbd-attr" :style="{ width: comfortParts.attrPct + '%' }"></div></div>
+          <span>{{ comfortParts.attr }}<i>/{{ comfortParts.attrMax }}</i></span>
+        </div>
+        <div class="cbd-row">
+          <label>種類齊全</label>
+          <div class="bar"><div class="cbd-cat" :style="{ width: comfortParts.catPct + '%' }"></div></div>
+          <span>{{ comfortParts.cat }}<i>/{{ comfortParts.catMax }}</i></span>
+        </div>
+        <div class="cbd-buckets">
+          <span v-for="b in comfortParts.buckets" :key="b.label" class="cbucket" :class="{ miss: !b.has }">
+            {{ b.has ? "✓" : "✗" }}{{ b.label }}
+          </span>
+        </div>
+        <div class="cbd-clean">
+          <label>🧹 整潔倍率</label>
+          <strong :style="{ color: comfortParts.multColor }">{{ comfortParts.multText }}</strong>
+          <span class="cbd-calc">
+            小計 {{ comfortParts.subtotal }}
+            <template v-if="comfortParts.discounted">
+              → <b :style="{ color: comfortParts.multColor }">{{ roomComfortScore }}</b>
+            </template>
+            <template v-else>(未折損)</template>
+          </span>
+        </div>
+      </div>
+
       <div v-if="roomComfortHints.length" class="comfort-hints">
         <span v-for="h in roomComfortHints" :key="h" class="chint">{{ h }}</span>
       </div>
@@ -857,6 +914,23 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .comfort-head span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .comfort-hints { display: flex; flex-wrap: wrap; gap: 6px; }
 .chint { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(143, 123, 255, 0.08); border: 1px solid var(--accent-2); color: #c9befc; }
+
+/* 舒適度拆解:窄螢幕(360px)一律直式堆疊,不用表格,避免橫向溢出 */
+.cbd { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.cbd-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+.cbd-row label { color: var(--text-dim); white-space: nowrap; }
+.cbd-row > span { min-width: 46px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); }
+.cbd-row > span i { font-style: normal; color: var(--text-dim); }
+.cbd-attr { height: 100%; border-radius: 4px; background: var(--accent-2); transition: width 0.5s ease; }
+.cbd-cat { height: 100%; border-radius: 4px; background: #58a6ff; transition: width 0.5s ease; }
+.cbd-buckets { display: flex; flex-wrap: wrap; gap: 4px; }
+.cbucket { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; white-space: nowrap; border: 1px solid rgba(88, 166, 255, 0.5); color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
+.cbucket.miss { border-color: rgba(232, 101, 122, 0.5); color: #f0a0ae; background: rgba(232, 101, 122, 0.08); }
+.cbd-clean { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 11.5px; }
+.cbd-clean label { color: var(--text-dim); white-space: nowrap; }
+.cbd-clean strong { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cbd-calc { margin-left: auto; color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cbd-calc b { font-weight: 700; }
 
 .attrs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .attrs-title { font-size: 11px; color: var(--text-dim); }

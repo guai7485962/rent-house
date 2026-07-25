@@ -42,6 +42,25 @@ const ATTR_WEIGHTS = { cozy: 1.0, style: 0.6, soundproof: 0.8, tech: 0.35, noise
 const ATTR_HALF = 18; // 飽和半值:加權和 = 18 時屬性分達上限的一半
 const ATTR_MAX = 60; // 屬性部分上限
 
+/**
+ * 給 UI 拆解面板/測試讀的上限常數(**純讀取的鏡射,不參與任何計算**)。
+ * 面板要讓玩家看到「離上限還有多遠」,又不能自己另訂一套數字,所以從本檔常數推導。
+ */
+export const COMFORT_LIMITS = {
+  /** 屬性部分上限(= ATTR_MAX) */
+  attrMax: ATTR_MAX,
+  /** 種類齊全度上限(= 類別數 × 每類點數) */
+  categoryMax: COMFORT_BUCKETS.length * CATEGORY_POINTS,
+  /** 每具備一類的點數 */
+  categoryPoints: CATEGORY_POINTS,
+} as const;
+
+/**
+ * 五大舒適類別的顯示名稱,順序同 roomComfortBreakdown 判定 missing 的順序。
+ * 純讀取:UI 用來畫「哪幾類有、哪幾類缺」,缺的判定仍以 breakdown 的 missing 為準。
+ */
+export const COMFORT_BUCKET_LABELS: readonly string[] = COMFORT_BUCKETS.map((b) => b.label);
+
 /** 房內具備哪些家具分類(用來算種類齊全度) */
 function roomCategories(roomId: string): Set<FurnCategory> {
   const set = new Set<FurnCategory>();

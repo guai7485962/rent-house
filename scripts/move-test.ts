@@ -1,7 +1,20 @@
 /** 家具移動(8-1)驗證:合法搬動 / 非法還原 / 跨房屬性 / 租客重定位 / 錢不變 */
-import { state, startMoving, moveFurnitureTo, debugStepHour } from "../src/store";
-import { placements, furnitureAt, findFreeSlot, roomAttributes } from "../src/sim/placements";
-import { getDef } from "../src/furniture/catalog";
+
+// 固定種子 PRNG(mulberry32),比照 balance-test.ts。因為必須在 store 初始化「之前」
+// 覆寫 Math.random(本檔還會 debugStepHour 推進 6 小時模擬),原本的靜態 import 改成
+// 動態 await import(語意相同)。不放寬任何斷言,只消除 flakiness。
+let seed = 20260710;
+Math.random = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const { state, startMoving, moveFurnitureTo, debugStepHour } = await import("../src/store");
+const { placements, furnitureAt, findFreeSlot, roomAttributes } = await import("../src/sim/placements");
+const { getDef } = await import("../src/furniture/catalog");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {

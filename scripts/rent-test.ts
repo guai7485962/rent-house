@@ -1,5 +1,18 @@
 /** 調租談判(設計檢討 7-1)驗證:降租必成 / 容忍內漲租勉強接受 / 漲太兇拒絕惹惱 / 冷卻 / 夾幅 / 非承租人擋下 */
-import { state, previewRent, proposeRent } from "../src/store";
+
+// 固定種子 PRNG(mulberry32),比照 balance-test.ts。因為必須在 store 初始化「之前」
+// 覆寫 Math.random,store 的匯入從靜態 import 改成動態 await import(語意相同)。
+// 不放寬任何斷言,只消除 flakiness。
+let seed = 20260710;
+Math.random = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+const { state, previewRent, proposeRent } = await import("../src/store");
 
 let pass = 0;
 let fail = 0;

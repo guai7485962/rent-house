@@ -6,6 +6,19 @@
  * - 冷戰:互動與相遇全擋、交誼廳迴避、每日關係小扣、期滿氣消
  * - 存檔往返
  */
+
+// 固定種子 PRNG(mulberry32),比照 balance-test.ts:必須在 import store 之前覆寫
+// Math.random,否則模組初始化階段就已經吃掉真實亂數。目的是消除偶發假性失敗
+// (原本靠 run-all.ts 的「失敗重試一次」兜著),不是放寬任何斷言。
+let seed = 20260710;
+Math.random = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 const mem: Record<string, string> = {};
 (globalThis as any).localStorage = {
   getItem: (k: string) => mem[k] ?? null,

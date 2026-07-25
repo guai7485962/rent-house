@@ -5,6 +5,19 @@
  * - 偷吃冰箱:吃貨/夜貓才偷、有交情(≥50)不算偷、冷卻 72h 不重複
  * - 被撞見:第三人記憶/壓力 + 當事人尷尬日誌
  */
+
+// 固定種子 PRNG(mulberry32),比照 balance-test.ts:必須在 import store 之前覆寫
+// Math.random。本檔用 generateApplicants 搬入 C/D 兩位租客,那是最大的亂數來源,
+// 種子固定後整場戲的角色屬性與抽樣都可重現。不放寬任何斷言,只消除 flakiness。
+let seed = 20260710;
+Math.random = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
 const mem: Record<string, string> = {};
 (globalThis as any).localStorage = {
   getItem: (k: string) => mem[k] ?? null,

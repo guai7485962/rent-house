@@ -17,7 +17,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { buildGrid } = await import("../src/floor/map");
+const { buildGrid, isWalkable, TILE } = await import("../src/floor/map");
 const { createAgents, tickAgents } = await import("../src/floor/agents");
 const { addPlacement } = await import("../src/sim/placements");
 const { MS_PER_GAME_HOUR } = await import("../src/sim/clock");
@@ -28,6 +28,8 @@ const {
   vacuumTargetArea,
   pickAreaCell,
   vacuumWillYield,
+  vacuumBlocksTenant,
+  pickYieldCell,
   createVacuumAgents,
   tickVacuumAgents,
   vacuumCellKeys,
@@ -94,6 +96,10 @@ check("gameHourIndex = floor(gameMs / 每小時)", gameHourIndex(3 * MS_PER_GAME
   const areasSeen = new Set<string>();
   let collisions = 0;
 
+  // 「租客被掃地機卡住」的連續幀數上限:掃地機會主動讓開,不該長期停滯
+  let stallStreak = 0;
+  let maxStallStreak = 0;
+
   const FRAMES = 1500;
   const DT = 0.1;
   for (let i = 0; i < FRAMES; i++) {
@@ -112,11 +118,21 @@ check("gameHourIndex = floor(gameMs / 每小時)", gameHourIndex(3 * MS_PER_GAME
         if (!ag.hidden && ag.c === v.c && ag.r === v.r) collisions++;
       }
     }
+
+    // 本幀是否有租客的下一步正踩在掃地機身上(= 被卡住的那一幀)
+    const vacKeys = vacuumCellKeys(vac);
+    const stalled = agents.some((ag) => {
+      const nxt = ag.path[0];
+      return !ag.hidden && ag.moving && !!nxt && vacKeys.has(`${nxt.c},${nxt.r}`);
+    });
+    stallStreak = stalled ? stallStreak + 1 : 0;
+    if (stallStreak > maxStallStreak) maxStallStreak = stallStreak;
   }
 
   check("掃地機確實會位移(造訪 >3 個不同格)", distinctCells.size > 3, `distinctCells=${distinctCells.size}`);
   check("掃地機確實會換區域(涵蓋 >=3 個區域)", areasSeen.size >= 3, `areasSeen=${areasSeen.size}`);
   check("全程 0 次與租客同格(避讓端到端成立)", collisions === 0, `collisions=${collisions}`);
+  check("長時間跑下來租客不會被永久卡住(卡住連續幀數有上限)", maxStallStreak < 60, `maxStallStreak=${maxStallStreak}`);
 
   // 反向驗證:硬把租客塞到掃地機的下一步,掃地機必須「停」而非踩上去
   const v0 = vac[0];
@@ -130,6 +146,133 @@ check("gameHourIndex = floor(gameMs / 每小時)", gameHourIndex(3 * MS_PER_GAME
   // 租客離開後,同一步就能走過去
   tickVacuumAgents(vac, 1.0, []);
   check("租客離開後掃地機續走", `${v0.c},${v0.r}` !== before);
+}
+
+// --- 6) 主動讓路:擋住租客的單一走廊格(門口)時會自己移開 ---
+//
+// 地圖上真正的「單一必經格」是房門開口(map.ts DOORS),例如 (6,4) = 301 房 → 走廊:
+// 上下都是牆,只剩房內 (5,4) 與走廊 (7,4)。掃地機閒置在這一格就會把租客鎖在房裡。
+const grid = buildGrid();
+const wallsOnly = grid.map((row) => row.map((cell) => !isWalkable(cell)));
+
+/** 把掃地機硬放到指定格、關掉閒置小巡,單獨觀察讓路行為 */
+function vacAt(c: number, r: number) {
+  const a = createVacuumAgents()[0];
+  a.c = c;
+  a.r = r;
+  a.px = c * TILE;
+  a.py = r * TILE;
+  a.path = [];
+  a.moving = false;
+  a.lastHourIdx = gameHourIndex(state.gameMs); // 別觸發換小時換區域
+  a.wanderAt = Number.MAX_SAFE_INTEGER; // 關掉閒置小巡
+  a.elapsed = 0;
+  a.yieldReadyAt = 0;
+  a.yielding = false;
+  return a;
+}
+
+/** 站在 (5,4)、正要穿過門口 (6,4) 出房的租客 */
+const doorTenant = () => ({ c: 5, r: 4, hidden: false, moving: true, path: [{ c: 6, r: 4 }, { c: 7, r: 4 }] });
+
+{
+  const tenant = doorTenant();
+  check("擋在租客路徑上 → 判定為「我把人擋住了」", vacuumBlocksTenant({ c: 6, r: 4 }, [tenant]));
+  check("不在任何租客路徑上 → 不算擋住", !vacuumBlocksTenant({ c: 1, r: 20 }, [tenant]));
+  check("租客外出(hidden)→ 不算擋住", !vacuumBlocksTenant({ c: 6, r: 4 }, [{ ...tenant, hidden: true }]));
+  check("租客沒在移動 → 不算擋住(它自己就停在那)", !vacuumBlocksTenant({ c: 6, r: 4 }, [{ ...tenant, moving: false }]));
+
+  const v = vacAt(6, 4);
+  let movedOff = false;
+  for (let i = 0; i < 60; i++) {
+    tickVacuumAgents([v], 0.2, [tenant]);
+    if (v.c !== 6 || v.r !== 4) { movedOff = true; break; }
+  }
+  check("掃地機主動讓開單一走廊格(門口)", movedOff, `仍在 ${v.c},${v.r}`);
+  for (let i = 0; i < 60; i++) tickVacuumAgents([v], 0.2, [tenant]);
+  check("讓路後不再擋住該租客的路徑", !vacuumBlocksTenant({ c: v.c, r: v.r }, [tenant]), `停在 ${v.c},${v.r}`);
+  check("讓路後仍站在可走格(沒鑽進牆/家具)", wallsOnly[v.r][v.c] === false);
+}
+
+// --- 7) 讓路是確定性的(同輸入同結果,無 Math.random)---
+{
+  const cells = new Set<string>(["5,4"]);
+  const paths = new Set<string>(["6,4", "7,4"]);
+  const y1 = pickYieldCell({ c: 6, r: 4 }, wallsOnly, cells, paths);
+  const y2 = pickYieldCell({ c: 6, r: 4 }, wallsOnly, cells, paths);
+  check("pickYieldCell 同輸入同輸出", !!y1 && !!y2 && y1.c === y2.c && y1.r === y2.r);
+  check("退讓格不是租客站著的格", !!y1 && `${y1.c},${y1.r}` !== "5,4");
+  check("退讓格不在租客路徑上", !!y1 && !paths.has(`${y1.c},${y1.r}`));
+  check("退讓格可走且不是原地", !!y1 && wallsOnly[y1.r][y1.c] === false && !(y1.c === 6 && y1.r === 4));
+
+  // 端到端:兩次全新模擬的逐幀位置序列必須完全一致
+  const runOnce = () => {
+    const v = vacAt(6, 4);
+    const tenant = doorTenant();
+    const seq: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      tickVacuumAgents([v], 0.2, [tenant]);
+      seq.push(`${v.c},${v.r}`);
+    }
+    return seq.join(">");
+  };
+  const runA = runOnce();
+  check("整段讓路過程可重現(逐幀位置序列相同)", runA === runOnce());
+}
+
+// --- 8) 沒有可退讓的格:不崩潰、不亂鑽、不無限迴圈 ---
+{
+  const allBlocked = grid.map((row) => row.map(() => true));
+  check("四周全被擋 → pickYieldCell 回 null", pickYieldCell({ c: 7, r: 10 }, allBlocked, new Set(), new Set()) === null);
+
+  // 門口 (6,4) 的兩個鄰格都被租客站滿 → 完全無處可退
+  const boxedIn = [
+    { c: 5, r: 4, hidden: false, moving: true, path: [{ c: 6, r: 4 }, { c: 7, r: 4 }] },
+    { c: 7, r: 4, hidden: false, moving: false },
+  ];
+  check("兩側都站著人 → 沒有退讓格", pickYieldCell({ c: 6, r: 4 }, wallsOnly, new Set(["5,4", "7,4"]), new Set(["6,4"])) === null);
+
+  const v = vacAt(6, 4);
+  let threw = "";
+  try {
+    for (let i = 0; i < 120; i++) tickVacuumAgents([v], 0.2, boxedIn);
+  } catch (e) {
+    threw = String(e);
+  }
+  check("無處可退時不崩潰(也沒卡在無限迴圈)", threw === "", threw);
+  check("無處可退時原地不動(不穿牆、不疊到租客)", v.c === 6 && v.r === 4, `跑到 ${v.c},${v.r}`);
+}
+
+// --- 9) 端到端:租客最終一定穿得過被掃地機占住的門口 ---
+{
+  // 迷你租客模擬,複製 agents.ts 的規則:下一格是掃地機就停在原地等,不繞路。
+  // 若掃地機不會主動讓開,這個租客就會永遠走不完 → 直接暴露「永久卡住」的 bug。
+  const v = vacAt(6, 19); // 303 房 → 走廊的門口
+  const tenant = {
+    c: 4,
+    r: 19,
+    hidden: false,
+    moving: true,
+    path: [{ c: 5, r: 19 }, { c: 6, r: 19 }, { c: 7, r: 19 }, { c: 8, r: 19 }],
+  };
+  let stall = 0;
+  let maxStall = 0;
+  for (let i = 0; i < 400 && tenant.path.length > 0; i++) {
+    tickVacuumAgents([v], 0.2, [tenant]);
+    const nxt = tenant.path[0];
+    if (!nxt) break;
+    if (v.c === nxt.c && v.r === nxt.r) {
+      stall++;
+      if (stall > maxStall) maxStall = stall;
+    } else {
+      stall = 0;
+      tenant.c = nxt.c;
+      tenant.r = nxt.r;
+      tenant.path.shift();
+    }
+  }
+  check("租客最終穿過被占住的門口(不會永久卡住)", tenant.path.length === 0, `還剩 ${tenant.path.length} 步`);
+  check("等待掃地機的幀數有上限", maxStall < 40, `maxStall=${maxStall}`);
 }
 
 console.log(`\n結果:${pass} 通過 / ${fail} 失敗`);

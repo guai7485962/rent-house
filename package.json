@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "npm run typecheck:app && npm run typecheck:worker",
+    "typecheck:app": "vue-tsc --noEmit",
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "test": "tsx scripts/run-all.ts"
   },
   "dependencies": {
@@ -15,6 +17,7 @@
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260724.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "tsx": "^4.23.0",
     "typescript": "~5.7.2",

@@ -1,0 +1,20 @@
+{
+  // Worker 專用型別檢查(前端用根目錄 tsconfig.json,兩者刻意分開)。
+  // Cloudflare Workers runtime 既不是 DOM 也不是 Node:
+  //   - lib 不含 DOM/DOM.Iterable,避免誤用瀏覽器 API 卻型別過關
+  //   - Request/Response/URL/fetch/crypto 等全域來自 @cloudflare/workers-types
+  //   - strict 保持開啟,與前端一致
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["worker/**/*.ts"]
+}

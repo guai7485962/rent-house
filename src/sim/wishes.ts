@@ -411,14 +411,22 @@ export function wishIdForOccupation(occupation: string): WishId {
 export function ensureWishes() {
   for (const rt of Object.values(state.runtimes)) {
     if (rt.wish && !WISH_DEFS[rt.wish.id]) rt.wish = null;
-    if (rt.wish) continue;
-    rt.wish = {
-      id: wishIdForOccupation(rt.tenant.occupation),
-      progress: 0,
-      fulfilledDay: -99,
-      graduateDay: -99,
-      announced: false,
-    };
+    if (!rt.wish) {
+      rt.wish = {
+        id: wishIdForOccupation(rt.tenant.occupation),
+        progress: 0,
+        fulfilledDay: -99,
+        graduateDay: -99,
+        announced: false,
+      };
+    }
+    // 2026-07-23 前已圓夢的安居型模範房客沒有 modelSinceDay。除了 load() 的舊檔補值，
+    // 也在 runtime 入口做一次性修復，涵蓋長時間未重載分頁／HMR 保留下來的記憶體狀態。
+    // 必須落成固定數字，不能讓 settleDepartDay 每次拿「今天」當 fallback，否則倒數永遠是 20。
+    const def = WISH_DEFS[rt.wish.id] as WishDef;
+    if (rt.modelTenant === true && !def.graduates && !Number.isFinite(rt.modelSinceDay)) {
+      rt.modelSinceDay = gameDayIndex();
+    }
   }
 }
 

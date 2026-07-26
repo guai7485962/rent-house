@@ -35,6 +35,7 @@ const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await impo
 const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { REP_GRADUATE, REP_SETTLE, REP_SETTLE_GRADUATE } = await import("../src/sim/reputation");
+const { hourlyTick } = await import("../src/sim/tick");
 
 let pass = 0;
 let fail = 0;
@@ -654,6 +655,22 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   check("舊存檔缺 modelSinceDay 但仍是模範 → 補為當前遊戲日",
     state.runtimes["t_since"].modelTenant === true && state.runtimes["t_since"].modelSinceDay === day(),
     `modelSinceDay=${state.runtimes["t_since"].modelSinceDay}`);
+  const persistedRepair = JSON.parse(mem[SAVE_KEY]).runtimes["t_since"].modelSinceDay;
+  check("舊存檔補出 modelSinceDay 後立即回存(短暫開啟也不會下次重設 20 天)",
+    persistedRepair === day(), `persisted=${persistedRepair}`);
+
+  // 長時間未重載分頁/HMR 可能留下 modelTenant=true、modelSinceDay 缺失的 runtime。
+  const repaired = state.runtimes["t_since"];
+  delete repaired.modelSinceDay;
+  wishes.ensureWishes();
+  const repairedAt = repaired.modelSinceDay;
+  check("記憶體中的舊模範房客缺 modelSinceDay → ensureWishes 一次性補固定起點",
+    repairedAt === day(), `modelSinceDay=${repairedAt}`);
+  state.gameMs += 24 * 3600 * 1000;
+  check("補值後倒數會單調下降 20 → 19,不再每天重設 20",
+    wishes.wishResult(repaired)?.daysLeft === wishes.SETTLE_TENURE_DAYS - 1,
+    `daysLeft=${wishes.wishResult(repaired)?.daysLeft}`);
+  state.gameMs -= 24 * 3600 * 1000;
 }
 
 // --- 27. 安居期滿 → 圓滿搬離(前 2 天預告 + 儀式 + 口碑 + 名冊安居告別信 + 紀念物) ---
@@ -745,6 +762,52 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   if (g) graduateFarewell(g.id, g.reason);
   check("主動送別搬離後 runtime 移除、貓留成樓貓",
     !state.runtimes["t_proactive"] && state.pets["t_proactive"]?.ownerId === HOUSE_CAT_OWNER);
+  state.gameMs = GAME_START.getTime();
+}
+
+// --- 29. 真正走 hourlyTick 跨 20 個換日:第 19 天仍在、第 20 天自動圓滿搬離 ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+  const seed = JSON.parse(JSON.stringify(tenants[0]));
+  seed.id = "t_tick_settle"; seed.name = "二十日安居"; seed.occupation = "後端工程師";
+  const rt = makeRuntime(seed, "303", 100, []);
+  state.runtimes[seed.id] = rt;
+  state.occupancy["r303"] = seed.id;
+  state.activeId = seed.id;
+  // 正式每日 pass 在本地午夜執行；測試從開局後第一個午夜起跑，精確驗證 20×24h。
+  state.gameMs = GAME_START.getTime() + 2 * 3600 * 1000;
+  wishes.ensureWishes();
+  rt.wish!.progress = 100;
+  rt.wish!.fulfilledDay = day();
+  rt.modelTenant = true;
+  rt.modelSinceDay = day();
+  rt.tenant.finance.monthlyRent = 12000;
+  rt.wallet = 1_000_000;
+  good(rt);
+
+  // 每小時重設舒適狀態，只隔離「居住品質退租」等旁支；時間與每日 wishPass 仍走正式 hourlyTick。
+  for (let h = 0; h < (wishes.SETTLE_TENURE_DAYS - 1) * 24; h++) {
+    good(rt);
+    rt.satisfaction = 100;
+    rt.unhappyHours = 0;
+    hourlyTick(false);
+  }
+  check("hourlyTick 實跑第 19 天:模範房客仍在且倒數為 1",
+    !!state.runtimes[seed.id] && wishes.wishResult(rt)?.daysLeft === 1,
+    `day=${day()}, daysLeft=${wishes.wishResult(rt)?.daysLeft}`);
+
+  for (let h = 0; h < 24 && state.runtimes[seed.id]; h++) {
+    good(rt);
+    rt.satisfaction = 100;
+    rt.unhappyHours = 0;
+    hourlyTick(false);
+  }
+  check("hourlyTick 實跑第 20 天:自動移除 runtime/occupancy 並記入安居圓滿名冊",
+    !state.runtimes[seed.id]
+      && !Object.values(state.occupancy).includes(seed.id)
+      && state.alumni.some((a) => a.debugSnapshot?.tenantId === seed.id && a.reason.includes("安居圓滿搬離")),
+    `day=${day()}, since=${rt.modelSinceDay}, left=${wishes.wishResult(rt)?.daysLeft}, announced=${rt.wish?.announced}, runtime=${!!state.runtimes[seed.id]}, occupied=${Object.values(state.occupancy).includes(seed.id)}, alumni=${state.alumni.find((a) => a.debugSnapshot?.tenantId === seed.id)?.reason ?? "none"}`);
   state.gameMs = GAME_START.getTime();
 }
 

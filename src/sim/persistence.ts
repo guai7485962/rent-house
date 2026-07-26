@@ -148,6 +148,7 @@ export function load(): boolean {
     if (!raw) return false;
     const s = migrateSave(JSON.parse(raw));
     if (!s) return false;
+    let repairedModelSinceDay = false;
     state.realAnchorMs = s.realAnchorMs;
     state.gameAnchorMs = s.gameAnchorMs;
     state.gameMs = s.gameMs;
@@ -219,6 +220,9 @@ export function load(): boolean {
     for (const [id, saved] of Object.entries<any>(s.runtimes)) {
       const loadedTenant = saved.tenant as Tenant;
       loadedTenant.growthTags = sanitizeGrowthTags(loadedTenant.growthTags);
+      const needsModelSinceDayRepair =
+        saved.modelTenant === true && !Number.isFinite(saved.modelSinceDay);
+      if (needsModelSinceDayRepair) repairedModelSinceDay = true;
       state.runtimes[id] = reactive({
         tenant: loadedTenant,
         roomNo: saved.roomNo,
@@ -253,9 +257,9 @@ export function load(): boolean {
         wish: saved.wish ?? null, // 舊檔沒有 → ensureWishes 依職業指派
         modelTenant: saved.modelTenant === true, // 舊檔沒有 → 不是模範房客
         // 安居期起點:舊檔已是模範但缺此欄位 → 補當前遊戲日(給滿安居期,不立刻踢走既有模範房客)
-        modelSinceDay: typeof saved.modelSinceDay === "number"
+        modelSinceDay: Number.isFinite(saved.modelSinceDay)
           ? saved.modelSinceDay
-          : (saved.modelTenant === true ? gameDayIndex() : undefined),
+          : (needsModelSinceDayRepair ? gameDayIndex() : undefined),
         lastCareDay: saved.lastCareDay ?? -99,
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],
@@ -295,6 +299,9 @@ export function load(): boolean {
     ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
     ensureWishes(); // 舊檔沒有人生心願 → 依職業指派
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
+    // 舊模範房客的安居起點若只補在記憶體、玩家未停留滿一個遊戲小時就關閉，
+    // syncToNow() 不會存檔，下次載入便又以「今天」重設成 20 天。補值當下立即持久化。
+    if (repairedModelSinceDay) save();
     return true;
   } catch {
     return false;

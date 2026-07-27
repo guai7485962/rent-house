@@ -127,7 +127,9 @@ export function graduateFarewell(tenantId: string, reason: string) {
   if (!rt) return;
   const w = rt.wish;
   const def = w ? (WISH_DEFS[w.id] as WishDef | undefined) : undefined;
-  const isSettle = rt.modelTenant === true && !!def && !def.graduates; // 安居型圓滿搬離
+  // 以「已完成的安居型心願」作 canonical 判定；最早期舊檔可能缺 modelTenant，
+  // 不能因此誤走畢業型口碑／graduateCount／紅包文案。
+  const isSettle = !!w && w.fulfilledDay !== -99 && !!def && !def.graduates;
   farewellSendoff(rt); // 送別會/獨白:離開者仍在名單時演出(結算之前)
   placeMemorial(rt); // 紀念物留在原房間(occupancy 尚未清除,綁房間不綁租客)
   const name = rt.tenant.name;

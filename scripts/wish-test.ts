@@ -906,5 +906,90 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   state.gameMs = GAME_START.getTime();
 }
 
+// --- 31. 最早期舊檔：安居心願已完成但沒有 modelTenant，UI=0 與離場資格不可再分裂 ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+
+  const settledSeed = JSON.parse(JSON.stringify(tenants[0]));
+  settledSeed.id = "t_legacy_settled"; settledSeed.name = "舊檔安居"; settledSeed.occupation = "後端工程師";
+  const settledRt = makeRuntime(settledSeed, "303", 80, []);
+  state.runtimes[settledSeed.id] = settledRt;
+  state.occupancy["r303"] = settledSeed.id;
+
+  const graduateSeed = JSON.parse(JSON.stringify(tenants[1]));
+  graduateSeed.id = "t_legacy_graduate"; graduateSeed.name = "舊檔畢業"; graduateSeed.occupation = "ASMR 實況主";
+  const graduateRt = makeRuntime(graduateSeed, "304", 80, []);
+  state.runtimes[graduateSeed.id] = graduateRt;
+  state.occupancy["r304"] = graduateSeed.id;
+
+  const unfinishedSeed = JSON.parse(JSON.stringify(tenants[0]));
+  unfinishedSeed.id = "t_legacy_unfinished"; unfinishedSeed.name = "舊檔未完成"; unfinishedSeed.occupation = "後端工程師";
+  const unfinishedRt = makeRuntime(unfinishedSeed, "302", 80, []);
+  state.runtimes[unfinishedSeed.id] = unfinishedRt;
+
+  state.gameMs = GAME_START.getTime() + 10 * 24 * 3600 * 1000 + 2 * 3600 * 1000;
+  state.realAnchorMs = Date.now();
+  state.gameAnchorMs = state.gameMs;
+  wishes.ensureWishes();
+  settledRt.wish!.progress = 100;
+  settledRt.wish!.fulfilledDay = 0;
+  settledRt.modelTenant = true;
+  settledRt.modelSinceCalendarDay = 1;
+  graduateRt.wish!.progress = 100;
+  graduateRt.wish!.fulfilledDay = 0;
+  graduateRt.wish!.graduateDay = day() + 6;
+  unfinishedRt.wish!.progress = 40;
+  unfinishedRt.wish!.fulfilledDay = -99;
+  const rentBeforeRepair = settledRt.tenant.finance.monthlyRent;
+  const repBeforeRepair = state.reputation;
+  const logBeforeRepair = settledRt.log.length;
+  save();
+
+  const legacySave = JSON.parse(mem[SAVE_KEY]);
+  legacySave.v = 3;
+  for (const id of [settledSeed.id, graduateSeed.id, unfinishedSeed.id]) {
+    delete legacySave.runtimes[id].modelTenant;
+    delete legacySave.runtimes[id].modelSinceCalendarDay;
+  }
+  mem[SAVE_KEY] = JSON.stringify(legacySave);
+  load();
+
+  const repairedSettled = state.runtimes[settledSeed.id];
+  check("舊檔完成安居心願但缺 modelTenant → 還原為模範房客與有效剩餘天數",
+    repairedSettled.modelTenant === true
+      && Number.isFinite(repairedSettled.modelSinceCalendarDay)
+      && (wishes.wishResult(repairedSettled)?.daysLeft ?? 0) > 0);
+  check("舊檔修復只補狀態，不重發 +3% 租金／口碑／日誌獎勵",
+    repairedSettled.tenant.finance.monthlyRent === rentBeforeRepair
+      && state.reputation === repBeforeRepair
+      && repairedSettled.log.length === logBeforeRepair);
+  check("未完成安居心願與已完成畢業型心願不會誤補 modelTenant",
+    state.runtimes[unfinishedSeed.id].modelTenant === false
+      && state.runtimes[graduateSeed.id].modelTenant === false);
+  check("舊檔 modelTenant 修復後立即持久化",
+    JSON.parse(mem[SAVE_KEY]).runtimes[settledSeed.id].modelTenant === true);
+
+  // 同一份舊資料若載入時已超過 20 天，initGame 即使無補時數也必須直接搬離。
+  const expiredLegacySave = JSON.parse(JSON.stringify(legacySave));
+  expiredLegacySave.gameMs = GAME_START.getTime() + 25 * 24 * 3600 * 1000 + 7 * 3600 * 1000;
+  expiredLegacySave.gameAnchorMs = expiredLegacySave.gameMs;
+  expiredLegacySave.realAnchorMs = Date.now();
+  const expiredRepBefore = expiredLegacySave.reputation;
+  const expiredGraduateCountBefore = expiredLegacySave.graduateCount;
+  mem[SAVE_KEY] = JSON.stringify(expiredLegacySave);
+  initGame();
+  check("最早期舊檔 UI 本會顯示 0 天 → 載入後直接移除並進安居圓滿名冊",
+    !state.runtimes[settledSeed.id]
+      && !Object.values(state.occupancy).includes(settledSeed.id)
+      && state.alumni.some((a) => a.debugSnapshot?.tenantId === settledSeed.id && a.reason.includes("安居圓滿搬離")));
+  check("最早期舊檔到期仍走安居結算，不誤增畢業人數／畢業型獎勵",
+    state.reputation === expiredRepBefore + REP_SETTLE_GRADUATE
+      && state.graduateCount === expiredGraduateCountBefore
+      && state.ledger.some((txn) => txn.label.includes("舊檔安居 圓滿謝禮紅包")));
+
+  state.gameMs = GAME_START.getTime();
+}
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

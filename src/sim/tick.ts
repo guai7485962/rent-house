@@ -36,7 +36,7 @@ import { moveOut, graduateFarewell, endCohabitOnBreakup } from "./tenancy";
 import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
-import { settleDeparturesDue, wishPass } from "./wishes";
+import { ensureWishes, settleDeparturesDue, wishPass } from "./wishes";
 import { communityPass } from "./community";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
@@ -469,6 +469,9 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
 export function hourlyTick(live = false) {
   const prevDay = new Date(state.gameMs).getDate();
   state.gameMs += MS_PER_GAME_HOUR;
+  // 到期搬離是逐時不變條件，不再只依賴午夜的每日 pass。
+  // 長時間開頁、分頁恢復或舊檔若已顯示 0 天，下一個遊戲小時必定完成離場。
+  reconcileDueSettleDepartures();
   const d = new Date(state.gameMs);
   const hour = d.getHours();
   const day = gameDayIndex();
@@ -686,6 +689,9 @@ function socialPass(skip: Set<string> = new Set()) {
 
 /** 對齊到現在(補進度)。回傳實際補了幾小時 */
 export function syncToNow(): number {
+  // 即使沒有任何整小時需要補，也要修正已經卡在 0 天的房客。
+  // initGame、每 5 秒前景同步與分頁 resume 都會經過這裡。
+  reconcileDueSettleDepartures();
   const target = currentGameMs(state.realAnchorMs, state.gameAnchorMs);
   let need = Math.floor((target - state.gameMs) / MS_PER_GAME_HOUR);
   if (need <= 0) return 0;
@@ -708,8 +714,11 @@ export function syncToNow(): number {
  * 避免重載頁面時額外推進其他心願或重複套用每日模範光環。
  */
 export function reconcileDueSettleDepartures(): number {
+  const repaired = ensureWishes();
   const due = settleDeparturesDue();
   for (const departure of due) graduateFarewell(departure.id, departure.reason);
+  // 到期者的 moveOut 會自行存檔；只有修復了尚未到期的歷史狀態時需在此立即回存。
+  if (repaired && due.length === 0) save();
   return due.length;
 }
 

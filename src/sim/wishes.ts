@@ -449,7 +449,15 @@ export function ensureWishes(): boolean {
     // 舊模範房客只有以 22:00 換日的 modelSinceDay，或上一版曾把缺值補成載入當天。
     // 從心願完成日還原午夜制起點，並在 runtime 入口自癒長時間未重載/HMR 的記憶體狀態。
     const def = WISH_DEFS[rt.wish.id] as WishDef;
-    if (rt.modelTenant === true && !def.graduates) {
+    const completedSettleWish = rt.wish.fulfilledDay !== -99 && !def.graduates;
+    // 最早期的安居心願版本只有 fulfilledDay，尚未把 modelTenant 寫入存檔。
+    // 已完成安居型心願在合法流程中必定是模範房客；只補狀態，不重跑 becomeModelTenant，
+    // 避免再次加租、加口碑、發成就或慶祝通知。
+    if (completedSettleWish && rt.modelTenant !== true) {
+      rt.modelTenant = true;
+      repaired = true;
+    }
+    if (completedSettleWish) {
       const inferred = inferredModelCalendarDay(rt);
       if (!Number.isFinite(rt.modelSinceCalendarDay) || rt.modelSinceCalendarDay! > inferred) {
         rt.modelSinceCalendarDay = inferred;
@@ -565,14 +573,12 @@ export function boostWishFromArc(rt: TenantRuntime, tone?: string | null) {
  * 啟動讀檔時用它立即補做舊存檔的到期離場，避免 daysLeft=0 還卡到下一個午夜。
  */
 export function settleDeparturesDue(): { id: string; reason: string }[] {
-  const calendarDay = calendarGameDayIndex();
   const due: { id: string; reason: string }[] = [];
   for (const rt of Object.values(state.runtimes)) {
-    const w = rt.wish;
-    if (!w || w.fulfilledDay === -99 || !rt.modelTenant) continue;
-    const def = WISH_DEFS[w.id] as WishDef | undefined;
-    if (!def || def.graduates) continue;
-    if (calendarDay >= settleDepartDay(rt)) {
+    // 與 UI 共用同一個結果來源：畫面只要顯示安居「剩 0 天」，
+    // 這裡就必須無條件列入到期名單，不能再有第二套資格條件造成分歧。
+    const result = wishResult(rt);
+    if (result?.phase === "stayed" && result.daysLeft === 0) {
       due.push({ id: rt.tenant.id, reason: settleDepartReason(rt.tenant.id) });
     }
   }

@@ -4,7 +4,7 @@
  */
 import { state, fmt } from "./gameState";
 import { load, save } from "./persistence";
-import { syncToNow, applyHour, hourlyTick, reconcileDueSettleDepartures } from "./tick";
+import { syncToNow, applyHour, hourlyTick } from "./tick";
 import { grantStarterBonus } from "./economy";
 
 let timer: number | undefined;
@@ -23,9 +23,6 @@ export function initGame() {
     for (const rt of Object.values(state.runtimes)) applyHour(rt, hour, false);
     save();
   }
-  // 舊存檔的真正完成日還原後可能已超過 20 天；讀檔當下就應完成離場，
-  // 不能讓畫面停在「剩 0 天」直到下一個遊戲午夜。
-  if (loaded) reconcileDueSettleDepartures();
   syncToNow();
   grantStarterBonus(); // 開辦補助金:每個存檔一次(現有存檔下次載入也補到)
   // 用最新的可站立點邏輯重新定位當前活動(修正舊存檔可能殘留的牆上目標)

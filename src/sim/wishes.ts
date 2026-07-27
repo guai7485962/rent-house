@@ -413,8 +413,8 @@ export function wishResult(rt: TenantRuntime): WishResult | null {
     headline: "🏠 安居中(模範房客)",
     verdictTag: "🏠 安居後圓滿搬離",
     verdict: daysLeft > 0
-      ? `安居中,將於 ${daysLeft} 天後圓滿展開人生下一步`
-      : "安居圓滿,即將展開人生下一步",
+      ? `安居倒數:剩 ${daysLeft} 天,之後圓滿展開人生下一步`
+      : "安居倒數:剩 0 天,今日結算後展開人生下一步",
     lines: [
       "他把這裡住成了家,正享受一段安穩的安居時光,自願多付 3% 月租、帶動全樓每天心情微升。",
       "安居期滿後會帶著這裡的溫暖圓滿搬離,前往人生下一步(成家/外派/買房),釋出房間。",
@@ -558,6 +558,25 @@ function maybeAttachCatFarewell(rt: TenantRuntime) {
 export function boostWishFromArc(rt: TenantRuntime, tone?: string | null) {
   if (tone === "down") return;
   advanceWish(rt, 6);
+}
+
+/**
+ * 只收集「安居期已到期」的模範房客，不推進其他心願、也不套每日光環。
+ * 啟動讀檔時用它立即補做舊存檔的到期離場，避免 daysLeft=0 還卡到下一個午夜。
+ */
+export function settleDeparturesDue(): { id: string; reason: string }[] {
+  const calendarDay = calendarGameDayIndex();
+  const due: { id: string; reason: string }[] = [];
+  for (const rt of Object.values(state.runtimes)) {
+    const w = rt.wish;
+    if (!w || w.fulfilledDay === -99 || !rt.modelTenant) continue;
+    const def = WISH_DEFS[w.id] as WishDef | undefined;
+    if (!def || def.graduates) continue;
+    if (calendarDay >= settleDepartDay(rt)) {
+      due.push({ id: rt.tenant.id, reason: settleDepartReason(rt.tenant.id) });
+    }
+  }
+  return due;
 }
 
 /** 每日心願推進(tick 換日呼叫)。回傳今天該「圓夢離開」的名單,

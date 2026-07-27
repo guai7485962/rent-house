@@ -36,7 +36,7 @@ import { moveOut, graduateFarewell, endCohabitOnBreakup } from "./tenancy";
 import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
-import { wishPass } from "./wishes";
+import { settleDeparturesDue, wishPass } from "./wishes";
 import { communityPass } from "./community";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
@@ -701,6 +701,16 @@ export function syncToNow(): number {
   }
   save();
   return need;
+}
+
+/**
+ * 讀檔後立即補做已到期的安居離場；刻意不呼叫完整 wishPass，
+ * 避免重載頁面時額外推進其他心願或重複套用每日模範光環。
+ */
+export function reconcileDueSettleDepartures(): number {
+  const due = settleDeparturesDue();
+  for (const departure of due) graduateFarewell(departure.id, departure.reason);
+  return due.length;
 }
 
 /** 除錯:一鍵快轉 N 遊戲小時(手動快轉視為 live,跨過午夜會觸發 AI 日記)。

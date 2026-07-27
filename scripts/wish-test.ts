@@ -35,7 +35,8 @@ const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await impo
 const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { REP_GRADUATE, REP_SETTLE, REP_SETTLE_GRADUATE } = await import("../src/sim/reputation");
-const { hourlyTick } = await import("../src/sim/tick");
+const { hourlyTick, reconcileDueSettleDepartures } = await import("../src/sim/tick");
+const { initGame } = await import("../src/sim/lifecycle");
 
 let pass = 0;
 let fail = 0;
@@ -604,8 +605,8 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   const expectLeft = wishes.SETTLE_TENURE_DAYS - 5;
   check("stayed:phase=stayed、leaves=true、daysLeft = 安居期 - 已住天數",
     st.phase === "stayed" && st.leaves === true && st.daysLeft === expectLeft, `daysLeft=${st.daysLeft}`);
-  check("stayed verdict 明說『N 天後圓滿展開人生下一步』且 tag 為安居後圓滿搬離",
-    st.verdict.includes(`${expectLeft} 天後`) && st.verdict.includes("圓滿") && st.verdictTag.includes("圓滿搬離"));
+  check("stayed verdict 明說『剩 N 天』且 tag 為安居後圓滿搬離",
+    st.verdict.includes(`剩 ${expectLeft} 天`) && st.verdict.includes("圓滿") && st.verdictTag.includes("圓滿搬離"));
   check("stayed 走向含 3% 月租 / 圓滿搬離 / 釋出房間(不再說不會離開)",
     st.lines.join("").includes("3% 月租") && st.lines.join("").includes("圓滿搬離")
       && st.lines.join("").includes("釋出房間") && !st.lines.join("").includes("不會離開"));
@@ -613,8 +614,8 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   // stayed 邊角:安居期已滿(modelSinceCalendarDay 很早)→ daysLeft=0、即將搬離
   rtS.modelSinceCalendarDay = calendarDay() - wishes.SETTLE_TENURE_DAYS;
   const st0 = wishResult(rtS)!;
-  check("stayed 邊角:安居期滿 daysLeft=0 顯示『即將展開人生下一步』",
-    st0.daysLeft === 0 && st0.verdict.includes("即將"));
+  check("stayed 邊角:安居期滿 daysLeft=0 仍明示『剩 0 天／今日結算』",
+    st0.daysLeft === 0 && st0.verdict.includes("剩 0 天") && st0.verdict.includes("今日結算"));
 
   // 種類判斷:graduates 欄位對應 def.graduates(畢業 true / 安居 false),決定 UI 顏色
   check("graduates 欄位由 def.graduates 決定(畢業 true / 安居 false)",
@@ -835,6 +836,73 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
       && !Object.values(state.occupancy).includes(seed.id)
       && state.alumni.some((a) => a.debugSnapshot?.tenantId === seed.id && a.reason.includes("安居圓滿搬離")),
     `day=${day()}, calendarDay=${calendarDay()}, since=${rt.modelSinceCalendarDay}, left=${wishes.wishResult(rt)?.daysLeft}, announced=${rt.wish?.announced}, runtime=${!!state.runtimes[seed.id]}, occupied=${Object.values(state.occupancy).includes(seed.id)}, alumni=${state.alumni.find((a) => a.debugSnapshot?.tenantId === seed.id)?.reason ?? "none"}`);
+  state.gameMs = GAME_START.getTime();
+}
+
+// --- 30. 讀檔後才發現已到期:05:00 立即補做離場，不卡在 0 天等下一個午夜 ---
+{
+  for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
+  for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
+
+  const dueSeed = JSON.parse(JSON.stringify(tenants[0]));
+  dueSeed.id = "t_load_due"; dueSeed.name = "讀檔到期"; dueSeed.occupation = "後端工程師";
+  const dueRt = makeRuntime(dueSeed, "303", 80, []);
+  state.runtimes[dueSeed.id] = dueRt;
+  state.occupancy["r303"] = dueSeed.id;
+  state.activeId = dueSeed.id;
+
+  const activeSeed = JSON.parse(JSON.stringify(tenants[1]));
+  activeSeed.id = "t_unfinished"; activeSeed.name = "未完成心願"; activeSeed.occupation = "ASMR 實況主";
+  const activeRt = makeRuntime(activeSeed, "304", 80, []);
+  state.runtimes[activeSeed.id] = activeRt;
+  state.occupancy["r304"] = activeSeed.id;
+
+  // 任意日 05:00：模擬載入後 ensureWishes 才還原出「20 天前已完成」。
+  state.gameMs = GAME_START.getTime() + 30 * 24 * 3600 * 1000 + 7 * 3600 * 1000;
+  wishes.ensureWishes();
+  dueRt.wish!.progress = 100;
+  dueRt.wish!.fulfilledDay = day() - wishes.SETTLE_TENURE_DAYS;
+  dueRt.modelTenant = true;
+  dueRt.modelSinceCalendarDay = calendarDay() - wishes.SETTLE_TENURE_DAYS;
+  dueRt.tenant.finance.monthlyRent = 12000;
+  activeRt.wish!.progress = 37;
+  const unfinishedProgress = activeRt.wish!.progress;
+  const unfinishedMood = activeRt.tenant.stats.mood;
+  const alumniBefore = state.alumni.length;
+
+  check("讀檔到期前 UI 明示剩 0 天",
+    wishes.wishResult(dueRt)?.daysLeft === 0 && wishes.wishResult(dueRt)?.verdict.includes("剩 0 天"));
+  check("只讀到期名單不推進其他心願",
+    wishes.settleDeparturesDue().some((x) => x.id === dueSeed.id)
+      && activeRt.wish!.progress === unfinishedProgress
+      && activeRt.tenant.stats.mood === unfinishedMood);
+
+  // 錨點對齊現在，確保 initGame 的 syncToNow() 沒有任何整小時可補；
+  // 搬離必須來自讀檔後的立即 reconcile，而不是剛好跨午夜。
+  state.realAnchorMs = Date.now();
+  state.gameAnchorMs = state.gameMs;
+  save();
+  initGame();
+  check("05:00 讀檔即過期 → 立即移除 runtime/occupancy 並寫入安居名冊",
+    !state.runtimes[dueSeed.id]
+      && !Object.values(state.occupancy).includes(dueSeed.id)
+      && state.alumni.length === alumniBefore + 1
+      && state.alumni.some((a) => a.debugSnapshot?.tenantId === dueSeed.id && a.reason.includes("安居圓滿搬離")));
+  const loadedActiveRt = state.runtimes[activeSeed.id];
+  check("立即補結算不推進未完成心願；心情只套正式歡送會 +4，沒有額外模範光環",
+    loadedActiveRt.wish!.progress === unfinishedProgress
+      && loadedActiveRt.tenant.stats.mood === Math.min(100, unfinishedMood + 4));
+
+  const alumniAfter = state.alumni.length;
+  const ledgerAfter = state.ledger.length;
+  const moneyAfter = state.money;
+  check("到期補結算冪等：再次呼叫不重複紅包／押金／名冊",
+    reconcileDueSettleDepartures() === 0
+      && state.alumni.length === alumniAfter
+      && state.ledger.length === ledgerAfter
+      && state.money === moneyAfter
+      && state.ledger.some((txn) => txn.label.includes("讀檔到期")));
+
   state.gameMs = GAME_START.getTime();
 }
 

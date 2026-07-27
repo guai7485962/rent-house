@@ -26,6 +26,7 @@ export {
   cohabitingPartnerId,
   canStartCohabit,
   gameDayIndex,
+  calendarGameDayIndex,
 } from "./sim/gameState";
 export type { Txn, TxnCategory, LogEntry, TenantRuntime } from "./sim/gameState";
 

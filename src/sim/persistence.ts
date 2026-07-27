@@ -24,7 +24,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -42,6 +42,8 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
     }
     return { ...s, v: 3 };
   },
+  // v3 → v4:安居倒數改以日曆午夜換日；實際起點由 ensureWishes 從心願完成日誌還原。
+  3: (s) => ({ ...s, v: 4 }),
 };
 
 /** 把任意版本的存檔升級到 SAVE_VERSION;不認得/升不上去回傳 null(視同壞檔) */
@@ -91,6 +93,7 @@ export function save() {
         wish: rt.wish,
         modelTenant: rt.modelTenant,
         modelSinceDay: rt.modelSinceDay,
+        modelSinceCalendarDay: rt.modelSinceCalendarDay,
         lastCareDay: rt.lastCareDay,
         arc: rt.arc,
         flags: rt.flags,
@@ -221,7 +224,7 @@ export function load(): boolean {
       const loadedTenant = saved.tenant as Tenant;
       loadedTenant.growthTags = sanitizeGrowthTags(loadedTenant.growthTags);
       const needsModelSinceDayRepair =
-        saved.modelTenant === true && !Number.isFinite(saved.modelSinceDay);
+        saved.modelTenant === true && !Number.isFinite(saved.modelSinceCalendarDay);
       if (needsModelSinceDayRepair) repairedModelSinceDay = true;
       state.runtimes[id] = reactive({
         tenant: loadedTenant,
@@ -256,10 +259,11 @@ export function load(): boolean {
         lastRentPleaDay: saved.lastRentPleaDay ?? -99,
         wish: saved.wish ?? null, // 舊檔沒有 → ensureWishes 依職業指派
         modelTenant: saved.modelTenant === true, // 舊檔沒有 → 不是模範房客
-        // 安居期起點:舊檔已是模範但缺此欄位 → 補當前遊戲日(給滿安居期,不立刻踢走既有模範房客)
-        modelSinceDay: Number.isFinite(saved.modelSinceDay)
-          ? saved.modelSinceDay
-          : (needsModelSinceDayRepair ? gameDayIndex() : undefined),
+        modelSinceDay: Number.isFinite(saved.modelSinceDay) ? saved.modelSinceDay : undefined,
+        // 午夜制安居起點缺失時先留空，ensureWishes 會從「心願成真」日誌／fulfilledDay 還原。
+        modelSinceCalendarDay: Number.isFinite(saved.modelSinceCalendarDay)
+          ? saved.modelSinceCalendarDay
+          : undefined,
         lastCareDay: saved.lastCareDay ?? -99,
         arc: saved.arc ?? null,
         flags: saved.flags ?? [],
@@ -297,10 +301,9 @@ export function load(): boolean {
       ...state.pendingDiaries.filter((job) => state.runtimes[job.tenantId]?.log.some((entry) => entry.diaryId === job.diaryId && entry.aiPending)),
     );
     ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
-    ensureWishes(); // 舊檔沒有人生心願 → 依職業指派
+    if (ensureWishes()) repairedModelSinceDay = true; // 同時修復舊安居起點與上一版錯補的「載入當天」
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
-    // 舊模範房客的安居起點若只補在記憶體、玩家未停留滿一個遊戲小時就關閉，
-    // syncToNow() 不會存檔，下次載入便又以「今天」重設成 20 天。補值當下立即持久化。
+    // 安居起點補值當下立即持久化，避免短暫開啟後關閉又重跑遷移。
     if (repairedModelSinceDay) save();
     return true;
   } catch {

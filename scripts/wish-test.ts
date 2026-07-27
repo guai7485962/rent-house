@@ -25,7 +25,7 @@ Math.random = () => {
 
 const { state, SAVE_KEY } = await import("../src/store");
 const wishes = await import("../src/sim/wishes");
-const { gameDayIndex, makeRuntime, tenants, GAME_START } = await import("../src/sim/gameState");
+const { gameDayIndex, calendarGameDayIndex, makeRuntime, tenants, GAME_START } = await import("../src/sim/gameState");
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { save, load } = await import("../src/sim/persistence");
 const { moveOut, graduateFarewell, decide, farewellSendoff, moveIn } = await import("../src/sim/tenancy");
@@ -47,6 +47,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 const chen = state.runtimes["tenant_chen_engineer"]; // 後端工程師 → career_step
 const lin = state.runtimes["tenant_lin_asmr"]; // ASMR 實況主 → finish_masterwork
 const day = () => gameDayIndex();
+const calendarDay = () => calendarGameDayIndex();
 
 // --- 1. 指派 ---
 check("種子租客開局即有心願(store 門面 ensureWishes)", !!chen.wish && !!lin.wish);
@@ -598,7 +599,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   // stayed · 安居型已圓夢成模範房客:安居中,安居期滿後圓滿搬離(顯示剩餘天數)
   const rtS = mk("t_s", "後端工程師", "304");
   rtS.wish!.progress = 100; rtS.wish!.fulfilledDay = today; rtS.modelTenant = true;
-  rtS.modelSinceDay = today - 5; // 安居第 5 天 → 剩 SETTLE_TENURE_DAYS-5 天
+  rtS.modelSinceCalendarDay = calendarDay() - 5; // 安居第 5 天 → 剩 SETTLE_TENURE_DAYS-5 天
   const st = wishResult(rtS)!;
   const expectLeft = wishes.SETTLE_TENURE_DAYS - 5;
   check("stayed:phase=stayed、leaves=true、daysLeft = 安居期 - 已住天數",
@@ -609,8 +610,8 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
     st.lines.join("").includes("3% 月租") && st.lines.join("").includes("圓滿搬離")
       && st.lines.join("").includes("釋出房間") && !st.lines.join("").includes("不會離開"));
 
-  // stayed 邊角:安居期已滿(modelSinceDay 很早)→ daysLeft=0、即將搬離
-  rtS.modelSinceDay = today - wishes.SETTLE_TENURE_DAYS;
+  // stayed 邊角:安居期已滿(modelSinceCalendarDay 很早)→ daysLeft=0、即將搬離
+  rtS.modelSinceCalendarDay = calendarDay() - wishes.SETTLE_TENURE_DAYS;
   const st0 = wishResult(rtS)!;
   check("stayed 邊角:安居期滿 daysLeft=0 顯示『即將展開人生下一步』",
     st0.daysLeft === 0 && st0.verdict.includes("即將"));
@@ -625,10 +626,10 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
 }
 
 // ============================================================
-// 安居型模範房客圓滿搬離(安居期滿離開 / modelSinceDay / 主動送別)
+// 安居型模範房客圓滿搬離(安居期滿離開 / 午夜制起點 / 主動送別)
 // ============================================================
 
-// --- 26. modelSinceDay:成為模範房客時記錄 + 存檔往返 + 舊存檔補值 ---
+// --- 26. 午夜制安居起點:完成時記錄 + 舊存檔從真正完成日還原 ---
 {
   for (const id of Object.keys(state.runtimes)) delete state.runtimes[id];
   for (const k of Object.keys(state.occupancy)) delete state.occupancy[k];
@@ -641,36 +642,58 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   good(rt);
   rt.wish!.progress = 98;
   wishes.wishPass(); // 實現 → becomeModelTenant
-  check("成為模範房客時記錄 modelSinceDay = 當前遊戲日",
-    rt.modelTenant === true && rt.modelSinceDay === day(), `modelSinceDay=${rt.modelSinceDay}`);
+  check("成為模範房客時記錄午夜制起點 = 當前日曆日",
+    rt.modelTenant === true && rt.modelSinceCalendarDay === calendarDay(),
+    `modelSinceCalendarDay=${rt.modelSinceCalendarDay}`);
 
   save();
   const s = JSON.parse(mem[SAVE_KEY]);
-  check("存檔含 modelSinceDay", s.runtimes["t_since"].modelSinceDay === day());
+  check("存檔含午夜制安居起點", s.runtimes["t_since"].modelSinceCalendarDay === calendarDay());
 
-  // 舊存檔:已是模範但缺 modelSinceDay → 載入時補為當前遊戲日(給滿安居期)
-  delete s.runtimes["t_since"].modelSinceDay;
+  // v3 舊存檔只有 22:00 制 modelSinceDay。即使五天後才升級，也要從心願完成日誌還原，
+  // 不能把「載入當天」當新起點，重新送滿 20 天。
+  const fulfilledCalendarDay = rt.modelSinceCalendarDay!;
+  s.v = 3;
+  delete s.runtimes["t_since"].modelSinceCalendarDay;
+  s.gameMs += 5 * 24 * 3600 * 1000;
   mem[SAVE_KEY] = JSON.stringify(s);
   load();
-  check("舊存檔缺 modelSinceDay 但仍是模範 → 補為當前遊戲日",
-    state.runtimes["t_since"].modelTenant === true && state.runtimes["t_since"].modelSinceDay === day(),
-    `modelSinceDay=${state.runtimes["t_since"].modelSinceDay}`);
-  const persistedRepair = JSON.parse(mem[SAVE_KEY]).runtimes["t_since"].modelSinceDay;
-  check("舊存檔補出 modelSinceDay 後立即回存(短暫開啟也不會下次重設 20 天)",
-    persistedRepair === day(), `persisted=${persistedRepair}`);
+  check("舊存檔從心願完成日還原起點，不以載入日重設 20 天",
+    state.runtimes["t_since"].modelTenant === true
+      && state.runtimes["t_since"].modelSinceCalendarDay === fulfilledCalendarDay
+      && wishes.wishResult(state.runtimes["t_since"])?.daysLeft === wishes.SETTLE_TENURE_DAYS - 5,
+    `modelSinceCalendarDay=${state.runtimes["t_since"].modelSinceCalendarDay}, daysLeft=${wishes.wishResult(state.runtimes["t_since"])?.daysLeft}`);
+  const persistedRepair = JSON.parse(mem[SAVE_KEY]).runtimes["t_since"].modelSinceCalendarDay;
+  check("舊存檔補出午夜制起點後立即回存", persistedRepair === fulfilledCalendarDay, `persisted=${persistedRepair}`);
 
-  // 長時間未重載分頁/HMR 可能留下 modelTenant=true、modelSinceDay 缺失的 runtime。
+  // 上一版已把錯誤的「載入當天」存成固定數字，也要用完成日誌自癒。
   const repaired = state.runtimes["t_since"];
-  delete repaired.modelSinceDay;
+  repaired.modelSinceCalendarDay = calendarDay();
   wishes.ensureWishes();
-  const repairedAt = repaired.modelSinceDay;
-  check("記憶體中的舊模範房客缺 modelSinceDay → ensureWishes 一次性補固定起點",
-    repairedAt === day(), `modelSinceDay=${repairedAt}`);
-  state.gameMs += 24 * 3600 * 1000;
-  check("補值後倒數會單調下降 20 → 19,不再每天重設 20",
+  check("上一版錯補的載入日起點會自癒回真正完成日",
+    repaired.modelSinceCalendarDay === fulfilledCalendarDay,
+    `modelSinceCalendarDay=${repaired.modelSinceCalendarDay}`);
+
+  // 頁首在午夜跨日，倒數也必須同時 20 → 19，不能等到 GAME_START 對齊的 22:00。
+  state.gameMs = GAME_START.getTime() + 60 * 60 * 1000; // 7/5 23:00
+  repaired.modelSinceCalendarDay = calendarDay();
+  check("午夜前安居倒數為 20", wishes.wishResult(repaired)?.daysLeft === wishes.SETTLE_TENURE_DAYS);
+  state.gameMs += 60 * 60 * 1000; // 7/6 00:00
+  check("頁首跨午夜時倒數同步 20 → 19",
     wishes.wishResult(repaired)?.daysLeft === wishes.SETTLE_TENURE_DAYS - 1,
-    `daysLeft=${wishes.wishResult(repaired)?.daysLeft}`);
-  state.gameMs -= 24 * 3600 * 1000;
+    `calendarDay=${calendarDay()}, daysLeft=${wishes.wishResult(repaired)?.daysLeft}`);
+
+  // 心願完成日誌若已被 LOG_CAP 裁掉，仍要用舊 fulfilledDay 推估當時的每日結算午夜。
+  state.gameMs = GAME_START.getTime() + 5 * 24 * 3600 * 1000 + 2 * 3600 * 1000;
+  repaired.log.splice(0, repaired.log.length);
+  repaired.wish!.fulfilledDay = 0;
+  delete repaired.modelSinceCalendarDay;
+  wishes.ensureWishes();
+  check("完成日誌被裁掉時，以 fulfilledDay 還原午夜制起點",
+    repaired.modelSinceCalendarDay === 1
+      && wishes.wishResult(repaired)?.daysLeft === wishes.SETTLE_TENURE_DAYS - 5,
+    `since=${repaired.modelSinceCalendarDay}, daysLeft=${wishes.wishResult(repaired)?.daysLeft}`);
+  state.gameMs = GAME_START.getTime();
 }
 
 // --- 27. 安居期滿 → 圓滿搬離(前 2 天預告 + 儀式 + 口碑 + 名冊安居告別信 + 紀念物) ---
@@ -686,7 +709,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   rt.tenant.stats.affinity = 60;
   wishes.ensureWishes();
   rt.wish!.progress = 100; rt.wish!.fulfilledDay = day(); rt.modelTenant = true;
-  rt.modelSinceDay = day() - (wishes.SETTLE_TENURE_DAYS - 2); // 安居只剩 2 天 → 進預告窗
+  rt.modelSinceCalendarDay = calendarDay() - (wishes.SETTLE_TENURE_DAYS - 2); // 安居只剩 2 天 → 進預告窗
 
   // 前 2 天:打包預告(只一次)
   wishes.wishPass();
@@ -696,7 +719,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   check("未到安居期滿 → 不在搬離名單", !before.some((g) => g.id === "t_settle"));
 
   // 到安居期滿:進圓滿搬離名單(離開原因是安居圓滿搬離之一)
-  rt.modelSinceDay = day() - wishes.SETTLE_TENURE_DAYS;
+  rt.modelSinceCalendarDay = calendarDay() - wishes.SETTLE_TENURE_DAYS;
   const grads = wishes.wishPass();
   const g = grads.find((x) => x.id === "t_settle");
   check("安居期滿 → 進圓滿搬離名單(原因為安居圓滿搬離)",
@@ -735,7 +758,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   state.occupancy["r303"] = "t_proactive";
   wishes.ensureWishes();
   rt.wish!.progress = 100; rt.wish!.fulfilledDay = day(); rt.modelTenant = true;
-  rt.modelSinceDay = day(); // 才剛安居,離自然到期還很久
+  rt.modelSinceCalendarDay = calendarDay(); // 才剛安居,離自然到期還很久
   adoptCat("t_proactive", { name: "教書", color: 1 });
 
   // 非模範房客不能用(先測一個非模範者)
@@ -748,6 +771,10 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
 
   const r1 = wishes.proactiveSettleFarewell("t_proactive");
   check("模範房客 → 主動送別成功並排定 2 天後搬離", r1.ok === true);
+  const proactiveStart = rt.modelSinceCalendarDay;
+  wishes.ensureWishes();
+  check("主動送別刻意提前的起點不會被自癒邏輯回改",
+    rt.modelSinceCalendarDay === proactiveStart, `since=${rt.modelSinceCalendarDay}`);
   check("主動送別:立即掛上貓去留抉擇",
     rt.pendingEvent?.id === "wish_pet_farewell" && rt.pendingEvent!.choices.length === 2);
   check("主動送別:重複點擊被拒(已在打包)", wishes.proactiveSettleFarewell("t_proactive").ok === false);
@@ -781,7 +808,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   rt.wish!.progress = 100;
   rt.wish!.fulfilledDay = day();
   rt.modelTenant = true;
-  rt.modelSinceDay = day();
+  rt.modelSinceCalendarDay = calendarDay();
   rt.tenant.finance.monthlyRent = 12000;
   rt.wallet = 1_000_000;
   good(rt);
@@ -807,7 +834,7 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
     !state.runtimes[seed.id]
       && !Object.values(state.occupancy).includes(seed.id)
       && state.alumni.some((a) => a.debugSnapshot?.tenantId === seed.id && a.reason.includes("安居圓滿搬離")),
-    `day=${day()}, since=${rt.modelSinceDay}, left=${wishes.wishResult(rt)?.daysLeft}, announced=${rt.wish?.announced}, runtime=${!!state.runtimes[seed.id]}, occupied=${Object.values(state.occupancy).includes(seed.id)}, alumni=${state.alumni.find((a) => a.debugSnapshot?.tenantId === seed.id)?.reason ?? "none"}`);
+    `day=${day()}, calendarDay=${calendarDay()}, since=${rt.modelSinceCalendarDay}, left=${wishes.wishResult(rt)?.daysLeft}, announced=${rt.wish?.announced}, runtime=${!!state.runtimes[seed.id]}, occupied=${Object.values(state.occupancy).includes(seed.id)}, alumni=${state.alumni.find((a) => a.debugSnapshot?.tenantId === seed.id)?.reason ?? "none"}`);
   state.gameMs = GAME_START.getTime();
 }
 

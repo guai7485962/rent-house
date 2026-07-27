@@ -107,8 +107,10 @@ export interface TenantRuntime {
   /** 🏠 模範房客:安居型心願實現後宣告長住(自願 +3% 租金、全樓每日 mood 微加成;入存檔) */
   modelTenant?: boolean;
   /** 成為模範房客的遊戲日(安居期計時起點;入存檔)。安居約 SETTLE_TENURE_DAYS 天後圓滿搬離。
-   *  舊存檔已是模範但缺此欄位 → 載入時補為當前遊戲日(給滿安居期,不立刻踢走既有模範房客)。 */
+   *  舊欄位以 GAME_START 的 22:00 為換日邊界；保留供舊存檔遷移。 */
   modelSinceDay?: number;
+  /** 成為模範房客的「日曆日」起點；與頁首日期、每日結算同樣在午夜換日。 */
+  modelSinceCalendarDay?: number;
   /** 上次收到房東心意的遊戲日(每人每日一次;kindness.ts) */
   lastCareDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
@@ -366,6 +368,14 @@ export const clockLabel = computed(() => {
 
 /** 單調遞增的遊戲日序號 */
 export const gameDayIndex = () => Math.floor((state.gameMs - GAME_START.getTime()) / (24 * 3600 * 1000));
+
+/** 依玩家本地日曆計算的遊戲日序號；在午夜換日，與頁首日期及每日結算一致。 */
+function localDateSerial(ms: number): number {
+  const d = new Date(ms);
+  return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / (24 * 3600 * 1000));
+}
+const GAME_START_DATE_SERIAL = localDateSerial(GAME_START.getTime());
+export const calendarGameDayIndex = (ms = state.gameMs) => localDateSerial(ms) - GAME_START_DATE_SERIAL;
 
 /** 某租客未讀日誌數(晚於 lastSeenMs) */
 export function unreadCount(tenantId: string): number {

@@ -17,6 +17,8 @@ import {
   state,
   clamp,
   gameDayIndex,
+  calendarGameDayIndex,
+  GAME_START,
   notify,
   pushMemory,
   pushSocialLog,
@@ -92,9 +94,32 @@ function settleFarewellText(id: string): string {
   return SETTLE_FAREWELL_TEXTS[settleIndex(id) % SETTLE_FAREWELL_TEXTS.length];
 }
 
-/** 模範房客的安居期滿搬離日(= 成為模範日 + 安居期);缺 modelSinceDay 時退回當前日(給滿安居期)。 */
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * 舊存檔沒有午夜制的安居起點時，優先從「心願成真」日誌還原真正完成日。
+ * 日誌若已因容量上限被裁掉，再用舊 fulfilledDay 推估其每日結算午夜。
+ */
+function inferredModelCalendarDay(rt: TenantRuntime): number {
+  for (let i = rt.log.length - 1; i >= 0; i--) {
+    const entry = rt.log[i];
+    if (entry.text.startsWith("🎉 心願成真:") && Number.isFinite(entry.gameMs)) {
+      return calendarGameDayIndex(entry.gameMs);
+    }
+  }
+  const fulfilledDay = rt.wish?.fulfilledDay;
+  if (Number.isFinite(fulfilledDay) && fulfilledDay! >= 0) {
+    const hoursToFirstMidnight = (24 - GAME_START.getHours()) % 24;
+    return calendarGameDayIndex(GAME_START.getTime() + fulfilledDay! * DAY_MS + hoursToFirstMidnight * 3600 * 1000);
+  }
+  return calendarGameDayIndex();
+}
+
+/** 模範房客的安居期滿搬離日(= 成為模範的日曆日 + 安居期)。 */
 export function settleDepartDay(rt: TenantRuntime): number {
-  const since = typeof rt.modelSinceDay === "number" ? rt.modelSinceDay : gameDayIndex();
+  const since = Number.isFinite(rt.modelSinceCalendarDay)
+    ? rt.modelSinceCalendarDay!
+    : inferredModelCalendarDay(rt);
   return since + SETTLE_TENURE_DAYS;
 }
 
@@ -379,7 +404,7 @@ export function wishResult(rt: TenantRuntime): WishResult | null {
   }
 
   // 已達成 · 安居型:成為模範房客安居中,安居期滿後圓滿搬離(顯示剩餘 N 天)
-  const daysLeft = Math.max(0, settleDepartDay(rt) - gameDayIndex());
+  const daysLeft = Math.max(0, settleDepartDay(rt) - calendarGameDayIndex());
   return {
     phase: "stayed",
     graduates: false,
@@ -408,7 +433,8 @@ export function wishIdForOccupation(occupation: string): WishId {
 
 /** 幫還沒有心願的租客指派(新入住/舊存檔載入都會補;冪等)。
  *  壞檔防線:心願 id 不在白名單 → 丟棄重新指派。 */
-export function ensureWishes() {
+export function ensureWishes(): boolean {
+  let repaired = false;
   for (const rt of Object.values(state.runtimes)) {
     if (rt.wish && !WISH_DEFS[rt.wish.id]) rt.wish = null;
     if (!rt.wish) {
@@ -420,14 +446,18 @@ export function ensureWishes() {
         announced: false,
       };
     }
-    // 2026-07-23 前已圓夢的安居型模範房客沒有 modelSinceDay。除了 load() 的舊檔補值，
-    // 也在 runtime 入口做一次性修復，涵蓋長時間未重載分頁／HMR 保留下來的記憶體狀態。
-    // 必須落成固定數字，不能讓 settleDepartDay 每次拿「今天」當 fallback，否則倒數永遠是 20。
+    // 舊模範房客只有以 22:00 換日的 modelSinceDay，或上一版曾把缺值補成載入當天。
+    // 從心願完成日還原午夜制起點，並在 runtime 入口自癒長時間未重載/HMR 的記憶體狀態。
     const def = WISH_DEFS[rt.wish.id] as WishDef;
-    if (rt.modelTenant === true && !def.graduates && !Number.isFinite(rt.modelSinceDay)) {
-      rt.modelSinceDay = gameDayIndex();
+    if (rt.modelTenant === true && !def.graduates) {
+      const inferred = inferredModelCalendarDay(rt);
+      if (!Number.isFinite(rt.modelSinceCalendarDay) || rt.modelSinceCalendarDay! > inferred) {
+        rt.modelSinceCalendarDay = inferred;
+        repaired = true;
+      }
     }
   }
+  return repaired;
 }
 
 /** 進度推進的共用入口(每日 pass 與劇情弧收束加成都走這裡):
@@ -487,7 +517,8 @@ function fulfillWish(rt: TenantRuntime, def: WishDef) {
 function becomeModelTenant(rt: TenantRuntime) {
   if (rt.modelTenant) return;
   rt.modelTenant = true;
-  rt.modelSinceDay = gameDayIndex(); // 安居期計時起點(SETTLE_TENURE_DAYS 天後圓滿搬離)
+  rt.modelSinceDay = gameDayIndex(); // 舊欄位保留相容既有存檔
+  rt.modelSinceCalendarDay = calendarGameDayIndex(); // 午夜制安居期起點
   const f = rt.tenant.finance;
   // 租金自願 +3%:只有承租人才有租可加(同居者本來就不付租)
   if (Object.values(state.occupancy).includes(rt.tenant.id)) {
@@ -544,6 +575,7 @@ export function wishPass(): { id: string; reason: string }[] {
     }
   }
   const day = gameDayIndex();
+  const calendarDay = calendarGameDayIndex();
   const graduates: { id: string; reason: string }[] = [];
   for (const rt of Object.values(state.runtimes)) {
     const w = rt.wish!;
@@ -556,13 +588,13 @@ export function wishPass(): { id: string; reason: string }[] {
     //    不寫進 w.graduateDay(那是畢業型專用;留 -99 讓房東主動送別鍵能判斷「尚未排定」)。
     if (rt.modelTenant && !def.graduates) {
       const departDay = settleDepartDay(rt);
-      if (!w.announced && day >= departDay - 2) {
+      if (!w.announced && calendarDay >= departDay - 2) {
         w.announced = true; // 前 2 天打包預告(比照畢業型)+ 掛貓去留抉擇
         pushSocialLog(rt, `📦 ${settleFarewellText(rt.tenant.id)}`, "major");
         maybeAttachCatFarewell(rt);
         notify(`🏠 ${rt.tenant.name} 安居圓滿,正準備搬離公寓,展開人生下一步…`);
       }
-      if (day >= departDay) graduates.push({ id: rt.tenant.id, reason: settleDepartReason(rt.tenant.id) });
+      if (calendarDay >= departDay) graduates.push({ id: rt.tenant.id, reason: settleDepartReason(rt.tenant.id) });
       continue;
     }
     if (w.graduateDay === -99) continue;
@@ -587,7 +619,8 @@ export function proactiveSettleFarewell(tenantId: string): { ok: boolean; text: 
   if (!w || w.fulfilledDay === -99) return { ok: false, text: "他還沒圓夢安居,先別急著送別" };
   if (w.announced) return { ok: false, text: "他已經在打包準備搬離了" };
   // 安居期提前到只剩 2 天(把成為模範日往前挪),讓 wishPass 的打包預告/搬離自然接手
-  rt.modelSinceDay = gameDayIndex() - SETTLE_TENURE_DAYS + 2;
+  rt.modelSinceDay = gameDayIndex() - SETTLE_TENURE_DAYS + 2; // 舊欄位同步
+  rt.modelSinceCalendarDay = calendarGameDayIndex() - SETTLE_TENURE_DAYS + 2;
   w.announced = true;
   pushSocialLog(rt, `🎓 你主動祝福 ${rt.tenant.name} 展開新生活。${settleFarewellText(rt.tenant.id)}`, "major");
   maybeAttachCatFarewell(rt);

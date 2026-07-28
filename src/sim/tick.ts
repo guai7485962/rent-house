@@ -39,6 +39,7 @@ import { legacyPass, unlock } from "./legacy";
 import { ensureWishes, settleDeparturesDue, wishPass } from "./wishes";
 import { communityPass } from "./community";
 import { floorChainPass } from "./floorChain";
+import { dreamPass } from "./dreams";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -512,6 +513,7 @@ export function hourlyTick(live = false) {
 
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
+  dreamPass(hour); // 夢境彩蛋:全員本小時 visualState 已定,睡著者每 3~4 遊戲日留一則夢(零 RNG、零數值)
   roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動
   pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)

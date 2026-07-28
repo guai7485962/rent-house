@@ -60,6 +60,7 @@ function weeklyHighlights(sinceMs: number): WeeklyHighlight[] {
   for (const rt of Object.values(state.runtimes)) {
     for (const entry of rt.log) {
       if (entry.gameMs <= sinceMs || entry.gameMs > state.gameMs || entry.importance === "minor" || entry.daily || entry.ai) continue;
+      if (/^💤/u.test(entry.text)) continue; // 夢境彩蛋是純風味,不該擠掉真實事件的週報名額
       candidates.push({
         gameMs: entry.gameMs,
         text: entry.decisionNote ?? entry.text,

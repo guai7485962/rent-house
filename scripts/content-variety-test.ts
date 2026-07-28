@@ -10,6 +10,7 @@ import {
   DAILY_TEMPLATES,
   OBSERVATION_LINES,
 } from "../src/content/observationLines";
+import * as DREAM_LINES from "../src/content/dreamLines";
 import { INTERACTIONS } from "../src/sim/interactions";
 import { templateDiary, type NarrateCtx } from "../src/sim/narrate";
 
@@ -48,10 +49,21 @@ check("低落日記會使用低心情情境池", lowDiary.startsWith(filledLast(
 check("開心日記會使用正向情境池", happyDiary.startsWith(filledLast(DAILY_HAPPY_TEMPLATES)));
 check("有鄰居互動時會使用社交情境池", socialDiary.startsWith(filledLast(DAILY_SOCIAL_TEMPLATES)));
 
+const dreamPools = Object.entries(DREAM_LINES) as [string, string[]][];
+const dreamCount = dreamPools.reduce((sum, [, lines]) => sum + lines.length, 0);
+check("夢境句庫:至少 12 個主題池", dreamPools.length >= 12, `pools=${dreamPools.length}`);
+check("夢境句庫:每個主題池至少 13 句", dreamPools.every(([, lines]) => lines.length >= 13), JSON.stringify(dreamPools.map(([k, v]) => `${k}=${v.length}`)));
+check("夢境句庫:總數至少 150 句", dreamCount >= 150, `count=${dreamCount}`);
+check("夢境句庫:各池內沒有重複句", dreamPools.every(([, lines]) => new Set(lines).size === lines.length));
+check("夢境句庫:全部以 💤 前綴開頭且長度足夠", dreamPools.every(([, lines]) => lines.every((line) => line.startsWith("💤 ") && line.trim().length >= 12)));
+check("夢境句庫:佔位符都能代換乾淨", dreamPools.every(([, lines]) => lines.every((line) =>
+  !line.replace(/\{m\}/g, "失戀").replace(/\{o\}/g, "鄰居").replace(/\{tier\}/g, "好朋友").match(/[{}]/))));
+check("夢境句庫:保底池不含任何佔位符", DREAM_LINES.DREAM_NEUTRAL_LINES.every((line) => !/[{}]/.test(line)));
+
 check("每種雙人互動至少 3 條文案", INTERACTIONS.every((def) => def.lines.length >= 3));
 check("雙人文案都能代換對方名字", INTERACTIONS.every((def) => def.lines.every((line) => !line.replace(/\{o\}/g, "鄰居").includes("{o}"))));
 check("成人互動仍全數使用 hidden 遮蔽姿勢", INTERACTIONS.filter((def) => def.adult).every((def) => def.pose === "hidden"));
 
-console.log(`\n內容統計:觀察 ${observationCount} 句 / 每日 ${DAILY_TEMPLATES.length + DAILY_STRESS_TEMPLATES.length + DAILY_LOW_MOOD_TEMPLATES.length + DAILY_HAPPY_TEMPLATES.length + DAILY_SOCIAL_TEMPLATES.length} 句 / 雙人 ${INTERACTIONS.reduce((sum, def) => sum + def.lines.length, 0)} 句`);
+console.log(`\n內容統計:觀察 ${observationCount} 句 / 每日 ${DAILY_TEMPLATES.length + DAILY_STRESS_TEMPLATES.length + DAILY_LOW_MOOD_TEMPLATES.length + DAILY_HAPPY_TEMPLATES.length + DAILY_SOCIAL_TEMPLATES.length} 句 / 雙人 ${INTERACTIONS.reduce((sum, def) => sum + def.lines.length, 0)} 句 / 夢境 ${dreamCount} 句`);
 console.log(`=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

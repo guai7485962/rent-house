@@ -371,8 +371,9 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
   // 上一篇「當日觀察」不能再當成今天的原始素材，否則 AI 會摘要自己的摘要，
   // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
-  // 🔮/🌀/🌱 是系統回饋日誌:不能回流當素材,否則 AI 會摘要自己的回饋(同舊日報回灌問題)
-  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !/^[🔮🌀🌱]/u.test(e.text));
+  // 🔮/🌀/🌱/💤 是系統回饋日誌(含夢境彩蛋):不能回流當素材,否則 AI 會摘要自己的回饋
+  // (同舊日報回灌問題);夢境本身就是既有日誌的再敘述,回流會讓同一件事被放大兩次。
+  const today = rt.log.filter((e) => e.gameMs > dayAgo && !e.daily && !/^[🔮🌀🌱💤]/u.test(e.text));
   const highlights = selectImportantNarrativeLines(
     today.flatMap((entry) => [
       ...(entry.text ? [{

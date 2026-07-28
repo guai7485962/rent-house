@@ -100,10 +100,19 @@ rt.log.push(
     importance: "notable",
     decisionNote: "房東答應替他延後三天收租。",
   },
+  // 系統回饋日誌:🔮/🌀/🌱 是既有的三種(過去零測試覆蓋),💤 是夢境彩蛋。
+  // 這些都是「既有日誌的再敘述」,回流當素材會讓 AI 摘要自己的回饋、同一件事被放大兩次。
+  { gameMs: now - 900_000, timeLabel: "", text: "🔮 系統回饋:劇情弧推進了一段。", visualState: "idle", importance: "notable" },
+  { gameMs: now - 800_000, timeLabel: "", text: "🌀 系統回饋:全樓章節推進。", visualState: "idle", importance: "notable" },
+  { gameMs: now - 700_000, timeLabel: "", text: "🌱 系統回饋:成長標籤固化。", visualState: "idle", importance: "notable" },
+  { gameMs: now - 600_000, timeLabel: "", text: "💤 夢裡回到一個沒去過卻很熟悉的房間。", visualState: "sleeping_on_bed", importance: "notable" },
 );
 const ctx = buildNarrateCtx(rt, "測試日");
 check("Context：排除上一份 AI 當日觀察", !ctx.todayLog.some((line) => line.includes("舊 AI 流水帳")), JSON.stringify(ctx.todayLog));
 check("Context：同日重複片段先去重", ctx.todayLog.filter((line) => line.includes("把書湊得很近")).length === 1, JSON.stringify(ctx.todayLog));
+check("Context：夢境彩蛋(💤)不回流當 AI 素材", !ctx.todayLog.some((line) => line.startsWith("💤")), JSON.stringify(ctx.todayLog));
+check("Context：既有系統回饋日誌(🔮/🌀/🌱)同樣被擋下", !ctx.todayLog.some((line) => /^[🔮🌀🌱]/u.test(line)), JSON.stringify(ctx.todayLog));
+check("Context：一般日誌仍然留得下來(過濾沒有誤殺)", ctx.todayLog.some((line) => line.includes("外送名單")), JSON.stringify(ctx.todayLog));
 check("Context：舊摘要進 prompt 前先去重", occurrences(ctx.summary, "喜歡和鄰居聊天") === 1, ctx.summary);
 check("Context：核心 behaviorHint 會送進 AI", ctx.tagDetails?.some((tag) => tag.label === "[社恐]" && tag.hint.includes("裝作不在")) === true, JSON.stringify(ctx.tagDetails));
 check("Context：記憶強度與 behaviorHint 會送進 AI", ctx.tagDetails?.some((tag) => tag.label === "[連續加班]" && tag.intensity === 0.82 && tag.hint.includes("忘記吃飯")) === true, JSON.stringify(ctx.tagDetails));

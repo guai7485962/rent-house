@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, GroupEvent, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -201,6 +201,12 @@ export const state = reactive({
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 待決的群體事件(全樓事務,房東抉擇影響整群人;§C-7;入存檔) */
   pendingGroupEvent: null as GroupEvent | null,
+  /** 月度全樓事件鏈:進行中(或剛完結)的章節;見 sim/floorChain.ts(入存檔) */
+  floorChain: null as FloorChainState | null,
+  /** 上一條章節鏈完結的遊戲日(鏈與鏈之間的休息;-99 = 還沒跑過任何一條;入存檔) */
+  lastChainEndDay: -99,
+  /** 章節鏈專屬的待決抉擇槽;刻意不與 pendingGroupEvent 共用,免得兩者互相餓死(入存檔) */
+  pendingChainEvent: null as ChainEvent | null,
   /** 尚待 AI 補寫的每日觀察；每位房客只保留最新一篇。 */
   pendingDiaries: [] as PendingDiary[],
   /** 擺放模式:玩家點了「買」後,待放置的家具 defId(點地圖選位置) */

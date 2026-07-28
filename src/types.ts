@@ -419,3 +419,41 @@ export interface GroupEvent {
   participantIds: string[];
   choices: GroupChoice[];
 }
+
+// ---------------------------------------------------------------------------
+// 月度全樓事件鏈(sim/floorChain.ts):3 條鏈 × 4 階段的跨日連鎖章節
+// 型別放這裡(而非 floorChain.ts)是為了讓 gameState 能宣告狀態槽而不反向 import。
+// ---------------------------------------------------------------------------
+
+/** 章節鏈裡「已發生的一階段」紀錄(動態頁章節卡逐條列出) */
+export interface FloorChainEntry {
+  stage: number;
+  title: string;
+  text: string;
+  gameMs: number;
+  /** 這階段有房東抉擇時,拍板後補記選了什麼 */
+  decision?: string;
+  /** 補進度時被跳過的階段(只留標題,不套數值也不發個人日誌) */
+  skipped?: boolean;
+}
+
+/** 進行中(或剛完結)的全樓章節鏈 */
+export interface FloorChainState {
+  chainId: string;
+  /** 已推進到第幾話(1~4) */
+  stage: number;
+  /** 這條鏈起始的遊戲日 */
+  startDay: number;
+  /** 上次推進階段的遊戲日(推進節奏用) */
+  lastAdvanceDay: number;
+  /** 已發生的階段 */
+  entries: FloorChainEntry[];
+  /** 已完結(仍留著給動態頁顯示,直到下一條鏈開始) */
+  done: boolean;
+}
+
+/** 事件鏈專屬的房東抉擇;結構相容 GroupEvent,可直接餵給 GroupDecisionModal */
+export interface ChainEvent extends GroupEvent {
+  chainId: string;
+  stage: number;
+}

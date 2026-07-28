@@ -136,6 +136,9 @@ export function save() {
         careGiven: state.careGiven,
         alumni: state.alumni,
         pendingGroupEvent: state.pendingGroupEvent,
+        floorChain: state.floorChain,
+        lastChainEndDay: state.lastChainEndDay,
+        pendingChainEvent: state.pendingChainEvent,
         pendingDiaries: state.pendingDiaries,
         runtimes,
       }),
@@ -216,6 +219,10 @@ export function load(): boolean {
     state.careGiven = typeof s.careGiven === "number" ? s.careGiven : 0; // 舊檔沒有 → 0
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
     state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
+    // 月度全樓事件鏈(選填欄位,舊檔沒有就從沒有章節開始,不需要升 SAVE_VERSION)
+    state.floorChain = s.floorChain ?? null;
+    state.lastChainEndDay = typeof s.lastChainEndDay === "number" ? s.lastChainEndDay : -99;
+    state.pendingChainEvent = s.pendingChainEvent ?? null;
     state.pendingDiaries.splice(0, state.pendingDiaries.length, ...(s.pendingDiaries ?? []));
 
     // 重建所有租客 runtime(含動態入住者)

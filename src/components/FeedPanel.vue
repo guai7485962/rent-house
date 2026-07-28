@@ -6,7 +6,7 @@
  * 點任何有租客歸屬的動態 → emit goto 跳該房間。
  */
 import { computed } from "vue";
-import { state, buildFeed } from "../store";
+import { state, buildFeed, floorChainView } from "../store";
 
 const props = defineProps<{ sinceMs: number }>();
 const emit = defineEmits<{ goto: [tenantId: string] }>();
@@ -19,6 +19,13 @@ const pendings = computed(() =>
 );
 
 const rows = computed(() => buildFeed().map((e) => ({ e, unread: e.gameMs > props.sinceMs })));
+/** 本月章節(全樓事件鏈):進行中或剛完結的一條鏈,已發生的話逐條列出 */
+const chain = computed(() => {
+  void state.floorChain; // 依賴狀態槽,推進時重算
+  return floorChainView();
+});
+const chainDots = computed(() => (chain.value ? Array.from({ length: chain.value.total }, (_, i) => i + 1) : []));
+const chainUnread = computed(() => (chain.value?.entries ?? []).some((e) => e.gameMs > props.sinceMs));
 const weeklyReports = computed(() => [...state.weeklyReports].reverse().slice(0, 4).map((report) => ({ report, unread: report.gameMs > props.sinceMs })));
 const money = (value: number) => `${value >= 0 ? "+" : "−"}$${Math.abs(value).toLocaleString()}`;
 
@@ -43,6 +50,31 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
         <span class="ec-text">{{ p.title }}</span>
         <span class="ec-go">前往 ›</span>
       </button>
+    </section>
+
+    <section v-if="chain" class="chain-section">
+      <div class="chain-title">📖 本月章節</div>
+      <details class="chain-card" :class="{ unread: chainUnread }" open>
+        <summary>
+          <span>{{ chain.icon }} {{ chain.title }}</span>
+          <small>第 {{ chain.stage }} 話 / 共 {{ chain.total }} 話</small>
+          <b :class="{ done: chain.done }">{{ chain.done ? '已完結' : '連載中' }}</b>
+          <em v-if="chainUnread">NEW</em>
+        </summary>
+        <div class="chain-body">
+          <div class="chain-dots">
+            <i v-for="n in chainDots" :key="n" :class="{ on: n <= chain.stage }" />
+          </div>
+          <ul v-if="chain.entries.length">
+            <li v-for="e in chain.entries" :key="e.stage" :class="{ skipped: e.skipped }">
+              <strong>{{ e.title }}</strong>
+              <span>{{ e.text }}</span>
+              <small v-if="e.decision">房東抉擇:{{ e.decision }}</small>
+            </li>
+          </ul>
+          <p v-else>章節剛開始,還沒有進展。</p>
+        </div>
+      </details>
     </section>
 
     <section v-if="weeklyReports.length" class="weekly-section">
@@ -89,7 +121,7 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
       </details>
     </section>
 
-    <p v-if="!rows.length && !weeklyReports.length" class="empty">還沒有動態。時間推進後,全棟的故事會匯集在這裡。</p>
+    <p v-if="!rows.length && !weeklyReports.length && !chain" class="empty">還沒有動態。時間推進後,全棟的故事會匯集在這裡。</p>
 
     <component
       :is="row.e.tenantId ? 'button' : 'div'"
@@ -134,6 +166,28 @@ const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "�
 .ec-room { font-weight: 700; color: var(--bad); font-size: 12px; }
 .ec-text { flex: 1; line-height: 1.4; }
 .ec-go { color: var(--text-dim); font-size: 11.5px; white-space: nowrap; }
+
+.chain-section { display: flex; flex-direction: column; gap: 6px; }
+.chain-title { font-size: 12px; font-weight: 700; color: #ffd6a3; letter-spacing: 0.5px; }
+.chain-card { border: 1px solid rgba(255,180,94,0.45); border-radius: 11px; background: linear-gradient(180deg, rgba(255,180,94,0.12), rgba(255,180,94,0.03)); overflow: hidden; }
+.chain-card.unread { box-shadow: 0 0 0 1px rgba(255,180,94,0.35); }
+.chain-card summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; padding: 9px 11px; flex-wrap: wrap; }
+.chain-card summary::-webkit-details-marker { display: none; }
+.chain-card summary span { font-size: 13px; font-weight: 700; color: #ffd6a3; }
+.chain-card summary small { font-size: 10.5px; color: var(--text-dim); }
+.chain-card summary b { margin-left: auto; font-size: 10.5px; color: var(--accent); }
+.chain-card summary b.done { color: var(--text-dim); }
+.chain-card summary em { font-size: 8.5px; font-style: normal; color: #ffd6a3; border: 1px solid rgba(255,180,94,0.55); border-radius: 999px; padding: 0 5px; }
+.chain-body { border-top: 1px solid rgba(255,180,94,0.25); padding: 9px 11px 11px; display: grid; gap: 8px; }
+.chain-dots { display: flex; gap: 6px; }
+.chain-dots i { width: 100%; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.10); }
+.chain-dots i.on { background: var(--accent); }
+.chain-body ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+.chain-body li { display: grid; gap: 2px; }
+.chain-body li.skipped { opacity: 0.55; }
+.chain-body li strong { font-size: 11.5px; color: #ffd6a3; }
+.chain-body li span, .chain-body p { font-size: 11.5px; line-height: 1.55; color: var(--text); margin: 0; }
+.chain-body li small { font-size: 10.5px; color: var(--text-dim); }
 
 .weekly-section { display: flex; flex-direction: column; gap: 6px; }
 .weekly-title { font-size: 12px; font-weight: 700; color: #9fd4ff; letter-spacing: 0.5px; }

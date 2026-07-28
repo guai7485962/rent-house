@@ -73,6 +73,10 @@ export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } 
 export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";
 export { KINDNESS_ACTS, giveKindness, caredToday, CARE_ACHIEVEMENT_AT, type KindnessId } from "./sim/kindness";
 export { communityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
+export {
+  floorChainPass, resolveChainEvent, floorChainView, resetFloorChain, chainDef,
+  CHAIN_DEFS, CHAIN_FIRST_DAY, CHAIN_MAX_DAYS, CHAIN_REST_DAYS, STAGE_DAYS, type FloorChainView,
+} from "./sim/floorChain";
 export { weeklyReportPass, currentRelationshipSnapshot, WEEKLY_REPORT_CAP, type WeeklyReport } from "./sim/weeklyReport";
 
 export type { StoryArc } from "./sim/arcs";

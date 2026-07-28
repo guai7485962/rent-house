@@ -47,6 +47,7 @@ import {
   startFastForward,
   decide,
   resolveGroupEvent,
+  resolveChainEvent,
   gameDayIndex,
   initGame,
   stopGame,
@@ -533,6 +534,10 @@ function onDecide(choiceId: string, label: string) {
 function onGroupResolve(choiceId: string) {
   resolveGroupEvent(choiceId);
 }
+
+function onChainResolve(choiceId: string) {
+  resolveChainEvent(choiceId);
+}
 </script>
 
 <template>
@@ -881,6 +886,13 @@ function onGroupResolve(choiceId: string) {
     v-if="state.pendingGroupEvent"
     :event="state.pendingGroupEvent"
     @resolve="onGroupResolve"
+  />
+  <!-- 月度全樓事件鏈的關鍵階段抉擇:獨立槽位,群體事務未決時先讓那件事處理完再彈 -->
+  <GroupDecisionModal
+    v-else-if="state.pendingChainEvent"
+    :event="state.pendingChainEvent"
+    tag="📖 本月章節 — 房東抉擇"
+    @resolve="onChainResolve"
   />
   <RecruitPanel v-if="recruitRoom" :room-id="recruitRoom" @close="recruitRoom = null" @upgrade="upgradeRoom = $event" />
   <FurnitureInfo

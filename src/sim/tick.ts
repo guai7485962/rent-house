@@ -38,6 +38,7 @@ import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { ensureWishes, settleDeparturesDue, wishPass } from "./wishes";
 import { communityPass } from "./community";
+import { floorChainPass } from "./floorChain";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -529,6 +530,7 @@ export function hourlyTick(live = false) {
     legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
     for (const g of wishPass()) graduateFarewell(g.id, g.reason); // 人生心願每日推進;到期者圓夢離開(紅包+退押金+口碑)
     communityPass(); // 群體事件:洗衣房口角/揪團/噪音公審/頂樓乘涼(牽動 3+ 人,§C-7)
+    floorChainPass(); // 月度全樓事件鏈:都更傳聞/颱風夜停電/頂樓漏水,4 話跨日連鎖(零 RNG)
     catJournalPass(); // 貓咪觀察筆記:每 7 遊戲日一篇,以貓口吻進 Feed(彩蛋)
     weeklyReportPass(); // 每 7 遊戲日彙整收支、大事與關係變化,進動態頁週報卡
   }

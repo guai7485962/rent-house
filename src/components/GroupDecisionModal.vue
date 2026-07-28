@@ -1,10 +1,15 @@
 <script setup lang="ts">
-/** 群體事件抉擇(§C-7):一件全樓事務,房東的選擇一次影響整群人。 */
+/**
+ * 群體事件抉擇(§C-7):一件全樓事務,房東的選擇一次影響整群人。
+ * 月度全樓事件鏈(sim/floorChain)的關鍵階段抉擇沿用同一個元件與互動,只換上方標籤。
+ */
 import { computed } from "vue";
 import type { GroupEvent } from "../types";
 import { state } from "../store";
 
-const props = defineProps<{ event: GroupEvent }>();
+const props = withDefaults(defineProps<{ event: GroupEvent; tag?: string }>(), {
+  tag: "🏢 全樓事務 — 房東抉擇",
+});
 const emit = defineEmits<{ resolve: [choiceId: string] }>();
 
 const names = computed(() =>
@@ -15,7 +20,7 @@ const names = computed(() =>
 <template>
   <div class="overlay">
     <div class="modal">
-      <div class="tag">🏢 全樓事務 — 房東抉擇</div>
+      <div class="tag">{{ props.tag }}</div>
       <h2>{{ event.title }}</h2>
       <p class="who">牽涉:{{ names }}</p>
       <p class="desc">{{ event.description }}</p>

@@ -105,6 +105,15 @@ export function routineRoles(tenantId: string): Role[] {
   return [...set];
 }
 
+/** 作息所需家具角色有幾成能在自房或共用區找到；滿意度公式與 UI 共用。 */
+export function routineNeedsMet(tenantId: string, roomId: string | null): number {
+  const roles = routineRoles(tenantId);
+  if (roles.length === 0) return 1;
+  let served = 0;
+  for (const role of roles) if (resolveTarget(role, roomId)) served++;
+  return served / roles.length;
+}
+
 /** 該租客該小時的作息 slot */
 export function routineSlot(tenantId: string, hour: number): Slot {
   const table = ROUTINES[tenantId];

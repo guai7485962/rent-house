@@ -29,6 +29,14 @@ import { WISH_DEFS, wishOutcomeBrief, wishResult, proactiveSettleFarewell } from
 import { KINDNESS_ACTS, giveKindness, caredToday, type KindnessId } from "./sim/kindness";
 import { inHardship } from "./sim/economy";
 import { repairBreakdown, getBreakdownDef } from "./sim/maintenance";
+import { routineNeedsMet } from "./sim/routine";
+import {
+  livingInfluenceNotes,
+  livingTone,
+  mindBodyScore,
+  retentionLabel,
+  retentionTone,
+} from "./presentation/livingExperience";
 import {
   state,
   activeRuntime,
@@ -71,6 +79,7 @@ const showNotices = ref(false);
 const showSettings = ref(false);
 const showLegacy = ref(false);
 const showRent = ref(false);
+const showLivingDetails = ref(false);
 /** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
 const upgradeRoom = ref<string | null>(null);
 /** 只有「承租人」能談房租(同居者不付租) */
@@ -437,6 +446,37 @@ function comfortColor(v: number) {
   return v < 35 ? "var(--bad)" : v > 60 ? "var(--good)" : "var(--accent)";
 }
 
+/** 作息所需設備的滿足率；與滿意度公式共用同一個只讀 helper。 */
+const roomNeedsMet = computed(() => routineNeedsMet(rt.value.tenant.id, activeRoomId.value));
+
+const livingExperience = computed(() => {
+  const stats = rt.value.tenant.stats;
+  const satisfaction = Math.round(rt.value.satisfaction);
+  const mindBody = mindBodyScore(stats);
+  const trust = Math.round(stats.affinity);
+  const room = roomComfortScore.value;
+  const needs = roomNeedsMet.value;
+  return {
+    satisfaction,
+    retentionLabel: retentionLabel(satisfaction),
+    retentionTone: retentionTone(satisfaction),
+    mindBody,
+    mindBodyTone: livingTone(mindBody),
+    trust,
+    trustTone: livingTone(trust),
+    room,
+    roomTone: livingTone(room),
+    needsPct: Math.round(needs * 100),
+    notes: livingInfluenceNotes({
+      stats,
+      satisfaction,
+      comfort: room,
+      cleanliness: rt.value.cleanliness,
+      needsMet: needs,
+    }),
+  };
+});
+
 /**
  * 舒適度拆解(**純呈現**:只把 sim 已算好的 breakdown 攤開,不做任何舒適度數學)。
  * 讓玩家看懂三件事:家具屬性離上限多遠、五大類缺哪幾類、整潔正在打幾折。
@@ -471,7 +511,10 @@ const STAT_HELP: Record<string, string> = {
   好感: "好感:對你(房東)的信任,影響繳租意願;你的抉擇會改變它。",
   整潔: "整潔:房間狀態,反映租客的生活習慣;收納家具能常保整潔。",
   舒適: "舒適:房間佈置齊全度+療癒感×整潔;越舒適,會「慢慢」墊高租客的心情與健康。佈置一次長期受益。",
-  滿意: "滿意:綜合心情/好感/壓力/健康/精力/房間裝潢;長期過低會退租!",
+  續住意願: "續住意願:真正影響退租與收租的綜合結果。它會依身心狀態、房東信任與生活機能緩慢變化。",
+  身心狀態: "身心狀態:把心情、壓力、精力與健康整理成一個閱讀用摘要；細項仍各自影響事件與生活。",
+  房東信任: "房東信任:就是原本的好感，反映房客對你的信任，影響繳租與漲租接受度。",
+  房間品質: "房間品質:沿用原本舒適度，受家具屬性、種類齊全與整潔影響；生活機能另顯示作息設備是否完整。",
 };
 function explainStat(key: string) {
   toast(STAT_HELP[key] ?? "", 4200);
@@ -600,41 +643,129 @@ function onGroupResolve(choiceId: string) {
 
     <PixelDollhouse :key="rt.tenant.id" :tenant-id="rt.tenant.id" :visual-state="rt.tenant.visualState" :room-no="rt.roomNo" />
 
-    <section class="stats">
-      <div class="stat">
-        <label @click="explainStat('心情')">心情</label>
-        <div class="bar"><div :style="{ width: rt.tenant.stats.mood + '%', background: statColor(rt.tenant.stats.mood) }"></div></div>
-        <span>{{ Math.round(rt.tenant.stats.mood) }}</span>
+    <section class="living">
+      <div class="living-title">
+        <strong>🏡 居住體驗</strong>
+        <span>把結果與改善方向放在一起</span>
       </div>
-      <div class="stat">
-        <label @click="explainStat('壓力')">壓力</label>
-        <div class="bar"><div :style="{ width: rt.tenant.stats.stress + '%', background: statColor(rt.tenant.stats.stress, true) }"></div></div>
-        <span>{{ Math.round(rt.tenant.stats.stress) }}</span>
+
+      <div class="retention-head">
+        <button class="living-label" @click="explainStat('續住意願')">續住意願</button>
+        <strong>{{ livingExperience.satisfaction }}</strong>
+        <span class="tone-badge" :class="'tone-' + livingExperience.retentionTone">
+          {{ livingExperience.retentionLabel }}
+        </span>
       </div>
-      <div class="stat">
-        <label @click="explainStat('精力')">精力</label>
-        <div class="bar"><div :style="{ width: rt.tenant.stats.energy + '%', background: statColor(rt.tenant.stats.energy) }"></div></div>
-        <span>{{ Math.round(rt.tenant.stats.energy) }}</span>
+      <div class="retention-bar">
+        <div
+          :style="{
+            width: livingExperience.satisfaction + '%',
+            background: statColor(livingExperience.satisfaction),
+          }"
+        ></div>
       </div>
-      <div class="stat">
-        <label @click="explainStat('健康')">健康</label>
-        <div class="bar"><div :style="{ width: rt.tenant.stats.wellbeing + '%', background: statColor(rt.tenant.stats.wellbeing) }"></div></div>
-        <span>{{ Math.round(rt.tenant.stats.wellbeing) }}</span>
+      <p class="living-explain">這是最後結果；低於安全線 25 才會累積退租風險。</p>
+
+      <div class="influence">
+        <span class="influence-title">目前狀態與改善方向</span>
+        <span v-for="note in livingExperience.notes" :key="note" class="influence-note">{{ note }}</span>
       </div>
-      <div class="stat">
-        <label @click="explainStat('好感')">好感</label>
-        <div class="bar"><div :style="{ width: rt.tenant.stats.affinity + '%', background: statColor(rt.tenant.stats.affinity) }"></div></div>
-        <span>{{ Math.round(rt.tenant.stats.affinity) }}</span>
+
+      <div class="living-drivers">
+        <div class="driver" :class="'tone-' + livingExperience.mindBodyTone">
+          <div class="driver-head">
+            <button @click="explainStat('身心狀態')">🌿 身心狀態</button>
+            <strong>{{ livingExperience.mindBody }}</strong>
+          </div>
+          <div class="bar"><div :style="{ width: livingExperience.mindBody + '%', background: statColor(livingExperience.mindBody) }"></div></div>
+          <small>心情、壓力、精力、健康</small>
+        </div>
+        <div class="driver" :class="'tone-' + livingExperience.trustTone">
+          <div class="driver-head">
+            <button @click="explainStat('房東信任')">🤝 房東信任</button>
+            <strong>{{ livingExperience.trust }}</strong>
+          </div>
+          <div class="bar"><div :style="{ width: livingExperience.trust + '%', background: statColor(livingExperience.trust) }"></div></div>
+          <small>你的關心、抉擇與租約互動</small>
+        </div>
+        <div class="driver" :class="'tone-' + livingExperience.roomTone">
+          <div class="driver-head">
+            <button @click="explainStat('房間品質')">🛋️ 房間品質</button>
+            <strong>{{ livingExperience.room }}</strong>
+          </div>
+          <div class="bar"><div :style="{ width: livingExperience.room + '%', background: comfortColor(livingExperience.room) }"></div></div>
+          <small>
+            整潔 {{ Math.round(rt.cleanliness) }} · 舒適慢慢影響身心 ·
+            機能 {{ livingExperience.needsPct }}% 直接影響意願
+          </small>
+        </div>
       </div>
-      <div class="stat">
-        <label @click="explainStat('整潔')">整潔</label>
-        <div class="bar"><div :style="{ width: rt.cleanliness + '%', background: statColor(rt.cleanliness) }"></div></div>
-        <span>{{ Math.round(rt.cleanliness) }}</span>
-      </div>
-      <div class="stat span2">
-        <label @click="explainStat('滿意')">滿意</label>
-        <div class="bar"><div :style="{ width: Math.round(rt.satisfaction) + '%', background: statColor(rt.satisfaction) }"></div></div>
-        <span>{{ Math.round(rt.satisfaction) }}</span>
+
+      <button class="living-toggle" @click="showLivingDetails = !showLivingDetails">
+        {{ showLivingDetails ? "收起診斷細項 ▲" : "查看診斷細項 ▼" }}
+      </button>
+
+      <div v-if="showLivingDetails" class="living-details">
+        <div class="detail-group">
+          <div class="detail-title">🌿 身心細項</div>
+          <div class="detail-stats">
+            <div class="stat">
+              <label @click="explainStat('心情')">心情</label>
+              <div class="bar"><div :style="{ width: rt.tenant.stats.mood + '%', background: statColor(rt.tenant.stats.mood) }"></div></div>
+              <span>{{ Math.round(rt.tenant.stats.mood) }}</span>
+            </div>
+            <div class="stat">
+              <label @click="explainStat('壓力')">壓力</label>
+              <div class="bar"><div :style="{ width: rt.tenant.stats.stress + '%', background: statColor(rt.tenant.stats.stress, true) }"></div></div>
+              <span>{{ Math.round(rt.tenant.stats.stress) }}</span>
+            </div>
+            <div class="stat">
+              <label @click="explainStat('精力')">精力</label>
+              <div class="bar"><div :style="{ width: rt.tenant.stats.energy + '%', background: statColor(rt.tenant.stats.energy) }"></div></div>
+              <span>{{ Math.round(rt.tenant.stats.energy) }}</span>
+            </div>
+            <div class="stat">
+              <label @click="explainStat('健康')">健康</label>
+              <div class="bar"><div :style="{ width: rt.tenant.stats.wellbeing + '%', background: statColor(rt.tenant.stats.wellbeing) }"></div></div>
+              <span>{{ Math.round(rt.tenant.stats.wellbeing) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-group">
+          <div class="detail-title">🛋️ 房間品質拆解</div>
+          <div class="cbd">
+            <div class="cbd-row">
+              <label>家具屬性</label>
+              <div class="bar"><div class="cbd-attr" :style="{ width: comfortParts.attrPct + '%' }"></div></div>
+              <span>{{ comfortParts.attr }}<i>/{{ comfortParts.attrMax }}</i></span>
+            </div>
+            <div class="cbd-row">
+              <label>種類齊全</label>
+              <div class="bar"><div class="cbd-cat" :style="{ width: comfortParts.catPct + '%' }"></div></div>
+              <span>{{ comfortParts.cat }}<i>/{{ comfortParts.catMax }}</i></span>
+            </div>
+            <div class="cbd-buckets">
+              <span v-for="b in comfortParts.buckets" :key="b.label" class="cbucket" :class="{ miss: !b.has }">
+                {{ b.has ? "✓" : "✗" }}{{ b.label }}
+              </span>
+            </div>
+            <div class="cbd-clean">
+              <label>🧹 整潔倍率</label>
+              <strong :style="{ color: comfortParts.multColor }">{{ comfortParts.multText }}</strong>
+              <span class="cbd-calc">
+                小計 {{ comfortParts.subtotal }}
+                <template v-if="comfortParts.discounted">
+                  → <b :style="{ color: comfortParts.multColor }">{{ roomComfortScore }}</b>
+                </template>
+                <template v-else>(未折損)</template>
+              </span>
+            </div>
+          </div>
+          <div v-if="roomComfortHints.length" class="comfort-hints">
+            <span v-for="h in roomComfortHints" :key="h" class="chint">{{ h }}</span>
+          </div>
+        </div>
       </div>
     </section>
     <p v-if="rt.unhappyHours >= 24" class="warn">⚠ {{ rt.tenant.name }} 住得不開心,再不改善可能會退租。</p>
@@ -670,48 +801,6 @@ function onGroupResolve(choiceId: string) {
         </button>
         <p v-for="(ln, i) in wishChip.result.lines" :key="i" class="wish-outcome-sub">{{ ln }}</p>
         <p v-if="wishChip.result.growthLabel" class="wish-outcome-growth">🌱 習得「{{ wishChip.result.growthLabel }}」——{{ wishChip.result.growthHint }}</p>
-      </div>
-    </section>
-
-    <section v-if="activeRoomId" class="comfort">
-      <div class="comfort-head">
-        <label @click="explainStat('舒適')">🛋️ 舒適度</label>
-        <div class="bar"><div :style="{ width: roomComfortScore + '%', background: comfortColor(roomComfortScore) }"></div></div>
-        <span>{{ roomComfortScore }}</span>
-      </div>
-
-      <!-- 舒適度拆解:純呈現 sim 已算好的 breakdown,讓玩家看懂分數被什麼拖住 -->
-      <div class="cbd">
-        <div class="cbd-row">
-          <label>家具屬性</label>
-          <div class="bar"><div class="cbd-attr" :style="{ width: comfortParts.attrPct + '%' }"></div></div>
-          <span>{{ comfortParts.attr }}<i>/{{ comfortParts.attrMax }}</i></span>
-        </div>
-        <div class="cbd-row">
-          <label>種類齊全</label>
-          <div class="bar"><div class="cbd-cat" :style="{ width: comfortParts.catPct + '%' }"></div></div>
-          <span>{{ comfortParts.cat }}<i>/{{ comfortParts.catMax }}</i></span>
-        </div>
-        <div class="cbd-buckets">
-          <span v-for="b in comfortParts.buckets" :key="b.label" class="cbucket" :class="{ miss: !b.has }">
-            {{ b.has ? "✓" : "✗" }}{{ b.label }}
-          </span>
-        </div>
-        <div class="cbd-clean">
-          <label>🧹 整潔倍率</label>
-          <strong :style="{ color: comfortParts.multColor }">{{ comfortParts.multText }}</strong>
-          <span class="cbd-calc">
-            小計 {{ comfortParts.subtotal }}
-            <template v-if="comfortParts.discounted">
-              → <b :style="{ color: comfortParts.multColor }">{{ roomComfortScore }}</b>
-            </template>
-            <template v-else>(未折損)</template>
-          </span>
-        </div>
-      </div>
-
-      <div v-if="roomComfortHints.length" class="comfort-hints">
-        <span v-for="h in roomComfortHints" :key="h" class="chint">{{ h }}</span>
       </div>
     </section>
 
@@ -899,21 +988,56 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .rgender { font-size: 11.5px; color: #9ec5e8; align-self: center; }
 .rgender.miss { color: #e08c8c; }
 
-.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.living {
+  --cbar-label-w: 58px; --cbar-value-w: 36px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: linear-gradient(145deg, rgba(83, 196, 126, 0.08), rgba(143, 123, 255, 0.08) 55%, var(--panel));
+  border: 1px solid rgba(103, 211, 145, 0.42); border-radius: var(--radius); padding: 13px 14px;
+}
+.living-title { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.living-title strong { color: #b9f6ce; font-size: 14px; }
+.living-title span { color: var(--text-dim); font-size: 10.5px; text-align: right; }
+.retention-head { display: flex; align-items: center; gap: 8px; }
+.living-label, .driver-head button {
+  margin: 0; padding: 0; background: none; border: 0; color: var(--text); font: inherit;
+  cursor: pointer; border-bottom: 1px dotted var(--line);
+}
+.retention-head .living-label { font-size: 12.5px; color: var(--text-dim); }
+.retention-head > strong { margin-left: auto; font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums; }
+.tone-badge { border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; font-size: 10.5px; white-space: nowrap; }
+.tone-badge.tone-danger { color: #ff9aa8; border-color: rgba(232, 101, 122, 0.65); background: rgba(232, 101, 122, 0.1); }
+.tone-badge.tone-watch { color: #ffd98a; border-color: rgba(181, 135, 46, 0.65); background: rgba(181, 135, 46, 0.1); }
+.tone-badge.tone-steady { color: #c9befc; border-color: rgba(143, 123, 255, 0.65); background: rgba(143, 123, 255, 0.1); }
+.tone-badge.tone-good { color: #b9f6ce; border-color: rgba(103, 211, 145, 0.65); background: rgba(83, 196, 126, 0.1); }
+.retention-bar { height: 10px; background: #17151f; border-radius: 999px; overflow: hidden; }
+.retention-bar > div { height: 100%; border-radius: inherit; transition: width 0.6s ease, background 0.6s; }
+.living-explain { margin: -4px 0 0; color: var(--text-dim); font-size: 10.5px; line-height: 1.5; }
+.influence { display: flex; flex-direction: column; gap: 5px; border-top: 1px dashed rgba(103, 211, 145, 0.25); padding-top: 8px; }
+.influence-title { color: var(--text-dim); font-size: 10.5px; }
+.influence-note { position: relative; padding-left: 13px; color: #d9d5e3; font-size: 11px; line-height: 1.4; }
+.influence-note::before { content: "•"; position: absolute; left: 2px; color: var(--accent); }
+.living-drivers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.driver { min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 9px; background: rgba(19, 17, 28, 0.62); border: 1px solid var(--line); border-radius: 10px; }
+.driver:nth-child(3) { grid-column: 1 / -1; }
+.driver.tone-danger { border-color: rgba(232, 101, 122, 0.55); }
+.driver.tone-watch { border-color: rgba(181, 135, 46, 0.5); }
+.driver.tone-good { border-color: rgba(103, 211, 145, 0.5); }
+.driver-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; }
+.driver-head button { min-width: 0; color: var(--text-dim); white-space: nowrap; }
+.driver-head strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.driver small { color: var(--text-dim); font-size: 9.5px; line-height: 1.35; }
+.living-toggle { align-self: center; background: none; border: 0; color: #c9befc; font-size: 11px; padding: 2px 10px; }
+.living-details { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.detail-group { display: flex; flex-direction: column; gap: 8px; padding: 9px; background: rgba(13, 12, 18, 0.42); border: 1px solid rgba(59, 55, 73, 0.7); border-radius: 10px; }
+.detail-title { color: var(--text-dim); font-size: 11px; }
+.detail-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
 .stat { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .stat label { color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
 .stat span { width: 24px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .bar { flex: 1; height: 7px; background: #17151f; border-radius: 4px; overflow: hidden; }
 .bar > div { height: 100%; border-radius: 4px; transition: width 0.6s ease, background 0.6s; }
-.stat.span2 { grid-column: 1 / -1; }
 .warn { font-size: 12px; color: var(--bad); }
 
-/* 總分與拆解共用同一條長條軌道:標籤欄與數值欄都固定同寬,
-   讓「舒適度」「家具屬性」「種類齊全」三條 .bar 的左右端精確對齊(可跨虛線比對) */
-.comfort { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; --cbar-label-w: 58px; --cbar-value-w: 36px; }
-.comfort-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.comfort-head label { flex: 0 0 var(--cbar-label-w); color: var(--text-dim); white-space: nowrap; cursor: pointer; border-bottom: 1px dotted var(--line); }
-.comfort-head span { flex: 0 0 var(--cbar-value-w); text-align: right; font-variant-numeric: tabular-nums; color: var(--text-dim); }
 .comfort-hints { display: flex; flex-wrap: wrap; gap: 6px; }
 .chint { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(143, 123, 255, 0.08); border: 1px solid var(--accent-2); color: #c9befc; }
 

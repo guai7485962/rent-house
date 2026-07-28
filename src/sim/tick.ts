@@ -5,7 +5,7 @@
  */
 import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
-import { bathroomActivityForDay, laundryHourForDay, routineSlot, resolveTarget, routineRoles, type Role } from "./routine";
+import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot, resolveTarget, type Role } from "./routine";
 import { rollEvent } from "./events";
 import { encounter, listRelationships, pairKey, getRel } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
@@ -47,6 +47,7 @@ import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
 import { placementFootprint, placementRotation } from "./placements";
 import { roomComfort, comfortBaselineDelta, cleanlinessBaseline } from "./comfort";
+import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
 import { nextRotation } from "../furniture/rotation";
 
@@ -290,25 +291,11 @@ function applyMemoryDrift(rt: TenantRuntime) {
   if (d.affinity) s.affinity = clamp(s.affinity + d.affinity, 0, 100);
 }
 
-/** 房間滿足租客需求的比例(作息要用的家具角色有幾成能在自房/共用區找到)*/
-function needsMet(tenantId: string, roomId: string | null): number {
-  const roles = routineRoles(tenantId);
-  if (roles.length === 0) return 1;
-  let served = 0;
-  for (const role of roles) if (resolveTarget(role, roomId)) served++;
-  return served / roles.length;
-}
-
 /** 更新滿意度:由心情/好感/壓力/身心健康/精力 + 房間是否滿足需求,緩慢趨近目標 */
 function updateSatisfaction(rt: TenantRuntime, roomId: string | null) {
   const s = rt.tenant.stats;
-  const nm = needsMet(rt.tenant.id, roomId);
-  const base = clamp(
-    0.25 * s.mood + 0.3 * s.affinity + 0.25 * (100 - s.stress) + 0.1 * s.wellbeing + 0.1 * s.energy,
-    0,
-    100,
-  );
-  const target = base * (0.55 + 0.45 * nm);
+  const nm = routineNeedsMet(rt.tenant.id, roomId);
+  const target = satisfactionTarget(s, nm);
   rt.satisfaction = clamp(rt.satisfaction + (target - rt.satisfaction) * 0.2, 0, 100);
 }
 

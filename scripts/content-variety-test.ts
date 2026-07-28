@@ -55,10 +55,16 @@ check("夢境句庫:至少 12 個主題池", dreamPools.length >= 12, `pools=${d
 check("夢境句庫:每個主題池至少 13 句", dreamPools.every(([, lines]) => lines.length >= 13), JSON.stringify(dreamPools.map(([k, v]) => `${k}=${v.length}`)));
 check("夢境句庫:總數至少 150 句", dreamCount >= 150, `count=${dreamCount}`);
 check("夢境句庫:各池內沒有重複句", dreamPools.every(([, lines]) => new Set(lines).size === lines.length));
+const dreamAllLines = dreamPools.flatMap(([, lines]) => lines);
+const dreamDupes = dreamAllLines.filter((line, i) => dreamAllLines.indexOf(line) !== i);
+check("夢境句庫:跨池也沒有重複句", dreamDupes.length === 0, JSON.stringify([...new Set(dreamDupes)]));
 check("夢境句庫:全部以 💤 前綴開頭且長度足夠", dreamPools.every(([, lines]) => lines.every((line) => line.startsWith("💤 ") && line.trim().length >= 12)));
 check("夢境句庫:佔位符都能代換乾淨", dreamPools.every(([, lines]) => lines.every((line) =>
   !line.replace(/\{m\}/g, "失戀").replace(/\{o\}/g, "鄰居").replace(/\{tier\}/g, "好朋友").match(/[{}]/))));
 check("夢境句庫:保底池不含任何佔位符", DREAM_LINES.DREAM_NEUTRAL_LINES.every((line) => !/[{}]/.test(line)));
+// tierLabel 會回傳「陌生」「曖昧」等不能直接當名詞用的詞,一律用「」包住才不會讀成「只是陌生」。
+const dreamTierLines = [...DREAM_LINES.DREAM_BOND_LINES, ...DREAM_LINES.DREAM_DISTANT_LINES].filter((line) => line.includes("{tier}"));
+check("夢境句庫:{tier} 一律以「」包住(任何親疏值代入都通順)", dreamTierLines.length > 0 && dreamTierLines.every((line) => !/[^「]\{tier\}|\{tier\}[^」]/.test(line)), JSON.stringify(dreamTierLines));
 
 check("每種雙人互動至少 3 條文案", INTERACTIONS.every((def) => def.lines.length >= 3));
 check("雙人文案都能代換對方名字", INTERACTIONS.every((def) => def.lines.every((line) => !line.replace(/\{o\}/g, "鄰居").includes("{o}"))));

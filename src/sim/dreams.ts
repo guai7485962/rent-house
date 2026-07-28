@@ -11,10 +11,16 @@
  * - **冷卻入存檔**:冷卻寫在 `state.interactionCooldowns`(比照 pets.ts 借用同一張表),
  *   會被 persistence 存讀。刻意不用模組層 Map——那種冷卻 reload 就清空,
  *   會變成「每次重開頁面當晚必做夢」。
- * - **用 `gameDayIndex()` 而非 `calendarGameDayIndex()`**:前者以 22:00 為換日邊界,
- *   22:00→06:00 整夜同屬一個遊戲日,天然保證「一夜最多一夢」;後者午夜換日會一夜兩夢。
+ * - **一夜最多一夢的硬保證是 `DREAM_MIN_GAP_DAYS = 3`**:冷卻以遊戲日計,間隔至少 3 天,
+ *   所以不管夜晚怎麼跨小時都不可能連兩夢。用 `gameDayIndex()` 而非
+ *   `calendarGameDayIndex()` 是**次要保險**——前者的換日邊界只在 UTC+8 剛好落在 22:00
+ *   (設計基準時區),讓整夜同屬一個遊戲日;玩家在其他時區時邊界會落進睡眠時段中間,
+ *   屆時仍由 3 日冷卻兜住。後者是午夜換日,連這層保險都沒有,所以不用。
  * - **前 DREAM_FIRST_DAY 天不做夢**:balance-test 的快照窗只有 10 遊戲日且
  *   `logs` 是整數精確比對,第 14 天起才觸發 ⇒ 快照零漂移(同 floorChain.CHAIN_FIRST_DAY)。
+ * - **首次做夢有決定性相位偏移**:所有人的冷卻鍵在新局(與舊存檔升級)時同時不存在,
+ *   不做處理就會全樓在第 14 天集體做夢。用 `phase|<id>` 把每人的第一次散到
+ *   第 14~17 天,之後 3/4 天的不等間隔會讓大家繼續錯開。相位只往後推,不影響門檻。
  */
 import type { TenantVisualState } from "../types";
 import { state, gameDayIndex, pushSocialLog, type TenantRuntime } from "./gameState";
@@ -43,6 +49,8 @@ export const DREAM_FIRST_DAY = 14;
 export const DREAM_MIN_GAP_DAYS = 3;
 /** 實際間隔 = DREAM_MIN_GAP_DAYS + [0, DREAM_GAP_SPAN) → 3~4 天,決定性挑 */
 const DREAM_GAP_SPAN = 2;
+/** 首次做夢的相位偏移範圍:第一次落在第 DREAM_FIRST_DAY ~ +DREAM_PHASE_SPAN-1 天 */
+export const DREAM_PHASE_SPAN = 4;
 /** 冷卻鍵前綴(借用 interactionCooldowns 這張入存檔的表);值存的是遊戲日序號 */
 const DREAM_CD_PREFIX = "dream|";
 /** 關係要到「朋友」(tierLabel 的 35 分門檻)以上才算親近 */
@@ -72,7 +80,7 @@ interface DreamTheme {
   lines: string[];
 }
 
-/** 記憶主題:對齊 MEMORY_RULES 的分類軸,挑語感上最適合做夢的十組 */
+/** 記憶主題:對齊 MEMORY_RULES 的分類軸,挑語感上最適合做夢的十一組 */
 export const DREAM_THEMES: DreamTheme[] = [
   { id: "romance", keywords: keywordsOf("熱戀"), lines: DREAM_ROMANCE_LINES },
   { id: "heartbreak", keywords: keywordsOf("失戀"), lines: DREAM_HEARTBREAK_LINES },
@@ -95,9 +103,12 @@ export interface DreamPick {
   vars: Record<string, string>;
 }
 
-/** 佔位符代換(同 community.fillCommunity) */
+/**
+ * 佔位符代換。代換值一律走 function replacement——{m} 來源是 AI 產生的記憶標籤,
+ * 若字面含 `$&`／`` $` ``,字串形式的 replacement 會被當成 pattern 展開。
+ */
 const fillDream = (line: string, vars: Record<string, string>) =>
-  Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), value), line);
+  Object.entries(vars).reduce((text, [key, value]) => text.replace(new RegExp(`\\{${key}\\}`, "g"), () => value), line);
 
 /**
  * 決定今晚夢到什麼:記憶標籤優先 → 鄰居關係 → 保底池。
@@ -147,7 +158,7 @@ export function dreamLine(rt: TenantRuntime, day: number, hour: number): string 
 
 /**
  * 每小時呼叫:睡著且冷卻到期的租客留下一則夢境日誌。
- * 冷卻以遊戲日計(gameDayIndex,22:00 換日),所以整個 22:00→06:00 的夜晚最多一則。
+ * 冷卻以遊戲日計,間隔至少 DREAM_MIN_GAP_DAYS 天 ⇒ 一夜不可能兩夢。
  */
 export function dreamPass(hour: number): void {
   const day = gameDayIndex();
@@ -155,12 +166,18 @@ export function dreamPass(hour: number): void {
   for (const rt of Object.values(state.runtimes)) {
     if (rt.pendingEvent) continue; // 被事件凍結的租客 visualState 停在舊值,不該發夢
     if (!SLEEPING_STATES.has(rt.tenant.visualState)) continue;
-    const key = `${DREAM_CD_PREFIX}${rt.tenant.id}`;
+    const id = rt.tenant.id;
+    const key = `${DREAM_CD_PREFIX}${id}`;
     const last = state.interactionCooldowns[key];
-    if (last != null) {
-      const gap = DREAM_MIN_GAP_DAYS + dreamIndex(`gap|${rt.tenant.id}|${last}`, DREAM_GAP_SPAN);
+    if (last == null) {
+      // 還沒做過夢(新局或舊存檔升級):相位偏移把首夢散到第 14~17 天,
+      // 否則全樓的冷卻鍵同時不存在 → 第一個符合條件的睡眠小時會集體發夢。
+      if (day < DREAM_FIRST_DAY + dreamIndex(`phase|${id}`, DREAM_PHASE_SPAN)) continue;
+    } else {
+      const gap = DREAM_MIN_GAP_DAYS + dreamIndex(`gap|${id}|${last}`, DREAM_GAP_SPAN);
       if (day - last < gap) continue;
     }
+    // ⚠️ 此鍵存的是「遊戲日序號」,與 interactionCooldowns 表中其他鍵存的 gameMs 單位不同。
     state.interactionCooldowns[key] = day;
     pushSocialLog(rt, dreamLine(rt, day, hour), "notable");
   }

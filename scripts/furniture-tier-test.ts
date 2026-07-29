@@ -95,6 +95,24 @@ check(
   CATALOG.every((d) => Number.isFinite(tierPoints(d)) && tierPoints(d) >= 0),
 );
 
+// 商店把紀念物下架(price <= 0 不上架)後,**只擋購買入口、不能誤傷畢業生回饋**:
+// 畢業流程仍會 addPlacement 紀念物,它仍要照常拿到 standard 的 +0.5。
+const placedMemorialRoom = "r_tier_memorial_placed";
+for (const id of MEMORIALS) addPlacement({ defId: id, room: placedMemorialRoom, c: MEMORIALS.indexOf(id), r: 1, memorial: true } as any);
+const placedMemorial = roomComfortBreakdown(placedMemorialRoom, 100);
+check(
+  `紀念物仍可被擺放且照常計入 tierPart(5 件 × ${TIER_POINTS.standard} = ${placedMemorial.tierPart})`,
+  placedMemorial.tierPart === MEMORIALS.length * TIER_POINTS.standard,
+);
+check(
+  "下架不影響 tier 語意:紀念物的 tierOf 仍是 standard、tierPoints 仍 > 0",
+  MEMORIALS.every((id) => tierOf(getDef(id)) === "standard" && tierPoints(getDef(id)) > 0),
+);
+check(
+  `擺放的紀念物確實墊高該房舒適度(${placedMemorial.comfort.toFixed(2)} > 0,畢業生回饋沒被誤傷)`,
+  placedMemorial.comfort > 0,
+);
+
 // --- 3. 同型三階遞增(核心驗收):單人床 < 雙人床 < 帷幔床 ---
 const bedBudget = roomComfortBreakdown(probeRoom(["single_bed"]), 100);
 const bedStandard = roomComfortBreakdown(probeRoom(["double_bed"]), 100);

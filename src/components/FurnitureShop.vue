@@ -27,11 +27,30 @@ const CAT_LABEL: Record<FurnCategory, string> = {
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
-/** 只賣可放地板的家具(牆面家具略過),依類別分組 */
+/**
+ * 只賣可放地板的家具(牆面家具略過),依類別分組。
+ *
+ * **非賣品(`price <= 0`)不上架**:商店是「花錢換東西」的地方,沒有標價的東西本來就
+ * 不該出現在貨架上。目前唯一符合的是 5 件畢業生紀念物(`memorial_*`,price 0)——
+ * 它們的設定是「畢業生離開時留在原房間的禮物」,在商店花 $0 買得到本身就違反設定;
+ * 而且自從 tier 接上舒適度後,每件免費 +0.5,塞滿就能零成本把 `tierPart` 拉到上限,
+ * 直接推翻「花更多錢買更好的家具」這個前提。
+ *
+ * 判準用 `price <= 0`(非賣品)而不是 `id.startsWith("memorial_")`:
+ * `FurnitureDef` 上**沒有** memorial 欄位(那面旗標掛在 `Placement` 上,由畢業流程寫入),
+ * 所以 def 層唯一能用的訊號就是價格;而且「非賣品不上架」是關於商店的通則,
+ * 未來若再有其他贈品/獎勵型家具也會自動擋掉,比綁 id 前綴穩健。
+ * `data-catalog-test.ts` 有斷言釘住「被擋掉的正好是那 5 件紀念物」,
+ * 日後若出現「應該可購買的 $0 家具」會直接紅燈,強迫做一次明確決定。
+ *
+ * ⚠️ 只擋**購買入口**:紀念物本身的 tier fallback(standard、+0.5)與已擺放的紀念物
+ * 完全不受影響——畢業生留下的紀念物給舒適度加分是對玩家的正當回饋,是設計意圖不是漏洞。
+ */
 const groups = computed(() => {
   const byCat = new Map<FurnCategory, typeof CATALOG>();
   for (const d of CATALOG) {
     if (d.placement === "wall") continue;
+    if (d.price <= 0) continue; // 非賣品(畢業生紀念物)
     if (!byCat.has(d.category)) byCat.set(d.category, []);
     byCat.get(d.category)!.push(d);
   }

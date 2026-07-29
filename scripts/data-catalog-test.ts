@@ -119,6 +119,32 @@ check(
   `TIER_POINTS 三階遞增,精品確實比平價多加分(${TIER_POINTS.budget}/${TIER_POINTS.standard}/${TIER_POINTS.premium})`,
   TIER_POINTS.budget < TIER_POINTS.standard && TIER_POINTS.standard < TIER_POINTS.premium,
 );
+
+// --- 5b. 商店上架規則:非賣品(price <= 0)不上架 ---
+// `FurnitureShop.vue` 的 groups 用 `placement !== "wall" && price > 0` 過濾。
+// 自從 tier 接上舒適度後,$0 家具每件免費 +0.5,能零成本把 tierPart 拉到上限,
+// 所以「非賣品不上架」不只是語意問題,也是平衡把關。
+const MEMORIAL_IDS = ["memorial_poster", "memorial_sign", "memorial_cert", "memorial_book", "memorial_frame"];
+const shopListed = CATALOG.filter((d) => d.placement !== "wall" && d.price > 0);
+const freeItems = CATALOG.filter((d) => d.placement !== "wall" && d.price <= 0);
+check(
+  `商店清單不含任何畢業生紀念物(上架 ${shopListed.length} 件,紀念物 ${MEMORIAL_IDS.length} 件全被擋)`,
+  MEMORIAL_IDS.every((id) => !shopListed.some((d) => d.id === id)),
+);
+check(
+  "商店清單不含任何 price <= 0 的品項(非賣品不上架)",
+  shopListed.every((d) => d.price > 0),
+);
+// 反向釘住:被擋掉的**正好**是那 5 件紀念物。日後若出現「應該可購買的 $0 家具」,
+// 這條會紅燈,強迫做一次明確決定,而不是被 price 判準靜默擋掉。
+check(
+  `被擋掉的非賣品正好是 5 件紀念物(實際:${freeItems.map((d) => d.id).join(", ") || "無"})`,
+  freeItems.length === MEMORIAL_IDS.length && freeItems.every((d) => MEMORIAL_IDS.includes(d.id)),
+);
+check(
+  `紀念物確實都是 price 0、且最便宜的上架品仍有價(${Math.min(...shopListed.map((d) => d.price))})`,
+  MEMORIAL_IDS.every((id) => getFurnDef(id).price === 0) && Math.min(...shopListed.map((d) => d.price)) > 0,
+);
 check(
   "床鋪三階:single=budget、double=standard、canopy=premium",
   getFurnDef("single_bed").tier === "budget"

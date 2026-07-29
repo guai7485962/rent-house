@@ -13,6 +13,15 @@ const mem: Record<string, string> = {};
 };
 
 const { drawAppearanceOverlay, randomAppearance, ALL_HAIR_STYLES, ALL_ACCESSORIES } = await import("../src/pixel/parts");
+const {
+  BASE_PAL,
+  CHAR_STAND,
+  CHAR_SIT,
+  CHAR_WALK_A,
+  CHAR_WALK_B,
+  CHAR_SIT_BACK,
+  CHAR_LIE,
+} = await import("../src/pixel/sprites");
 const { setCustomAppearance, getCustomAppearance, getTheme } = await import("../src/pixel/scene");
 const { state, getApplicants, moveIn } = await import("../src/store");
 import type { Appearance } from "../src/types";
@@ -34,6 +43,7 @@ function mockCtx() {
   };
 }
 let allInBounds = true;
+let allInVerticalBounds = true;
 let missingPixels: string[] = [];
 for (const hs of ALL_HAIR_STYLES) {
   for (const acc of ALL_ACCESSORIES) {
@@ -41,6 +51,7 @@ for (const hs of ALL_HAIR_STYLES) {
     const ap: Appearance = { hairStyle: hs, hairColor: "#111111", shirt: "#222222", pants: "#333333", skin: "#444444", accessory: acc };
     drawAppearanceOverlay(ctx, ap, 0, 0);
     if (pixels.some((p) => p.x < 0 || p.x > 10)) allInBounds = false;
+    if (pixels.some((p) => p.y < -2 || p.y > 10)) allInVerticalBounds = false;
     if (hs !== "short" || acc !== "none") {
       if (pixels.length === 0) missingPixels.push(`${hs}+${acc}`);
     }
@@ -50,6 +61,57 @@ check("所有髮型×配件像素都在 sprite 11 寬內", allInBounds);
 check("非預設組合都有實際像素", missingPixels.length === 0, missingPixels.join(","));
 
 // --- 2. 隨機外觀變化量 ---
+check("所有髮型與配件維持頭部垂直對位", allInVerticalBounds);
+
+const spriteEntries = [
+  ["stand", CHAR_STAND, 19, 11],
+  ["sit", CHAR_SIT, 14, 11],
+  ["walkA", CHAR_WALK_A, 19, 11],
+  ["walkB", CHAR_WALK_B, 19, 11],
+  ["sitBack", CHAR_SIT_BACK, 12, 11],
+  ["lie", CHAR_LIE, 7, 22],
+] as const;
+const allowedTokens = new Set([".", ...Object.keys(BASE_PAL), ..."hHfFtTjdD"]);
+check(
+  "共用人物姿勢維持各自固定寬度與高度",
+  spriteEntries.every(([, rows, height, width]) => rows.length === height && rows.every((row) => row.length === width)),
+);
+check(
+  "共用人物姿勢只使用已定義的角色色票 token",
+  spriteEntries.every(([, rows]) => rows.every((row) => [...row].every((token) => allowedTokens.has(token)))),
+);
+check(
+  "站走坐姿都有雙眼與嘴部表情",
+  [CHAR_STAND, CHAR_SIT, CHAR_WALK_A, CHAR_WALK_B]
+    .every((rows) => rows[5].split("k").length - 1 === 2 && rows[7].includes("m")),
+);
+check(
+  "走路雙幀同時改變手臂與腿部",
+  CHAR_WALK_A.slice(9, 14).join("") !== CHAR_WALK_B.slice(9, 14).join("")
+    && CHAR_WALK_A.slice(16).join("") !== CHAR_WALK_B.slice(16).join(""),
+);
+
+const signature = (hairStyle: Appearance["hairStyle"], accessory: Appearance["accessory"]) => {
+  const { ctx, pixels } = mockCtx();
+  drawAppearanceOverlay(ctx, {
+    hairStyle,
+    hairColor: "#553322",
+    shirt: "#222222",
+    pants: "#333333",
+    skin: "#d9a67a",
+    accessory,
+  }, 0, 0);
+  return pixels.map((p) => `${p.x},${p.y}`).sort().join("|");
+};
+check(
+  "五種髮型都有可辨識的不同輪廓",
+  new Set(ALL_HAIR_STYLES.map((hair) => signature(hair, "none"))).size === ALL_HAIR_STYLES.length,
+);
+check(
+  "六種配件都有可辨識的不同輪廓",
+  new Set(ALL_ACCESSORIES.map((accessory) => signature("short", accessory))).size === ALL_ACCESSORIES.length,
+);
+
 const combos = new Set<string>();
 let noneCount = 0;
 for (let i = 0; i < 200; i++) {

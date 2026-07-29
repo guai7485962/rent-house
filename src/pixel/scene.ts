@@ -32,6 +32,7 @@ import {
   ICON_EXCLAIM,
   ICON_PHONE,
 } from "./sprites";
+import { drawAppearanceOverlay } from "./parts";
 
 export const SCENE_W = 192; // 12 tiles
 export const SCENE_H = 144; // 9 tiles
@@ -187,7 +188,7 @@ export function composeScene(ctx: Ctx, s: SceneState) {
   if (has("cat_sleeping_on_couch")) drawSprite(ctx, CAT_SLEEP, 96, 104, BASE_PAL);
   if (has("cat_hiding")) drawSprite(ctx, CAT_PEEK, 60, 46, BASE_PAL);
 
-  drawTenant(ctx, pal, s.visualState, frame);
+  drawTenant(ctx, pal, getCustomAppearance(s.tenantId), s.visualState, frame);
 
   // ---- 關燈:夜色 + 光源保留 ----
   if (dark) {
@@ -495,14 +496,18 @@ function drawDirt(ctx: Ctx, cleanliness: number) {
 // 租客
 // ---------------------------------------------------------------------------
 
-function drawTenant(ctx: Ctx, pal: Palette, st: TenantVisualState, frame: number) {
+function drawTenant(ctx: Ctx, pal: Palette, appearance: Appearance | null, st: TenantVisualState, frame: number) {
   const bob = frame % 2;
 
   const stand = (x: number, y: number) => {
     groundShadow(ctx, x + 5, y + 19, 12);
     drawSprite(ctx, CHAR_STAND, x, y - bob, pal);
+    if (appearance) drawAppearanceOverlay(ctx, appearance, x, y - bob);
   };
-  const sit = (x: number, y: number) => drawSprite(ctx, CHAR_SIT, x, y, pal);
+  const sit = (x: number, y: number) => {
+    drawSprite(ctx, CHAR_SIT, x, y, pal);
+    if (appearance) drawAppearanceOverlay(ctx, appearance, x, y);
+  };
   const lie = (x: number, y: number) => drawSprite(ctx, CHAR_LIE, x, y, pal);
 
   switch (st) {

@@ -124,8 +124,11 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     for (const spot of TENANT_SPOTS) {
       const px = spot.c * TILE;
       const py = spot.r * TILE;
+      const spriteY = py - 4 - (frame % 2);
       groundShadow(ctx, px + TILE / 2, py + TILE - 1, 11);
-      drawSprite(ctx, CHAR_STAND, px + 3, py - 4 - (frame % 2), charPalette(spot.tenantId));
+      drawSprite(ctx, CHAR_STAND, px + 3, spriteY, charPalette(spot.tenantId));
+      const appearance = getCustomAppearance(spot.tenantId);
+      if (appearance) drawAppearanceOverlay(ctx, appearance, px + 3, spriteY);
     }
   }
 
@@ -651,6 +654,24 @@ function drawLying(ctx: Ctx, a: Agent, pal: Palette) {
     else if (a.poseRotation === 270) rect(ctx, ox + y, oy + TILE - x - w, h, w, color);
     else rect(ctx, ox + x, oy + y, w, h, color);
   };
+  const appearance = getCustomAppearance(a.tenantId);
+  if (appearance?.hairStyle === "long") {
+    rr(1, 3, 1, 8, pal.h);
+    rr(7, 3, 1, 8, shade(pal.h, -18));
+    rr(2, 3, 5, 1, shade(pal.h, 24));
+  } else if (appearance?.hairStyle === "ponytail") {
+    rr(1, 3, 6, 1, pal.h);
+    rr(0, 4, 2, 4, pal.h);
+    rr(0, 7, 1, 3, shade(pal.h, -18));
+  } else if (appearance?.hairStyle === "spiky") {
+    rr(1, 3, 1, 2, pal.h);
+    rr(3, 2, 1, 2, shade(pal.h, 24));
+    rr(5, 3, 2, 1, pal.h);
+  } else if (appearance?.hairStyle === "bob") {
+    rr(1, 3, 7, 2, pal.h);
+    rr(1, 5, 1, 5, pal.h);
+    rr(7, 5, 1, 5, shade(pal.h, -18));
+  }
   rr(7, 3, 8, 10, shade(pal.t, -22)); // 被子滾邊
   rr(8, 4, 7, 8, pal.t); // 被子
   rr(8, 7, 7, 1, shade(pal.t, 22)); // 摺線高光
@@ -658,6 +679,20 @@ function drawLying(ctx: Ctx, a: Agent, pal: Palette) {
   rr(2, 7, 5, 3, pal.F); // 臉
   rr(3, 8, 1, 1, shade(pal.F, -40)); // 閉眼
   rr(5, 8, 1, 1, shade(pal.F, -40));
+  if (appearance?.accessory === "glasses" || appearance?.accessory === "round_glasses") {
+    rr(2, 7, 2, 1, "#34313b");
+    rr(5, 7, 2, 1, "#34313b");
+    rr(4, 8, 1, 1, "#34313b");
+  } else if (appearance?.accessory === "cap") {
+    rr(1, 3, 7, 2, "#3a66aa");
+    rr(6, 5, 3, 1, "#31578e");
+  } else if (appearance?.accessory === "bow") {
+    rr(1, 3, 1, 2, "#ff88b0");
+    rr(2, 4, 1, 1, "#e96f9b");
+  } else if (appearance?.accessory === "headphones") {
+    rr(1, 6, 1, 4, "#2a2d38");
+    rr(7, 6, 1, 4, "#2a2d38");
+  }
 }
 
 // ---------------------------------------------------------------------------

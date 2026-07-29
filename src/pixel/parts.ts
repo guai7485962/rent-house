@@ -6,13 +6,18 @@
  * 長髮=兩側垂下、馬尾=右後方辮子、刺蝟=頭頂尖刺、鮑伯=兩側加寬。
  * 配件畫在最上層(眼鏡/圓框眼鏡/棒球帽/蝴蝶結/耳機)。
  */
-import type { Ctx } from "./sprites";
+import { shade, type Ctx } from "./sprites";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 
 interface Overlay {
   dy: number; // 相對 sprite 原點的縱向位移(可為負 = 畫到頭頂上方)
   rows: string[]; // "X" = 上色(11 寬)
   color?: string; // 配件用固定色;髮型不填(用 hairColor)
+}
+
+interface HairOverlay {
+  base?: Overlay;
+  accent?: Overlay;
 }
 
 function pat(ctx: Ctx, rows: string[], x: number, y: number, color: string) {
@@ -22,57 +27,69 @@ function pat(ctx: Ctx, rows: string[], x: number, y: number, color: string) {
       if (rows[r][c] === "X") ctx.fillRect(x + c, y + r, 1, 1);
 }
 
-/** 髮型圖層(short = 用基底自帶的短髮,無疊加) */
-const HAIR_OVERLAYS: Record<HairStyle, Overlay | null> = {
-  short: null,
+/** 髮型圖層(short 保留基底輪廓，只補一小段高光) */
+const HAIR_OVERLAYS: Record<HairStyle, HairOverlay> = {
+  short: {
+    accent: { dy: 0, rows: ["....XX.....", "...X......."] },
+  },
   long: {
-    dy: 3,
-    rows: [
-      "X........X.",
-      "X........X.",
-      "X........X.",
-      "X........X.",
-      "X........X.",
-      ".X......X..",
-    ],
+    base: {
+      dy: 2,
+      rows: [
+        ".X.......X.",
+        "XX.......XX",
+        "XX.......XX",
+        "XX.......XX",
+        ".X.......X.",
+        ".X.......X.",
+        "..X.....X..",
+      ],
+    },
+    accent: { dy: 3, rows: [".X.........", ".X.........", "..........X"] },
   },
   ponytail: {
-    dy: 1,
-    rows: [
-      ".........X.",
-      ".........XX",
-      ".........XX",
-      "..........X",
-      "..........X",
-      ".........X.",
-    ],
+    base: {
+      dy: 1,
+      rows: [
+        ".........X.",
+        "........XXX",
+        ".........XX",
+        ".........XX",
+        "..........X",
+        ".........X.",
+        "........X..",
+      ],
+    },
+    accent: { dy: 2, rows: [".........X.", "..........X", "..........X"] },
   },
   spiky: {
-    dy: -2,
-    rows: [
-      "..X.X.X.X..",
-      "..XXXXXXX..",
-    ],
+    base: { dy: -2, rows: ["..X.X.X.X..", "..XXXXXXX.."] },
+    accent: { dy: -2, rows: ["....X.X...."] },
   },
   bob: {
-    dy: 2,
-    rows: [
-      ".X.......X.",
-      "XX.......XX",
-      "XX.......XX",
-      ".X.......X.",
-    ],
+    base: {
+      dy: 2,
+      rows: [
+        ".X.......X.",
+        "XX.......XX",
+        "XX.......XX",
+        "XX.......XX",
+        ".XX.....XX.",
+        "..X.....X..",
+      ],
+    },
+    accent: { dy: 3, rows: [".X.........", ".X.........", "..X........"] },
   },
 };
 
 /** 配件圖層(可多段;各自有固定色) */
 const ACCESSORY_OVERLAYS: Record<AccessoryKind, Overlay[]> = {
   none: [],
-  glasses: [{ dy: 5, color: "#23252e", rows: [".XXXXXXXX.."] }],
+  glasses: [{ dy: 5, color: "#23252e", rows: ["..XXX.XXX.."] }],
   round_glasses: [
     {
       dy: 4,
-      color: "#f2f2f2",
+      color: "#34313b",
       rows: ["..XXX.XXX..", "..X.X.X.X..", "..XXX.XXX.."],
     },
   ],
@@ -99,7 +116,8 @@ const ACCESSORY_OVERLAYS: Record<AccessoryKind, Overlay[]> = {
 /** 在基底 sprite 上疊畫髮型與配件((x,y) = sprite 繪製原點) */
 export function drawAppearanceOverlay(ctx: Ctx, ap: Appearance, x: number, y: number) {
   const hair = HAIR_OVERLAYS[ap.hairStyle];
-  if (hair) pat(ctx, hair.rows, x, y + hair.dy, ap.hairColor);
+  if (hair.base) pat(ctx, hair.base.rows, x, y + hair.base.dy, ap.hairColor);
+  if (hair.accent) pat(ctx, hair.accent.rows, x, y + hair.accent.dy, shade(ap.hairColor, 24));
   for (const seg of ACCESSORY_OVERLAYS[ap.accessory] ?? []) {
     pat(ctx, seg.rows, x, y + seg.dy, seg.color!);
   }

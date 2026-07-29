@@ -124,6 +124,7 @@ export function drawSprite(ctx: Ctx, rows: string[], x: number, y: number, pal: 
 // ---------------------------------------------------------------------------
 
 export const BASE_PAL: Palette = {
+  m: "#b85f68", // mouth / warm facial accent
   k: "#241b33", // 描邊/深
   p: "#efe7d6", // 枕頭
   P: "#cfc4ae", // 枕頭陰影
@@ -143,20 +144,20 @@ export const BASE_PAL: Palette = {
 
 /** 站姿 11x19 */
 export const CHAR_STAND = [
-  "...hhhh....",
+  "...hHh.....",
   "..hHHhhh...",
   ".hHHhhhhh..",
   ".hHFFFFfh..",
-  ".hHFFFFfh..",
-  ".hFkFFkfh..",
-  ".hFFFFFfh..",
-  "..fFFFFf...",
-  "...FFFF....",
+  ".hFFFFFFh..",
+  ".hFkFFkFh..",
+  ".hFFFFFFh..",
+  "..fFFmFf...",
+  "...fFFf....",
   "..jTTttj...",
   ".jTTttttj..",
   ".FTTttttjF.",
-  ".jTTttttj..",
-  "..Tttttt...",
+  ".FjTTttjF..",
+  "..jTtttj...",
   "..dddddd...",
   "..dDDDDd...",
   "..dd..dd...",
@@ -166,66 +167,66 @@ export const CHAR_STAND = [
 
 /** 坐姿 11x14(用於椅子/沙發/地板) */
 export const CHAR_SIT = [
-  "...hhhh....",
+  "...hHh.....",
   "..hHHhhh...",
   ".hHHhhhhh..",
   ".hHFFFFfh..",
-  ".hFkFFkfh..",
-  ".hFFFFFfh..",
-  "..fFFFFf...",
-  "...FFFF....",
-  "..jTTttj...",
-  ".FTTttttF..",
-  ".jTTttttj..",
-  "..Tttttt...",
-  ".dddddddd..",
-  ".dD.dd.Dd..",
+  ".hFFFFFFh..",
+  ".hFkFFkFh..",
+  ".hFFFFFFh..",
+  "..fFFmFf...",
+  "...fFFf....",
+  "...jTTttj..",
+  "..jTTttttj.",
+  ".FjTtttjF..",
+  ".ddFddFdd..",
+  ".dD.kk.Dd..",
 ];
 
 /** 走路 A(下半身左移)11x19 */
 export const CHAR_WALK_A = [
-  "...hhhh....",
+  "...hHh.....",
   "..hHHhhh...",
   ".hHHhhhhh..",
   ".hHFFFFfh..",
-  ".hHFFFFfh..",
-  ".hFkFFkfh..",
-  ".hFFFFFfh..",
-  "..fFFFFf...",
-  "...FFFF....",
-  "..jTTttj...",
-  ".jTTttttj..",
-  ".FTTttttjF.",
-  ".jTTttttj..",
-  "..Tttttt...",
+  ".hFFFFFFh..",
+  ".hFkFFkFh..",
+  ".hFFFFFFh..",
+  "..fFFmFf...",
+  "...fFFf....",
+  "...jTTttj..",
+  "..FTTttttj.",
+  ".FjTTttttj.",
+  "..jTTttj.F.",
+  "...Tttt.F..",
   "..dddddd...",
   "..dDDDDd...",
-  ".dd..dd....",
-  ".dd..dd....",
-  ".kk..kk....",
+  ".dd...dd...",
+  "dd.....dd..",
+  "kk.....kk..",
 ];
 
 /** 走路 B(下半身右移)11x19 */
 export const CHAR_WALK_B = [
-  "...hhhh....",
+  "...hHh.....",
   "..hHHhhh...",
   ".hHHhhhhh..",
   ".hHFFFFfh..",
-  ".hHFFFFfh..",
-  ".hFkFFkfh..",
-  ".hFFFFFfh..",
-  "..fFFFFf...",
-  "...FFFF....",
-  "..jTTttj...",
-  ".jTTttttj..",
-  ".FTTttttjF.",
-  ".jTTttttj..",
-  "..Tttttt...",
+  ".hFFFFFFh..",
+  ".hFkFFkFh..",
+  ".hFFFFFFh..",
+  "..fFFmFf...",
+  "...fFFf....",
+  "...jTTttj..",
+  ".jTTttttF..",
+  ".jTTttttjF.",
+  ".F.jTTttj..",
+  "..F.Tttt...",
   "..dddddd...",
   "..dDDDDd...",
-  "...dd..dd..",
-  "...dd..dd..",
-  "...kk..kk..",
+  "...dd...dd.",
+  "..dd.....dd",
+  "..kk.....kk",
 ];
 
 /** 坐姿(背對,桌前工作用)11x12 */
@@ -244,9 +245,9 @@ export const CHAR_SIT_BACK = [
   ".ddd..ddd..",
 ];
 
-/** 躺姿 21x7(頭在左,蓋毯子) */
+/** 躺姿 22x7(頭在左,蓋毯子) */
 export const CHAR_LIE = [
-  "...hhh...............",
+  "...hhh................",
   ".hHHhhh..bbbbbbbbbbb..",
   ".hHFFfh..bBbbbbbbbBb..",
   ".hFkFfh..bbbbbbbbbbb..",

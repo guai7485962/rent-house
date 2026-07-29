@@ -36,12 +36,16 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 const APPROVED_IDS = [
   "single_bed", "gaming_desk", "wardrobe", "dresser", "floor_lamp", "plant", "bath_plant",
-  "tv_console", "lounge_tv", "fridge", "stove", "counter", "coffee_machine", "dining_table",
+  "fridge", "stove", "counter", "coffee_machine", "dining_table",
   "toilet", "shower", "washing_machine", "laundry_washer",
-  "shared_sofa", "loveseat", "lounge_plant", "wood_chair", "coffee_table",
+  "lounge_plant", "coffee_table",
 ] as const;
-/** 仍走程序繪圖的手繪件(furniture-art-test.ts 鎖住指紋的三件中,tv_console 已轉入白名單)。 */
-const PROCEDURAL_IDS = ["beanbag", "cat_tower"] as const;
+/** 仍走程序繪圖的手繪件；電視／座椅有 id-specific 像素指紋測試。 */
+const PROCEDURAL_IDS = [
+  "beanbag", "cat_tower",
+  "tv_console", "lounge_tv", "lounge_console",
+  "wood_chair", "plastic_stool", "loveseat", "shared_sofa",
+] as const;
 /** 選件時因寬度/朝向/尺寸規則跳過的 id:絕不可誤入白名單。 */
 const SKIPPED_IDS = ["double_bed", "bookshelf", "bathtub", "bath_sink", "lounge_rug"] as const;
 
@@ -70,7 +74,7 @@ const atlasPng = pngSize("../public/assets/limezu/furniture.png");
 const floorsPng = pngSize("../public/assets/limezu/floors.png");
 
 check(
-  "runtime 白名單 = 23 個核准 id(第一批 18 件 + Generic 第二批 5 件)",
+  "runtime 白名單 = 18 個核准 id；電視與座椅改走專屬程序圖",
   JSON.stringify(LIMEZU_FURNITURE_IDS) === JSON.stringify(APPROVED_IDS),
 );
 check(
@@ -224,27 +228,26 @@ check(
   !tryDrawLimezuFurniture(atlasCtx as any, "double_bed", 0, 0, 48, 32) && atlasCtx.drawCalls.length === 1,
 );
 check(
-  "tv_console 本批已加入白名單且走 atlas",
-  tryDrawLimezuFurniture(atlasCtx as any, "tv_console", 0, 0, 32, 16) && atlasCtx.drawCalls.length === 2,
+  "錯誤壁爐 frame 不再能以 tv_console 從 runtime atlas 畫出",
+  !tryDrawLimezuFurniture(atlasCtx as any, "tv_console", 0, 0, 32, 16) && atlasCtx.drawCalls.length === 1,
 );
 check(
   "washing_machine 與 laundry_washer 共用同一 atlas 格",
   LIMEZU_FURNITURE_FRAMES.washing_machine.sx === LIMEZU_FURNITURE_FRAMES.laundry_washer.sx
     && LIMEZU_FURNITURE_FRAMES.washing_machine.sy === LIMEZU_FURNITURE_FRAMES.laundry_washer.sy,
 );
-const BATCH2_IDS = ["shared_sofa", "loveseat", "lounge_plant", "wood_chair", "coffee_table"] as const;
+const BATCH2_IDS = ["lounge_plant", "coffee_table"] as const;
 check(
-  "第二批 5 件全部位於 atlas 新增的 y>=96 帶",
+  "第二批保留的 2 件全部位於 atlas 新增的 y>=96 帶",
   BATCH2_IDS.every((id) => LIMEZU_FURNITURE_FRAMES[id].sy >= 96),
 );
 check(
-  "shared_sofa 以 48px 全寬貼齊 3x1 footprint(dx=0、往上長 10px)",
-  LIMEZU_FURNITURE_FRAMES.shared_sofa.sw === 48
-    && LIMEZU_FURNITURE_FRAMES.shared_sofa.dx === 0
-    && LIMEZU_FURNITURE_FRAMES.shared_sofa.dy === -10,
+  "五件電視／座椅舊 frame 已從 runtime 映射移除",
+  ["tv_console", "lounge_tv", "shared_sofa", "loveseat", "wood_chair"]
+    .every((id) => !(id in LIMEZU_FURNITURE_FRAMES)),
 );
 check(
-  "第二批 id 已載入 atlas 時可繪製",
+  "第二批保留 id 已載入 atlas 時可繪製",
   BATCH2_IDS.every((id) => {
     const def = getDef(id);
     const c = new FakeCtx();
@@ -254,7 +257,7 @@ check(
 );
 check(
   "跳過件 lounge_rug 不會誤畫 atlas",
-  !tryDrawLimezuFurniture(atlasCtx as any, "lounge_rug", 0, 0, 64, 48) && atlasCtx.drawCalls.length === 2,
+  !tryDrawLimezuFurniture(atlasCtx as any, "lounge_rug", 0, 0, 64, 48) && atlasCtx.drawCalls.length === 1,
 );
 
 for (const id of PROCEDURAL_IDS) {
@@ -267,6 +270,24 @@ for (const id of PROCEDURAL_IDS) {
 const renderCtx = new FakeCtx();
 drawDef(renderCtx as any, getDef("gaming_desk"), 0, 0);
 check("drawDef 成功使用 atlas 時不疊加程序像素", renderCtx.drawCalls.length === 1 && renderCtx.fillCount === 0);
+
+const semanticArtOverrides = [
+  "tv_console",
+  "lounge_tv",
+  "lounge_console",
+  "wood_chair",
+  "plastic_stool",
+  "loveseat",
+  "shared_sofa",
+] as const;
+check(
+  "電視與座椅專屬程序圖在 atlas 已載入時仍優先，避免錯誤素材覆蓋",
+  semanticArtOverrides.every((id) => {
+    const c = new FakeCtx();
+    drawDef(c as any, getDef(id), 0, 0);
+    return c.drawCalls.length === 0 && c.fillCount > 0;
+  }),
+);
 
 let warnings = 0;
 const originalWarn = console.warn;

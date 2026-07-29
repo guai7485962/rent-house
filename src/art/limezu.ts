@@ -21,8 +21,6 @@ export const LIMEZU_FURNITURE_IDS = [
   "floor_lamp",
   "plant",
   "bath_plant",
-  "tv_console",
-  "lounge_tv",
   "fridge",
   "stove",
   "counter",
@@ -32,10 +30,7 @@ export const LIMEZU_FURNITURE_IDS = [
   "shower",
   "washing_machine",
   "laundry_washer",
-  "shared_sofa",
-  "loveseat",
   "lounge_plant",
-  "wood_chair",
   "coffee_table",
 ] as const;
 
@@ -65,8 +60,6 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   floor_lamp: { sx: 96, sy: 0, sw: 15, sh: 33, dx: 0, dy: -17 },
   plant: { sx: 28, sy: 40, sw: 14, sh: 29, dx: 1, dy: -13 },
   bath_plant: { sx: 103, sy: 70, sw: 12, sh: 14, dx: 2, dy: 2 },
-  tv_console: { sx: 0, sy: 0, sw: 32, sh: 40, dx: 0, dy: -24 },
-  lounge_tv: { sx: 32, sy: 0, sw: 32, sh: 40, dx: 0, dy: -24 },
   fridge: { sx: 80, sy: 0, sw: 16, sh: 36, dx: 0, dy: -4 },
   stove: { sx: 0, sy: 70, sw: 16, sh: 25, dx: 0, dy: -9 },
   counter: { sx: 74, sy: 70, sw: 29, sh: 14, dx: 1, dy: 2 },
@@ -76,10 +69,7 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   shower: { sx: 16, sy: 70, sw: 29, sh: 25, dx: 1, dy: 7 },
   washing_machine: { sx: 42, sy: 40, sw: 20, sh: 29, dx: -2, dy: -13 },
   laundry_washer: { sx: 42, sy: 40, sw: 20, sh: 29, dx: -2, dy: -13 },
-  shared_sofa: { sx: 0, sy: 96, sw: 48, sh: 26, dx: 0, dy: -10 },
-  loveseat: { sx: 48, sy: 96, sw: 30, sh: 18, dx: 1, dy: -2 },
   lounge_plant: { sx: 78, sy: 96, sw: 16, sh: 31, dx: 0, dy: -15 },
-  wood_chair: { sx: 94, sy: 96, sw: 14, sh: 22, dx: 1, dy: -6 },
   coffee_table: { sx: 108, sy: 96, sw: 14, sh: 14, dx: 1, dy: 2 },
 };
 

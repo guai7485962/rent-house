@@ -48,6 +48,12 @@ function hasFill(calls: FillCall[], color: string, x: number, y: number, w: numb
 const cases = [
   { id: "beanbag", width: 16, height: 16 },
   { id: "tv_console", width: 32, height: 16 },
+  { id: "lounge_tv", width: 32, height: 16 },
+  { id: "lounge_console", width: 32, height: 16 },
+  { id: "wood_chair", width: 16, height: 16 },
+  { id: "plastic_stool", width: 16, height: 16 },
+  { id: "loveseat", width: 32, height: 16 },
+  { id: "shared_sofa", width: 48, height: 16 },
   { id: "cat_tower", width: 16, height: 32 },
   { id: "dog_bed", width: 32, height: 16 },
   { id: "chew_toy", width: 16, height: 16 },
@@ -96,11 +102,62 @@ check("懶骨頭具有上窄下寬的鬆軟色塊",
 const tv = new RecorderCtx();
 drawDef(tv as any, getDef("tv_console"), 0, 0);
 check("電視櫃具有薄螢幕與獨立遊戲主機",
-  hasFill(tv.fills, "#608fbd", 5, 3, 18, 4)
-  && hasFill(tv.fills, "#d8d4cb", 24, 4, 5, 8));
+  hasFill(tv.fills, "#477ca8", 4, 3, 17, 5)
+  && hasFill(tv.fills, "#d8d4cb", 25, 3, 5, 9));
 check("電視櫃具有可辨識控制器按鍵",
   hasFill(tv.fills, "#7da6cc", 7, 11, 1, 1)
   && hasFill(tv.fills, "#d9818f", 10, 11, 1, 1));
+
+const loungeTv = new RecorderCtx();
+drawDef(loungeTv as any, getDef("lounge_tv"), 0, 0);
+check("交誼廳大電視具有滿版螢幕、聲霸與遙控器",
+  hasFill(loungeTv.fills, "#345b78", 3, 3, 26, 5)
+  && hasFill(loungeTv.fills, "#242936", 8, 11, 16, 2)
+  && hasFill(loungeTv.fills, "#b9a57e", 27, 12, 2, 1));
+
+const motionConsole = new RecorderCtx();
+drawDef(motionConsole as any, getDef("lounge_console"), 0, 0);
+check("體感遊戲機具有雙色感應條與兩支動態手把",
+  hasFill(motionConsole.fills, "#171c29", 9, 9, 14, 2)
+  && hasFill(motionConsole.fills, "#4aa9b2", 5, 11, 3, 3)
+  && hasFill(motionConsole.fills, "#b45f96", 24, 11, 3, 3));
+check("三款電視使用不同主畫面色與用途配件",
+  hasFill(tv.fills, "#477ca8", 4, 3, 17, 5)
+  && hasFill(loungeTv.fills, "#345b78", 3, 3, 26, 5)
+  && hasFill(motionConsole.fills, "#54508a", 4, 3, 24, 5));
+
+const woodChair = new RecorderCtx();
+drawDef(woodChair as any, getDef("wood_chair"), 0, 0);
+check("木質單椅具有鏤空直條椅背與四像素椅腳",
+  hasFill(woodChair.fills, "#8a6444", 6, 3, 2, 4)
+  && hasFill(woodChair.fills, "#8a6444", 9, 3, 2, 4)
+  && woodChair.fills.some((call) => call.x === 3 && call.y === 12 && call.w === 2 && call.h === 4));
+
+const plasticStool = new RecorderCtx();
+drawDef(plasticStool as any, getDef("plastic_stool"), 0, 0);
+check("塑膠椅凳具有藍綠弧面座與張開椅腳",
+  hasFill(plasticStool.fills, "#3f9da0", 3, 5, 10, 4)
+  && hasFill(plasticStool.fills, "#a6ded1", 5, 6, 6, 1)
+  && hasFill(plasticStool.fills, "#23575f", 3, 15, 3, 1));
+check("木椅與塑膠椅凳不再共用材質或輪廓",
+  !woodChair.fills.some((call) => call.color === "#3f9da0")
+  && !plasticStool.fills.some((call) => call.color === "#8a6444"));
+
+const loveseat = new RecorderCtx();
+drawDef(loveseat as any, getDef("loveseat"), 0, 0);
+check("戀人雙人沙發具有雙座分界與兩色抱枕",
+  hasFill(loveseat.fills, "#b96882", 4, 8, 11, 4)
+  && hasFill(loveseat.fills, "#b96882", 17, 8, 11, 4)
+  && hasFill(loveseat.fills, "#e6b0a8", 6, 5, 5, 3)
+  && hasFill(loveseat.fills, "#815a91", 21, 5, 5, 3));
+
+const sharedSofa = new RecorderCtx();
+drawDef(sharedSofa as any, getDef("shared_sofa"), 0, 0);
+check("共用沙發具有三個獨立坐墊與寬版藍綠輪廓",
+  hasFill(sharedSofa.fills, "#5d8e90", 5, 8, 11, 4)
+  && hasFill(sharedSofa.fills, "#56878a", 18, 8, 11, 4)
+  && hasFill(sharedSofa.fills, "#5d8e90", 31, 8, 11, 4)
+  && hasFill(sharedSofa.fills, "#d9a36f", 7, 5, 5, 3));
 
 const catTower = new RecorderCtx();
 drawDef(catTower as any, getDef("cat_tower"), 0, 0);

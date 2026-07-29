@@ -44,6 +44,10 @@ export function drawDef(ctx: Ctx, def: FurnitureDef, x: number, y: number, rotat
 }
 
 function drawUnrotated(ctx: Ctx, def: FurnitureDef, x: number, y: number, w: number, h: number) {
+  // 電視與座椅採專屬程序像素圖：這批家具需要依 id 呈現用途與材質差異，
+  // 不能再讓同一個 atlas 輪廓只靠名稱區分。放在 LimeZu 前面，確保瀏覽器
+  // 與 atlas 未載入時看到的是同一套美術，不會出現正式畫面／測試 fallback 分岔。
+  if (drawFurnitureArtOverride(ctx, def.id, x, y, w, h)) return;
   if (tryDrawLimezuFurniture(ctx, def.id, x, y, w, h)) return;
   if ("recipe" in def.sprite) {
     drawRecipe(ctx, def.sprite.recipe, x, y);
@@ -55,6 +59,176 @@ function drawUnrotated(ctx: Ctx, def: FurnitureDef, x: number, y: number, w: num
   if (def.id === "canopy_bed") drawCanopyTrim(ctx, x, y, w, h);
   else if (def.id === "loveseat") drawLoveseatTrim(ctx, x, y, w, h);
   else if (def.id === "romantic_table") drawDateTableTrim(ctx, x, y, w, h);
+}
+
+function drawFurnitureArtOverride(
+  ctx: Ctx,
+  id: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): boolean {
+  switch (id) {
+    case "tv_console":
+      drawRoomTvConsole(ctx, x, y, w, h);
+      return true;
+    case "lounge_tv":
+      drawLoungeTv(ctx, x, y, w, h);
+      return true;
+    case "lounge_console":
+      drawMotionConsole(ctx, x, y, w, h);
+      return true;
+    case "wood_chair":
+      drawWoodChair(ctx, x, y, w, h);
+      return true;
+    case "plastic_stool":
+      drawPlasticStool(ctx, x, y, w, h);
+      return true;
+    case "loveseat":
+      drawLoveseat(ctx, x, y, w, h);
+      return true;
+    case "shared_sofa":
+      drawSharedSofa(ctx, x, y, w, h);
+      return true;
+    default:
+      return false;
+  }
+}
+
+function drawScreen(
+  ctx: Ctx,
+  x: number,
+  y: number,
+  w: number,
+  bezel: string,
+  glass: string,
+  glow: string,
+) {
+  rect(ctx, x, y, w, 9, bezel);
+  rect(ctx, x + 1, y + 1, w - 2, 7, "#101521");
+  rect(ctx, x + 2, y + 2, w - 4, 5, glass);
+  rect(ctx, x + 3, y + 2, Math.max(3, Math.floor(w / 3)), 1, glow);
+  rect(ctx, x + 2, y + 3, 1, 2, glow);
+}
+
+/** 房內款：暖木低櫃、直立主機與控制器，讀成「電視＋遊戲主機」。 */
+function drawRoomTvConsole(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
+  const wood = ramp("#76553d");
+  drawScreen(ctx, x + 2, y + 1, 21, "#252b3a", "#477ca8", "#9fc4da");
+  rect(ctx, x + 11, y + 9, 4, 1, "#252b3a");
+  block(ctx, x + 1, y + 10, w - 2, 5, wood, 1);
+  rect(ctx, x + 16, y + 12, 1, 2, wood.out);
+
+  // 白色直立主機：不再與螢幕或櫃門黏成同一塊。
+  rect(ctx, x + w - 7, y + 3, 5, 9, "#d8d4cb");
+  rect(ctx, x + w - 7, y + 3, 1, 9, "#f0ede5");
+  rect(ctx, x + w - 4, y + 4, 1, 6, "#3b4150");
+  rect(ctx, x + w - 6, y + 10, 1, 1, "#71c994");
+
+  // 櫃面上的控制器：深色本體、兩側握把與雙色按鍵。
+  rect(ctx, x + 5, y + 11, 7, 2, "#292d3a");
+  rect(ctx, x + 4, y + 12, 2, 2, "#292d3a");
+  rect(ctx, x + 11, y + 12, 2, 2, "#292d3a");
+  rect(ctx, x + 7, y + 11, 1, 1, "#7da6cc");
+  rect(ctx, x + 10, y + 11, 1, 1, "#d9818f");
+}
+
+/** 交誼廳大電視：滿版螢幕、中央腳座、聲霸與遙控器。 */
+function drawLoungeTv(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
+  const cabinet = ramp("#59483b");
+  drawScreen(ctx, x + 1, y + 1, w - 2, "#202737", "#345b78", "#8db8cf");
+  rect(ctx, x + 14, y + 9, 4, 1, "#242b38");
+  block(ctx, x + 2, y + 10, w - 4, 5, cabinet, 1);
+  rect(ctx, x + 8, y + 11, 16, 2, "#242936");
+  rect(ctx, x + 10, y + 11, 12, 1, "#3f485c");
+  rect(ctx, x + 27, y + 12, 2, 1, "#b9a57e");
+  rect(ctx, x + 15, y + 12, 1, 1, "#71c994");
+}
+
+/** 體感遊戲機：攝影機感應條、雙手把與高彩度動態畫面。 */
+function drawMotionConsole(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
+  const cabinet = ramp("#43465a");
+  drawScreen(ctx, x + 2, y + 1, w - 4, "#24293b", "#54508a", "#71d7d0");
+  rect(ctx, x + 9, y + 9, 14, 2, "#171c29");
+  rect(ctx, x + 11, y + 9, 2, 1, "#71d7d0");
+  rect(ctx, x + 19, y + 9, 2, 1, "#d981b4");
+  block(ctx, x + 2, y + 11, w - 4, 4, cabinet, 1);
+  rect(ctx, x + 5, y + 11, 3, 3, "#4aa9b2");
+  rect(ctx, x + 6, y + 12, 1, 1, "#d9fbf2");
+  rect(ctx, x + 24, y + 11, 3, 3, "#b45f96");
+  rect(ctx, x + 25, y + 12, 1, 1, "#ffe0f1");
+}
+
+/** 木質單椅：有鏤空直條椅背、厚座板與前後腳，不再像方形床頭櫃。 */
+function drawWoodChair(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 5);
+  const wood = ramp("#8a6444");
+  rect(ctx, x + 3, y + 1, w - 6, 2, wood.out);
+  rect(ctx, x + 3, y + 3, 2, 5, wood.dark);
+  rect(ctx, x + w - 5, y + 3, 2, 5, wood.dark);
+  rect(ctx, x + 6, y + 3, 2, 4, wood.mid);
+  rect(ctx, x + 9, y + 3, 2, 4, wood.mid);
+  rect(ctx, x + 4, y + 7, w - 8, 1, wood.light);
+  block(ctx, x + 2, y + 8, w - 4, 5, wood, 2);
+  rect(ctx, x + 3, y + 12, 2, 4, wood.dark);
+  rect(ctx, x + w - 5, y + 12, 2, 4, wood.dark);
+  rect(ctx, x + 5, y + 10, w - 10, 1, wood.hi);
+}
+
+/** 塑膠椅凳：一體成形的藍綠弧面座與張開椅腳，和木椅完全不同。 */
+function drawPlasticStool(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 6);
+  rect(ctx, x + 4, y + 4, w - 8, 1, "#317d82");
+  rect(ctx, x + 3, y + 5, w - 6, 4, "#3f9da0");
+  rect(ctx, x + 4, y + 5, w - 8, 2, "#72c1ba");
+  rect(ctx, x + 5, y + 6, w - 10, 1, "#a6ded1");
+  rect(ctx, x + 4, y + 9, w - 8, 2, "#327f84");
+  rect(ctx, x + 4, y + 10, 2, 5, "#2c6d73");
+  rect(ctx, x + w - 6, y + 10, 2, 5, "#2c6d73");
+  rect(ctx, x + 6, y + 12, w - 12, 1, "#65b5b0");
+  rect(ctx, x + 3, y + 15, 3, 1, "#23575f");
+  rect(ctx, x + w - 6, y + 15, 3, 1, "#23575f");
+}
+
+/** 房內雙人沙發：酒紅絨布、左右兩座與不同抱枕。 */
+function drawLoveseat(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
+  const fabric = ramp("#a95772");
+  block(ctx, x + 1, y + 2, w - 2, 11, fabric, 3);
+  rect(ctx, x + 3, y + 3, w - 6, 4, fabric.light);
+  rect(ctx, x + 4, y + 8, 11, 4, "#b96882");
+  rect(ctx, x + 17, y + 8, 11, 4, "#b96882");
+  rect(ctx, x + 15, y + 4, 2, 8, fabric.dark);
+  rect(ctx, x + 1, y + 6, 4, 7, fabric.out);
+  rect(ctx, x + w - 5, y + 6, 4, 7, fabric.out);
+  rect(ctx, x + 6, y + 5, 5, 3, "#e6b0a8");
+  rect(ctx, x + 21, y + 5, 5, 3, "#815a91");
+  rect(ctx, x + 4, y + 13, 3, 2, "#5d3545");
+  rect(ctx, x + w - 7, y + 13, 3, 2, "#5d3545");
+}
+
+/** 交誼廳三人沙發：藍綠耐磨布、三個獨立坐墊與暖色抱枕。 */
+function drawSharedSofa(ctx: Ctx, x: number, y: number, w: number, h: number) {
+  groundShadow(ctx, x + w / 2, y + h - 1, w - 2);
+  const fabric = ramp("#48777a");
+  block(ctx, x + 1, y + 2, w - 2, 11, fabric, 3);
+  rect(ctx, x + 4, y + 3, w - 8, 4, "#629496");
+  for (let i = 0; i < 3; i++) {
+    const sx = x + 5 + i * 13;
+    rect(ctx, sx, y + 8, 11, 4, i === 1 ? "#56878a" : "#5d8e90");
+  }
+  rect(ctx, x + 16, y + 4, 1, 8, fabric.dark);
+  rect(ctx, x + 31, y + 4, 1, 8, fabric.dark);
+  rect(ctx, x + 1, y + 6, 4, 7, fabric.out);
+  rect(ctx, x + w - 5, y + 6, 4, 7, fabric.out);
+  rect(ctx, x + 7, y + 5, 5, 3, "#d9a36f");
+  rect(ctx, x + 35, y + 5, 5, 3, "#d6c68e");
+  rect(ctx, x + 5, y + 13, 3, 2, "#2e5154");
+  rect(ctx, x + w - 8, y + 13, 3, 2, "#2e5154");
 }
 
 function drawCanopyTrim(ctx: Ctx, x: number, y: number, w: number, h: number) {

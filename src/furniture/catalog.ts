@@ -25,8 +25,12 @@ export type Placement = "room" | "communal" | "wall";
 
 /**
  * 品質層級(選配):budget=平價入門(便宜、低屬性,給手頭緊的早期玩家)、
- * standard=標準、premium=精品(貴、高屬性)。純標示用,不影響任何模擬數值——
- * 舒適度/招租星等仍只看 attributes,tier 只是商店/資訊卡的一眼分級。
+ * standard=標準、premium=精品(貴、高屬性)。
+ *
+ * **會影響模擬數值**:每件家具依 tier 貢獻舒適度點數(`furniture/tier.ts` 的 `TIER_POINTS`),
+ * 房內加總後成為 `roomComfortBreakdown` 的 `tierPart`,是舒適度三個加項之一。
+ * 未標 tier 的家具(紀念物、`UNKNOWN_DEF`)fallback 為中性的 standard,不是 budget。
+ * 招租星等/租金/損壞率仍只看 attributes,tier 不參與。
  */
 export type FurnTier = "budget" | "standard" | "premium";
 
@@ -87,7 +91,7 @@ export interface FurnitureDef {
   name: string;
   category: FurnCategory;
   placement: Placement;
-  /** 品質層級(選配;純標示,不影響模擬)。同型家具用它區分平價/標準/精品版。 */
+  /** 品質層級(選配)。同型家具用它區分平價/標準/精品版,並依 TIER_POINTS 貢獻舒適度;未標 = standard。 */
   tier?: FurnTier;
   price: number;
   /** 佔用格數(walkable=false) */

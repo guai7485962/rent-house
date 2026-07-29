@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
+import { tierChipText } from "../furniture/tier";
 import { furnitureAt } from "../sim/placements";
 
 const props = defineProps<{ c: number; r: number; defId: string; rotation: FurnitureRotation }>();
@@ -20,11 +21,6 @@ const CAT_LABEL: Record<FurnCategory, string> = {
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
-const TIER_INFO: Record<string, { label: string; stars: string }> = {
-  budget: { label: "平價", stars: "★" },
-  standard: { label: "標準", stars: "★★" },
-  premium: { label: "精品", stars: "★★★" },
-};
 const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v]) => v));
 </script>
 
@@ -38,7 +34,7 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
       </div>
 
       <div class="chips">
-        <span v-if="def.tier" class="tier" :class="def.tier">{{ TIER_INFO[def.tier].stars }} {{ TIER_INFO[def.tier].label }}</span>
+        <span v-if="def.tier" class="tier" :class="def.tier" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(def.tier) }}</span>
         <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>

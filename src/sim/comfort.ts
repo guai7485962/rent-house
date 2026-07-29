@@ -10,10 +10,11 @@
  *   - cleanlinessBaseline(roomId)       → 整潔的自然回歸目標(收納家具墊高「常保整潔」)
  *   - comfortHints(roomId, cleanliness) → 房間細看的改善提示
  *
- * 舒適度 = ( 家具屬性(飽和加權) + 家具種類齊全度 ) × 整潔乘子。
+ * 舒適度 = ( 家具屬性(飽和加權) + 家具種類齊全度 + 家具品質層級 ) × 整潔乘子。
  * 依 catalog 家具 attributes 的實際值域設計係數(見下方註解),不臆測。
  */
 import { getDef, type FurnCategory } from "../furniture/catalog";
+import { tierPoints } from "../furniture/tier";
 import { getPlacements, roomAttributes } from "./placements";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -43,6 +44,13 @@ const ATTR_HALF = 18; // 飽和半值:加權和 = 18 時屬性分達上限的一
 const ATTR_MAX = 60; // 屬性部分上限
 
 /**
+ * 品質層級部分上限:房內逐件加總 `TIER_POINTS` 後夾到 0~12。
+ * 夾值是防「狂塞 premium 小物刷分」——沒有上限的話,買 20 個精品盆栽就能無限加分,
+ * 與「佈置得體」的設計意圖相反。12 = 大約 8 件精品家具滿檔,一般房間拿 2~5 分。
+ */
+const TIER_MAX = 12;
+
+/**
  * 給 UI 拆解面板/測試讀的上限常數(**純讀取的鏡射,不參與任何計算**)。
  * 面板要讓玩家看到「離上限還有多遠」,又不能自己另訂一套數字,所以從本檔常數推導。
  */
@@ -53,6 +61,8 @@ export const COMFORT_LIMITS = {
   categoryMax: COMFORT_BUCKETS.length * CATEGORY_POINTS,
   /** 每具備一類的點數 */
   categoryPoints: CATEGORY_POINTS,
+  /** 品質層級部分上限(= TIER_MAX) */
+  tierMax: TIER_MAX,
 } as const;
 
 /**
@@ -71,6 +81,22 @@ function roomCategories(roomId: string): Set<FurnCategory> {
   return set;
 }
 
+/**
+ * 房內家具的品質層級點數總和(夾 0~TIER_MAX)。
+ *
+ * 刻意在本檔自己遍歷 placements,**不動 `placements.roomAttributes()`**:
+ * 那支同時餵 comfort / acoustics.noiseComplaintEligible / recruit.matchStars(→ 租金),
+ * 動一行會連鎖三個系統。tier 只想影響舒適度,所以形狀比照上面的 roomCategories()。
+ */
+function roomTierPoints(roomId: string): number {
+  let points = 0;
+  for (const p of getPlacements()) {
+    if (p.room !== roomId) continue;
+    points += tierPoints(getDef(p.defId));
+  }
+  return clamp(points, 0, TIER_MAX);
+}
+
 /** 房內自動清潔家具(掃地機器人等)的清潔力總和(墊高整潔基準用) */
 function roomCleanPower(roomId: string): number {
   let power = 0;
@@ -86,9 +112,17 @@ export function cleanlinessMultiplier(cleanliness: number): number {
   return clamp(0.5 + 0.5 * (cleanliness / 100), 0.5, 1);
 }
 
-/** 舒適度拆解(給 UI/測試看細項);roomId 空 → 中性(comfort 50) */
+/**
+ * 舒適度拆解(給 UI/測試看細項);roomId 空 → 中性(comfort 50)。
+ *
+ * tierPart 是**獨立加分項**,在 cleanMult **之前**與另外兩項相加:
+ * 線性、可手算、面板列表交代得清楚;若改成乘子會放大 cleanMult 的變異,
+ * 而且對 attributes 全空的家具(單人床/爐具/馬桶…)是 0×n=0 的空砲。
+ */
 export function roomComfortBreakdown(roomId: string | null, cleanliness: number) {
-  if (!roomId) return { comfort: 50, attrPart: 30, categoryPart: 20, cleanMult: 1, missing: [] as string[] };
+  if (!roomId) {
+    return { comfort: 50, attrPart: 30, categoryPart: 20, tierPart: 0, cleanMult: 1, missing: [] as string[] };
+  }
   const attrs = roomAttributes(roomId);
   const cozy = attrs.cozy ?? 0;
   const style = attrs.style ?? 0;
@@ -114,9 +148,11 @@ export function roomComfortBreakdown(roomId: string | null, cleanliness: number)
   }
   const categoryPart = present * CATEGORY_POINTS;
 
+  const tierPart = roomTierPoints(roomId);
+
   const cleanMult = cleanlinessMultiplier(cleanliness);
-  const comfort = clamp((attrPart + categoryPart) * cleanMult, 0, 100);
-  return { comfort, attrPart, categoryPart, cleanMult, missing };
+  const comfort = clamp((attrPart + categoryPart + tierPart) * cleanMult, 0, 100);
+  return { comfort, attrPart, categoryPart, tierPart, cleanMult, missing };
 }
 
 /** 房間舒適度 0~100(佈置越齊全/越療癒/越乾淨越高) */

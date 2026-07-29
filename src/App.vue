@@ -480,14 +480,16 @@ const livingExperience = computed(() => {
 
 /**
  * 舒適度拆解(**純呈現**:只把 sim 已算好的 breakdown 攤開,不做任何舒適度數學)。
- * 讓玩家看懂三件事:家具屬性離上限多遠、五大類缺哪幾類、整潔正在打幾折。
- * 小計刻意用「已四捨五入的兩部分相加」,玩家看到的加法才對得起來。
+ * 讓玩家看懂四件事:家具屬性離上限多遠、五大類缺哪幾類、家具品質加了多少、整潔正在打幾折。
+ * 小計刻意用「已四捨五入的三部分相加」,玩家看到的加法才對得起來。
+ * (品質那項是 0.5 的倍數 → 保留一位小數,不然小計會對不上。)
  */
 const comfortParts = computed(() => {
   const bd = comfortBd.value;
   const missing = new Set(bd.missing);
   const attr = Math.round(bd.attrPart);
   const cat = Math.round(bd.categoryPart);
+  const tier = Math.round(bd.tierPart * 10) / 10;
   return {
     attr,
     attrMax: COMFORT_LIMITS.attrMax,
@@ -495,9 +497,12 @@ const comfortParts = computed(() => {
     cat,
     catMax: COMFORT_LIMITS.categoryMax,
     catPct: Math.min(100, (bd.categoryPart / COMFORT_LIMITS.categoryMax) * 100),
+    tier,
+    tierMax: COMFORT_LIMITS.tierMax,
+    tierPct: Math.min(100, (bd.tierPart / COMFORT_LIMITS.tierMax) * 100),
     buckets: COMFORT_BUCKET_LABELS.map((label) => ({ label, has: !missing.has(label) })),
     multText: `×${bd.cleanMult.toFixed(2)}`,
-    subtotal: attr + cat,
+    subtotal: Math.round((attr + cat + tier) * 10) / 10,
     discounted: bd.cleanMult < 0.995,
     multColor: bd.cleanMult < 0.7 ? "var(--bad)" : bd.cleanMult > 0.94 ? "var(--good)" : "var(--accent)",
   };
@@ -511,11 +516,11 @@ const STAT_HELP: Record<string, string> = {
   健康: "健康:身心狀態,慢慢變化;長期高壓/透支會生病(要花錢處理!)。",
   好感: "好感:對你(房東)的信任,影響繳租意願;你的抉擇會改變它。",
   整潔: "整潔:房間狀態,反映租客的生活習慣;收納家具能常保整潔。",
-  舒適: "舒適:房間佈置齊全度+療癒感×整潔;越舒適,會「慢慢」墊高租客的心情與健康。佈置一次長期受益。",
+  舒適: "舒適:(房間佈置齊全度+療癒感+家具品質)×整潔;越舒適,會「慢慢」墊高租客的心情與健康。佈置一次長期受益。",
   續住意願: "續住意願:真正影響退租與收租的綜合結果。它會依身心狀態、房東信任與生活機能緩慢變化。",
   身心狀態: "身心狀態:把心情、壓力、精力與健康整理成一個閱讀用摘要；細項仍各自影響事件與生活。",
   房東信任: "房東信任:就是原本的好感，反映房客對你的信任，影響繳租與漲租接受度。",
-  房間品質: "房間品質:沿用原本舒適度，受家具屬性、種類齊全與整潔影響；生活機能另顯示作息設備是否完整。",
+  房間品質: "房間品質:沿用原本舒適度，受家具屬性、種類齊全、家具品質層級與整潔影響；生活機能另顯示作息設備是否完整。",
 };
 function explainStat(key: string) {
   toast(STAT_HELP[key] ?? "", 4200);
@@ -754,6 +759,11 @@ function onChainResolve(choiceId: string) {
               <span v-for="b in comfortParts.buckets" :key="b.label" class="cbucket" :class="{ miss: !b.has }">
                 {{ b.has ? "✓" : "✗" }}{{ b.label }}
               </span>
+            </div>
+            <div class="cbd-row">
+              <label>✨ 品質</label>
+              <div class="bar"><div class="cbd-tier" :style="{ width: comfortParts.tierPct + '%' }"></div></div>
+              <span>{{ comfortParts.tier }}<i>/{{ comfortParts.tierMax }}</i></span>
             </div>
             <div class="cbd-clean">
               <label>🧹 整潔倍率</label>
@@ -1061,6 +1071,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .cbd-row > span i { font-style: normal; color: var(--text-dim); }
 .cbd-attr { height: 100%; border-radius: 4px; background: var(--accent-2); transition: width 0.5s ease; }
 .cbd-cat { height: 100%; border-radius: 4px; background: #58a6ff; transition: width 0.5s ease; }
+.cbd-tier { height: 100%; border-radius: 4px; background: #f0c674; transition: width 0.5s ease; }
 .cbd-buckets { display: flex; flex-wrap: wrap; gap: 4px; }
 .cbucket { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; white-space: nowrap; border: 1px solid rgba(88, 166, 255, 0.5); color: #a9d1ff; background: rgba(88, 166, 255, 0.08); }
 .cbucket.miss { border-color: rgba(232, 101, 122, 0.5); color: #f0a0ae; background: rgba(232, 101, 122, 0.08); }

@@ -17,6 +17,7 @@ const mem: Record<string, string> = {};
 
 const { state } = await import("../src/store");
 const { CATALOG, getDef: getFurnDef } = await import("../src/furniture/catalog");
+const { TIER_POINTS, tierOf, tierPoints } = await import("../src/furniture/tier");
 const { routineSlot, routineRoles, ARCHETYPE_ROUTINES } = await import("../src/sim/routine");
 const { rollEvent } = await import("../src/sim/events");
 const { decide } = await import("../src/store");
@@ -97,12 +98,26 @@ hourlyTick(false);
 check("整合:康復日觸發 sick_aftermath", lin.pendingEvent?.id === "sick_aftermath");
 check("整合:旗標已消耗(不會重複觸發)", !lin.flags.includes("病中沒人管"));
 
-// --- 5. 家具品質層級(tier):值域合法 + 平價變體比精品同胞便宜/低屬性 ---
+// --- 5. 家具品質層級(tier):值域合法 + 全部可解析成舒適度係數 + 平價變體比精品同胞便宜/低屬性 ---
+// tier 已不是純標示:每件家具依 TIER_POINTS 貢獻舒適度(見 src/furniture/tier.ts 與
+// furniture-tier-test.ts)。所以「合法值域」不夠,還要保證**每一件都算得出係數**。
 const VALID_TIERS = new Set(["budget", "standard", "premium"]);
 const attrSum = (id: string) => Object.values(getFurnDef(id).attributes).reduce((a, v) => a + (v ?? 0), 0);
 check(
   "每件家具的 tier 若有值必為 budget/standard/premium(選配但合法)",
   CATALOG.every((d) => d.tier === undefined || VALID_TIERS.has(d.tier)),
+);
+check(
+  "每件家具的 tier 都能解析成舒適度係數(未標 → 中性 standard,不會是 undefined/NaN)",
+  CATALOG.every((d) => Number.isFinite(tierPoints(d)) && tierPoints(d) >= 0 && VALID_TIERS.has(tierOf(d))),
+);
+check(
+  `未標 tier 的家具 fallback 為 standard 而非 budget(紀念物是禮物,不該變扣分;共 ${CATALOG.filter((d) => d.tier === undefined).length} 件)`,
+  CATALOG.filter((d) => d.tier === undefined).every((d) => tierOf(d) === "standard" && tierPoints(d) === TIER_POINTS.standard),
+);
+check(
+  `TIER_POINTS 三階遞增,精品確實比平價多加分(${TIER_POINTS.budget}/${TIER_POINTS.standard}/${TIER_POINTS.premium})`,
+  TIER_POINTS.budget < TIER_POINTS.standard && TIER_POINTS.standard < TIER_POINTS.premium,
 );
 check(
   "床鋪三階:single=budget、double=standard、canopy=premium",

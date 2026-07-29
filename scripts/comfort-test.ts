@@ -147,25 +147,25 @@ check(`有掃地機器人 → 整潔慢慢爬過舊基準(40 → ${chen3.cleanli
 check(`整潔乘子三檔固定(0→${cleanlinessMultiplier(0)}, 50→${cleanlinessMultiplier(50)}, 100→${cleanlinessMultiplier(100)})`,
   cleanlinessMultiplier(0) === 0.5 && cleanlinessMultiplier(50) === 0.75 && cleanlinessMultiplier(100) === 1);
 
-check(`拆解上限常數與設計一致(屬性 ${COMFORT_LIMITS.attrMax} + 齊全 ${COMFORT_LIMITS.categoryMax} = 90)`,
+check(`拆解上限常數與設計一致(屬性 ${COMFORT_LIMITS.attrMax} + 齊全 ${COMFORT_LIMITS.categoryMax} + 品質 ${COMFORT_LIMITS.tierMax} = 102)`,
   COMFORT_LIMITS.attrMax === 60 && COMFORT_LIMITS.categoryMax === 30 &&
-  COMFORT_LIMITS.categoryPoints === 6 &&
+  COMFORT_LIMITS.categoryPoints === 6 && COMFORT_LIMITS.tierMax === 12 &&
   COMFORT_LIMITS.categoryMax === COMFORT_BUCKET_LABELS.length * COMFORT_LIMITS.categoryPoints);
 
 check(`五大舒適類別固定五類(${COMFORT_BUCKET_LABELS.join("/")})`,
   COMFORT_BUCKET_LABELS.length === 5 &&
   ["睡眠", "娛樂", "收納", "裝飾", "生活"].every((l, i) => COMFORT_BUCKET_LABELS[i] === l));
 
-// (attrPart + categoryPart) × cleanMult 必須真的等於 comfort(面板的加減乘法就是這條)
+// (attrPart + categoryPart + tierPart) × cleanMult 必須真的等於 comfort(面板的加減乘法就是這條)
 const idCases: [string | null, number][] = [
   ["r301", 100], ["r301", 0], ["r302", 55], ["r303", 100], ["r304", 20], ["r_nonexistent", 100], [null, 42],
 ];
 const idBad = idCases.filter(([room, cl]) => {
   const bd = roomComfortBreakdown(room, cl);
-  const expect = Math.min(100, Math.max(0, (bd.attrPart + bd.categoryPart) * bd.cleanMult));
+  const expect = Math.min(100, Math.max(0, (bd.attrPart + bd.categoryPart + bd.tierPart) * bd.cleanMult));
   return Math.abs(bd.comfort - expect) > 1e-9;
 });
-check(`(屬性+齊全)×整潔 = 舒適 在 ${idCases.length} 組房間/整潔組合都成立`, idBad.length === 0);
+check(`(屬性+齊全+品質)×整潔 = 舒適 在 ${idCases.length} 組房間/整潔組合都成立`, idBad.length === 0);
 
 const multBad = idCases.filter(([, cl]) => roomComfortBreakdown("r302", cl).cleanMult !== cleanlinessMultiplier(cl));
 check("拆解的 cleanMult 就是 cleanlinessMultiplier(面板顯示的折數不會另有一套)", multBad.length === 0);
@@ -191,7 +191,7 @@ check("齊全度 =(五類 − 缺的類數)× 每類點數,落在 0~上限", cat
 const bareBd = roomComfortBreakdown("r_nonexistent", 100);
 check(`空房缺全部五類且順序一致(${bareBd.missing.join("/")})`,
   bareBd.missing.length === 5 && bareBd.missing.every((l, i) => l === COMFORT_BUCKET_LABELS[i]) &&
-  bareBd.categoryPart === 0 && bareBd.attrPart === 0);
+  bareBd.categoryPart === 0 && bareBd.attrPart === 0 && bareBd.tierPart === 0);
 check("missing 內容永遠是五大類 label 的子集(面板不會拿到未知類別)",
   idCases.every(([room, cl]) => roomComfortBreakdown(room, cl).missing.every((l) => COMFORT_BUCKET_LABELS.includes(l))));
 
@@ -201,15 +201,34 @@ addPlacement({ defId: "beanbag", room: "r303", c: 6, r: 17 } as any); // seating
 const fullBd = roomComfortBreakdown("r303", 100);
 check(`五類全齊的房間 missing 為空、齊全度滿分(${fullBd.categoryPart}/${COMFORT_LIMITS.categoryMax})`,
   fullBd.missing.length === 0 && fullBd.categoryPart === COMFORT_LIMITS.categoryMax);
-check(`兩部分合計不超 90、整潔滿分時舒適 ≤ 90(實得 ${fullBd.comfort.toFixed(1)})`,
-  fullBd.attrPart + fullBd.categoryPart <= COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax &&
-  fullBd.comfort <= 90);
+check(`三部分合計不超上限、整潔滿分時舒適 ≤ 100(實得 ${fullBd.comfort.toFixed(1)})`,
+  fullBd.attrPart + fullBd.categoryPart + fullBd.tierPart <=
+    COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax &&
+  fullBd.comfort <= 100);
 
 // roomId 為 null(無房租客)→ 中性拆解,面板不會出現負數或 NaN
 const neutral = roomComfortBreakdown(null, 0);
 check(`無房間時給中性拆解(comfort ${neutral.comfort}、倍率 ${neutral.cleanMult}、無缺類)`,
   neutral.comfort === 50 && neutral.cleanMult === 1 && neutral.missing.length === 0 &&
-  neutral.attrPart + neutral.categoryPart === 50);
+  neutral.tierPart === 0 && neutral.attrPart + neutral.categoryPart + neutral.tierPart === 50);
+
+// --- 11. 家具品質層級(tier)是舒適度的第三個加項(細節見 furniture-tier-test.ts) ---
+// 這裡只釘「有進入總分」與「沒破壞既有語意」,避免 comfort 的三個加項哪天被抽掉一個。
+const tierProbe = "r_tier_in_comfort";
+addPlacement({ defId: "single_bed", room: tierProbe, c: 1, r: 1 } as any); // budget、零屬性
+const tierBefore = roomComfortBreakdown(tierProbe, 100);
+addPlacement({ defId: "canopy_bed", room: tierProbe, c: 3, r: 1 } as any); // premium
+const tierAfter = roomComfortBreakdown(tierProbe, 100);
+check(`品質層級進入總分(tierPart ${tierBefore.tierPart} → ${tierAfter.tierPart},舒適 ${tierBefore.comfort.toFixed(1)} → ${tierAfter.comfort.toFixed(1)})`,
+  tierAfter.tierPart > tierBefore.tierPart && tierAfter.comfort > tierBefore.comfort);
+
+// 品質是「加項」不是「乘子」:同房不同整潔度,tierPart 完全不受整潔影響
+check(`品質部分不隨整潔改變(clean100 ${roomComfortBreakdown(tierProbe, 100).tierPart} = clean10 ${roomComfortBreakdown(tierProbe, 10).tierPart})`,
+  roomComfortBreakdown(tierProbe, 100).tierPart === roomComfortBreakdown(tierProbe, 10).tierPart);
+
+// 既有語意不變:空房仍為 0(tier 加分是「逐件」的,沒家具就沒得加)
+check(`空房仍為 0、tierPart 也是 0(tier 不會憑空給底分)`,
+  roomComfort("r_nonexistent_2", 100) === 0 && roomComfortBreakdown("r_nonexistent_2", 100).tierPart === 0);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

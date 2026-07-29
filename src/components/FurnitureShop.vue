@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { CATALOG, type FurnCategory } from "../furniture/catalog";
+import { tierChipText } from "../furniture/tier";
 import { INTERACTIONS } from "../sim/interactions";
 import { state, startPlacing } from "../store";
 
@@ -26,13 +27,6 @@ const CAT_LABEL: Record<FurnCategory, string> = {
 const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
-/** 品質層級的一眼標示(星數 + 中文;純標示,不影響數值) */
-const TIER_INFO: Record<string, { label: string; stars: string }> = {
-  budget: { label: "平價", stars: "★" },
-  standard: { label: "標準", stars: "★★" },
-  premium: { label: "精品", stars: "★★★" },
-};
-
 /** 只賣可放地板的家具(牆面家具略過),依類別分組 */
 const groups = computed(() => {
   const byCat = new Map<FurnCategory, typeof CATALOG>();
@@ -79,7 +73,7 @@ function attrs(d: (typeof CATALOG)[number]) {
             <div class="info">
               <div class="name">
                 {{ d.name }}
-                <span v-if="d.tier" class="tier" :class="d.tier">{{ TIER_INFO[d.tier].stars }} {{ TIER_INFO[d.tier].label }}</span>
+                <span v-if="d.tier" class="tier" :class="d.tier" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(d.tier) }}</span>
               </div>
               <div class="chips">
                 <span class="fp">{{ d.footprint.w }}×{{ d.footprint.h }}</span>

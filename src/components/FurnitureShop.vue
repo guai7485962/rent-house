@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { CATALOG, type FurnCategory } from "../furniture/catalog";
-import { tierChipText } from "../furniture/tier";
+import { tierChipText, tierOf } from "../furniture/tier";
 import { INTERACTIONS } from "../sim/interactions";
 import { state, startPlacing } from "../store";
 
@@ -73,7 +73,9 @@ function attrs(d: (typeof CATALOG)[number]) {
             <div class="info">
               <div class="name">
                 {{ d.name }}
-                <span v-if="d.tier" class="tier" :class="d.tier" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(d.tier) }}</span>
+                <!-- 一律用 tierOf():未標 tier 的家具 fallback 成 standard 也**確實有 +0.5**,
+                     若用 v-if="d.tier" 就會出現「有分卻沒標示」,玩家看不出 0.5 從哪來 -->
+                <span class="tier" :class="tierOf(d)" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(tierOf(d)) }}</span>
               </div>
               <div class="chips">
                 <span class="fp">{{ d.footprint.w }}×{{ d.footprint.h }}</span>

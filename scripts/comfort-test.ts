@@ -147,10 +147,15 @@ check(`有掃地機器人 → 整潔慢慢爬過舊基準(40 → ${chen3.cleanli
 check(`整潔乘子三檔固定(0→${cleanlinessMultiplier(0)}, 50→${cleanlinessMultiplier(50)}, 100→${cleanlinessMultiplier(100)})`,
   cleanlinessMultiplier(0) === 0.5 && cleanlinessMultiplier(50) === 0.75 && cleanlinessMultiplier(100) === 1);
 
-check(`拆解上限常數與設計一致(屬性 ${COMFORT_LIMITS.attrMax} + 齊全 ${COMFORT_LIMITS.categoryMax} + 品質 ${COMFORT_LIMITS.tierMax} = 102)`,
+check(`拆解上限常數與設計一致(屬性 ${COMFORT_LIMITS.attrMax} + 齊全 ${COMFORT_LIMITS.categoryMax} + 品質 ${COMFORT_LIMITS.tierMax} = 100)`,
   COMFORT_LIMITS.attrMax === 60 && COMFORT_LIMITS.categoryMax === 30 &&
-  COMFORT_LIMITS.categoryPoints === 6 && COMFORT_LIMITS.tierMax === 12 &&
+  COMFORT_LIMITS.categoryPoints === 6 && COMFORT_LIMITS.tierMax === 10 &&
   COMFORT_LIMITS.categoryMax === COMFORT_BUCKET_LABELS.length * COMFORT_LIMITS.categoryPoints);
+
+// 三個加項的總上限必須 ≤ 100 → roomComfortBreakdown 的 clamp 永遠不生效。
+// 這是面板加法恆等的前提:一旦 clamp 真的夾到,玩家就會看到「小計 × 倍率 = 102」但總分 100。
+check(`三個加項總上限剛好不破 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax})`,
+  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax <= 100);
 
 check(`五大舒適類別固定五類(${COMFORT_BUCKET_LABELS.join("/")})`,
   COMFORT_BUCKET_LABELS.length === 5 &&

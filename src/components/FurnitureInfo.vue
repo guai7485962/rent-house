@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
-import { tierChipText } from "../furniture/tier";
+import { tierChipText, tierOf } from "../furniture/tier";
 import { furnitureAt } from "../sim/placements";
 
 const props = defineProps<{ c: number; r: number; defId: string; rotation: FurnitureRotation }>();
@@ -34,7 +34,9 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
       </div>
 
       <div class="chips">
-        <span v-if="def.tier" class="tier" :class="def.tier" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(def.tier) }}</span>
+        <!-- 一律用 tierOf():紀念物等未標 tier 的家具 fallback 成 standard 也**確實有 +0.5**,
+             若用 v-if="def.tier" 就會出現「有分卻沒標示」,玩家看不出 0.5 從哪來 -->
+        <span class="tier" :class="tierOf(def)" title="品質層級:每件家具依此加房間舒適度">{{ tierChipText(tierOf(def)) }}</span>
         <span class="fp">佔 {{ footprint.w }}×{{ footprint.h }} 格 · {{ props.rotation }}°</span>
         <span v-for="[k, v] in attrs" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
         <span v-if="def.social" class="social">社交點</span>

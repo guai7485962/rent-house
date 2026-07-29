@@ -44,11 +44,18 @@ const ATTR_HALF = 18; // 飽和半值:加權和 = 18 時屬性分達上限的一
 const ATTR_MAX = 60; // 屬性部分上限
 
 /**
- * 品質層級部分上限:房內逐件加總 `TIER_POINTS` 後夾到 0~12。
- * 夾值是防「狂塞 premium 小物刷分」——沒有上限的話,買 20 個精品盆栽就能無限加分,
- * 與「佈置得體」的設計意圖相反。12 = 大約 8 件精品家具滿檔,一般房間拿 2~5 分。
+ * 品質層級部分上限:房內逐件加總 `TIER_POINTS` 後夾到 0~10。
+ *
+ * 夾值有兩個目的:
+ * 1. 防「狂塞 premium 小物刷分」——沒有上限的話,買 20 個精品盆栽就能無限加分,
+ *    與「佈置得體」的設計意圖相反。10 = 約 6~7 件精品家具滿檔,一般房間拿 2~5 分。
+ * 2. **讓三個加項的總上限剛好 = 100**(60 + 30 + 10),使 `roomComfortBreakdown` 的
+ *    `clamp(…, 0, 100)` 永遠不生效。這不是巧合而是硬性約束:UI 拆解面板把四列數字
+ *    攤開給玩家看,一旦 clamp 真的夾到,面板就會出現「小計 × 倍率 = 102」但總分顯示 100
+ *    的加法對不起來。改動任何一個上限都必須維持 attrMax + categoryMax + tierMax ≤ 100
+ *    (comfort-test 有斷言把關)。
  */
-const TIER_MAX = 12;
+const TIER_MAX = 10;
 
 /**
  * 給 UI 拆解面板/測試讀的上限常數(**純讀取的鏡射,不參與任何計算**)。
@@ -87,6 +94,11 @@ function roomCategories(roomId: string): Set<FurnCategory> {
  * 刻意在本檔自己遍歷 placements,**不動 `placements.roomAttributes()`**:
  * 那支同時餵 comfort / acoustics.noiseComplaintEligible / recruit.matchStars(→ 租金),
  * 動一行會連鎖三個系統。tier 只想影響舒適度,所以形狀比照上面的 roomCategories()。
+ *
+ * ⚠️ **兩個加項的來源集合刻意不同**:`roomAttributes()` 會把 `upgradeAttributes(roomId)`
+ * (一次性改建升級的永久加成)疊進屬性部分,但 tierPart **只算家具擺放**——房間升級沒有
+ * tier 的概念,硬給它一個等級只會是憑空捏造的數字。所以「屬性部分」= 家具 + 改建、
+ * 「品質部分」= 純家具。日後若替改建升級補上品質語意,要記得同步這裡。
  */
 function roomTierPoints(roomId: string): number {
   let points = 0;

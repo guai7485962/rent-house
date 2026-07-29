@@ -151,6 +151,37 @@ check(
   spam.comfort <= 100,
 );
 
+// --- 5b. 滿配房間:三個加項合計不破 100 → clamp 永遠不生效、面板加法恆等 ---
+// 這是加了第三個加項之後最容易踩到的坑:上限若是 60+30+12=102,滿配房會出現
+// 「小計 × 倍率 = 102」但總分顯示 100,四列加起來對不上(comfort.ts:45-48 明訂面板要對得起來)。
+const maxRoom = "r_tier_maxed";
+// 五大類全齊 + 狂堆高屬性 premium(帷幔床 cozy9/style7)把 attrPart 推到逼近 60、tierPart 撞上限
+for (const defId of ["tv_console", "bookshelf", "plant", "loveseat"]) {
+  addPlacement({ defId, room: maxRoom, c: 0, r: 1 } as any);
+}
+for (let i = 0; i < 200; i++) addPlacement({ defId: "canopy_bed", room: maxRoom, c: i, r: 2 } as any);
+const maxed = roomComfortBreakdown(maxRoom, 100); // 整潔滿分 → cleanMult = 1(最嚴苛的情況)
+const maxedSum = maxed.attrPart + maxed.categoryPart + maxed.tierPart;
+check(
+  `滿配房五類全齊、attrPart 逼近上限、tierPart 撞頂(attr ${maxed.attrPart.toFixed(2)} + cat ${maxed.categoryPart} + tier ${maxed.tierPart} = ${maxedSum.toFixed(2)})`,
+  maxed.missing.length === 0 &&
+    maxed.attrPart > COMFORT_LIMITS.attrMax - 1 &&
+    maxed.categoryPart === COMFORT_LIMITS.categoryMax &&
+    maxed.tierPart === COMFORT_LIMITS.tierMax,
+);
+check(
+  `滿配房整潔 100 時三個加項合計仍不超過 100(${maxedSum.toFixed(4)} ≤ 100)`,
+  maxedSum <= 100,
+);
+check(
+  `滿配房的 clamp 不生效 → comfort 就是三項相加(${maxed.comfort.toFixed(4)} === ${maxedSum.toFixed(4)},面板加法恆等)`,
+  Math.abs(maxed.comfort - maxedSum) < 1e-9 && maxed.comfort < 100,
+);
+check(
+  `上限常數本身就保證不破 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax} ≤ 100)`,
+  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax <= 100,
+);
+
 // --- 6. 空房 tierPart = 0、roomId === null 回中性 ---
 const bare = roomComfortBreakdown("r_tier_bare", 100);
 check(

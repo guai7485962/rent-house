@@ -40,6 +40,7 @@ import { ensureWishes, settleDeparturesDue, wishPass } from "./wishes";
 import { communityPass } from "./community";
 import { floorChainPass } from "./floorChain";
 import { dreamPass } from "./dreams";
+import { outingEncounterPass, outingSpot } from "./outing";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -440,6 +441,8 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     effectState,
     isDeviation,
     recentSummary: rt.tenant.recentSummary,
+    // 外出 → 帶上決定性算出的目的地,讓觀察句從「空房間」變成「他大概在哪」(零 RNG)
+    outingSpot: st === "away" ? outingSpot(rt, gameDayIndex(), hour) : undefined,
   });
   applyStat(rt, gen.statDeltas);
   applyMemoryDrift(rt); // 記憶標籤造成的長期數值漂移
@@ -514,6 +517,7 @@ export function hourlyTick(live = false) {
   for (const id of moveOuts) moveOut(id, "對居住品質長期不滿");
 
   dreamPass(hour); // 夢境彩蛋:全員本小時 visualState 已定,睡著者每 3~4 遊戲日留一則夢(零 RNG、零數值)
+  outingEncounterPass(hour); // 樓外巧遇:同理由要等全員 visualState 定案,同時外出的兩人每 4~5 日低頻碰面(零 RNG)
   roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動
   pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)

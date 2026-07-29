@@ -11,6 +11,7 @@ import {
   OBSERVATION_LINES,
 } from "../src/content/observationLines";
 import * as DREAM_LINES from "../src/content/dreamLines";
+import * as OUTING_LINES from "../src/content/outingLines";
 import { INTERACTIONS } from "../src/sim/interactions";
 import { templateDiary, type NarrateCtx } from "../src/sim/narrate";
 
@@ -66,10 +67,27 @@ check("夢境句庫:保底池不含任何佔位符", DREAM_LINES.DREAM_NEUTRAL_L
 const dreamTierLines = [...DREAM_LINES.DREAM_BOND_LINES, ...DREAM_LINES.DREAM_DISTANT_LINES].filter((line) => line.includes("{tier}"));
 check("夢境句庫:{tier} 一律以「」包住(任何親疏值代入都通順)", dreamTierLines.length > 0 && dreamTierLines.every((line) => !/[^「]\{tier\}|\{tier\}[^」]/.test(line)), JSON.stringify(dreamTierLines));
 
+// 樓外世界錨點:目的地池(走一般觀察日誌,無前綴無佔位符)+ 巧遇池(🏪 前綴,{o}/{spot})
+const outingPools = Object.entries(OUTING_LINES) as [string, string[]][];
+const outingSpotPools = outingPools.filter(([name]) => name !== "OUTING_ENCOUNTER_LINES");
+const outingCount = outingPools.reduce((sum, [, lines]) => sum + lines.length, 0);
+check("外出句庫:至少 6 個目的地池", outingSpotPools.length >= 6, `pools=${outingSpotPools.length}`);
+check("外出句庫:每個池至少 13 句", outingPools.every(([, lines]) => lines.length >= 13), JSON.stringify(outingPools.map(([k, v]) => `${k}=${v.length}`)));
+check("外出句庫:總數至少 90 句", outingCount >= 90, `count=${outingCount}`);
+check("外出句庫:各池內沒有重複句", outingPools.every(([, lines]) => new Set(lines).size === lines.length));
+const outingAllLines = outingPools.flatMap(([, lines]) => lines);
+const outingDupes = outingAllLines.filter((line, i) => outingAllLines.indexOf(line) !== i);
+check("外出句庫:跨池也沒有重複句", outingDupes.length === 0, JSON.stringify([...new Set(outingDupes)]));
+check("外出句庫:巧遇池全部以 🏪 前綴開頭且長度足夠", OUTING_LINES.OUTING_ENCOUNTER_LINES.every((line) => line.startsWith("🏪 ") && line.trim().length >= 12));
+check("外出句庫:巧遇池佔位符都能代換乾淨", OUTING_LINES.OUTING_ENCOUNTER_LINES.every((line) =>
+  !line.replace(/\{o\}/g, "鄰居").replace(/\{spot\}/g, "便利商店").match(/[{}]/)));
+// 目的地池走的是 generate.ts 的一般觀察日誌路徑:那條路只代換 {time},也從不加前綴。
+check("外出句庫:目的地池不含佔位符、也不帶 emoji 前綴", outingSpotPools.every(([, lines]) => lines.every((line) => !/[{}]/.test(line) && !/^\p{Extended_Pictographic}/u.test(line))));
+
 check("每種雙人互動至少 3 條文案", INTERACTIONS.every((def) => def.lines.length >= 3));
 check("雙人文案都能代換對方名字", INTERACTIONS.every((def) => def.lines.every((line) => !line.replace(/\{o\}/g, "鄰居").includes("{o}"))));
 check("成人互動仍全數使用 hidden 遮蔽姿勢", INTERACTIONS.filter((def) => def.adult).every((def) => def.pose === "hidden"));
 
-console.log(`\n內容統計:觀察 ${observationCount} 句 / 每日 ${DAILY_TEMPLATES.length + DAILY_STRESS_TEMPLATES.length + DAILY_LOW_MOOD_TEMPLATES.length + DAILY_HAPPY_TEMPLATES.length + DAILY_SOCIAL_TEMPLATES.length} 句 / 雙人 ${INTERACTIONS.reduce((sum, def) => sum + def.lines.length, 0)} 句 / 夢境 ${dreamCount} 句`);
+console.log(`\n內容統計:觀察 ${observationCount} 句 / 每日 ${DAILY_TEMPLATES.length + DAILY_STRESS_TEMPLATES.length + DAILY_LOW_MOOD_TEMPLATES.length + DAILY_HAPPY_TEMPLATES.length + DAILY_SOCIAL_TEMPLATES.length} 句 / 雙人 ${INTERACTIONS.reduce((sum, def) => sum + def.lines.length, 0)} 句 / 夢境 ${dreamCount} 句 / 外出 ${outingCount} 句`);
 console.log(`=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

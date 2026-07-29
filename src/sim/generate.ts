@@ -11,6 +11,7 @@
  */
 import type { ObservationLog, StatDeltas, TenantVisualState } from "../types";
 import { OBSERVATION_LINES } from "../content/observationLines";
+import { outingSpotLines } from "./outing";
 
 export interface GenCtx {
   tenantId: string;
@@ -22,6 +23,9 @@ export interface GenCtx {
   effectState?: TenantVisualState;
   isDeviation: boolean; // 是否偏離了正常作息(壓力/事件)
   recentSummary: string;
+  /** 外出目的地 id(僅 state === "away" 時給;見 sim/outing.ts)。用來把「空房間」的
+   *  觀察句換成「他大概在便利商店/早餐店/公司樓下」的目的地句池。 */
+  outingSpot?: string;
 }
 
 export interface GenResult {
@@ -75,7 +79,11 @@ function timeWord(hour: number): string {
 export function generateHourly(ctx: GenCtx): GenResult {
   // 從豐富句庫隨機挑一句(每次不同,避免每天雷同),再把 {time} 換成實際時段
   const seed = Math.floor(Math.random() * 1000);
-  const base = (pick(OBSERVATION_LINES[ctx.state], seed) || "度過了平淡的一小時。").replace(/\{time\}/g, timeWord(ctx.hour));
+  // 外出時改用目的地句池(「他大概在哪」),取不到就 fallback 回原本的空房間句池。
+  // ⚠️ 只換池不換流程:仍然只有上面那一次 Math.random,日誌筆數與 RNG 次序完全不變
+  //    ⇒ balance 快照零漂移(快照沒有文字欄位)。
+  const pool = (ctx.state === "away" ? outingSpotLines(ctx.outingSpot) : undefined) ?? OBSERVATION_LINES[ctx.state];
+  const base = (pick(pool, seed) || "度過了平淡的一小時。").replace(/\{time\}/g, timeWord(ctx.hour));
   const importance: ObservationLog["importance"] = ctx.isDeviation
     ? "major"
     : ctx.state === "crying" || ctx.state === "pacing"

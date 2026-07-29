@@ -27,8 +27,13 @@
  *   一次會跑最多 48 個 hourlyTick,日序號冷卻天然冪等,gameMs 短冷卻會刷出一整排巧遇。
  * - **相位偏移**:新局所有 pair 的冷卻鍵同時不存在,不處理的話第 14 天會兩兩同時
  *   巧遇一輪,一次刷出 C(n,2) 條日誌(同 dreams 的首夢相位)。
- * - **一次 pass 最多成立 1 對**:即使冷卻是 pair 級,同一小時 3 人外出仍可能同時成立
- *   3 對(同 floorChain「每次 pass 最多推一話」的稀疏哲學)。
+ * - **一次 pass 最多成立 1 對 + 每日全域鎖**:即使冷卻是 pair 級,同一小時 3 人外出仍可能
+ *   同時成立 3 對;而每小時 1 對也只擋得住同一小時,住戶一多不同對仍會在同一天連續成立。
+ *   兩層合起來保證「全樓一天最多一次巧遇」(稀疏哲學同 floorChain「每次 pass 最多推一話」)。
+ * - **兩人目的地必須相同才算碰到面**:這條同時是「文案不矛盾」與「密度不爆」的關鍵。
+ *   租客詳情面板直接吃整條 rt.log(含 minor 觀察句),觀察句與巧遇句共用同一個
+ *   gameMs ⇒ timeLabel 相同、相鄰兩行;地點若不一致就會並排矛盾。同時「每小時 1 對」
+ *   只擋得住同一小時、pair 冷卻只擋得住同一對,住戶一多不同對仍會在同一天連續成立。
  * - **不做「回樓才留日誌」的延遲寫入**:那要新增 runtime 欄位、處理離線補進度的懸空
  *   狀態與巧遇後對方退租。改成當下就寫、文案用回憶語氣,效果相同而狀態機乾淨。
  * - 🏪 前綴刻意**不**加進 narration/weeklyReport 的過濾名單:巧遇是第一手世界事件,
@@ -58,6 +63,13 @@ export const OUTING_PHASE_SPAN = 4;
 export const OUTING_BOND = 1;
 /** 冷卻鍵前綴(借用 interactionCooldowns 這張入存檔的表);值存的是遊戲日序號 */
 const OUTING_CD_PREFIX = "outing|";
+/**
+ * 每日全域鎖:一個遊戲日全樓最多成立一次巧遇。
+ * pair 冷卻只擋得住「同一對」、每小時 1 對只擋得住「同一小時」,住戶一多,
+ * 不同對仍會在同一天連續成立(8 住戶實測單日最高 7 對 = 14 則 notable 日誌,
+ * 佔 FEED_CAP 的近四分之一)。鍵名不可能與 pairKey 相撞(pairKey 恆含 `|`)。
+ */
+const OUTING_DAY_LOCK_KEY = `${OUTING_CD_PREFIX}__day`;
 
 /** 決定性雜湊:同輸入永遠同輸出,不消耗 Math.random(同 dreams.dreamIndex 的寫法) */
 export function outingIndex(key: string, size: number): number {
@@ -144,6 +156,7 @@ function encounterLine(selfId: string, pk: string, day: number, hour: number, ot
 export function outingEncounterPass(hour: number): void {
   const day = gameDayIndex();
   if (day < OUTING_FIRST_DAY) return;
+  if (state.interactionCooldowns[OUTING_DAY_LOCK_KEY] === day) return; // 全樓一天最多一次
   // 固定次序:runtimes 的鍵順序會被搬入/搬出改變,不排序會讓同一存檔巧遇到不同的人
   const out = Object.values(state.runtimes)
     .filter((rt) => !rt.pendingEvent && rt.tenant.visualState === "away")
@@ -154,6 +167,15 @@ export function outingEncounterPass(hour: number): void {
     for (let j = i + 1; j < out.length; j++) {
       const a = out[i];
       const b = out[j];
+      // 兩人必須在同一個目的地才碰得到面。這一刀同時解決兩件事:
+      // (a) **文案矛盾**:租客詳情面板(App.vue 的 LogFeed)吃整條 rt.log(含 minor),
+      //     觀察句用他自己的 spot、巧遇句若取另一位的 spot,兩行 timeLabel 相同又相鄰,
+      //     會並排出現「他在超市」+「🏪 在公園碰到…」。地點一致後任何介面都不再矛盾。
+      // (b) **密度**:每小時最多 1 對只擋得住同一小時,pair 冷卻只擋得住同一對;
+      //     住戶一多,不同對仍會在同一天連續成立(8 住戶實測單日曾達 9 對 = 18 則 notable)。
+      //     要求同地點後,一天的成立數自然收斂到個位數以下。
+      const spotId = outingSpot(a, day, hour);
+      if (spotId !== outingSpot(b, day, hour)) continue;
       const pk = pairKey(a.tenant.id, b.tenant.id);
       const key = `${OUTING_CD_PREFIX}${pk}`;
       const last = state.interactionCooldowns[key];
@@ -167,10 +189,8 @@ export function outingEncounterPass(hour: number): void {
       }
       // ⚠️ 此鍵存的是「遊戲日序號」,與 interactionCooldowns 表中其他鍵存的 gameMs 單位不同。
       state.interactionCooldowns[key] = day;
-      // 碰面的地點取兩人其中一位的目的地,讓至少一邊與他當下的觀察日誌對得起來
-      const spotId = outingIndex(`met|${pk}|${day}`, 2) === 0
-        ? outingSpot(a, day, hour)
-        : outingSpot(b, day, hour);
+      state.interactionCooldowns[OUTING_DAY_LOCK_KEY] = day;
+      // 地點就是兩人共同的目的地,與雙方本小時的觀察句必然對得起來
       const spot = outingSpotLabel(spotId);
       pushSocialLog(a, encounterLine(a.tenant.id, pk, day, hour, b.tenant.name, spot), "notable");
       pushSocialLog(b, encounterLine(b.tenant.id, pk, day, hour, a.tenant.name, spot), "notable");

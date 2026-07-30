@@ -93,10 +93,13 @@ const SLEEP_STATES = new Set<TenantVisualState>(["sleeping_on_bed", "sleeping_on
  */
 const SLEEP_SCALED = ["energy", "stress"] as const;
 
-/** 這一小時的家具 tier 乘數(非睡眠狀態、或沒帶家具 → 精確的 1.0,乘了等於沒乘) */
+/**
+ * 這一小時的家具 tier 乘數(非睡眠狀態、或沒帶家具 → 精確的 1.0,乘了等於沒乘)。
+ * `sleepMultiplier()` 永遠回傳有限數(查完整 `Record` 再夾值),故此處無需再補 fallback。
+ */
 function furnitureMultiplier(key: TenantVisualState, defId: string | undefined): number {
   if (!SLEEP_STATES.has(key) || !defId) return 1;
-  return sleepMultiplier(getDef(defId)) ?? 1;
+  return sleepMultiplier(getDef(defId));
 }
 
 function pick(arr: string[] | undefined, seed: number): string {

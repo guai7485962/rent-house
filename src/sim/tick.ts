@@ -432,8 +432,14 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
           rt.inLounge = false;
         }
       }
-      usedDefId = tgt.placement.defId;
-      if (rt.targetTile?.c === tgt.tile.c && rt.targetTile?.r === tgt.tile.r) setFurniturePose(rt, st, tgt.placement, tgt.tile);
+      // ⚠️ 這個賦值必須留在「目標格 = 家具互動格」的判斷**內**:被上面的浴室排隊分支
+      // 擠成 `waiting_for_bathroom` 的人並沒有真的用到那件設備,若在分支外賦值,
+      // 第三階段接浴缸時**排隊中的人會吃到 premium 浴缸的乘數**。
+      // 睡眠不排隊(床的 slot 從不進 ACTIVE_BATHROOM_STATES),故本批行為零變更。
+      if (rt.targetTile?.c === tgt.tile.c && rt.targetTile?.r === tgt.tile.r) {
+        usedDefId = tgt.placement.defId;
+        setFurniturePose(rt, st, tgt.placement, tgt.tile);
+      }
     } else {
       // 房裡缺對應家具、共用區也沒有(或 hermit 拒去)→ 在自己房間發呆(不闖別人房)
       st = "idle";

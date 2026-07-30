@@ -292,9 +292,19 @@ check(
       SLEEP_MULT[t] >= SLEEP_MULT_RANGE.min && SLEEP_MULT[t] <= SLEEP_MULT_RANGE.max,
   ),
 );
+// 🔴 平衡守門員(2026-07-30 review):貴的床不得成為「嚴格最優解」。
+// 效果對 (mult − 1) 幾乎線性,所以每元效益 ∝ (mult − 1) / price。
+// premium 允許有溫和的規模優勢,但**不得超過 standard 的 1.25 倍**——
+// 初版 1.15/1.35 是 1.44 倍(canopy 每元更划算 ⇒ 中階床變陷阱),現值約 1.17 倍。
+const perDollar = (id: string) => (sleepMultiplier(getDef(id)) - 1) / getDef(id).price;
+const ratio = perDollar("canopy_bed") / perDollar("double_bed");
 check(
-  `premium 的躍升大於 standard(形狀對齊 TIER_POINTS 的 0/0.5/1.5)`,
-  SLEEP_MULT.premium - SLEEP_MULT.standard > SLEEP_MULT.standard - SLEEP_MULT.budget,
+  `貴的床不是嚴格最優解:premium 每元效益僅為 standard 的 ${ratio.toFixed(2)} 倍(需 ≤ 1.25,初版 1.15/1.35 是 1.44)`,
+  ratio <= 1.25,
+);
+check(
+  `中階床確實有意義:standard 的每元效益為正且 premium 沒有全面輾壓(${(perDollar("double_bed") * 1e6).toFixed(2)} vs ${(perDollar("canopy_bed") * 1e6).toFixed(2)} 每百萬元)`,
+  perDollar("double_bed") > 0 && perDollar("canopy_bed") > 0,
 );
 
 // 10-2. 未標 tier / 查無此 id → 複用 tierOf() 的 standard,不拋例外、不另開一套 fallback
@@ -340,9 +350,15 @@ check(
   sleepBudget.wellbeing === sleepStandard.wellbeing && sleepStandard.wellbeing === sleepPremium.wellbeing,
 );
 check(
-  `乘法是唯一形式:premium = budget × ${SLEEP_MULT.premium}(沒有先四捨五入、沒有先加 bonus)`,
+  `乘法是唯一形式:premium = budget × ${SLEEP_MULT.premium}、standard = budget × ${SLEEP_MULT.standard}(沒有先四捨五入、沒有先加 bonus)`,
   Math.abs(sleepPremium.energy! - sleepBudget.energy! * SLEEP_MULT.premium) < 1e-12 &&
-    Math.abs(sleepPremium.stress! - sleepBudget.stress! * SLEEP_MULT.premium) < 1e-12,
+    Math.abs(sleepPremium.stress! - sleepBudget.stress! * SLEEP_MULT.premium) < 1e-12 &&
+    Math.abs(sleepStandard.energy! - sleepBudget.energy! * SLEEP_MULT.standard) < 1e-12 &&
+    Math.abs(sleepStandard.stress! - sleepBudget.stress! * SLEEP_MULT.standard) < 1e-12,
+);
+check(
+  `SLEEP_MULT 已凍結,執行期改不動(擋探針/外掛偷偷竄改係數)`,
+  Object.isFrozen(SLEEP_MULT) && Object.isFrozen(SLEEP_MULT_RANGE),
 );
 
 // 10-4. 🔴 範圍紀律:第二階段**只做睡眠**。種子局的沙發/電視/浴缸/書桌全踩 premium 家具,
@@ -398,6 +414,9 @@ function sleepRun(defId: string, hours: number, from: number) {
 // 座標刻意遠離種子樓層與上面的探針房,避免與既有 placement 的佔位範圍相撞
 const swapRoom = "r_sleep_swap";
 const SC = 900, SR = 900;
+// `addPlacement` 不驗證樓層邊界,所以這裡自己先確認該格是空的——
+// 否則某天有人在上面新增探針房、座標剛好撞上時,下面會安靜地量到別件家具。
+check(`前提:(${SC},${SR}) 原本是空格(換床驗證不會量到別件家具)`, furnitureAt(SC, SR) === null);
 addPlacement({ defId: "single_bed", room: swapRoom, c: SC, r: SR } as any);
 const beforeSwap = furnitureAt(SC, SR);
 const runBudget = sleepRun(beforeSwap!.defId, 5, 20);

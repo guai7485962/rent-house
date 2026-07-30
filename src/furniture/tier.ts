@@ -42,8 +42,6 @@ export const TIER_INFO: Record<FurnTier, { label: string; stars: string }> = {
 
 /**
  * 睡眠恢復效率乘數:床的 tier 直接放大這一小時的睡眠效果(`sim/generate.ts` 的 EFFECT 展開)。
- * 形狀刻意對齊 `TIER_POINTS` 的 0 / 0.5 / 1.5——premium 的躍升大於 standard,
- * 讓「再往上加一階」始終有感,而不是線性到頂。
  *
  * budget 是 **精確的 1.0**:種子局四間房全是平價單人床,`9 * 1.0 === 9` 位元級成立
  * ⇒ 既有 balance 快照零漂移。任何「先四捨五入再乘」「先加 bonus 再乘」的變體都會
@@ -51,15 +49,28 @@ export const TIER_INFO: Record<FurnTier, { label: string; stars: string }> = {
  *
  * **只乘 energy 與 stress**(見 `sim/generate.ts` 的 `SLEEP_SCALED`):
  * mood 的 +2 在實測中已頻繁頂到 100 上限,乘了幾乎全浪費;wellbeing 的 +0.3 幅度太小。
+ *
+ * 🔴 **形狀刻意「不」照抄 `TIER_POINTS` 的 0 / 0.5 / 1.5**(2026-07-30 review 修正)。
+ * 舒適度那條管道被 homeostasis 的 `K = 0.06` 嚴重稀釋,所以 premium 敢給大躍升;
+ * 這條管道**沒有那層稀釋**,效果對 `(mult − 1)` 幾乎線性(實測比值 2.26 vs 外推 2.33)。
+ * 初版的 1.15 / 1.35 讓 premium 的**每元效益比 standard 高 44%** ⇒ `canopy_bed`
+ * 成為嚴格最優解、中階床變成陷阱,違反「tier 是花錢有回報的**選擇**」的初衷。
+ * 現值 1.12 / 1.22 對上 22000/14000 = 1.571 的價格比 → 每元效益差縮到約 17%:
+ * 大額採購仍有溫和的效率優勢(合理),但中階床是真正的選項。
+ * **改這三個數字前,請先重跑「$/stress 點」對照表**(240h / seed 20260710 / 陳家豪@r301)。
  */
-export const SLEEP_MULT: Record<FurnTier, number> = {
+export const SLEEP_MULT = Object.freeze({
   budget: 1.0,
-  standard: 1.15,
-  premium: 1.35,
-};
+  standard: 1.12,
+  premium: 1.22,
+}) satisfies Record<FurnTier, number>;
 
-/** 睡眠乘數的合理值域(防未來有人把係數改成離譜的數字,睡一晚回滿或倒扣) */
-export const SLEEP_MULT_RANGE = { min: 0.5, max: 2.0 } as const;
+/**
+ * 睡眠乘數的合理值域。這道夾值只擋得住「字面值寫錯」(例如手滑打成 20),
+ * 而且是**靜默改寫**而不是報錯——真正的把關是 `SLEEP_MULT` 的 `Object.freeze`
+ * (擋執行期竄改)與 `furniture-tier-test.ts` §10-1 的斷言(夾值不得改動現行係數)。
+ */
+export const SLEEP_MULT_RANGE = Object.freeze({ min: 0.5, max: 2.0 });
 
 /** 家具的實際 tier(未標 → 中性 standard) */
 export function tierOf(def: Pick<FurnitureDef, "tier">): FurnTier {
@@ -77,10 +88,12 @@ export function tierPoints(def: Pick<FurnitureDef, "tier">): number {
  * 刻意**複用 `tierOf()` 而不另開一套 fallback**:tier 語意在全系統只有一份,
  * 未標 tier 的家具在舒適度是 standard、在睡眠也必須是 standard。
  * `UNKNOWN_DEF` 走同一條路,不會拋例外。
+ *
+ * 註:`tierOf()` 的回傳型別是 `FurnTier`、`SLEEP_MULT` 是涵蓋三階的完整 `Record`,
+ * 因此查表**不可能**是 undefined——這裡刻意不寫 `?? fallback`,免得讀者以為有那條路徑。
  */
 export function sleepMultiplier(def: Pick<FurnitureDef, "tier">): number {
-  const raw = SLEEP_MULT[tierOf(def)] ?? SLEEP_MULT[DEFAULT_TIER];
-  return Math.min(SLEEP_MULT_RANGE.max, Math.max(SLEEP_MULT_RANGE.min, raw));
+  return Math.min(SLEEP_MULT_RANGE.max, Math.max(SLEEP_MULT_RANGE.min, SLEEP_MULT[tierOf(def)]));
 }
 
 /**

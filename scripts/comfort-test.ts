@@ -154,10 +154,11 @@ check(`拆解上限常數與設計一致(屬性 ${COMFORT_LIMITS.attrMax} + 齊�
   COMFORT_LIMITS.categoryPoints === 6 && COMFORT_LIMITS.tierMax === 10 &&
   COMFORT_LIMITS.categoryMax === COMFORT_BUCKET_LABELS.length * COMFORT_LIMITS.categoryPoints);
 
-// 三個加項的總上限必須 ≤ 100 → roomComfortBreakdown 的 clamp 永遠不生效。
+// 三個加項的總上限**剛好** = 100 → roomComfortBreakdown 的 clamp 永遠不生效。
 // 這是面板加法恆等的前提:一旦 clamp 真的夾到,玩家就會看到「小計 × 倍率 = 102」但總分 100。
-check(`三個加項總上限剛好不破 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax})`,
-  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax <= 100);
+// 刻意用 === 而非 ≤:寫 ≤ 的話,把 TIER_MAX 改小也不會紅,「滿配房拿得到 100」就悄悄破了。
+check(`三個加項總上限剛好等於 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax} === 100)`,
+  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax === 100);
 
 check(`五大舒適類別固定五類(${COMFORT_BUCKET_LABELS.join("/")})`,
   COMFORT_BUCKET_LABELS.length === 5 &&
@@ -249,9 +250,9 @@ check(
   }),
 );
 check(
-  "共用區也維持 attrMax + categoryMax + tierMax ≤ 100(自己那套不變量,clamp 永不生效)",
+  "共用區也維持 attrMax + categoryMax + tierMax === 100(自己那套不變量,clamp 永不生效)",
   COMMUNAL_AREA_IDS.every(
-    (id) => COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax <= 100,
+    (id) => COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax === 100,
   ),
 );
 check(

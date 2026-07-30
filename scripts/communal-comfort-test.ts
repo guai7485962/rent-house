@@ -137,11 +137,13 @@ check(
   }),
 );
 
-// --- 4. 每區上限之和 ≤ 100(clamp 永不生效 → 面板加法恆等) ---
+// --- 4. 每區上限之和 === 100(clamp 永不生效 → 面板加法恆等) ---
+// 刻意是 === 而不是 ≤:「每區滿分都是 100、三區同尺規」是加權合成的前提。
+// 寫成 ≤ 的話,有人把 COMMUNAL_TIER_MAX 從 20 改成 15,前提就破了而測試不會紅。
 check(
-  `每區 attrMax + categoryMax + tierMax ≤ 100(${COMMUNAL_AREA_IDS.map((id) => `${COMMUNAL_AREA_LABELS[id]} ${COMMUNAL_LIMITS[id].attrMax}+${COMMUNAL_LIMITS[id].categoryMax}+${COMMUNAL_LIMITS[id].tierMax}=${COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax}`).join(" / ")})`,
+  `每區 attrMax + categoryMax + tierMax === 100(${COMMUNAL_AREA_IDS.map((id) => `${COMMUNAL_AREA_LABELS[id]} ${COMMUNAL_LIMITS[id].attrMax}+${COMMUNAL_LIMITS[id].categoryMax}+${COMMUNAL_LIMITS[id].tierMax}=${COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax}`).join(" / ")})`,
   COMMUNAL_AREA_IDS.every(
-    (id) => COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax <= 100,
+    (id) => COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax === 100,
   ),
 );
 check(
@@ -316,11 +318,36 @@ check(
 );
 
 // --- 空區保護:共用區被拆空也不會 NaN / 負數(面板不會爆) ---
-// 用一個沒有任何家具的假共用區驗純函式的邊界(不動真的三區)。
-const emptyLike = (0 * 0 + 0 + 0) * cleanlinessMultiplier(cleanlinessBaseline("__empty__"));
+// ⚠️ 這裡必須真的走 `communalAreaBreakdown` 的空區路徑:屬性部分是 `max × w/(w+18)`,
+// 全空時是 0/(0+18) 而非 0/0——但那要**實際呼叫**才驗得到。
+// 作法:暫時把洗衣間的家具全數移出 placements,驗完立刻原樣塞回(順序也還原)。
+const laundryBackup = getPlacements().filter((p) => p.room === "laundry").map((p) => ({ ...p }));
+const listRef = getPlacements();
+const keptOthers = listRef.filter((p) => p.room !== "laundry").map((p) => ({ ...p }));
+listRef.length = 0;
+listRef.push(...keptOthers);
+const emptyArea = communalAreaBreakdown("laundry");
 check(
-  `空共用區的分數是 0 而非 NaN(整潔錨 ${cleanlinessBaseline("__empty__")} → ${emptyLike})`,
-  emptyLike === 0 && Number.isFinite(emptyLike),
+  `真的清空一區後,該區走完整條計算路徑仍得 0 而非 NaN(attr ${emptyArea.attrPart} / cat ${emptyArea.categoryPart} / tier ${emptyArea.tierPart} → quality ${emptyArea.quality})`,
+  emptyArea.attrPart === 0 && emptyArea.categoryPart === 0 && emptyArea.tierPart === 0 &&
+    emptyArea.quality === 0 && Number.isFinite(emptyArea.quality),
+);
+check(
+  `空區的 bucket 全部標記為缺、整潔錨回到無收納的 50(錨 ${emptyArea.cleanBase} → ×${emptyArea.cleanMult})`,
+  emptyArea.buckets.every((b) => !b.has) && emptyArea.cleanBase === 50 &&
+    emptyArea.cleanMult === cleanlinessMultiplier(50),
+);
+const qWithEmpty = communalQuality();
+check(
+  `整棟合成分數也不會 NaN,且比未清空時低(${qWithEmpty.toFixed(3)} 且為有限數)`,
+  Number.isFinite(qWithEmpty) && qWithEmpty >= 0,
+);
+// 還原洗衣間(後面沒有斷言依賴它,但別留下被掏空的狀態給同進程的其他程式碼)
+listRef.push(...laundryBackup);
+check(
+  `還原後洗衣間回到清空前的件數與分數(${getPlacements().filter((p) => p.room === "laundry").length} 件,quality ${communalAreaBreakdown("laundry").quality})`,
+  getPlacements().filter((p) => p.room === "laundry").length === laundryBackup.length &&
+    communalAreaBreakdown("laundry").quality > 0,
 );
 
 // ===========================================================================

@@ -135,7 +135,18 @@ export interface Placement {
   memorial?: boolean;
 }
 
-/** 開場預設家具(動態家具狀態的種子;之後由 sim/placements.ts 管理可變副本) */
+/**
+ * 開場預設家具(動態家具狀態的種子;之後由 sim/placements.ts 管理可變副本)
+ *
+ * ⚠️ **動到 `lounge` / `bathroom` / `laundry` 這三區的擺放,必須重新校準
+ * `sim/comfort.ts` 的 `COMMUNAL_NEUTRAL`**(公共空間品質的中性錨點)。
+ * 那個常數是「開場樓層公共空間分數」的實測 double,硬編是為了讓種子局的
+ * baseline delta 恰好為 0 → balance 快照零漂移。這三區增/減/換任何一件家具,
+ * 種子分數就變了、delta 不再是 0,`scripts/balance-test.ts` 會紅燈。
+ * 正解是重新量一次分數並更新 `COMMUNAL_NEUTRAL`(`communal-comfort-test.ts` 會告訴你
+ * 新值),**不是跑 `balance-test.ts --update` 把漂移蓋掉**。
+ * 改私人房(r301~r304)不受此限。
+ */
 export const INITIAL_PLACEMENTS: Placement[] = [
   // ---- 301 陳家豪(工作狂 / 夜貓 / 養貓)----
   { defId: "single_bed", room: "r301", c: 1, r: 1 },

@@ -224,8 +224,17 @@ const CLEANLINESS_K = 0.015;
  * - 社交(socialFulfillment 簡版):有戀人/朋友 → 心情基準↑;完全孤立 → ↓
  * - 身心健康後果:wellbeing 低 → 心情基準大幅下修(病懨懨開心不起來)
  * - 精力後果:energy 低 → 壓力基準上修(累到什麼都煩)
+ *
+ * `comfort` / `communalQ` 都是**可選的預算快取**:未帶入時就地計算(外部呼叫如 arc-test、
+ * stats-model-test 用),`applyStat` 會兩個都傳進來避免重算。`communalQ` 對同一小時的
+ * **所有租客是同一個值**(它描述整棟樓的公共空間),但 `communalBreakdown()` 一次要掃
+ * 3 區 × 5 趟 placements 全表;不快取的話 4 租客 × 2 個呼叫點 = 每小時 120 趟全表掃描。
  */
-export function baselines(rt: TenantRuntime, comfort?: number): { mood: number; stress: number } {
+export function baselines(
+  rt: TenantRuntime,
+  comfort?: number,
+  communalQ?: number,
+): { mood: number; stress: number } {
   let mood = 62;
   let stress = 38;
   for (const tag of rt.tenant.coreTags) {
@@ -260,7 +269,7 @@ export function baselines(rt: TenantRuntime, comfort?: number): { mood: number; 
   // 公共空間(交誼廳/浴室/洗衣間)品質:走 comfort.ts 的**獨立管道**再疊一層,
   // 刻意不混進上面的 roomComfort——那個值同時是 cozyHomePass 的門檻,動它會位移慶祝日誌。
   // 種子樓層 q 恰好等於 COMMUNAL_NEUTRAL → 三個 delta 皆 0,舊局/舊存檔數值完全不變。
-  const gdelta = communalBaselineDelta(communalQuality());
+  const gdelta = communalBaselineDelta(communalQ ?? communalQuality());
   mood += gdelta.mood;
   stress += gdelta.stress;
   return { mood: clamp(mood, 10, 90), stress: clamp(stress, 10, 90) };
@@ -270,7 +279,10 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   const s = rt.tenant.stats;
   const roomId = roomOfTenant(rt.tenant.id);
   const comfort = roomComfort(roomId, rt.cleanliness);
-  const base = baselines(rt, comfort);
+  // 公共空間分數對整棟樓是同一個值,但一次要掃 3 區 × 5 趟 placements。
+  // 這裡算一次,同時餵給 baselines() 與下面的 wbAnchor(原本同一個 applyStat 內算兩遍)。
+  const communalQ = communalQuality();
+  const base = baselines(rt, comfort, communalQ);
   // homeostasis:mood/stress 先朝性格基準回歸,再吃這小時的活動增量 → 不再黏死 0/100
   s.mood = clamp(s.mood + (base.mood - s.mood) * HOMEOSTASIS_K + clampDelta(d.mood), 0, 100);
   s.stress = clamp(s.stress + (base.stress - s.stress) * HOMEOSTASIS_K + clampDelta(d.stress), 0, 100);
@@ -278,7 +290,7 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   s.affinity = clamp(s.affinity + clampDelta(d.affinity), 0, 100);
   s.energy = clamp(s.energy + clampDelta(d.energy), 0, 100);
   // wellbeing 也給極弱回歸(1%/h),避免黏死 100;舒適房把回歸錨點微微墊高、髒/簡陋房下修
-  const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing + communalBaselineDelta(communalQuality()).wellbeing;
+  const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing + communalBaselineDelta(communalQ).wellbeing;
   s.wellbeing = clamp(s.wellbeing + (wbAnchor - s.wellbeing) * 0.01 + clampDelta(d.wellbeing), 0, 100);
   // 整潔慢變環境品質:朝「收納決定的自然水位」極慢回歸(生活會變髒/收納常保整潔),
   // 再吃本小時活動增量(煮飯/洗澡等)。收納家具墊高基準 = 減緩衰減,不逼玩家一直打掃。

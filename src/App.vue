@@ -21,7 +21,7 @@ import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
 import {
   roomComfortBreakdown, comfortHints, COMFORT_LIMITS, COMFORT_BUCKET_LABELS,
-  communalBreakdown, COMMUNAL_NEUTRAL,
+  communalBreakdown, COMMUNAL_NEUTRAL, COMMUNAL_LIMITS,
 } from "./sim/comfort";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
@@ -522,9 +522,19 @@ const communalOpen = ref(false);
 const communalParts = computed(() => {
   const bd = communalBreakdown();
   const vs = bd.quality - COMMUNAL_NEUTRAL;
+  /**
+   * 分母嚴格從 `COMMUNAL_LIMITS` 推導,**不寫字面 100**(比照上面 `comfortParts` 從
+   * `COMFORT_LIMITS` 推導)。目前每區三項合計剛好 100 只是「碰巧成立」——真正的來源是
+   * 那組上限常數,測試以 `=== 100` 把關;面板不該自己另訂一套數字。
+   */
+  const areaMax = (id: keyof typeof COMMUNAL_LIMITS) =>
+    COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax;
+  // 合成分數的上限 = Σ(各區上限 × 權重);三區同尺規時它就等於單區上限。
+  const totalMax = bd.areas.reduce((sum, a) => sum + areaMax(a.id) * a.weight, 0);
   return {
     score: Math.round(bd.quality),
-    pct: Math.min(100, Math.max(0, bd.quality)),
+    max: Math.round(totalMax),
+    pct: Math.min(100, Math.max(0, (bd.quality / totalMax) * 100)),
     neutral: Math.round(COMMUNAL_NEUTRAL),
     vsText: `${vs >= 0 ? "+" : "−"}${Math.abs(Math.round(vs))}`,
     vsColor: vs > 0.5 ? "var(--good)" : vs < -0.5 ? "var(--bad)" : "var(--text-dim)",
@@ -532,7 +542,8 @@ const communalParts = computed(() => {
       id: a.id,
       label: a.label,
       score: Math.round(a.quality),
-      pct: Math.min(100, Math.max(0, a.quality)),
+      max: Math.round(areaMax(a.id)),
+      pct: Math.min(100, Math.max(0, (a.quality / areaMax(a.id)) * 100)),
       weightText: `權重 ${a.weight}`,
       multText: `🧹×${a.cleanMult.toFixed(2)}`,
       buckets: a.buckets.map((b) => ({ label: b.label, has: b.has })),
@@ -827,7 +838,7 @@ function onChainResolve(choiceId: string) {
                 <div class="cbd-row">
                   <label>{{ a.label }}</label>
                   <div class="bar"><div class="cbd-comm" :style="{ width: a.pct + '%' }"></div></div>
-                  <span>{{ a.score }}<i>/100</i></span>
+                  <span>{{ a.score }}<i>/{{ a.max }}</i></span>
                 </div>
                 <div class="cbd-buckets">
                   <span class="cbucket cbmeta">{{ a.weightText }}</span>

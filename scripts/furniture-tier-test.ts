@@ -195,9 +195,11 @@ check(
   `滿配房的 clamp 不生效 → comfort 就是三項相加(${maxed.comfort.toFixed(4)} === ${maxedSum.toFixed(4)},面板加法恆等)`,
   Math.abs(maxed.comfort - maxedSum) < 1e-9 && maxed.comfort < 100,
 );
+// 刻意是 === 而不是 ≤:comfort.ts:52-56 明訂三個加項的總上限**剛好** = 100。
+// 寫成 ≤ 的話,把 TIER_MAX 從 10 改成 5 也不會紅,但「滿配房拿得到 100」這個前提就悄悄破了。
 check(
-  `上限常數本身就保證不破 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax} ≤ 100)`,
-  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax <= 100,
+  `上限常數三項合計剛好等於 100(${COMFORT_LIMITS.attrMax} + ${COMFORT_LIMITS.categoryMax} + ${COMFORT_LIMITS.tierMax} === 100)`,
+  COMFORT_LIMITS.attrMax + COMFORT_LIMITS.categoryMax + COMFORT_LIMITS.tierMax === 100,
 );
 
 // --- 6. 空房 tierPart = 0、roomId === null 回中性 ---

@@ -8,13 +8,13 @@
  * 取得途徑:種子(陳家豪的橘貓「橘子」,他的作息本來就有逗貓時段)、
  * AI/規則事件的 adopt_cat 行為指令，以及自帶貓狗入住的應徵者。
  *
- * 樓貓(圓夢畢業批):飼主圓夢離開時可把貓「留下成樓貓」——pet.ownerId 改為
- * 哨兵值 "landlord"(Pet.ownerId 型別是 string,合法;不新增欄位、舊存檔零遷移)。
- * 樓貓沒有飼主 runtime:遊蕩錨點改為交誼廳,串門/搗蛋/貓週記照常(文案改「樓貓」)。
- * state.pets 的 key 維持原飼主 id(唯一,不會撞 key);貓的識別一律用 record key(catId)。
+ * 樓寵物(圓夢畢業批):飼主離開時可永久留下，或先由公寓／合作家庭中途照顧。
+ * pet.ownerId 會改成哨兵值 "landlord"，state.pets 的 key 維持原飼主 id；
+ * 永久與公寓中途照常參與樓層活動，合作中途則暫時離開現場，媒合完成後寫入幸福新家紀錄。
  */
-import type { Pet, PetKind, PetPairAction } from "../types";
+import type { Pet, PetKind, PetPairAction, PetRehomingDestination } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
+import { save } from "./persistence";
 import { adjustRelationship } from "./social";
 import { unlock } from "./legacy";
 import { getPlacements } from "./placements";
@@ -59,16 +59,187 @@ export const HOUSE_PET_OWNER = "landlord";
 /** 舊測試與存檔語意相容。 */
 export const HOUSE_CAT_OWNER = HOUSE_PET_OWNER;
 const isHousePet = (pet: Pet) => pet.ownerId === HOUSE_PET_OWNER;
+export const PERMANENT_HOUSE_PET_LIMIT = 2;
+export const IN_HOUSE_FOSTER_LIMIT = 1;
+export const PET_HOME_CAP = 50;
+const DAY_MS = 24 * 3600 * 1000;
+const REHOME_MIN_DAYS = 5;
+const REHOME_MAX_DAYS = 8;
+
+export const isPetOnSite = (pet: Pet) => pet.housePlacement !== "partner_foster";
+
+export function housePetEntries() {
+  return Object.entries(state.pets).filter(([, pet]) => isHousePet(pet));
+}
+
+export function permanentHousePetEntries() {
+  return housePetEntries().filter(([, pet]) => (pet.housePlacement ?? "permanent") === "permanent");
+}
+
+export function fosterHousePetEntries() {
+  return housePetEntries().filter(([, pet]) => pet.housePlacement === "foster");
+}
+
+export function needsHousePetReview() {
+  return permanentHousePetEntries().length > PERMANENT_HOUSE_PET_LIMIT;
+}
+
+export function petRehomingDaysLeft(pet: Pet) {
+  if (!pet.rehomingAtMs) return 0;
+  return Math.max(0, Math.ceil((pet.rehomingAtMs - state.gameMs) / DAY_MS));
+}
+
+function stableHash(text: string) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function rehomeDurationMs(petId: string, pet: Pet) {
+  const span = REHOME_MAX_DAYS - REHOME_MIN_DAYS + 1;
+  return (REHOME_MIN_DAYS + (stableHash(`${petId}|${pet.name}|${pet.sinceMs}`) % span)) * DAY_MS;
+}
+
+function formerOwnerName(petId: string, pet: Pet) {
+  if (pet.formerOwnerName) return pet.formerOwnerName;
+  const alumnus = state.alumni.find((entry) => entry.debugSnapshot?.tenantId === petId);
+  return alumnus?.name;
+}
+
+function clearPetLinks(petId: string) {
+  for (const pet of Object.values(state.pets)) {
+    if (pet.pairWith !== petId) continue;
+    delete pet.pairWith;
+    delete pet.pairAction;
+    delete pet.pairUntilMs;
+  }
+  for (const key of Object.keys(state.interactionCooldowns)) {
+    if (key.split("|").includes(petId)) delete state.interactionCooldowns[key];
+  }
+}
+
+function beginRehoming(
+  petId: string,
+  pet: Pet,
+  destination: PetRehomingDestination,
+  preferInHouse = true,
+) {
+  const canStayInHouse = preferInHouse && fosterHousePetEntries().length < IN_HOUSE_FOSTER_LIMIT;
+  pet.housePlacement = canStayInHouse ? "foster" : "partner_foster";
+  pet.rehomingDestination = destination;
+  pet.rehomingAtMs = state.gameMs + rehomeDurationMs(petId, pet);
+  pet.hangout = "lounge";
+  delete pet.pairWith;
+  delete pet.pairAction;
+  delete pet.pairUntilMs;
+  clearPetLinks(petId);
+}
+
+function finishRehoming(petId: string, pet: Pet) {
+  const owner = formerOwnerName(petId, pet);
+  const reunion = pet.rehomingDestination === "former_owner" && !!owner;
+  const destination = reunion ? `${owner}安頓後接回` : "通過審核的新家庭";
+  const note = reunion
+    ? `「${pet.name}」回到 ${owner} 身邊，新住處已經準備好牠熟悉的睡墊與玩具。`
+    : `「${pet.name}」完成媒合，新家主動回報牠已經找到最喜歡的窗邊位置。`;
+  state.petHomes.unshift({
+    id: `${petId}:${state.gameMs}`,
+    name: pet.name,
+    kind: pet.kind ?? "cat",
+    color: pet.color,
+    leftMs: state.gameMs,
+    daysTogether: Math.max(1, Math.floor((state.gameMs - pet.sinceMs) / DAY_MS)),
+    destination,
+    note,
+  });
+  if (state.petHomes.length > PET_HOME_CAP) state.petHomes.splice(PET_HOME_CAP);
+  clearPetLinks(petId);
+  delete state.pets[petId];
+  notify(`${petIcon(pet)} 「${pet.name}」${reunion ? `由 ${owner} 接回` : "找到幸福新家"}，離開公寓展開新生活`);
+}
+
+/** 玩家從寵物面板替永久樓寵物媒合新家。 */
+export function startHousePetRehoming(
+  petId: string,
+  destination: PetRehomingDestination = "adopter",
+): { ok: boolean; text: string } {
+  const pet = state.pets[petId];
+  if (!pet || !isHousePet(pet)) return { ok: false, text: "只有樓寵物能由房東安排送養" };
+  if ((pet.housePlacement ?? "permanent") !== "permanent") return { ok: false, text: "這隻動物已經在媒合中" };
+  beginRehoming(petId, pet, destination);
+  save();
+  const where = pet.housePlacement === "foster" ? "留在公寓中途照顧" : "先到合作中途家庭";
+  return { ok: true, text: `${petIcon(pet)} 「${pet.name}」開始媒合，${where}` };
+}
+
+/** 媒合完成前可取消；永久樓寵物名額已滿時不能帶回。 */
+export function cancelHousePetRehoming(petId: string): { ok: boolean; text: string } {
+  const pet = state.pets[petId];
+  if (!pet || !isHousePet(pet) || (pet.housePlacement !== "foster" && pet.housePlacement !== "partner_foster")) {
+    return { ok: false, text: "這隻動物目前沒有進行中的媒合" };
+  }
+  if (permanentHousePetEntries().length >= PERMANENT_HOUSE_PET_LIMIT) {
+    return { ok: false, text: `永久樓寵物名額已滿（${PERMANENT_HOUSE_PET_LIMIT}/${PERMANENT_HOUSE_PET_LIMIT}）` };
+  }
+  pet.housePlacement = "permanent";
+  delete pet.rehomingAtMs;
+  delete pet.rehomingDestination;
+  pet.hangout = "lounge";
+  save();
+  return { ok: true, text: `${petIcon(pet)} 已取消「${pet.name}」的媒合，牠繼續留在公寓` };
+}
+
+/** 舊存檔永久樓寵物超量時，由玩家挑剛好兩隻留下，其餘依序分流到公寓／合作中途。 */
+export function resolveHousePetOverload(keepPetIds: string[]): { ok: boolean; text: string } {
+  const permanent = permanentHousePetEntries()
+    .sort((a, b) => a[1].sinceMs - b[1].sinceMs || a[0].localeCompare(b[0]));
+  if (permanent.length <= PERMANENT_HOUSE_PET_LIMIT) return { ok: false, text: "目前沒有超量樓寵物需要安置" };
+  const keep = new Set(keepPetIds);
+  if (keep.size !== PERMANENT_HOUSE_PET_LIMIT || [...keep].some((id) => !permanent.some(([petId]) => petId === id))) {
+    return { ok: false, text: `請選擇剛好 ${PERMANENT_HOUSE_PET_LIMIT} 隻永久留下` };
+  }
+  const extras = permanent.filter(([petId]) => !keep.has(petId));
+  extras.forEach(([petId, pet], index) => {
+    beginRehoming(petId, pet, formerOwnerName(petId, pet) ? "former_owner" : "adopter", index === 0);
+  });
+  save();
+  notify(`🐾 樓寵物安置完成：${keep.size} 隻永久留下，${extras.length} 隻開始幸福新家媒合`);
+  return { ok: true, text: `已保留 ${keep.size} 隻樓寵物，其餘 ${extras.length} 隻依序中途送養` };
+}
+
+/** 每小時冪等檢查；快轉、離線補進度與前景掛機共用。 */
+export function processPetRehoming() {
+  const due = housePetEntries()
+    .filter(([, pet]) => (pet.housePlacement === "foster" || pet.housePlacement === "partner_foster")
+      && typeof pet.rehomingAtMs === "number" && pet.rehomingAtMs <= state.gameMs)
+    .sort((a, b) => (a[1].rehomingAtMs ?? 0) - (b[1].rehomingAtMs ?? 0) || a[0].localeCompare(b[0]));
+  for (const [petId, pet] of due) finishRehoming(petId, pet);
+  return due.length;
+}
 
 /** 孤兒貓修復:飼主已不在 runtime 的貓一律轉為樓貓(補一則通知;冪等)。
  *  正常流程 moveOut 會刪貓或事先轉樓貓,這裡是舊存檔載入與防禦性的安全網。 */
 export function repairOrphanPets() {
-  for (const pet of Object.values(state.pets)) {
+  let changed = false;
+  for (const [petId, pet] of Object.entries(state.pets)) {
     if (isHousePet(pet) || state.runtimes[pet.ownerId]) continue;
+    const hasPermanentSlot = permanentHousePetEntries().length < PERMANENT_HOUSE_PET_LIMIT;
+    pet.formerOwnerName ??= formerOwnerName(petId, pet);
     pet.ownerId = HOUSE_PET_OWNER;
     pet.hangout = "lounge";
-    notify(`${petIcon(pet)} 「${pet.name}」的主人已經搬走,公寓接手照顧,牠成了${housePetLabel(pet)}`);
+    if (hasPermanentSlot) {
+      pet.housePlacement = "permanent";
+      notify(`${petIcon(pet)} 「${pet.name}」的主人已經搬走,公寓接手照顧,牠成了${housePetLabel(pet)}`);
+    } else {
+      beginRehoming(petId, pet, pet.formerOwnerName ? "former_owner" : "adopter");
+      notify(`${petIcon(pet)} 「${pet.name}」的主人已經搬走；永久名額已滿，公寓先替牠安排中途媒合`);
+    }
+    changed = true;
   }
+  return changed;
 }
 
 /** 向後相容名稱。 */
@@ -77,8 +248,25 @@ export const repairOrphanCats = repairOrphanPets;
 /** 種子寵物補登:陳家豪的作息本來就有「逗貓」時段——把那隻貓變成真的。
  *  也順手做孤兒貓修復(persistence 載入時呼叫本函式)。 */
 export function ensurePets() {
+  let changed = false;
   // 舊存檔沒有 kind；在所有 resolver 前一次正規化，避免舊貓被配對系統漏掉。
-  for (const pet of Object.values(state.pets)) pet.kind ??= "cat";
+  for (const [petId, pet] of Object.entries(state.pets)) {
+    if (!pet.kind) {
+      pet.kind = "cat";
+      changed = true;
+    }
+    if (isHousePet(pet)) {
+      if (!pet.housePlacement) {
+        pet.housePlacement = "permanent";
+        changed = true;
+      }
+      const ownerName = formerOwnerName(petId, pet);
+      if (!pet.formerOwnerName && ownerName) {
+        pet.formerOwnerName = ownerName;
+        changed = true;
+      }
+    }
+  }
   const chen = state.runtimes["tenant_chen_engineer"];
   if (chen && !state.pets[chen.tenant.id]) {
     state.pets[chen.tenant.id] = {
@@ -89,21 +277,36 @@ export function ensurePets() {
       hangout: roomOfTenant(chen.tenant.id) ?? "lounge",
       sinceMs: state.gameMs,
     };
+    changed = true;
   }
-  repairOrphanPets();
+  return repairOrphanPets() || changed;
 }
 
-/** 圓夢畢業「貓的去留」抉擇的套用(tenancy.decide 呼叫):
- *  stay → 立即轉樓貓(ownerId="landlord",錨點交誼廳);take → 只留日誌,離開日隨 moveOut 帶走。 */
+/** 圓夢畢業「寵物去留」抉擇的套用(tenancy.decide 呼叫)。 */
 export function resolvePetFarewell(rt: TenantRuntime, choiceId: string) {
   const pet = state.pets[rt.tenant.id];
   if (!pet || pet.ownerId !== rt.tenant.id) return;
   const icon = petIcon(pet);
   if (choiceId === "stay") {
+    const hasPermanentSlot = permanentHousePetEntries().length < PERMANENT_HOUSE_PET_LIMIT;
     pet.ownerId = HOUSE_PET_OWNER;
     pet.hangout = "lounge";
-    pushSocialLog(rt, `${icon} 他把「${pet.name}」托付給了公寓:「牠在這裡比跟著我奔波幸福。」`, "major");
-    notify(`${icon} 「${pet.name}」留了下來,成為公寓的${housePetLabel(pet)}`);
+    pet.formerOwnerName = rt.tenant.name;
+    if (hasPermanentSlot) {
+      pet.housePlacement = "permanent";
+      pushSocialLog(rt, `${icon} 他把「${pet.name}」托付給了公寓:「牠在這裡比跟著我奔波幸福。」`, "major");
+      notify(`${icon} 「${pet.name}」留了下來,成為公寓的${housePetLabel(pet)}`);
+    } else {
+      beginRehoming(rt.tenant.id, pet, "former_owner");
+      pushSocialLog(rt, `${icon} 永久樓寵物名額已滿，公寓答應先照顧「${pet.name}」，等他安頓後接回。`, "major");
+      notify(`${icon} 永久名額已滿，「${pet.name}」改由公寓中途照顧`);
+    }
+  } else if (choiceId === "foster") {
+    pet.ownerId = HOUSE_PET_OWNER;
+    pet.formerOwnerName = rt.tenant.name;
+    beginRehoming(rt.tenant.id, pet, "former_owner");
+    pushSocialLog(rt, `${icon} 公寓先中途照顧「${pet.name}」，等他安頓新住處後再接回。`, "major");
+    notify(`${icon} 「${pet.name}」開始中途安置，預計 ${petRehomingDaysLeft(pet)} 天後與主人團圓`);
   } else {
     const carrier = pet.kind === "dog" ? "牽繩和外出水壺" : "貓籠";
     pushSocialLog(rt, `${icon} 決定帶「${pet.name}」一起走,連${carrier}都提前準備好了。`, "notable");
@@ -216,7 +419,9 @@ function fxAt(roomId: string, kind: Parameters<typeof spawnFx>[0], dur = 10000) 
 /** 每遊戲小時:每隻貓換去處 + 擲骰貓咪事件(owner=null 代表樓貓) */
 export function petsPass() {
   repairOrphanPets();
+  processPetRehoming();
   for (const [petId, pet] of Object.entries(state.pets)) {
+    if (!isPetOnSite(pet)) continue;
     const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId] ?? null;
     pet.hangout = pickHangout(pet);
     rollVisit(petId, pet, owner);
@@ -237,6 +442,7 @@ const CROSS_PAIR_ACTIONS: CrossPairAction[] = ["greet", "avoid"];
 
 function clearExpiredPetPairs() {
   for (const pet of Object.values(state.pets)) {
+    if (!isPetOnSite(pet)) continue;
     if (pet.pairUntilMs != null && pet.pairUntilMs <= state.gameMs) {
       delete pet.pairWith;
       delete pet.pairAction;
@@ -250,7 +456,7 @@ function clearExpiredPetPairs() {
  *  不能拿來配對;一般貓的 catId === ownerId,舊存檔的 pairWith/冷卻 key 完全相容。 */
 export function resolveCatPairs(random: () => number = Math.random, force = false): CatPairAction | null {
   clearExpiredPetPairs();
-  const entries = Object.entries(state.pets).filter(([, pet]) => pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
   // 兩隻貓原本沒碰面時,偶爾主動去找貓伴；避免「雙貓互動」只能靠兩次獨立亂數巧遇。
@@ -326,7 +532,7 @@ function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
 /** 同區域的兩隻狗會追球、互聞或靠著午睡；force 僅供測試與美術預覽。 */
 export function resolveDogPairs(random: () => number = Math.random, force = false): DogPairAction | null {
   clearExpiredPetPairs();
-  const entries = Object.entries(state.pets).filter(([, pet]) => pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
   if (!force && !alreadyTogether && entries.length >= 2 && random() < 0.16) {
@@ -357,8 +563,8 @@ export function resolveDogPairs(random: () => number = Math.random, force = fals
 /** 同區域的一貓一狗會友善打招呼或互相保持距離。 */
 export function resolveCrossSpeciesPairs(random: () => number = Math.random, force = false): CrossPairAction | null {
   clearExpiredPetPairs();
-  const cats = Object.entries(state.pets).filter(([, pet]) => pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
-  const dogs = Object.entries(state.pets).filter(([, pet]) => pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const cats = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const dogs = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = cats.some(([, cat]) => dogs.some(([, dog]) => cat.hangout === dog.hangout));
   if (!force && !alreadyTogether && cats.length > 0 && dogs.length > 0 && random() < 0.1) {
@@ -480,6 +686,7 @@ function dogJournalLines(petName: string, ownerName: string, neighbor: string): 
  *  樓貓沒有飼主 → 筆記掛在任一位在住租客的日誌上(Feed 彙整全樓日誌,玩家都看得到)。 */
 export function catJournalPass() {
   for (const [petId, pet] of Object.entries(state.pets)) {
+    if (!isPetOnSite(pet)) continue;
     const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId];
     const host = owner ?? Object.values(state.runtimes)[0]; // 樓貓筆記的落點
     if (!host || (!owner && !isHousePet(pet))) continue;

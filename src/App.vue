@@ -16,6 +16,7 @@ import GroupDecisionModal from "./components/GroupDecisionModal.vue";
 import RentPanel from "./components/RentPanel.vue";
 import UpgradePanel from "./components/UpgradePanel.vue";
 import FeedPanel from "./components/FeedPanel.vue";
+import PetPanel from "./components/PetPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -67,6 +68,7 @@ import {
   canDropAt,
   feedUnreadCount,
   markFeedSeen,
+  needsHousePetReview,
 } from "./store";
 
 type View = "floor" | "room" | "feed";
@@ -84,6 +86,7 @@ const showSettings = ref(false);
 const showLegacy = ref(false);
 const showRent = ref(false);
 const showLivingDetails = ref(false);
+const showPets = ref(false);
 /** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
 const upgradeRoom = ref<string | null>(null);
 /** 只有「承租人」能談房租(同居者不付租) */
@@ -114,6 +117,7 @@ const pendingRooms = computed(() => {
 /** 底部導覽「動態」徽章:待決事件優先(紅),否則未讀動態數(紫) */
 const pendingCount = computed(() => Object.values(state.runtimes).filter((r) => r.pendingEvent).length);
 const feedUnread = computed(() => feedUnreadCount());
+const petReviewNeeded = computed(() => needsHousePetReview());
 
 // 進動態分頁:快照上次已讀點(給 NEW 標記)後立即標為已讀;離開時再標一次,
 // 把停留期間湧入的動態也吸收掉,徽章才不會馬上又亮
@@ -635,6 +639,9 @@ function onChainResolve(choiceId: string) {
 
     <div class="floor-actions">
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
+      <button class="pet-btn" :class="{ warn: petReviewNeeded }" @click="showPets = true">
+        🐾 寵物<span v-if="petReviewNeeded">!</span>
+      </button>
       <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(6)">
         {{ state.ffRemaining > 0 ? "⏳ 快轉中…" : "⏩ 6 小時" }}
       </button>
@@ -960,6 +967,7 @@ function onChainResolve(choiceId: string) {
   <FurnitureShop v-if="showShop" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
+  <PetPanel v-if="showPets" @close="showPets = false" @done="toast($event, 3600)" />
   <CohabitModal
     v-if="state.pendingCohabit"
     :a-name="state.pendingCohabit.aName"
@@ -1210,6 +1218,10 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .floor-actions { display: flex; gap: 8px; }
 .shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
 .shop-btn:hover { background: #322c46; }
+.pet-btn { flex: 0.75; background: var(--panel-2); border: 1px solid #d69963; color: #f0bd82; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
+.pet-btn.warn { border-color: #ff8f70; color: #ffb39c; animation: pet-pulse 1.4s ease-in-out infinite; }
+.pet-btn span { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 50%; background: #d85f54; color: white; font-size: 10px; }
+@keyframes pet-pulse { 50% { box-shadow: 0 0 0 3px rgba(255, 143, 112, 0.15); } }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .rpet { font-size: 11.5px; color: #e0b078; align-self: center; }
 .advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }

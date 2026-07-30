@@ -92,6 +92,20 @@ check("匯入非 JSON → 拒絕", !importSave("這不是存檔"));
 check("匯入無升級路徑的舊版 → 拒絕", !importSave('{"v":1,"runtimes":{},"occupancy":{}}'));
 check("匯入缺欄位 → 拒絕", !importSave(`{"v":${SAVE_VERSION}}`));
 
+// --- v4 → v5:既有樓寵物保留為永久，補幸福新家名冊 ---
+const v4save = JSON.parse(json!);
+v4save.v = 4;
+delete v4save.petHomes;
+v4save.pets.legacy_house_pet = {
+  name: "舊樓貓", kind: "cat", color: 1, ownerId: "landlord", hangout: "lounge", sinceMs: v4save.gameMs,
+};
+check("匯入 v4 樓寵物舊檔 → 遷移成功", importSave(JSON.stringify(v4save)));
+const migratedV4 = JSON.parse(mem["rent_house_save_v1"]);
+check("v4→v5 補 permanent 身分與幸福新家空陣列",
+  migratedV4.v === SAVE_VERSION
+  && migratedV4.pets.legacy_house_pet.housePlacement === "permanent"
+  && Array.isArray(migratedV4.petHomes));
+
 // --- 遷移層:v2 存檔(stats 還是 hygiene、沒有 energy)應被升級後接受 ---
 const v2save = JSON.parse(json!);
 v2save.v = 2;

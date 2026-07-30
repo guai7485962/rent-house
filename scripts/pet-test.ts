@@ -23,7 +23,14 @@ Math.random = () => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 
-const { petsPass, adoptCat, adoptPet, catAttitude, petAttitude, ensurePets, mischiefRelief, resolveCatPairs, resolveDogPairs, resolveCrossSpeciesPairs } = await import("../src/sim/pets");
+const {
+  petsPass, adoptCat, adoptPet, catAttitude, petAttitude, ensurePets, mischiefRelief,
+  resolveCatPairs, resolveDogPairs, resolveCrossSpeciesPairs,
+  HOUSE_PET_OWNER, PERMANENT_HOUSE_PET_LIMIT, IN_HOUSE_FOSTER_LIMIT,
+  permanentHousePetEntries, fosterHousePetEntries, needsHousePetReview,
+  resolveHousePetOverload, startHousePetRehoming, cancelHousePetRehoming,
+  processPetRehoming,
+} = await import("../src/sim/pets");
 const { produceDailyDiaries, setNarrateImplForTest, diaryTiming } = await import("../src/sim/narration");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
@@ -329,6 +336,78 @@ check("日記 ctx:狗飼主帶「養了一隻狗」flag", !!linCtx && (linCtx as
 // --- ensurePets 冪等 ---
 ensurePets();
 check("ensurePets 冪等:不會生出第二隻", Object.keys(state.pets).filter((k) => k === CHEN).length === 1);
+
+// --- 樓寵物容量 + 中途送養 + 幸福新家 ---
+const DAY_MS = 24 * 3600 * 1000;
+for (const id of ["house_a", "house_b", "house_c", "house_d"]) delete state.pets[id];
+state.petHomes.splice(0);
+const housePet = (name: string, sinceDays: number, kind: "cat" | "dog" = "cat") => ({
+  name,
+  kind,
+  color: sinceDays % 4,
+  ownerId: HOUSE_PET_OWNER,
+  hangout: "lounge",
+  sinceMs: state.gameMs - sinceDays * DAY_MS,
+  housePlacement: "permanent" as const,
+});
+state.pets.house_a = housePet("阿甲", 12);
+state.pets.house_b = housePet("阿乙", 10, "dog");
+state.pets.house_c = housePet("阿丙", 8);
+state.pets.house_d = housePet("阿丁", 6, "dog");
+check("容量常數:永久 2 + 公寓中途 1", PERMANENT_HOUSE_PET_LIMIT === 2 && IN_HOUSE_FOSTER_LIMIT === 1);
+check("舊檔四隻永久樓寵物 → 要求安置會議", needsHousePetReview() && permanentHousePetEntries().length === 4);
+const invalidReview = resolveHousePetOverload(["house_a"]);
+check("安置會議未選滿兩隻 → 拒絕且零變更", !invalidReview.ok && permanentHousePetEntries().length === 4);
+const reviewed = resolveHousePetOverload(["house_a", "house_b"]);
+check("安置會議:只留兩隻永久", reviewed.ok && permanentHousePetEntries().map(([id]) => id).sort().join(",") === "house_a,house_b");
+check("安置會議:第一隻進公寓中途、下一隻進合作中途",
+  state.pets.house_c.housePlacement === "foster"
+  && state.pets.house_d.housePlacement === "partner_foster"
+  && fosterHousePetEntries().length === 1);
+check("中途期限都在 5～8 遊戲日",
+  [state.pets.house_c, state.pets.house_d].every((pet) => {
+    const days = ((pet.rehomingAtMs ?? 0) - state.gameMs) / DAY_MS;
+    return days >= 5 && days <= 8;
+  }));
+check("合作中途不出現在樓層 agent，公寓中途仍看得到",
+  !createPetAgents().some((agent) => agent.petId === "house_d")
+  && createPetAgents().some((agent) => agent.petId === "house_c"));
+check("永久名額滿時不能取消合作中途",
+  !cancelHousePetRehoming("house_d").ok && state.pets.house_d.housePlacement === "partner_foster");
+
+const manual = startHousePetRehoming("house_a", "adopter");
+check("主動送養只動樓寵物，公寓中途已滿時分流合作中途",
+  manual.ok && state.pets.house_a.housePlacement === "partner_foster" && permanentHousePetEntries().length === 1);
+check("房客自己的寵物不能由房東送養", !startHousePetRehoming(CHEN, "adopter").ok && !!state.pets[CHEN]);
+check("永久有空位後可取消媒合", cancelHousePetRehoming("house_d").ok && state.pets.house_d.housePlacement === "permanent");
+
+// 到期前一毫秒仍在；到期後只退場一次，並清理另一隻身上的配對引用。
+state.pets.house_c.pairWith = "house_d";
+state.pets.house_c.pairAction = "greet";
+state.pets.house_d.pairWith = "house_c";
+state.pets.house_d.pairAction = "greet";
+const cDue = state.pets.house_c.rehomingAtMs!;
+state.pets.house_a.rehomingAtMs = cDue + DAY_MS;
+state.gameMs = cDue - 1;
+check("中途到期前仍留在公寓", processPetRehoming() === 0 && !!state.pets.house_c);
+state.gameMs = cDue;
+check("中途到期 → 從 pets 退場並新增一筆幸福新家", processPetRehoming() === 1 && !state.pets.house_c && state.petHomes.length === 1);
+check("送養退場清掉另一隻的 pair 狀態",
+  !state.pets.house_d.pairWith && !state.pets.house_d.pairAction && !state.pets.house_d.pairUntilMs);
+check("同一小時重跑冪等，不重複幸福新家", processPetRehoming() === 0 && state.petHomes.length === 1);
+check("幸福新家保留名字／物種／花色／去向／穩定 id",
+  state.petHomes[0].name === "阿丙"
+  && state.petHomes[0].kind === "cat"
+  && typeof state.petHomes[0].color === "number"
+  && !!state.petHomes[0].destination
+  && state.petHomes[0].id.startsWith("house_c:"));
+
+save();
+const savedHomeId = state.petHomes[0].id;
+state.petHomes.splice(0);
+delete state.pets.house_a;
+check("幸福新家與媒合中寵物可存檔往返",
+  load() && state.petHomes[0]?.id === savedHomeId && state.pets.house_a?.housePlacement === "partner_foster");
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

@@ -540,21 +540,26 @@ function becomeModelTenant(rt: TenantRuntime) {
   addReputation(REP_SETTLE, `${rt.tenant.name} 在這裡安居圓夢`);
 }
 
-/** 畢業型心願實現且租客有貓 → 立即掛規則式「貓的去留」抉擇(不經 AI;玩家未決 = 離開時帶走)。
- *  「留下成樓貓」把 pet.ownerId 改為 "landlord"(Pet.ownerId 是 string,哨兵值型別合法;
- *  pets.ts 各 pass 對它特判:錨點改交誼廳、不再找飼主 runtime),實際套用在 tenancy.decide。 */
+/** 畢業型心願實現且租客有寵物 → 立即掛規則式去留抉擇(不經 AI;玩家未決 = 離開時帶走)。
+ *  永久樓寵物最多 2 隻；滿額時仍可由公寓暫住中途，等原主人安頓後接回。 */
 function maybeAttachCatFarewell(rt: TenantRuntime) {
   const pet = state.pets[rt.tenant.id];
   if (!pet || pet.ownerId !== rt.tenant.id || rt.pendingEvent) return;
   const species = pet.kind === "dog" ? "狗" : "貓";
   const houseSpecies = pet.kind === "dog" ? "公寓犬" : "樓貓";
+  const permanentCount = Object.values(state.pets).filter((candidate) =>
+    candidate.ownerId === "landlord" && (candidate.housePlacement ?? "permanent") === "permanent").length;
+  const canStayPermanently = permanentCount < 2;
   const ev: EventDef = {
     id: "wish_pet_farewell",
     title: `「${pet.name}」的去留`,
-    description: `${rt.tenant.name} 帶著「${pet.name}」來找你:「新住處還不確定能不能養${species}……牠在這棟樓有熟悉的角落,我可以帶牠走,也可以拜託你收留牠。」`,
+    description: `${rt.tenant.name} 帶著「${pet.name}」來找你:「新住處還不確定能不能養${species}……牠在這棟樓有熟悉的角落,我可以帶牠走，也可以請公寓暫時幫忙。」${canStayPermanently ? "" : "（永久樓寵物名額已滿）"}`,
     choices: [
       { id: "take", label: "讓他帶牠一起走", hint: `${species}跟著主人開始新生活`, effect: {} },
-      { id: "stay", label: `留下當${houseSpecies}`, hint: "由公寓接手照顧,牠會繼續在樓裡遊蕩", effect: {} },
+      ...(canStayPermanently
+        ? [{ id: "stay", label: `永久留下當${houseSpecies}`, hint: "使用一個永久樓寵物名額", effect: {} }]
+        : []),
+      { id: "foster", label: "由公寓暫住中途", hint: "5～8 天後由主人安頓好接回", effect: {} },
     ],
   };
   rt.pendingEvent = ev;

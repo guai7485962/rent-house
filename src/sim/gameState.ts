@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -236,8 +236,10 @@ export const state = reactive({
   breakdowns: {} as Record<string, { defId: string; cost: number; sinceMs: number }>,
   /** 冷戰(§10-2 衝突):pairKey → 期限(期間互相迴避、關係每日小扣;入存檔) */
   feuds: {} as Record<string, { untilMs: number }>,
-  /** 寵物:飼主租客 id → 貓(一人一隻;會在樓層遊走並引發事件;入存檔) */
+  /** 寵物:record key 通常是原飼主租客 id；樓寵物共享 ownerId="landlord"(入存檔)。 */
   pets: {} as Record<string, Pet>,
+  /** 樓寵物完成中途媒合後的幸福新家名冊，最新在前(入存檔)。 */
+  petHomes: [] as PetHomeEntry[],
   /** 成就冊:已解鎖的成就 id(§G-7;入存檔) */
   achievements: [] as string[],
   /** 累計實現的人生心願數(成就「夢想孵化器」用;入存檔) */

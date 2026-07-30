@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -45,6 +45,13 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
   },
   // v3 → v4:安居倒數改以日曆午夜換日；實際起點由 ensureWishes 從心願完成日誌還原。
   3: (s) => ({ ...s, v: 4 }),
+  // v4 → v5:樓寵物永久名額／中途送養；既有樓寵物先保留為 permanent，交由玩家挑選超量安置。
+  4: (s) => {
+    for (const pet of Object.values<any>(s.pets ?? {})) {
+      if (pet?.ownerId === "landlord") pet.housePlacement ??= "permanent";
+    }
+    return { ...s, petHomes: s.petHomes ?? [], v: 5 };
+  },
 };
 
 /** 把任意版本的存檔升級到 SAVE_VERSION;不認得/升不上去回傳 null(視同壞檔) */
@@ -130,6 +137,7 @@ export function save() {
         breakdowns: state.breakdowns,
         feuds: state.feuds,
         pets: state.pets,
+        petHomes: state.petHomes,
         achievements: state.achievements,
         wishesFulfilled: state.wishesFulfilled,
         reputation: state.reputation,
@@ -153,7 +161,9 @@ export function load(): boolean {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return false;
-    const s = migrateSave(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const migratedVersion = parsed?.v !== SAVE_VERSION;
+    const s = migrateSave(parsed);
     if (!s) return false;
     let repairedModelSinceDay = false;
     state.realAnchorMs = s.realAnchorMs;
@@ -213,6 +223,7 @@ export function load(): boolean {
     Object.assign(state.feuds, s.feuds ?? {}); // 舊檔沒有 → 沒冷戰,無害
     for (const k of Object.keys(state.pets)) delete state.pets[k];
     Object.assign(state.pets, s.pets ?? {}); // 舊檔沒有 → ensurePets 會補種子貓
+    state.petHomes.splice(0, state.petHomes.length, ...((s.petHomes ?? []) as typeof state.petHomes));
     state.achievements.splice(0, state.achievements.length, ...((s.achievements ?? []) as string[]));
     state.wishesFulfilled = typeof s.wishesFulfilled === "number" ? s.wishesFulfilled : 0; // 舊檔沒有 → 0
     state.reputation = typeof s.reputation === "number" ? s.reputation : 0; // 舊檔沒有 → 口碑從 0 累積
@@ -312,11 +323,11 @@ export function load(): boolean {
       state.pendingDiaries.length,
       ...state.pendingDiaries.filter((job) => state.runtimes[job.tenantId]?.log.some((entry) => entry.diaryId === job.diaryId && entry.aiPending)),
     );
-    ensurePets(); // 舊檔沒有寵物資料 → 補種子貓
+    const repairedPets = ensurePets(); // 舊檔沒有寵物資料 → 補種子貓；孤兒／新欄位修復需立即回存
     if (ensureWishes()) repairedModelSinceDay = true; // 同時修復舊安居起點與上一版錯補的「載入當天」
     if (!state.runtimes[state.activeId]) state.activeId = Object.keys(state.runtimes)[0];
     // 安居起點補值當下立即持久化，避免短暫開啟後關閉又重跑遷移。
-    if (repairedModelSinceDay) save();
+    if (repairedModelSinceDay || repairedPets || migratedVersion) save();
     return true;
   } catch {
     return false;

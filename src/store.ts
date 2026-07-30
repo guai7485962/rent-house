@@ -67,6 +67,10 @@ export { buildFeed, feedUnreadCount, markFeedSeen, FEED_CAP, type FeedEntry } fr
 export {
   adoptCat, adoptPet, catAttitude, petAttitude, petsPass, ensurePets, mischiefRelief,
   randomCatPreset, randomDogPreset, randomPetPreset, catJournalPass, petIcon, petSpecies,
+  HOUSE_PET_OWNER, PERMANENT_HOUSE_PET_LIMIT, IN_HOUSE_FOSTER_LIMIT,
+  housePetEntries, permanentHousePetEntries, fosterHousePetEntries, needsHousePetReview,
+  petRehomingDaysLeft, startHousePetRehoming, cancelHousePetRehoming,
+  resolveHousePetOverload, processPetRehoming, isPetOnSite,
 } from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";

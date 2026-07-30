@@ -296,7 +296,10 @@ const chenRent0 = chen.tenant.finance.monthlyRent; // 模範房客 +3% 的比較
   good(rtD);
   rtD.wish!.progress = 98;
   wishes.wishPass(); // 實現 → 排定離開 + 掛貓去留抉擇
-  check("實現當下掛上「寵物去留」抉擇(不經 AI)", rtD.pendingEvent?.id === "wish_pet_farewell" && rtD.pendingEvent!.choices.length === 2);
+  check("實現當下掛上「寵物去留」抉擇(不經 AI，永久有位時三選)",
+    rtD.pendingEvent?.id === "wish_pet_farewell"
+    && rtD.pendingEvent!.choices.some((choice) => choice.id === "stay")
+    && rtD.pendingEvent!.choices.some((choice) => choice.id === "foster"));
   decide("t_drummer", "stay", "把牠留下當樓貓");
   const cat = state.pets["t_drummer"];
   check("留下 → ownerId 轉 landlord、錨點交誼廳", cat?.ownerId === HOUSE_CAT_OWNER && cat?.hangout === "lounge");
@@ -776,10 +779,12 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   wishes.ensureWishes();
   check("主動送別刻意提前的起點不會被自癒邏輯回改",
     rt.modelSinceCalendarDay === proactiveStart, `since=${rt.modelSinceCalendarDay}`);
-  check("主動送別:立即掛上貓去留抉擇",
-    rt.pendingEvent?.id === "wish_pet_farewell" && rt.pendingEvent!.choices.length === 2);
+  check("主動送別:永久名額滿時只提供帶走／中途，不再提供第三隻永久樓寵物",
+    rt.pendingEvent?.id === "wish_pet_farewell"
+    && !rt.pendingEvent!.choices.some((choice) => choice.id === "stay")
+    && rt.pendingEvent!.choices.some((choice) => choice.id === "foster"));
   check("主動送別:重複點擊被拒(已在打包)", wishes.proactiveSettleFarewell("t_proactive").ok === false);
-  decide("t_proactive", "stay", "留下當樓貓");
+  decide("t_proactive", "foster", "由公寓暫住中途");
 
   // 提前後:當下未到期(還有 2 天)→ 尚不在名單
   check("主動送別後當日尚未到期", !wishes.wishPass().some((g) => g.id === "t_proactive"));
@@ -788,8 +793,10 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   const g = wishes.wishPass().find((x) => x.id === "t_proactive");
   check("快轉 2 天 → 圓滿搬離名單(安居圓滿搬離)", !!g && g!.reason.includes("安居圓滿搬離"));
   if (g) graduateFarewell(g.id, g.reason);
-  check("主動送別搬離後 runtime 移除、貓留成樓貓",
-    !state.runtimes["t_proactive"] && state.pets["t_proactive"]?.ownerId === HOUSE_CAT_OWNER);
+  check("主動送別搬離後 runtime 移除、貓進中途但不會被退租流程刪除",
+    !state.runtimes["t_proactive"]
+    && state.pets["t_proactive"]?.ownerId === HOUSE_CAT_OWNER
+    && ["foster", "partner_foster"].includes(state.pets["t_proactive"]?.housePlacement ?? ""));
   state.gameMs = GAME_START.getTime();
 }
 

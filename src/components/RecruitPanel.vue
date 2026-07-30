@@ -10,7 +10,11 @@ import { state } from "../sim/gameState";
 import type { Gender, PetKind } from "../types";
 
 // 樓內已有該物種時才提示相性；自帶寵物優先顯示。
-const floorPetKinds = computed(() => [...new Set(Object.values(state.pets).map((pet) => pet.kind ?? "cat"))] as PetKind[]);
+const floorPetKinds = computed(() => [...new Set(
+  Object.values(state.pets)
+    .filter((pet) => pet.housePlacement !== "partner_foster")
+    .map((pet) => pet.kind ?? "cat"),
+)] as PetKind[]);
 function petNote(a: Applicant): string {
   if (a.pet) return `${(a.pet.kind ?? "cat") === "dog" ? "🐕 自帶狗" : "🐈 自帶貓"}`;
   return floorPetKinds.value.map((kind) => {

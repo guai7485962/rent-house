@@ -44,7 +44,7 @@ function tileInRegion(region: string, blocked: boolean[][]): Tile | null {
 
 export function createPetAgents(): PetAgent[] {
   const blocked = currentBlocked();
-  return Object.entries(state.pets).map(([petId, pet]) => {
+  return Object.entries(state.pets).filter(([, pet]) => pet.housePlacement !== "partner_foster").map(([petId, pet]) => {
     const t = tileInRegion(pet.hangout, blocked) ?? { c: 7, r: 10 };
     return {
       petId,
@@ -69,6 +69,7 @@ export function createPetAgents(): PetAgent[] {
 /** 寵物名單換人／換物種時重建渲染 agent；只看數量會漏掉「一進一出、總數不變」。 */
 export function petAgentSignature(): string {
   return Object.entries(state.pets)
+    .filter(([, pet]) => pet.housePlacement !== "partner_foster")
     .map(([petId, pet]) => `${petId}:${pet.kind ?? "cat"}:${pet.color}:${pet.name}`)
     .sort()
     .join("|");

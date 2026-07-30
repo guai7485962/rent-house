@@ -323,6 +323,8 @@ export interface LandlordDecision {
 // ---------------------------------------------------------------------------
 
 export type PetKind = "cat" | "dog";
+export type HousePetPlacement = "permanent" | "foster" | "partner_foster";
+export type PetRehomingDestination = "former_owner" | "adopter";
 
 export type PetPairAction =
   | "chase" | "groom" | "nap" | "territory" | "mischief"
@@ -343,6 +345,26 @@ export interface Pet {
   pairAction?: PetPairAction;
   pairUntilMs?: number;
   sinceMs: number;
+  /** 僅樓寵物使用；舊存檔缺省視為 permanent。一般租客寵物不需要此欄位。 */
+  housePlacement?: HousePetPlacement;
+  /** 中途媒合完成的遊戲時間；到期後移入幸福新家名冊。 */
+  rehomingAtMs?: number;
+  /** 退場方向：原主人安頓後接回，或通過審核的新家庭。 */
+  rehomingDestination?: PetRehomingDestination;
+  /** 原飼主顯示名；轉樓寵物時留下，供日後團圓文案使用。 */
+  formerOwnerName?: string;
+}
+
+/** 樓寵物完成媒合後留下的幸福新家紀錄。 */
+export interface PetHomeEntry {
+  id: string;
+  name: string;
+  kind: PetKind;
+  color: number;
+  leftMs: number;
+  daysTogether: number;
+  destination: string;
+  note: string;
 }
 
 // ---------------------------------------------------------------------------

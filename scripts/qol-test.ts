@@ -104,7 +104,16 @@ const migratedV4 = JSON.parse(mem["rent_house_save_v1"]);
 check("v4→v5 補 permanent 身分與幸福新家空陣列",
   migratedV4.v === SAVE_VERSION
   && migratedV4.pets.legacy_house_pet.housePlacement === "permanent"
-  && Array.isArray(migratedV4.petHomes));
+  && Array.isArray(migratedV4.petHomes)
+  && Array.isArray(migratedV4.scheduledCommunityEvents));
+
+// --- v5 → v6:補正確時段的社群事件排程佇列 ---
+const v5save = JSON.parse(json!);
+v5save.v = 5;
+delete v5save.scheduledCommunityEvents;
+check("匯入 v5 舊檔 → 補待演社群事件空佇列",
+  importSave(JSON.stringify(v5save))
+  && Array.isArray(JSON.parse(mem["rent_house_save_v1"]).scheduledCommunityEvents));
 
 // --- 遷移層:v2 存檔(stats 還是 hygiene、沒有 energy)應被升級後接受 ---
 const v2save = JSON.parse(json!);

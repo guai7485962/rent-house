@@ -76,7 +76,7 @@ export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";
 export { KINDNESS_ACTS, giveKindness, caredToday, CARE_ACHIEVEMENT_AT, type KindnessId } from "./sim/kindness";
-export { communityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
+export { communityPass, scheduledCommunityPass, rollGroupEvent, resolveGroupEvent } from "./sim/community";
 export {
   floorChainPass, resolveChainEvent, floorChainView, resetFloorChain, chainDef,
   CHAIN_DEFS, CHAIN_FIRST_DAY, CHAIN_MAX_DAYS, CHAIN_REST_DAYS, STAGE_DAYS, type FloorChainView,

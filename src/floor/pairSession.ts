@@ -94,3 +94,11 @@ export function activeSessions(gameNow: number): PairSession[] {
 export function clearPairSessions() {
   sessions.length = 0;
 }
+
+/** 多人事件接管參與者前，清掉只涉及這些人的雙人演出，避免兩套走位互搶。 */
+export function clearPairSessionsFor(tenantIds: readonly string[]) {
+  const ids = new Set(tenantIds);
+  for (let i = sessions.length - 1; i >= 0; i--) {
+    if (ids.has(sessions[i].aId) || ids.has(sessions[i].bId)) sessions.splice(i, 1);
+  }
+}

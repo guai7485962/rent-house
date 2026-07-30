@@ -47,6 +47,7 @@ import { upgradeTolBonus } from "./upgrades";
 import { setCustomAppearance } from "../pixel/scene";
 import { randomAppearance } from "../pixel/parts";
 import { save } from "./persistence";
+import { startGroupScene } from "../floor/groupScene";
 
 /** 取得某空房的應徵者(每遊戲日換一批;重開面板/重整頁面不重抽,星等隨當前裝潢即時更新) */
 export function getApplicants(roomId: string): Applicant[] {
@@ -236,6 +237,17 @@ export function farewellSendoff(rt: TenantRuntime) {
     r.tenant.stats.stress = clamp(r.tenant.stats.stress - 4, 0, 100);
   }
   const ids = residents.map((r) => r.tenant.id);
+  startGroupScene({
+    id: `farewell:${rt.tenant.id}:${state.gameMs}`,
+    title: `為 ${name} 舉辦歡送會`,
+    venue: "lounge",
+    layout: "farewell",
+    participantIds: ids,
+    fx: "hearts",
+    gameNow: state.gameMs,
+    durationMs: 15_000,
+    priority: 3,
+  });
   for (let i = 0; i < ids.length; i++)
     for (let j = i + 1; j < ids.length; j++) adjustRelationship(ids[i], ids[j], 2);
   // 送別日誌掛在最好的鄰居身上,離開者搬走後這筆仍留在全樓 Feed

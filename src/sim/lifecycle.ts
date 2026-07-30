@@ -6,6 +6,7 @@ import { state, fmt } from "./gameState";
 import { load, save } from "./persistence";
 import { syncToNow, applyHour, hourlyTick } from "./tick";
 import { grantStarterBonus } from "./economy";
+import { clearGroupScene } from "../floor/groupScene";
 
 let timer: number | undefined;
 
@@ -16,6 +17,7 @@ export function stopTicker() {
 
 /** App 掛載時呼叫:載入 → 補進度 → 啟動掛機計時器 */
 export function initGame() {
+  clearGroupScene(); // 即時舞台不入存檔；重新載入時從乾淨畫面開始，待演事件仍由排程佇列恢復。
   const loaded = load();
   if (!loaded) {
     // 全新遊戲:先幫每位租客定位到開場時刻的活動(不寫日誌)

@@ -23,6 +23,7 @@ import { grantEventSoundproofing, noiseComplaintEligible } from "./acoustics";
 import { todayWeather } from "./weather";
 import { isWeekend } from "./week";
 import { unlock } from "./legacy";
+import { startGroupScene, type GroupSceneLayout, type GroupSceneVenue } from "../floor/groupScene";
 
 type Rng = () => number;
 
@@ -376,6 +377,14 @@ interface CommunityEvent {
   select: (present: TenantRuntime[], rng: Rng) => TenantRuntime[] | null;
   /** 觸發:套用效果 + 寫日誌 */
   fire: (parts: TenantRuntime[], rng: Rng) => void;
+  /** 有明確時段的群體事件先排程，屆時才結算並啟動多人畫面。 */
+  scene?: {
+    hour: number;
+    title: string;
+    venue: GroupSceneVenue;
+    layout: GroupSceneLayout;
+    fx?: Parameters<typeof startGroupScene>[0]["fx"];
+  };
 }
 
 export const COMMUNITY_EVENTS: CommunityEvent[] = [
@@ -614,6 +623,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     need: 3,
     cooldownDays: 3,
     when: () => todayWeather() !== "rainy",
+    scene: { hour: 18, title: "傍晚頂樓乘涼", venue: "rooftop", layout: "cluster" },
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
     fire: (parts) => {
       bondAll(parts, 2);
@@ -630,6 +640,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     need: 3,
     cooldownDays: 2,
     when: () => todayWeather() === "rainy",
+    scene: { hour: 15, title: "雨天窩在交誼廳", venue: "lounge", layout: "cluster", fx: "chat" },
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
     fire: (parts) => {
       bondAll(parts, 2);
@@ -647,6 +658,7 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
     need: 3,
     cooldownDays: 3,
     when: () => isWeekend(state.gameMs),
+    scene: { hour: 20, title: "週末電影夜", venue: "lounge", layout: "watch", fx: "chat" },
     select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
     fire: (parts) => {
       bondAll(parts, 2);
@@ -664,6 +676,56 @@ function onCooldown(id: string, days: number): boolean {
   return last != null && state.gameMs - last < days * 24 * 3600 * 1000;
 }
 
+function dueAtHour(hour: number): number {
+  const due = new Date(state.gameMs);
+  due.setHours(hour, 0, 0, 0);
+  if (due.getTime() <= state.gameMs) due.setDate(due.getDate() + 1);
+  return due.getTime();
+}
+
+function scheduleCommunityEvent(ev: CommunityEvent, parts: TenantRuntime[]) {
+  if (!ev.scene) return;
+  state.scheduledCommunityEvents.push({
+    eventId: ev.id,
+    participantIds: parts.map((rt) => rt.tenant.id),
+    dueGameMs: dueAtHour(ev.scene.hour),
+  });
+  state.scheduledCommunityEvents.sort((a, b) => a.dueGameMs - b.dueGameMs || a.eventId.localeCompare(b.eventId));
+  save();
+}
+
+/** 每遊戲小時呼叫：到正確時段才真正寫日誌、套效果並啟動多人舞台。 */
+export function scheduledCommunityPass(rng: Rng = Math.random): number {
+  const due = state.scheduledCommunityEvents.filter((entry) => entry.dueGameMs <= state.gameMs);
+  if (due.length === 0) return 0;
+  let fired = 0;
+  for (const entry of due) {
+    const index = state.scheduledCommunityEvents.indexOf(entry);
+    if (index >= 0) state.scheduledCommunityEvents.splice(index, 1);
+    const ev = COMMUNITY_EVENTS.find((candidate) => candidate.id === entry.eventId);
+    if (!ev?.scene) continue;
+    const parts = entry.participantIds
+      .map((id) => state.runtimes[id])
+      // 演出本身就是這個時段的行程：即使一般作息原本是外出，也讓已答應參加的人回來入鏡。
+      .filter((rt): rt is TenantRuntime => !!rt && !rt.pendingEvent);
+    if (parts.length < ev.need) continue;
+    ev.fire(parts, rng);
+    startGroupScene({
+      id: `community:${ev.id}:${entry.dueGameMs}`,
+      title: ev.scene.title,
+      venue: ev.scene.venue,
+      layout: ev.scene.layout,
+      participantIds: parts.map((rt) => rt.tenant.id),
+      fx: ev.scene.fx,
+      gameNow: state.gameMs,
+      priority: 1,
+    });
+    fired++;
+  }
+  save();
+  return fired;
+}
+
 /** 每遊戲日呼叫:有機率觸發一件社群事件(牽動 3+ 人,進 Feed)。稀疏、不洗版。
  *  也可能升級成「有房東抉擇」的群體事件(較低機率、需 3+ 人、無待決的且離上次夠久)。 */
 export function communityPass(rng: Rng = Math.random): boolean {
@@ -679,7 +741,8 @@ export function communityPass(rng: Rng = Math.random): boolean {
   const ev = eligible[Math.floor(rng() * eligible.length)];
   const parts = ev.select(present, rng);
   if (!parts || parts.length < ev.need) return false;
-  ev.fire(parts, rng);
+  if (ev.scene) scheduleCommunityEvent(ev, parts);
+  else ev.fire(parts, rng);
   state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
   return true;
 }
@@ -796,6 +859,18 @@ export function resolveGroupEvent(choiceId: string): boolean {
   if (choice.clearsNoise) for (const rt of parts) clearNoiseMemories(rt.tenant); // 隔音選項:清掉噪音困擾記憶
   if ((choice.installsSoundproofing || (ev.id === "noise_verdict" && choice.id === "soundproof")) && parts[0]) {
     grantEventSoundproofing(parts[0].tenant.id); // 永久入 upgrades 存檔，不再只是清掉當下抱怨
+  }
+  if (ev.id === "floor_party" && choice.id !== "decline") {
+    startGroupScene({
+      id: `group:floor_party:${state.gameMs}`,
+      title: choice.id === "host" ? "房東請客的樓層聚餐" : "住戶 AA 樓層聚餐",
+      venue: "lounge",
+      layout: "table",
+      participantIds: parts.map((rt) => rt.tenant.id),
+      fx: "hearts",
+      gameNow: state.gameMs,
+      priority: 1,
+    });
   }
   for (const rt of parts) pushSocialLog(rt, `🏢 「${ev.title}」——房東選擇了「${choice.label}」。`, "notable");
   state.interactionCooldowns["community|group_any"] = state.gameMs; // 與 onCooldown("group_any") 同鍵

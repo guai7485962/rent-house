@@ -26,6 +26,7 @@ import { save } from "./persistence";
 import { spawnFx } from "../floor/fx";
 import { LOUNGE_HALL_RECT } from "../floor/map";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
+import { clearGroupScene, startGroupScene, type GroupSceneLayout } from "../floor/groupScene";
 
 /** 每話之間的遊戲日間隔 */
 export const STAGE_DAYS = 4;
@@ -51,6 +52,8 @@ interface ChainStage {
   flag?: string;
   /** 交誼廳特效(讓事發地看得到) */
   fx?: "chat" | "anger" | "lights";
+  /** 明確寫到大家聚在交誼廳的話，接管參與者走位並顯示現場標題。 */
+  scene?: { layout: GroupSceneLayout };
   /** 這一話要房東抉擇(掛上 state.pendingChainEvent) */
   decision?: { title: string; description: string; choices: GroupChoice[] };
 }
@@ -92,6 +95,7 @@ export const CHAIN_DEFS: ChainDef[] = [
         effect: { stress: 3, mood: -2 },
         bond: -1,
         fx: "anger",
+        scene: { layout: "cluster" },
       },
       {
         title: "第三話 · 建商找上門",
@@ -156,6 +160,7 @@ export const CHAIN_DEFS: ChainDef[] = [
         ],
         effect: { stress: 5, mood: -2 },
         fx: "lights",
+        scene: { layout: "storm" },
         decision: {
           title: "颱風夜停電,你怎麼安排",
           description: "整棟樓沒電,住戶抱著手電筒擠在交誼廳。風雨還要吹一整夜,你打算怎麼做?",
@@ -178,6 +183,7 @@ export const CHAIN_DEFS: ChainDef[] = [
         effect: { mood: 5, stress: -3 },
         bond: 4,
         fx: "chat",
+        scene: { layout: "storm" },
       },
       {
         title: "第四話 · 復電與收拾",
@@ -361,7 +367,20 @@ function fireStage(day: number, stage: number, quiet: boolean): boolean {
       if (st.flag) addFlag(rt, st.flag);
     }
     if (st.bond && parts.length >= 2) bondAll(parts, st.bond);
-    if (st.fx) loungeFx(st.fx);
+    if (st.scene && parts.length > 0) {
+      startGroupScene({
+        id: `chain:${def.id}:${stage}:${state.gameMs}`,
+        title: `${def.icon} ${st.title}`,
+        venue: "lounge",
+        layout: st.scene.layout,
+        participantIds: parts.map((p) => p.tenant.id),
+        fx: st.fx,
+        gameNow: state.gameMs,
+        priority: 2,
+      });
+    } else if (st.fx) {
+      loungeFx(st.fx);
+    }
     notify(`${def.icon} 【${def.title}】${st.title}——${st.notice}`);
     if (st.decision) {
       state.pendingChainEvent = {
@@ -478,4 +497,5 @@ export function resetFloorChain() {
   state.floorChain = null;
   state.pendingChainEvent = null;
   state.lastChainEndDay = -99;
+  clearGroupScene();
 }

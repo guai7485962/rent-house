@@ -442,6 +442,13 @@ export interface GroupEvent {
   choices: GroupChoice[];
 }
 
+/** 每日社群事件先排到符合文案的時段，屆時才真正結算與演出。 */
+export interface ScheduledCommunityEvent {
+  eventId: string;
+  participantIds: string[];
+  dueGameMs: number;
+}
+
 // ---------------------------------------------------------------------------
 // 月度全樓事件鏈(sim/floorChain.ts):3 條鏈 × 4 階段的跨日連鎖章節
 // 型別放這裡(而非 floorChain.ts)是為了讓 gameState 能宣告狀態槽而不反向 import。

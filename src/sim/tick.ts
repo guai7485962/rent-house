@@ -37,7 +37,7 @@ import { diaryPass, resetDiaryQuota } from "./narration";
 import { petsPass, catJournalPass } from "./pets";
 import { legacyPass, unlock } from "./legacy";
 import { ensureWishes, settleDeparturesDue, wishPass } from "./wishes";
-import { communityPass } from "./community";
+import { communityPass, scheduledCommunityPass } from "./community";
 import { floorChainPass } from "./floorChain";
 import { dreamPass } from "./dreams";
 import { outingEncounterPass, outingSpot } from "./outing";
@@ -554,6 +554,7 @@ export function hourlyTick(live = false) {
   socialPass(interacted); // 交誼廳相遇 → 聊天/衝突/戀愛(這小時已互動過的配對跳過,避免雙重)
   dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
   petsPass(); // 寵物貓:換去處 + 闖房/搗蛋/大小便事件
+  scheduledCommunityPass(); // 有時段的群體事件:到早晨／傍晚／夜間才結算並把參與者帶到場景
   diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])

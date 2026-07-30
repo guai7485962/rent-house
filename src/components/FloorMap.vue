@@ -6,6 +6,7 @@ import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
 import { layoutFloorTags } from "../floor/tagLayout";
+import { groupSceneView, type GroupScene } from "../floor/groupScene";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
@@ -36,6 +37,16 @@ let last = 0;
 
 /** 跟著人走的名字標籤(誰是誰一眼可辨);每幀使用角色當下座標，不做延遲補間。 */
 const agentTags = ref<{ id: string; name: string; left: string; top: string; color: string }[]>([]);
+const eventScene = ref<GroupScene | null>(null);
+
+function actorStyle(actor: GroupScene["actors"][number]) {
+  return {
+    "--actor-hair": actor.hair,
+    "--actor-shirt": actor.shirt,
+    "--actor-pants": actor.pants,
+    "--actor-skin": actor.skin,
+  };
+}
 
 function loop(t: number) {
   try {
@@ -60,6 +71,7 @@ function loop(t: number) {
       petSignature = nextPetSignature;
     }
     tickPetAgents(petAgents, dt);
+    eventScene.value = groupSceneView(state.gameMs);
     const el = canvas.value;
     if (el) {
       const ctx = el.getContext("2d")!;
@@ -178,6 +190,23 @@ function onClick(e: MouseEvent) {
     </button>
     <div class="lounge-tag">交誼廳</div>
     <div class="entrance-tag">🚪 大門</div>
+    <div
+      v-if="eventScene"
+      class="event-scene"
+      :class="[eventScene.venue, eventScene.layout, { cinematic: eventScene.venue === 'rooftop' || eventScene.layout === 'farewell' }]"
+    >
+      <div class="event-scene-title">{{ eventScene.venue === "rooftop" ? "🌇 頂樓" : "🎬 現場" }} · {{ eventScene.title }}</div>
+      <div v-if="eventScene.venue === 'rooftop' || eventScene.layout === 'farewell'" class="event-actors">
+        <div v-for="actor in eventScene.actors" :key="actor.tenantId" class="event-actor">
+          <span class="pixel-person" :style="actorStyle(actor)">
+            <i class="hair"></i><i class="head"></i><i class="body"></i><i class="legs"></i>
+          </span>
+          <span>{{ actor.name }}</span>
+        </div>
+      </div>
+      <div v-if="eventScene.venue === 'rooftop'" class="roof-rail"></div>
+      <div v-if="eventScene.layout === 'farewell'" class="party-decor">🎈　✨　🎉　✨　🎈</div>
+    </div>
     <!-- 跟著人走的名字標籤 -->
     <div v-for="tag in agentTags" :key="tag.id" class="agent-tag" :style="{ left: tag.left, top: tag.top, borderColor: tag.color }">
       {{ tag.name }}
@@ -190,6 +219,48 @@ function onClick(e: MouseEvent) {
   position: relative;
   line-height: 0;
 }
+.event-scene {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 27%;
+  transform: translateX(-50%);
+  max-width: 88%;
+  padding: 5px 9px;
+  border: 1px solid rgba(238, 190, 111, 0.7);
+  border-radius: 8px;
+  background: rgba(20, 17, 28, 0.88);
+  color: #ffe9bc;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  line-height: 1.25;
+}
+.event-scene-title { font-size: 10px; font-weight: 700; white-space: nowrap; text-align: center; }
+.event-scene.cinematic {
+  top: 4%;
+  width: 74%;
+  min-height: 58px;
+  padding: 7px 10px 8px;
+  overflow: hidden;
+}
+.event-scene.rooftop {
+  border-color: rgba(247, 176, 94, 0.8);
+  background: linear-gradient(#584f85 0%, #c47a66 58%, #20233c 59%, #141522 100%);
+}
+.event-scene.farewell {
+  top: 29%;
+  background: linear-gradient(180deg, rgba(76, 45, 75, 0.96), rgba(31, 24, 38, 0.96));
+}
+.event-actors { display: flex; justify-content: center; align-items: flex-end; gap: 8px; margin-top: 7px; }
+.event-actor { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #fff8e8; font-size: 8px; }
+.pixel-person { position: relative; display: block; width: 12px; height: 22px; image-rendering: pixelated; }
+.pixel-person i { position: absolute; display: block; }
+.pixel-person .hair { left: 2px; top: 0; width: 8px; height: 5px; background: var(--actor-hair); border-radius: 2px 2px 0 0; }
+.pixel-person .head { left: 3px; top: 4px; width: 6px; height: 5px; background: var(--actor-skin); }
+.pixel-person .body { left: 2px; top: 9px; width: 8px; height: 8px; background: var(--actor-shirt); }
+.pixel-person .legs { left: 3px; top: 17px; width: 6px; height: 5px; background: var(--actor-pants); border-left: 2px solid rgba(10, 10, 15, 0.35); }
+.roof-rail { height: 2px; margin: 3px -10px -5px; background: #c7b792; box-shadow: 0 3px 0 #6b5f57; }
+.party-decor { position: absolute; inset: 27px 0 auto; text-align: center; font-size: 9px; opacity: 0.9; }
 canvas {
   width: 100%;
   height: auto;

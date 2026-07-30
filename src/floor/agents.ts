@@ -8,6 +8,7 @@
 import { TILE } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { sessionFor, type PairPose } from "./pairSession";
+import { groupSceneFor } from "./groupScene";
 import { state } from "../store";
 import type { TenantVisualState } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
@@ -94,12 +95,13 @@ export function tickAgents(agents: Agent[], dt: number, blockedCells: ReadonlySe
   const plans = agents.map((a) => {
     const rt = state.runtimes[a.tenantId];
     // 互動 session(§10-6)覆寫走位:走到互動錨點;🔞 遮蔽式 pose 直接隱藏 sprite
-    const ses = rt && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
-    const desired = ses?.tile ?? rt?.activityTile ?? rt?.targetTile ?? null;
-    a.hidden = !rt || rt.tenant.visualState === "away" || !desired || ses?.pose === "hidden";
-    a.pose = ses?.pose ?? rt?.activityPose ?? null;
+    const group = rt ? groupSceneFor(a.tenantId, state.gameMs) : null;
+    const ses = rt && !group && rt.tenant.visualState !== "away" ? sessionFor(a.tenantId, state.gameMs) : null;
+    const desired = group?.tile ?? ses?.tile ?? rt?.activityTile ?? rt?.targetTile ?? null;
+    a.hidden = !rt || group?.hidden === true || (!group && rt.tenant.visualState === "away") || !desired || ses?.pose === "hidden";
+    a.pose = group?.pose ?? ses?.pose ?? rt?.activityPose ?? null;
     a.facing = ses?.facing ?? 0;
-    a.poseRotation = ses ? 0 : rt?.activityRotation ?? 0;
+    a.poseRotation = group || ses ? 0 : rt?.activityRotation ?? 0;
     a.poseOffsetX = 0;
     a.poseOffsetY = 0;
     if (!ses && rt?.activitySurface === "furniture" && rt.activityTile && a.pose === "lie") {
@@ -112,13 +114,13 @@ export function tickAgents(agents: Agent[], dt: number, blockedCells: ReadonlySe
         a.poseOffsetY = (furniture.r + fp.h / 2) * TILE - TILE / 2 - rt.activityTile.r * TILE;
       }
     }
-    a.seatBack = !ses && rt?.activitySurface === "chair";
+    a.seatBack = !group && !ses && rt?.activitySurface === "chair";
     a.vs = rt?.tenant.visualState ?? "idle";
     const target = !a.hidden && desired ? claimCrowdTarget(desired, claimedTargets, blocked) : null;
-    return { a, rt, ses, target };
+    return { a, rt, ses, group, target };
   });
 
-  for (const { a, rt, ses, target: plannedTarget } of plans) {
+  for (const { a, rt, ses, group, target: plannedTarget } of plans) {
     let target = plannedTarget;
     if (a.hidden) {
       a.moving = false;
@@ -128,7 +130,7 @@ export function tickAgents(agents: Agent[], dt: number, blockedCells: ReadonlySe
     // 家具座位錨點(§10-6):session 目標若是家具佔用格(沙發/床),先走到最近可走鄰格,
     // 抵達後再「跨上去」坐/躺(不用尋路穿越家具、也絕不瞬移)。
     let snapTile: Tile | null = null;
-    if ((ses || rt?.activityTile) && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
+    if ((group || ses || rt?.activityTile) && target && blocked[target.r]?.[target.c] && !(a.c === target.c && a.r === target.r)) {
       snapTile = target;
       target = nearestWalkableNeighbor(target, a, blocked);
       if (!target) snapTile = null; // 四鄰全被擋:留在原地照常演

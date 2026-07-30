@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -203,6 +203,8 @@ export const state = reactive({
   pendingCohabit: null as { aId: string; bId: string; aName: string; bName: string } | null,
   /** 待決的群體事件(全樓事務,房東抉擇影響整群人;§C-7;入存檔) */
   pendingGroupEvent: null as GroupEvent | null,
+  /** 已選定、等待早晨／傍晚／夜間才實際發生的社群事件(入存檔)。 */
+  scheduledCommunityEvents: [] as ScheduledCommunityEvent[],
   /** 月度全樓事件鏈:進行中(或剛完結)的章節;見 sim/floorChain.ts(入存檔) */
   floorChain: null as FloorChainState | null,
   /** 上一條章節鏈完結的遊戲日(鏈與鏈之間的休息;-99 = 還沒跑過任何一條;入存檔) */

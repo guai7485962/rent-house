@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -52,6 +52,8 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
     }
     return { ...s, petHomes: s.petHomes ?? [], v: 5 };
   },
+  // v5 → v6:社群事件可排到正確時段；舊檔沒有待演場景，從空佇列開始。
+  5: (s) => ({ ...s, scheduledCommunityEvents: s.scheduledCommunityEvents ?? [], v: 6 }),
 };
 
 /** 把任意版本的存檔升級到 SAVE_VERSION;不認得/升不上去回傳 null(視同壞檔) */
@@ -145,6 +147,7 @@ export function save() {
         careGiven: state.careGiven,
         alumni: state.alumni,
         pendingGroupEvent: state.pendingGroupEvent,
+        scheduledCommunityEvents: state.scheduledCommunityEvents,
         floorChain: state.floorChain,
         lastChainEndDay: state.lastChainEndDay,
         pendingChainEvent: state.pendingChainEvent,
@@ -231,6 +234,11 @@ export function load(): boolean {
     state.careGiven = typeof s.careGiven === "number" ? s.careGiven : 0; // 舊檔沒有 → 0
     state.alumni.splice(0, state.alumni.length, ...((s.alumni ?? []) as typeof state.alumni));
     state.pendingGroupEvent = s.pendingGroupEvent ?? null; // 舊檔沒有 → 無待決群體事件
+    state.scheduledCommunityEvents.splice(
+      0,
+      state.scheduledCommunityEvents.length,
+      ...(s.scheduledCommunityEvents ?? []),
+    );
     // 月度全樓事件鏈(選填欄位,舊檔沒有就從沒有章節開始,不需要升 SAVE_VERSION)
     state.floorChain = s.floorChain ?? null;
     state.lastChainEndDay = typeof s.lastChainEndDay === "number" ? s.lastChainEndDay : -99;

@@ -515,6 +515,9 @@ const INVITE_SYSTEM = `你是《房東監視中》的角色設計 AI。玩家會
 - appearance 各欄位只能從枚舉挑,顏色給 #rrggbb(挑符合角色形象的;skin 用自然膚色):
   hairStyle: short | long | ponytail | spiky | bob
   accessory: none | glasses | round_glasses | cap | bow | headphones
+- 顏色亮度指引(角色只有 11 像素寬,太亮會糊掉):hairColor 偏深(避免接近白色/淺灰);
+  shirt 中等明度即可,別用純黑或接近純白;pants 偏深;skin 必須是自然膚色(不要綠/藍/紫/純白)。
+  髮色與膚色的明暗要拉開,否則臉會糊成一團。(前端仍會做亮度夾值,這裡先給對方向能少被修。)
 - coreTags 2~3 個:label 用[中括號],behaviorHint 一句話行為指引。
 - stats 各 0~100,依個性設定(一般人:心情 60~80、壓力 20~40、身心 60~80、精力 55~75、好感 45~60)。
 - preferences 從 tech/cozy/noise/soundproof/storage/style 挑 2~3 個,權重 1~8。
@@ -563,10 +566,11 @@ const INVITE_SCHEMA = {
       type: "OBJECT",
       properties: {
         hairStyle: S({ enum: HAIR_ENUM }),
-        hairColor: S(),
-        shirt: S(),
-        pants: S(),
-        skin: S(),
+        // 純軟性引導;真正的白名單/亮度帶夾值在前端統一做(見 src/pixel/parts.ts)
+        hairColor: S({ description: "#rrggbb 髮色,偏深,避免接近白色或淺灰,並與 skin 明暗拉開" }),
+        shirt: S({ description: "#rrggbb 上衣色,中等明度,不要純黑或接近純白" }),
+        pants: S({ description: "#rrggbb 褲子色,偏深" }),
+        skin: S({ description: "#rrggbb 自然膚色(淺到深皆可),不得是綠/藍/紫等非膚色" }),
         accessory: S({ enum: ACC_ENUM }),
       },
       required: ["hairStyle", "hairColor", "shirt", "pants", "skin", "accessory"],

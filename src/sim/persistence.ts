@@ -14,6 +14,7 @@ import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from "./social";
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
+import { sanitizeAppearanceInPlace } from "../pixel/parts";
 import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
@@ -230,6 +231,10 @@ export function load(): boolean {
     for (const [id, saved] of Object.entries<any>(s.runtimes)) {
       const loadedTenant = saved.tenant as Tenant;
       loadedTenant.growthTags = sanitizeGrowthTags(loadedTenant.growthTags);
+      // AI 色碼安全化(§9-3):`0accd4b` 之前的特邀租客把未消毒的顏色寫進了存檔,
+      // 這裡就地修好。消毒冪等 → 不需升 SAVE_VERSION,也不寫回存檔(下次存檔自然帶乾淨值)。
+      // 同一個物件下方會傳給 setCustomAppearance,渲染層拿到的已是消毒後的顏色。
+      sanitizeAppearanceInPlace(loadedTenant.appearance);
       const needsModelSinceDayRepair =
         saved.modelTenant === true && !Number.isFinite(saved.modelSinceCalendarDay);
       if (needsModelSinceDayRepair) repairedModelSinceDay = true;

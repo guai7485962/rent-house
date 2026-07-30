@@ -10,7 +10,7 @@ import type { Appearance, Gender, HairStyle, AccessoryKind, CoreTag, PetKind, Ro
 import type { Applicant } from "./recruit";
 import { ARCHETYPE_ROUTINES } from "./routine";
 import { randomCatPreset, randomDogPreset } from "./pets";
-import { ALL_HAIR_STYLES, ALL_ACCESSORIES, HAIR_COLORS, SHIRT_COLORS, PANTS_COLORS, SKIN_TONES } from "../pixel/parts";
+import { ALL_HAIR_STYLES, ALL_ACCESSORIES, HAIR_COLORS, SHIRT_COLORS, PANTS_COLORS, SKIN_TONES, sanitizeAppearanceColors } from "../pixel/parts";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -60,6 +60,8 @@ const GENDERS: Gender[] = ["male", "female", "nonbinary"];
 const ATTRS: RoomAttribute[] = ["tech", "cozy", "noise", "soundproof", "storage", "style"];
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
+/** 只做**格式**回退(語意消毒交給 `sanitizeAppearanceColors`)。
+ *  fallback 分支刻意保持原樣 —— `Math.random()` 的呼叫次數必須與消毒前完全相同。 */
 const pickColor = (v: unknown, pool: string[]): string =>
   typeof v === "string" && HEX.test(v) ? v : pool[Math.floor(Math.random() * pool.length)];
 
@@ -106,14 +108,16 @@ export function sanitizeInvited(
   if (Object.keys(preferences).length === 0) preferences.cozy = 4;
 
   const apRaw = r.appearance ?? {};
-  const appearance: Appearance = {
+  // 顏色兩段式:pickColor 只保證格式,sanitizeAppearanceColors 再做亮度帶/白名單/髮膚分離。
+  // 只驗格式是假保護 —— 語法合法的 `#fdfdfd` 髮色照樣會糊在背景與臉上。
+  const appearance: Appearance = sanitizeAppearanceColors({
     hairStyle: ALL_HAIR_STYLES.includes(apRaw.hairStyle) ? (apRaw.hairStyle as HairStyle) : "short",
     hairColor: pickColor(apRaw.hairColor, HAIR_COLORS),
     shirt: pickColor(apRaw.shirt, SHIRT_COLORS),
     pants: pickColor(apRaw.pants, PANTS_COLORS),
     skin: pickColor(apRaw.skin, SKIN_TONES),
     accessory: ALL_ACCESSORIES.includes(apRaw.accessory) ? (apRaw.accessory as AccessoryKind) : "none",
-  };
+  });
   const pet = selectedPet === "cat" ? randomCatPreset() : selectedPet === "dog" ? randomDogPreset() : undefined;
 
   const applicant: Applicant = {

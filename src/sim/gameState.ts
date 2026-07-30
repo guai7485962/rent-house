@@ -19,6 +19,7 @@ import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
 import { sanitizeGrowthTags } from "./growth";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
+import { sanitizeAppearanceInPlace } from "../pixel/parts";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
 import type { WeeklyReport } from "./weeklyReport";
@@ -139,6 +140,7 @@ export const tenants = tenantsJson as unknown as Tenant[];
 export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, props: RoomPropState[]): TenantRuntime {
   const tenant = JSON.parse(JSON.stringify(t)) as Tenant; // 深拷貝,避免改到 import 的原始資料
   tenant.growthTags = sanitizeGrowthTags(tenant.growthTags);
+  sanitizeAppearanceInPlace(tenant.appearance); // AI 色碼安全化(§9-3):涵蓋 moveIn 與種子租客
   return reactive({
     tenant,
     roomNo,

@@ -7,7 +7,11 @@
  * 配件畫在最上層(眼鏡/圓框眼鏡/棒球帽/蝴蝶結/耳機)。
  */
 import { shade, type Ctx } from "./sprites";
+import { clampLuma, nearestInPool, separateHairFromSkin, type LumaBand } from "./color";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
+
+/** 消毒只碰四個顏色欄位;髮型/配件走各自的白名單,不在這裡處理 */
+export type AppearanceColors = Pick<Appearance, "hairColor" | "shirt" | "pants" | "skin">;
 
 interface Overlay {
   dy: number; // 相對 sprite 原點的縱向位移(可為負 = 畫到頭頂上方)
@@ -130,10 +134,81 @@ export function drawAppearanceOverlay(ctx: Ctx, ap: Appearance, x: number, y: nu
 export const HAIR_COLORS = ["#241f2c", "#4a3a2a", "#7a4530", "#b58a4a", "#2c2620", "#5a3020", "#c8a050", "#8a4a5a"];
 export const SHIRT_COLORS = ["#5aa06a", "#c85a4a", "#d0a040", "#3fa0a0", "#b070c8", "#e8e2d4", "#4a6ac8", "#d97a3a"];
 export const PANTS_COLORS = ["#3d4257", "#4a4055", "#3a4a5a", "#5a4a60", "#44503a", "#6a4a3a"];
-export const SKIN_TONES = ["#f0c19a", "#e8b088", "#f4c9a6", "#d99a6c"];
+/** 膚色白名單(§9-3 消毒:AI 的 skin 一律 snap 到最近的一色)。
+ *  ⚠️ 只能 append 到尾端,不得重排或刪除 —— `pick()` 消耗的隨機數個數必須不變,
+ *  否則 `randomAppearance()` 會位移 seeded 序列、炸掉 balance 快照。 */
+export const SKIN_TONES = [
+  // 原始 4 色(L = 0.590 / 0.500 / 0.638 / 0.390)
+  "#f0c19a", "#e8b088", "#f4c9a6", "#d99a6c",
+  // 擴充(append only):往深與往極淺各補,覆蓋更廣的膚色範圍
+  "#8d5524", // L 0.123
+  "#a5673f", // L 0.181
+  "#b57a52", // L 0.244
+  "#c68e6a", // L 0.324
+  "#ffdbac", // L 0.749
+];
 
 export const ALL_HAIR_STYLES: HairStyle[] = ["short", "long", "ponytail", "spiky", "bob"];
 export const ALL_ACCESSORIES: AccessoryKind[] = ["none", "glasses", "round_glasses", "cap", "bow", "headphones"];
+
+// ---------------------------------------------------------------------------
+// AI 色碼安全化(§9-3):per-slot 亮度帶 + 膚色白名單 + 髮膚 ΔL 分離
+// ---------------------------------------------------------------------------
+
+/**
+ * 各槽位的相對亮度帶(WCAG relative luminance,見 `./color.ts` 的 `relLuma`)。
+ * **每條帶都必須涵蓋自家色池的實測範圍**,否則就會把現有美術
+ * 判成違規(見 `scripts/invite-test.ts` 的護欄測試)。實測值:
+ *
+ * - HAIR  池 L ∈ [0.015, 0.380](`#241f2c` ~ `#c8a050`)→ 帶 [0.010, 0.42]
+ * - SHIRT 池 L ∈ [0.159, 0.763](`#4a6ac8` ~ `#e8e2d4`)→ 帶 [0.12, 0.80]
+ * - PANTS 池 L ∈ [0.056, 0.083](`#3d4257` ~ `#6a4a3a`)→ 帶 [0.04, 0.30]
+ *
+ * ⚠️ PANTS 是**刻意放寬**的:實測池極窄(寬度僅 0.027),若照抄會把 AI 給的任何
+ * 合理淺色褲子壓成全黑。放寬到 0.30 讓卡其/淺牛仔仍可用,同時擋掉白褲。
+ */
+export const HAIR_LUMA_BAND: LumaBand = { lo: 0.010, hi: 0.42 };
+export const SHIRT_LUMA_BAND: LumaBand = { lo: 0.12, hi: 0.80 };
+export const PANTS_LUMA_BAND: LumaBand = { lo: 0.04, hi: 0.30 };
+
+/** 髮色與膚色的最小亮度差(背景無關、永遠成立的唯一對比對象) */
+export const MIN_HAIR_SKIN_DELTA = 0.10;
+
+/**
+ * 把一組外觀顏色消毒成「可辨識」的版本。
+ *
+ * 形狀刻意照抄 `sanitizeGrowthTags`:**純函式、無副作用、可重入、冪等**。
+ * 掛在三處邊界(invite 源頭 / makeRuntime / load),既有存檔裡的髒顏色也會被就地修好。
+ *
+ * - `skin`:snap 到 `SKIN_TONES` 最近一色(膚色沒有創意空間,零 RNG)。
+ * - `hairColor` / `shirt` / `pants`:夾進亮度帶,**色相保留**。
+ * - 最後把髮色與膚色拉開至少 `MIN_HAIR_SKIN_DELTA`(只動髮色)。
+ *
+ * 格式不合法的色碼**不在這裡處理** —— 由呼叫端(`pickColor`)先做格式回退,
+ * 這樣連 `Math.random()` 的呼叫次數都完全不變。
+ */
+export function sanitizeAppearanceColors<T extends AppearanceColors>(ap: T): T {
+  const skin = nearestInPool(ap.skin, SKIN_TONES);
+  const clamped = clampLuma(ap.hairColor, HAIR_LUMA_BAND);
+  const hairColor = separateHairFromSkin(clamped, skin, HAIR_LUMA_BAND, MIN_HAIR_SKIN_DELTA);
+  return {
+    ...ap,
+    hairColor,
+    shirt: clampLuma(ap.shirt, SHIRT_LUMA_BAND),
+    pants: clampLuma(ap.pants, PANTS_LUMA_BAND),
+    skin,
+  };
+}
+
+/** 就地消毒一個可能為 undefined 的 `Appearance`(給 makeRuntime / load 這種改物件的邊界用) */
+export function sanitizeAppearanceInPlace(ap: Appearance | undefined): void {
+  if (!ap) return;
+  const safe = sanitizeAppearanceColors(ap);
+  ap.hairColor = safe.hairColor;
+  ap.shirt = safe.shirt;
+  ap.pants = safe.pants;
+  ap.skin = safe.skin;
+}
 
 const pick = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
 

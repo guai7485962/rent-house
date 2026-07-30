@@ -17,6 +17,8 @@ const { getCustomAppearance, getTheme } = await import("../src/pixel/scene");
 const { generateApplicants } = await import("../src/sim/recruit");
 const { moveIn } = await import("../src/sim/tenancy");
 const { save, load } = await import("../src/sim/persistence");
+const { relLuma } = await import("../src/pixel/color");
+const { HAIR_LUMA_BAND, SHIRT_LUMA_BAND, PANTS_LUMA_BAND, SKIN_TONES, MIN_HAIR_SKIN_DELTA } = await import("../src/pixel/parts");
 
 let pass = 0;
 let fail = 0;
@@ -66,6 +68,37 @@ delete raw.runtimes.tenant_chen_engineer.tenant.appearance;
 mem["rent_house_save_v1"] = JSON.stringify(raw);
 check("舊檔(無外觀)讀檔成功", load());
 check("舊檔種子自動補上固定外觀", state.runtimes["tenant_chen_engineer"].tenant.appearance?.hairStyle === "spiky");
+
+// --- 髒存檔消毒(AI 色碼安全化第三道防線)---
+// `0accd4b` 之前的特邀租客把未消毒的顏色寫進了玩家的 localStorage,load 必須就地修好。
+save();
+const dirtySave = JSON.parse(mem["rent_house_save_v1"]);
+const dirtyAp = dirtySave.runtimes.tenant_chen_engineer.tenant.appearance;
+dirtyAp.hairColor = "#ffffff"; // 純白髮:格式合法,舊版消毒完全擋不住
+dirtyAp.shirt = "#000000";
+dirtyAp.pants = "#ffffff";
+dirtyAp.skin = "#00ff00"; // 螢光綠皮膚
+mem["rent_house_save_v1"] = JSON.stringify(dirtySave);
+check("髒色存檔讀檔成功", load());
+const fixed = state.runtimes["tenant_chen_engineer"].tenant.appearance!;
+const lum = (h: string) => relLuma(h);
+check("load 後純白髮被夾進亮度帶", lum(fixed.hairColor) <= HAIR_LUMA_BAND.hi && lum(fixed.hairColor) >= HAIR_LUMA_BAND.lo,
+  `${fixed.hairColor} L=${lum(fixed.hairColor).toFixed(4)}`);
+check("load 後全黑衣被抬進亮度帶", lum(fixed.shirt) >= SHIRT_LUMA_BAND.lo && lum(fixed.shirt) <= SHIRT_LUMA_BAND.hi,
+  `${fixed.shirt} L=${lum(fixed.shirt).toFixed(4)}`);
+check("load 後純白褲被夾進亮度帶", lum(fixed.pants) <= PANTS_LUMA_BAND.hi && lum(fixed.pants) >= PANTS_LUMA_BAND.lo,
+  `${fixed.pants} L=${lum(fixed.pants).toFixed(4)}`);
+check("load 後螢光綠膚 snap 回白名單", SKIN_TONES.includes(fixed.skin), fixed.skin);
+check("load 後髮膚亮度差達標", Math.abs(lum(fixed.hairColor) - lum(fixed.skin)) >= MIN_HAIR_SKIN_DELTA,
+  `ΔL=${Math.abs(lum(fixed.hairColor) - lum(fixed.skin)).toFixed(4)}`);
+// 渲染層拿到的也必須是消毒後的顏色(setCustomAppearance 收到的是同一個物件)
+check("渲染層登錄的也是消毒後的顏色", getCustomAppearance("tenant_chen_engineer")?.skin === fixed.skin);
+// 冪等:再存再讀不會繼續變暗(否則玩家每讀一次檔頭髮就暗一階)
+const afterOnce = JSON.stringify(fixed);
+save();
+check("再次讀檔成功", load());
+check("重複存讀顏色不再變動(冪等)", JSON.stringify(state.runtimes["tenant_chen_engineer"].tenant.appearance) === afterOnce,
+  `${afterOnce} → ${JSON.stringify(state.runtimes["tenant_chen_engineer"].tenant.appearance)}`);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

@@ -13,7 +13,7 @@
  * 舒適度 = ( 家具屬性(飽和加權) + 家具種類齊全度 + 家具品質層級 ) × 整潔乘子。
  * 依 catalog 家具 attributes 的實際值域設計係數(見下方註解),不臆測。
  */
-import { getDef, type FurnCategory } from "../furniture/catalog";
+import { getDef, type FurnCategory, type FurnKind } from "../furniture/catalog";
 import { tierPoints } from "../furniture/tier";
 import { getPlacements, roomAttributes } from "./placements";
 
@@ -78,6 +78,28 @@ export const COMFORT_LIMITS = {
  */
 export const COMFORT_BUCKET_LABELS: readonly string[] = COMFORT_BUCKETS.map((b) => b.label);
 
+/**
+ * 屬性部分:加權和過飽和收斂到 `max`。私人房與共用區共用同一條曲線(權重/半值都一樣),
+ * 只有上限不同——這樣「多買一件療癒家具」在哪一區都是同一個手感。
+ */
+function attrPartOf(roomId: string, max: number): number {
+  const attrs = roomAttributes(roomId);
+  const cozy = attrs.cozy ?? 0;
+  const style = attrs.style ?? 0;
+  const soundproof = attrs.soundproof ?? 0;
+  const tech = attrs.tech ?? 0;
+  const noise = Math.max(0, attrs.noise ?? 0);
+  const weighted = Math.max(
+    0,
+    cozy * ATTR_WEIGHTS.cozy +
+      style * ATTR_WEIGHTS.style +
+      soundproof * ATTR_WEIGHTS.soundproof +
+      tech * ATTR_WEIGHTS.tech -
+      noise * ATTR_WEIGHTS.noise,
+  );
+  return max * (weighted / (weighted + ATTR_HALF));
+}
+
 /** 房內具備哪些家具分類(用來算種類齊全度) */
 function roomCategories(roomId: string): Set<FurnCategory> {
   const set = new Set<FurnCategory>();
@@ -99,14 +121,18 @@ function roomCategories(roomId: string): Set<FurnCategory> {
  * (一次性改建升級的永久加成)疊進屬性部分,但 tierPart **只算家具擺放**——房間升級沒有
  * tier 的概念,硬給它一個等級只會是憑空捏造的數字。所以「屬性部分」= 家具 + 改建、
  * 「品質部分」= 純家具。日後若替改建升級補上品質語意,要記得同步這裡。
+ *
+ * `max` 由呼叫端傳入:私人房用 `TIER_MAX`(10)、共用區用較寬的 `COMMUNAL_TIER_MAX`
+ * (種子交誼廳的 tierPart 已經 7.0,沿用 10 幾乎沒有升級空間)。夾值邏輯只有這一份,
+ * 兩套公式不會各自長出一個上限。
  */
-function roomTierPoints(roomId: string): number {
+function tierPointsIn(roomId: string, max: number): number {
   let points = 0;
   for (const p of getPlacements()) {
     if (p.room !== roomId) continue;
     points += tierPoints(getDef(p.defId));
   }
-  return clamp(points, 0, TIER_MAX);
+  return clamp(points, 0, max);
 }
 
 /** 房內自動清潔家具(掃地機器人等)的清潔力總和(墊高整潔基準用) */
@@ -135,21 +161,7 @@ export function roomComfortBreakdown(roomId: string | null, cleanliness: number)
   if (!roomId) {
     return { comfort: 50, attrPart: 30, categoryPart: 20, tierPart: 0, cleanMult: 1, missing: [] as string[] };
   }
-  const attrs = roomAttributes(roomId);
-  const cozy = attrs.cozy ?? 0;
-  const style = attrs.style ?? 0;
-  const soundproof = attrs.soundproof ?? 0;
-  const tech = attrs.tech ?? 0;
-  const noise = Math.max(0, attrs.noise ?? 0);
-  const weighted = Math.max(
-    0,
-    cozy * ATTR_WEIGHTS.cozy +
-      style * ATTR_WEIGHTS.style +
-      soundproof * ATTR_WEIGHTS.soundproof +
-      tech * ATTR_WEIGHTS.tech -
-      noise * ATTR_WEIGHTS.noise,
-  );
-  const attrPart = ATTR_MAX * (weighted / (weighted + ATTR_HALF));
+  const attrPart = attrPartOf(roomId, ATTR_MAX);
 
   const cats = roomCategories(roomId);
   const missing: string[] = [];
@@ -160,7 +172,7 @@ export function roomComfortBreakdown(roomId: string | null, cleanliness: number)
   }
   const categoryPart = present * CATEGORY_POINTS;
 
-  const tierPart = roomTierPoints(roomId);
+  const tierPart = tierPointsIn(roomId, TIER_MAX);
 
   const cleanMult = cleanlinessMultiplier(cleanliness);
   const comfort = clamp((attrPart + categoryPart + tierPart) * cleanMult, 0, 100);
@@ -212,4 +224,211 @@ export function comfortHints(roomId: string | null, cleanliness: number): string
   // 都齊了但屬性偏低 → 建議加療癒佈置
   if (hints.length < 3 && bd.attrPart < 28) hints.push("多點溫馨佈置會更舒適");
   return hints.slice(0, 3);
+}
+
+// ===========================================================================
+// 共用區舒適度(交誼廳 / 浴室 / 洗衣間)
+//
+// 🔴 **刻意走獨立管道,不把共用區分數塞進 `roomComfort`**:
+//   1. `roomComfort` 是 `cozyHomePass` 的門檻輸入(tick.ts)。把共用區攪進去會位移
+//      每個租客的舒適度,慶祝日誌的觸發次數一變,mood/satisfaction 就會偏移遠超
+//      balance 快照的容差。獨立管道讓 `roomComfort` 的值**一位元都不變**。
+//   2. 共用區不能沿用私人房的 `COMFORT_BUCKETS`:那五類裡「睡眠」對浴室永遠不可能達成、
+//      「社交」對洗衣間也不該算缺點;更致命的是 `FurnCategory` 的 `utility` **不在任何
+//      bucket 裡**,而浴室 3/4 件、洗衣間 5/5 件全是 utility → 洗衣間結構性拿 0 分,
+//      玩家怎麼買都拿不到分。所以共用區用自己的 bucket 表(按 `sprite.kind` 細分 utility)。
+//   3. 不動 `COMFORT_BUCKETS` / `COMFORT_LIMITS`:把 utility 併成第六類會讓私人房的
+//      categoryMax 30→36、總上限破 100(`robot_vacuum` 是 utility,連所有私人房分數都會變)。
+//
+// 共用區自己維持自己的不變量:**每一區 attrMax + categoryMax + tierMax = 100**,
+// 三區用同一組上限 → 三區分數在同一個 0~100 尺規上,加權合成才有意義。
+// ===========================================================================
+
+/** 共用區 id(這三個是全部;它們永遠不會是 `roomOfTenant()` 的回傳值) */
+export type CommunalAreaId = "lounge" | "bathroom" | "laundry";
+
+/**
+ * 加權合成:交誼廳權重最高(租客待最久、社交/用餐都在那),浴室次之,洗衣間最低。
+ * 用加權而非「取最低」:UI 上「哪一區拖累最多」比「木桶效應」好解釋,
+ * 而且不會發生「洗衣間差一分,整棟樓全毀」的懸崖。
+ */
+const COMMUNAL_WEIGHTS: Record<CommunalAreaId, number> = { lounge: 0.5, bathroom: 0.3, laundry: 0.2 };
+
+/** 共用區的三個加項上限(三區共用一套 → 每區滿分都是 100) */
+const COMMUNAL_ATTR_MAX = 50;
+const COMMUNAL_CATEGORY_MAX = 30;
+/**
+ * 共用區的品質層級上限刻意比私人房的 10 寬:種子交誼廳的 tierPart 已經是 7.0,
+ * 沿用 10 等於一開場就快撞頂、玩家換精品家具幾乎看不到分數動。20 給得出升級空間,
+ * 又維持 50 + 30 + 20 = 100 的不變量。
+ */
+const COMMUNAL_TIER_MAX = 20;
+
+/**
+ * 每一區自己的舒適 bucket。`cats` 比對家具分類,`kinds` 比對 `sprite.kind`——
+ * 後者是把 `utility` 這個大雜燴拆開的關鍵(淋浴間/馬桶/洗手台/洗衣機/曬衣架全是 utility,
+ * 但它們對「浴室夠不夠用」與「洗衣間夠不夠用」的意義完全不同)。
+ *
+ * 每一區的 bucket 都**確保拿得到**(種子局缺的那一類都買得到對應家具),
+ * `categoryPoints` = 30 ÷ 該區 bucket 數 → 不論幾類,「機能齊全」對每一區都值 30 分。
+ */
+interface CommunalBucket {
+  label: string;
+  cats?: FurnCategory[];
+  kinds?: FurnKind[];
+  hint: string;
+}
+
+const COMMUNAL_BUCKETS: Record<CommunalAreaId, CommunalBucket[]> = {
+  // 交誼廳:種子局缺「收納」(擺個書架/衣櫃/抽屜櫃就補得起來)
+  lounge: [
+    { label: "社交", cats: ["seating", "av"], hint: "交誼廳缺沙發或電視,沒人想留下來" },
+    { label: "餐廚", cats: ["kitchen"], hint: "交誼廳缺廚房機能,吃飯只能各自解決" },
+    { label: "裝飾", cats: ["ambiance"], hint: "交誼廳加點盆栽/地毯會更像家" },
+    { label: "收納", cats: ["storage"], hint: "交誼廳缺收納,公共雜物沒地方放" },
+  ],
+  // 浴室:種子局缺「收納」
+  bathroom: [
+    { label: "淋浴", kinds: ["shower", "bathtub"], hint: "浴室缺淋浴設備" },
+    { label: "如廁", kinds: ["toilet"], hint: "浴室缺馬桶" },
+    { label: "盥洗", kinds: ["sink"], hint: "浴室缺洗手台" },
+    { label: "裝飾", cats: ["ambiance"], hint: "浴室擺盆小植栽會舒服很多" },
+    { label: "收納", cats: ["storage"], hint: "浴室缺收納,盥洗用品散一地" },
+  ],
+  // 洗衣間:種子局缺「裝飾」
+  laundry: [
+    { label: "洗滌", kinds: ["washer", "sink"], hint: "洗衣間缺洗衣機或水槽" },
+    { label: "晾曬", kinds: ["drying_rack"], hint: "洗衣間缺晾衣的地方" },
+    { label: "整理", kinds: ["laundry_basket"], cats: ["storage"], hint: "洗衣間缺洗衣籃/收納" },
+    { label: "裝飾", cats: ["ambiance"], hint: "洗衣間加點綠意就不只是機房" },
+  ],
+};
+
+/** 共用區三區的顯示順序(UI 與測試共用,權重高的在前) */
+export const COMMUNAL_AREA_IDS: readonly CommunalAreaId[] = ["lounge", "bathroom", "laundry"];
+
+/** 共用區的中文名稱(UI 面板列標題) */
+export const COMMUNAL_AREA_LABELS: Record<CommunalAreaId, string> = {
+  lounge: "交誼廳",
+  bathroom: "浴室",
+  laundry: "洗衣間",
+};
+
+/**
+ * 給 UI 拆解面板/測試讀的共用區上限(**純讀取的鏡射,不參與計算**)。
+ * 每一區 attrMax + categoryMax + tierMax = 100 → 分數永遠不會被 clamp 夾到,
+ * 面板上「屬性 + 齊全 + 品質」的加法對得起來(同私人房 `COMFORT_LIMITS` 的硬性約束)。
+ */
+export const COMMUNAL_LIMITS: Record<
+  CommunalAreaId,
+  { attrMax: number; categoryMax: number; categoryPoints: number; tierMax: number; weight: number }
+> = Object.fromEntries(
+  COMMUNAL_AREA_IDS.map((id) => [
+    id,
+    {
+      attrMax: COMMUNAL_ATTR_MAX,
+      categoryMax: COMMUNAL_CATEGORY_MAX,
+      categoryPoints: COMMUNAL_CATEGORY_MAX / COMMUNAL_BUCKETS[id].length,
+      tierMax: COMMUNAL_TIER_MAX,
+      weight: COMMUNAL_WEIGHTS[id],
+    },
+  ]),
+) as Record<CommunalAreaId, { attrMax: number; categoryMax: number; categoryPoints: number; tierMax: number; weight: number }>;
+
+/** 某區具備哪些 sprite kind(bucket 用來細分 utility) */
+function areaKinds(areaId: string): Set<FurnKind> {
+  const set = new Set<FurnKind>();
+  for (const p of getPlacements()) {
+    if (p.room !== areaId) continue;
+    const sprite = getDef(p.defId).sprite;
+    if ("kind" in sprite) set.add(sprite.kind);
+  }
+  return set;
+}
+
+/**
+ * 單一共用區的品質拆解(0~100)。形狀刻意與 `roomComfortBreakdown` 對稱:
+ * `quality === (attrPart + categoryPart + tierPart) × cleanMult`。
+ *
+ * **整潔沒有新狀態**:共用區沒有租客、沒有 `rt.cleanliness`,直接用純函式
+ * `cleanlinessBaseline(areaId)` 推導它的自然水位(收納家具與掃地機器人墊高它)。
+ * 於是整個共用區分數 100% 由 `placements.list` 推導 → 零存檔改動、零 migration、
+ * 零 tick 工作,舊存檔載入自動一致(placements 早已入存檔)。
+ */
+export function communalAreaBreakdown(areaId: CommunalAreaId) {
+  const limits = COMMUNAL_LIMITS[areaId];
+  const attrPart = attrPartOf(areaId, limits.attrMax);
+
+  const cats = roomCategories(areaId);
+  const kinds = areaKinds(areaId);
+  const buckets = COMMUNAL_BUCKETS[areaId].map((b) => ({
+    label: b.label,
+    hint: b.hint,
+    has: (b.cats?.some((c) => cats.has(c)) ?? false) || (b.kinds?.some((k) => kinds.has(k)) ?? false),
+  }));
+  const categoryPart = buckets.filter((b) => b.has).length * limits.categoryPoints;
+
+  const tierPart = tierPointsIn(areaId, limits.tierMax);
+
+  const cleanBase = cleanlinessBaseline(areaId);
+  const cleanMult = cleanlinessMultiplier(cleanBase);
+  const quality = clamp((attrPart + categoryPart + tierPart) * cleanMult, 0, 100);
+  return { quality, attrPart, categoryPart, tierPart, cleanMult, cleanBase, buckets };
+}
+
+/** 三區的完整拆解 + 加權合成分數(UI 展開面板與測試共用同一份計算) */
+export function communalBreakdown() {
+  const areas = COMMUNAL_AREA_IDS.map((id) => ({
+    id,
+    label: COMMUNAL_AREA_LABELS[id],
+    weight: COMMUNAL_WEIGHTS[id],
+    ...communalAreaBreakdown(id),
+  }));
+  const quality = areas.reduce((sum, a) => sum + a.quality * a.weight, 0);
+  return { quality, areas };
+}
+
+/** 公共空間整體品質 0~100(交誼廳 0.5 / 浴室 0.3 / 洗衣間 0.2 加權) */
+export function communalQuality(): number {
+  return communalBreakdown().quality;
+}
+
+/**
+ * 🔴 中性基準 = **開場樓層的公共空間分數**,不是 50。
+ *
+ * 低於它 = 你把公共空間搞差了(賣掉沙發、拆了洗衣機),高於它 = 你有投資。
+ * 取 50 會讓功能一上線就是全樓大扣分(種子局 q ≈ 35.3 → cd ≈ −15 → mood −1.5、
+ * 三區合成後更難看),而且 balance 快照會全盤重排,等於用「新功能」偷改既有平衡。
+ *
+ * **實測推導**(種子 `INITIAL_PLACEMENTS`,無任何玩家操作;上限 50/30/20):
+ *   交誼廳:attr 32.5243(cozy 23・style 14・tech 6 → 加權 33.5)
+ *          + 齊全 22.5(社交/餐廚/裝飾 ✓、收納 ✗ → 3/4 × 30)
+ *          + 品質 7.0  → 小計 62.0243 × 0.81(整潔錨 62:冰箱 4 + 流理臺 2 → 50+12)
+ *          = 50.2397
+ *   浴室  :attr 5.0(僅浴室小盆栽 cozy 2)
+ *          + 齊全 24(淋浴/如廁/盥洗/裝飾 ✓、收納 ✗ → 4/5 × 30)
+ *          + 品質 0.5  → 小計 29.5 × 0.75(整潔錨 50)= 22.125
+ *   洗衣間:attr 0(五件全零屬性)
+ *          + 齊全 22.5(洗滌/晾曬/整理 ✓、裝飾 ✗ → 3/4 × 30)
+ *          + 品質 1.0  → 小計 23.5 × 0.75(整潔錨 50)= 17.625
+ *   加權  :0.5 × 50.2397 + 0.3 × 22.125 + 0.2 × 17.625 = 35.28233…
+ *
+ * 下面這個字面值是把實測的 double 原封不動貼回來(不是四捨五入的近似值),
+ * 所以種子局 `cd` **恰好** === 0 → 三個 delta 全 0 → balance 快照零漂移。
+ * communal-comfort-test 有斷言把這條釘死;改動 bucket 表/上限/權重都必須重新校準,
+ * 不可以改 `scripts/balance-snapshot.json` 掩蓋。
+ */
+export const COMMUNAL_NEUTRAL = 35.28233009708738;
+
+/**
+ * 公共空間品質 → homeostasis 基準的溫和增量(疊在私人房的 `comfortBaselineDelta` 之上)。
+ *
+ * 係數刻意**小於私人房**(私人房 0.16 / 0.10 / 0.08):公共空間是共享環境,
+ * 影響力應該低於「自己的房間」——把交誼廳佈置到滿分也不該蓋過房間本身的好壞。
+ *   q 55(比開場好很多):mood +1.97、stress −1.18、wellbeing 錨 +0.99
+ *   q 15(公共空間荒廢):mood −2.03、stress +1.22、wellbeing 錨 −1.01
+ */
+export function communalBaselineDelta(q: number): { mood: number; stress: number; wellbeing: number } {
+  const cd = q - COMMUNAL_NEUTRAL;
+  return { mood: cd * 0.1, stress: -cd * 0.06, wellbeing: cd * 0.05 };
 }

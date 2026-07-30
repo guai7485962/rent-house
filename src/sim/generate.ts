@@ -11,6 +11,8 @@
  */
 import type { ObservationLog, StatDeltas, TenantVisualState } from "../types";
 import { OBSERVATION_LINES } from "../content/observationLines";
+import { getDef } from "../furniture/catalog";
+import { sleepMultiplier } from "../furniture/tier";
 import { outingSpotLines } from "./outing";
 
 export interface GenCtx {
@@ -26,6 +28,9 @@ export interface GenCtx {
   /** 外出目的地 id(僅 state === "away" 時給;見 sim/outing.ts)。用來把「空房間」的
    *  觀察句換成「他大概在便利商店/早餐店/公司樓下」的目的地句池。 */
   outingSpot?: string;
+  /** 這一小時實際使用的家具 defId(由 `tick.ts` 的 `applyHour` 帶入)。
+   *  目前**只有睡眠**會用到它(床的 tier → 恢復效率乘數);其他活動一律不吃乘數。 */
+  furnitureDefId?: string;
 }
 
 export interface GenResult {
@@ -62,6 +67,38 @@ const EFFECT: Partial<Record<TenantVisualState, StatDeltas>> = {
   idle: { energy: 1 },
 };
 
+/**
+ * 吃家具 tier 乘數的狀態:**只有睡眠**。
+ *
+ * 沙發休息/看電視/泡澡/書桌工作刻意不接——種子局那些活動全踩在 premium 家具上
+ * (`mic_desk`、`gaming_desk`、`shared_sofa`、`lounge_tv`、`bathtub`),一接就整片
+ * 改變既有平衡快照。要擴充請另開一階段、連同快照一起重新校準。
+ *
+ * ⚠️ 擴充時的坑:本函式的 key 是 `ctx.effectState ?? ctx.state`,而 `tick.ts` 的
+ * `decideState` 在浴室輪替/洗衣時會讓「畫面狀態」與「數值狀態」分家,可能出現
+ * 「泡的是 premium 浴缸、乘數卻乘在 showering 上」。睡眠沒有這個問題:床的 slot
+ * 從不觸發 effectState 覆寫。
+ */
+const SLEEP_STATES = new Set<TenantVisualState>(["sleeping_on_bed", "sleeping_on_couch"]);
+
+/**
+ * 睡眠乘數只作用在這兩個欄位。
+ *
+ * - `energy`:主軸,但實測 240h 有 41~47% 的 +9 被 100 上限吃掉,帳面效果比名目小近一半。
+ * - `stress`:-5 在實測中 100% 生效(從未觸底),且 stress 有 homeostasis 拉回、
+ *   不會像 energy 那樣黏死在極值 ⇒ 「好床真的有感」主要靠它。
+ *
+ * 刻意不含 `mood`(+2 已頻繁頂到 100,加成幾乎全浪費,還會讓心情滿分更常態化)
+ * 與 `wellbeing`(+0.3 太小,單日 ±2,乘了看不出來)。
+ */
+const SLEEP_SCALED = ["energy", "stress"] as const;
+
+/** 這一小時的家具 tier 乘數(非睡眠狀態、或沒帶家具 → 精確的 1.0,乘了等於沒乘) */
+function furnitureMultiplier(key: TenantVisualState, defId: string | undefined): number {
+  if (!SLEEP_STATES.has(key) || !defId) return 1;
+  return sleepMultiplier(getDef(defId)) ?? 1;
+}
+
 function pick(arr: string[] | undefined, seed: number): string {
   if (!arr || arr.length === 0) return "";
   return arr[seed % arr.length];
@@ -89,9 +126,14 @@ export function generateHourly(ctx: GenCtx): GenResult {
     : ctx.state === "crying" || ctx.state === "pacing"
       ? "notable"
       : "minor";
-  return {
-    logText: base,
-    importance,
-    statDeltas: { ...(EFFECT[ctx.effectState ?? ctx.state] ?? {}) },
-  };
+  // 家具 tier → 數值效果乘數。全系統只有這一種形式:`EFFECT[key] × mult`。
+  // budget 床(與所有非睡眠狀態)的 mult 是精確的 1.0,`9 * 1.0 === 9` 位元級成立。
+  const effectKey = ctx.effectState ?? ctx.state;
+  const mult = furnitureMultiplier(effectKey, ctx.furnitureDefId);
+  const statDeltas: StatDeltas = { ...(EFFECT[effectKey] ?? {}) };
+  for (const field of SLEEP_SCALED) {
+    const v = statDeltas[field];
+    if (v !== undefined) statDeltas[field] = v * mult;
+  }
+  return { logText: base, importance, statDeltas };
 }

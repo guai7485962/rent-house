@@ -40,6 +40,27 @@ export const TIER_INFO: Record<FurnTier, { label: string; stars: string }> = {
   premium: { label: "精品", stars: "★★★" },
 };
 
+/**
+ * 睡眠恢復效率乘數:床的 tier 直接放大這一小時的睡眠效果(`sim/generate.ts` 的 EFFECT 展開)。
+ * 形狀刻意對齊 `TIER_POINTS` 的 0 / 0.5 / 1.5——premium 的躍升大於 standard,
+ * 讓「再往上加一階」始終有感,而不是線性到頂。
+ *
+ * budget 是 **精確的 1.0**:種子局四間房全是平價單人床,`9 * 1.0 === 9` 位元級成立
+ * ⇒ 既有 balance 快照零漂移。任何「先四捨五入再乘」「先加 bonus 再乘」的變體都會
+ * 在這條路徑上引入浮點誤差,因此全系統只准有 `EFFECT[key] × mult` 這一種形式。
+ *
+ * **只乘 energy 與 stress**(見 `sim/generate.ts` 的 `SLEEP_SCALED`):
+ * mood 的 +2 在實測中已頻繁頂到 100 上限,乘了幾乎全浪費;wellbeing 的 +0.3 幅度太小。
+ */
+export const SLEEP_MULT: Record<FurnTier, number> = {
+  budget: 1.0,
+  standard: 1.15,
+  premium: 1.35,
+};
+
+/** 睡眠乘數的合理值域(防未來有人把係數改成離譜的數字,睡一晚回滿或倒扣) */
+export const SLEEP_MULT_RANGE = { min: 0.5, max: 2.0 } as const;
+
 /** 家具的實際 tier(未標 → 中性 standard) */
 export function tierOf(def: Pick<FurnitureDef, "tier">): FurnTier {
   return def.tier ?? DEFAULT_TIER;
@@ -48,6 +69,18 @@ export function tierOf(def: Pick<FurnitureDef, "tier">): FurnTier {
 /** 家具貢獻的舒適度 tier 點數(未標 → 中性 standard 的點數) */
 export function tierPoints(def: Pick<FurnitureDef, "tier">): number {
   return TIER_POINTS[tierOf(def)];
+}
+
+/**
+ * 睡在這件家具上的恢復效率乘數(未標 tier → 走 `tierOf()` 的中性 standard)。
+ *
+ * 刻意**複用 `tierOf()` 而不另開一套 fallback**:tier 語意在全系統只有一份,
+ * 未標 tier 的家具在舒適度是 standard、在睡眠也必須是 standard。
+ * `UNKNOWN_DEF` 走同一條路,不會拋例外。
+ */
+export function sleepMultiplier(def: Pick<FurnitureDef, "tier">): number {
+  const raw = SLEEP_MULT[tierOf(def)] ?? SLEEP_MULT[DEFAULT_TIER];
+  return Math.min(SLEEP_MULT_RANGE.max, Math.max(SLEEP_MULT_RANGE.min, raw));
 }
 
 /**

@@ -8,6 +8,13 @@
  * - tierPart 有上限夾值(狂塞 premium 小物刷不了分)
  * - 零 RNG:覆寫 Math.random 並計數,被呼叫就 fail
  * - COMFORT_LIMITS.tierMax 與實際上限一致(防 UI 面板與計算脫鉤)
+ *
+ * 第二階段(睡眠效率)追加(§10):
+ * - `sleepMultiplier(budget)` **嚴格等於 1.0**——種子局四間房全是平價床,
+ *   `9 * 1.0 === 9` 位元級成立才有 balance 快照零漂移
+ * - 只有 energy/stress 吃乘數,mood/wellbeing 明確不吃
+ * - **範圍紀律**:非睡眠狀態帶了家具也不能有任何數值差(擋第三階段的順手擴充)
+ * - 不變條件:`INITIAL_PLACEMENTS` 裡所有床皆為 budget(有人換種子床就主動報警)
  */
 // 固定種子 PRNG + localStorage mock —— 必須在載入 store 之前
 let seed = 20260729;
@@ -28,10 +35,12 @@ const store = new Map<string, string>();
 
 await import("../src/store");
 const { roomComfortBreakdown, COMFORT_LIMITS, cleanlinessMultiplier } = await import("../src/sim/comfort");
-const { addPlacement } = await import("../src/sim/placements");
+const { addPlacement, furnitureAt, removePlacementAt } = await import("../src/sim/placements");
 const { getDef, CATALOG } = await import("../src/furniture/catalog");
-const { TIER_POINTS, TIER_INFO, DEFAULT_TIER, tierOf, tierPoints, tierChipText } =
+const { TIER_POINTS, TIER_INFO, DEFAULT_TIER, tierOf, tierPoints, tierChipText, SLEEP_MULT, SLEEP_MULT_RANGE, sleepMultiplier } =
   await import("../src/furniture/tier");
+const { generateHourly } = await import("../src/sim/generate");
+const { INITIAL_PLACEMENTS } = await import("../src/floor/map");
 
 let pass = 0;
 let fail = 0;
@@ -250,6 +259,173 @@ const detB = idCases.map(([room, cl]) => roomComfortBreakdown(room, cl).tierPart
 Math.random = seededRandom;
 check(`舒適度拆解不呼叫 Math.random(實測 ${rngCalls} 次)`, rngCalls === 0);
 check("同輸入重複呼叫得到完全相同的 tierPart(決定性)", detA.every((v, i) => v === detB[i]));
+
+// --- 10. 睡眠效率(tier 第二階段):床的品質放大恢復效率 ---
+type VState = Parameters<typeof generateHourly>[0]["state"];
+/** 走一次真正的 generateHourly(與 tick.ts 呼叫的是同一支函式),取這一小時的數值效果 */
+function deltasOf(st: VState, furnitureDefId?: string) {
+  return generateHourly({
+    tenantId: "t_probe",
+    tenantName: "探針",
+    hour: 3,
+    timeLabel: "03:00",
+    state: st,
+    isDeviation: false,
+    recentSummary: "",
+    furnitureDefId,
+  }).statDeltas;
+}
+
+// 10-1. budget 必須是**嚴格等於** 1.0(不是 ≈):零漂移的位元級保證
+check(
+  `budget 床的睡眠乘數嚴格等於 1.0(實測 ${sleepMultiplier({ tier: "budget" })},9 × 它 = ${9 * sleepMultiplier({ tier: "budget" })})`,
+  sleepMultiplier({ tier: "budget" }) === 1.0 && 9 * sleepMultiplier({ tier: "budget" }) === 9,
+);
+check(
+  `睡眠乘數三階嚴格遞增(${SLEEP_MULT.budget} < ${SLEEP_MULT.standard} < ${SLEEP_MULT.premium})`,
+  SLEEP_MULT.budget < SLEEP_MULT.standard && SLEEP_MULT.standard < SLEEP_MULT.premium,
+);
+check(
+  `三階乘數都夾在合理值域內(${SLEEP_MULT_RANGE.min}~${SLEEP_MULT_RANGE.max},夾值不會偷偷改動現行係數)`,
+  (["budget", "standard", "premium"] as const).every(
+    (t) => sleepMultiplier({ tier: t }) === SLEEP_MULT[t] &&
+      SLEEP_MULT[t] >= SLEEP_MULT_RANGE.min && SLEEP_MULT[t] <= SLEEP_MULT_RANGE.max,
+  ),
+);
+check(
+  `premium 的躍升大於 standard(形狀對齊 TIER_POINTS 的 0/0.5/1.5)`,
+  SLEEP_MULT.premium - SLEEP_MULT.standard > SLEEP_MULT.standard - SLEEP_MULT.budget,
+);
+
+// 10-2. 未標 tier / 查無此 id → 複用 tierOf() 的 standard,不拋例外、不另開一套 fallback
+let unknownOk = true;
+try {
+  unknownOk =
+    sleepMultiplier(getDef("不存在的id")) === SLEEP_MULT.standard &&
+    sleepMultiplier(getDef("memorial_poster")) === SLEEP_MULT[DEFAULT_TIER];
+} catch {
+  unknownOk = false;
+}
+check(
+  `未知 defId / 未標 tier 的家具走 tierOf() 的 standard 且不拋例外(→ ×${sleepMultiplier(getDef("不存在的id"))})`,
+  unknownOk,
+);
+check(
+  "帶了查無此 id 的家具仍能算出這一小時的效果(UNKNOWN_DEF 不會炸掉睡眠)",
+  Number.isFinite(deltasOf("sleeping_on_bed", "不存在的id").energy),
+);
+check(
+  "完全不帶家具時退回 ×1.0(防禦性 fallback:效果與 budget 床完全相同)",
+  JSON.stringify(deltasOf("sleeping_on_bed")) === JSON.stringify(deltasOf("sleeping_on_bed", "single_bed")),
+);
+
+// 10-3. 只乘 energy 與 stress:mood/wellbeing 明確不吃乘數
+const sleepBudget = deltasOf("sleeping_on_bed", "single_bed");
+const sleepStandard = deltasOf("sleeping_on_bed", "double_bed");
+const sleepPremium = deltasOf("sleeping_on_bed", "canopy_bed");
+check(
+  `energy 恢復三階嚴格遞增(${sleepBudget.energy} < ${sleepStandard.energy} < ${sleepPremium.energy})`,
+  sleepBudget.energy! < sleepStandard.energy! && sleepStandard.energy! < sleepPremium.energy!,
+);
+check(
+  `stress 消除三階嚴格加強(${sleepBudget.stress} > ${sleepStandard.stress} > ${sleepPremium.stress},負值越大越紓壓)`,
+  sleepBudget.stress! > sleepStandard.stress! && sleepStandard.stress! > sleepPremium.stress!,
+);
+check(
+  `mood 三階完全相同(${sleepBudget.mood} / ${sleepStandard.mood} / ${sleepPremium.mood}——+2 已頻繁頂到 100 上限,乘了是浪費)`,
+  sleepBudget.mood === sleepStandard.mood && sleepStandard.mood === sleepPremium.mood,
+);
+check(
+  `wellbeing 三階完全相同(${sleepBudget.wellbeing} / ${sleepPremium.wellbeing}——單日 ±2 太小,乘了看不出來)`,
+  sleepBudget.wellbeing === sleepStandard.wellbeing && sleepStandard.wellbeing === sleepPremium.wellbeing,
+);
+check(
+  `乘法是唯一形式:premium = budget × ${SLEEP_MULT.premium}(沒有先四捨五入、沒有先加 bonus)`,
+  Math.abs(sleepPremium.energy! - sleepBudget.energy! * SLEEP_MULT.premium) < 1e-12 &&
+    Math.abs(sleepPremium.stress! - sleepBudget.stress! * SLEEP_MULT.premium) < 1e-12,
+);
+
+// 10-4. 🔴 範圍紀律:第二階段**只做睡眠**。種子局的沙發/電視/浴缸/書桌全踩 premium 家具,
+// 一旦有人把乘數接到這些活動上,balance 快照會整片漂移 → 這裡先擋下來。
+const NON_SLEEP: [VState, string][] = [
+  ["reading", "shared_sofa"], ["watching_tv", "lounge_tv"], ["taking_bath", "bathtub"],
+  ["working_at_desk", "gaming_desk"], ["streaming", "mic_desk"], ["playing_with_cat", "shared_sofa"],
+  ["gaming", "gaming_desk"], ["eating_at_table", "dining_table"], ["idle", "canopy_bed"],
+];
+const leaked = NON_SLEEP.filter(
+  ([st, defId]) => JSON.stringify(deltasOf(st, defId)) !== JSON.stringify(deltasOf(st)),
+);
+check(
+  `非睡眠活動一律不吃家具乘數(${NON_SLEEP.length} 組全部零差異,含 premium 的沙發/電視/浴缸/書桌)`,
+  leaked.length === 0,
+);
+
+// 10-5. 🔴 不變條件:種子局的床全是 budget ⇒ ×1.0 ⇒ balance 快照零漂移。
+// 未來有人把種子床換成 double_bed/canopy_bed,這條會**主動報警**提醒重建快照。
+const seedBeds = INITIAL_PLACEMENTS.filter((p) => {
+  const sp = getDef(p.defId).sprite;
+  return "kind" in sp && sp.kind === "bed";
+});
+check(
+  `種子局的床全是 budget(${seedBeds.length} 張:${[...new Set(seedBeds.map((p) => p.defId))].join("/")})⇒ 睡眠乘數恆為 ×1.0、快照零漂移`,
+  seedBeds.length > 0 && seedBeds.every((p) => tierOf(getDef(p.defId)) === "budget") &&
+    seedBeds.every((p) => sleepMultiplier(getDef(p.defId)) === 1.0),
+);
+
+// 10-6. 文案與係數同步(比照 tierChipText:改了係數不能忘了改商店文案)
+const BED_HINTS: [string, keyof typeof SLEEP_MULT][] = [
+  ["folding_bed", "budget"], ["single_bed", "budget"], ["double_bed", "standard"], ["canopy_bed", "premium"],
+];
+check(
+  `四張床的 effectHint 都寫出實際乘數(${BED_HINTS.map(([id]) => getDef(id).effectHint).join(" / ")})`,
+  BED_HINTS.every(([id, tier]) =>
+    getDef(id).tier === tier && (getDef(id).effectHint ?? "").includes(`×${SLEEP_MULT[tier].toFixed(2)}`),
+  ),
+);
+
+// 10-7. 端到端:同房間換床 → 同一初始 energy 跑 N 小時睡眠,好床嚴格較高
+/** 用真正的 generateHourly 逐小時累積(energy 是資源、夾在 0~100,與 applyStat 同語意) */
+function sleepRun(defId: string, hours: number, from: number) {
+  let energy = from;
+  let stress = 60;
+  for (let h = 0; h < hours; h++) {
+    const d = deltasOf("sleeping_on_bed", defId);
+    energy = Math.min(100, Math.max(0, energy + (d.energy ?? 0)));
+    stress = Math.min(100, Math.max(0, stress + (d.stress ?? 0)));
+  }
+  return { energy, stress };
+}
+// 座標刻意遠離種子樓層與上面的探針房,避免與既有 placement 的佔位範圍相撞
+const swapRoom = "r_sleep_swap";
+const SC = 900, SR = 900;
+addPlacement({ defId: "single_bed", room: swapRoom, c: SC, r: SR } as any);
+const beforeSwap = furnitureAt(SC, SR);
+const runBudget = sleepRun(beforeSwap!.defId, 5, 20);
+removePlacementAt(SC, SR);
+addPlacement({ defId: "canopy_bed", room: swapRoom, c: SC, r: SR } as any);
+const afterSwap = furnitureAt(SC, SR);
+const runPremium = sleepRun(afterSwap!.defId, 5, 20);
+check(
+  `前提:同一格的床真的換掉了(${beforeSwap?.defId} → ${afterSwap?.defId})`,
+  beforeSwap?.defId === "single_bed" && afterSwap?.defId === "canopy_bed",
+);
+check(
+  `同房換成 premium 床:5 小時睡眠後 energy 嚴格較高(${runBudget.energy} < ${runPremium.energy.toFixed(2)})`,
+  runPremium.energy > runBudget.energy,
+);
+check(
+  `同房換成 premium 床:5 小時睡眠後 stress 嚴格較低(${runBudget.stress} > ${runPremium.stress.toFixed(2)})`,
+  runPremium.stress < runBudget.stress,
+);
+
+// 10-8. 零 RNG:查 placement 的 tier 是純查表,不得動到亂數序列(否則整個模擬序列位移)
+let sleepRngCalls = 0;
+Math.random = () => { sleepRngCalls++; return seededRandom(); };
+const mulA = ["single_bed", "double_bed", "canopy_bed", "不存在的id", "memorial_poster"].map((id) => sleepMultiplier(getDef(id)));
+const mulB = ["single_bed", "double_bed", "canopy_bed", "不存在的id", "memorial_poster"].map((id) => sleepMultiplier(getDef(id)));
+Math.random = seededRandom;
+check(`算睡眠乘數不呼叫 Math.random(實測 ${sleepRngCalls} 次)`, sleepRngCalls === 0);
+check("同輸入重複呼叫得到完全相同的乘數(決定性)", mulA.every((v, i) => v === mulB[i]));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

@@ -385,6 +385,9 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   let st = decided.state;
   let effectState = decided.effectState;
   const isDeviation = decided.isDeviation;
+  // 這一小時實際用到的家具(睡眠靠它拿床的 tier 乘數);`tgt` 宣告在下面的 else 區塊內,
+  // 所以在這裡 hoist 一個變數,而不是把 placement 一路穿透傳進 generateHourly。
+  let usedDefId: string | undefined;
   rt.activityPose = null;
   rt.activityTile = null;
   rt.activityRotation = 0;
@@ -429,6 +432,7 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
           rt.inLounge = false;
         }
       }
+      usedDefId = tgt.placement.defId;
       if (rt.targetTile?.c === tgt.tile.c && rt.targetTile?.r === tgt.tile.r) setFurniturePose(rt, st, tgt.placement, tgt.tile);
     } else {
       // 房裡缺對應家具、共用區也沒有(或 hermit 拒去)→ 在自己房間發呆(不闖別人房)
@@ -461,6 +465,8 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
     recentSummary: rt.tenant.recentSummary,
     // 外出 → 帶上決定性算出的目的地,讓觀察句從「空房間」變成「他大概在哪」(零 RNG)
     outingSpot: st === "away" ? outingSpot(rt, gameDayIndex(), hour) : undefined,
+    // 這一小時用到的家具 → 睡眠吃床的 tier 乘數(純查表,零 RNG)
+    furnitureDefId: usedDefId,
   });
   applyStat(rt, gen.statDeltas);
   applyMemoryDrift(rt); // 記憶標籤造成的長期數值漂移

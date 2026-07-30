@@ -110,6 +110,8 @@ export function sanitizeInvited(
   const apRaw = r.appearance ?? {};
   // 顏色兩段式:pickColor 只保證格式,sanitizeAppearanceColors 再做亮度帶/白名單/髮膚分離。
   // 只驗格式是假保護 —— 語法合法的 `#fdfdfd` 髮色照樣會糊在背景與臉上。
+  // 消毒用的是 per-slot relative luminance 夾值 + 髮膚 ΔL,**不是 vs 背景的 WCAG contrast**
+  // (實測自家色池對背景的 contrast ratio 幾乎全在 1.0~1.3,那套模型會誤殺現有美術)。
   const appearance: Appearance = sanitizeAppearanceColors({
     hairStyle: ALL_HAIR_STYLES.includes(apRaw.hairStyle) ? (apRaw.hairStyle as HairStyle) : "short",
     hairColor: pickColor(apRaw.hairColor, HAIR_COLORS),

@@ -320,6 +320,7 @@ export function refreshAppearances() {
     const rt = state.runtimes[tid];
     if (!rt) continue;
     rt.tenant.appearance ??= { ...ap };
+    sanitizeAppearanceInPlace(rt.tenant.appearance); // 第 4 個入口:舊存檔缺外觀時就地補的 SEED 值也要過消毒
     setCustomAppearance(tid, rt.tenant.appearance);
   }
 

@@ -102,7 +102,9 @@ export function moveIn(roomId: string, ap: Applicant) {
   delete state.applicantPools[roomId]; // 房間租出去,該池作廢
   for (const p of Object.values(state.applicantPools)) p.applicants = p.applicants.filter((x) => x.name !== ap.name); // 別的房不能再出現同名應徵者
   registerRoutine(ap.id, ap.archetypeKey);
-  if (tenant.appearance) setCustomAppearance(tenant.id, tenant.appearance); // 部件化外觀登錄(髮型/配件/衣色)
+  // 用 rt.tenant(makeRuntime 深拷貝後已消毒的副本),不要用未消毒的 tenant 本體。
+  // 下一行的 refreshAppearances() 目前也會覆蓋回乾淨值,但那是巧合不是設計。
+  if (rt.tenant.appearance) setCustomAppearance(tenant.id, rt.tenant.appearance); // 部件化外觀登錄(髮型/配件/衣色)
   refreshAppearances(); // 指派配色(依房間,確保彼此不同;有部件外觀者角色色由 Appearance 覆蓋)
   applyHour(rt, new Date(state.gameMs).getHours(), false); // 定位到當前活動
   if (ap.pet) adoptPet(ap.id, ap.pet); // 舊池缺 kind 會在 adoptPet 視為貓

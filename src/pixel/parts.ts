@@ -7,7 +7,7 @@
  * 配件畫在最上層(眼鏡/圓框眼鏡/棒球帽/蝴蝶結/耳機)。
  */
 import { shade, type Ctx } from "./sprites";
-import { clampLuma, nearestInPool, separateHairFromSkin, type LumaBand } from "./color";
+import { clampLuma, hexToRgb, nearestInPool, separateHairFromSkin, type LumaBand } from "./color";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 
 /** 消毒只碰四個顏色欄位;髮型/配件走各自的白名單,不在這裡處理 */
@@ -174,28 +174,48 @@ export const PANTS_LUMA_BAND: LumaBand = { lo: 0.04, hi: 0.30 };
 /** 髮色與膚色的最小亮度差(背景無關、永遠成立的唯一對比對象) */
 export const MIN_HAIR_SKIN_DELTA = 0.10;
 
+/** 格式不合法時的 per-slot 回退色(決定性、零 RNG:一律取該池首色) */
+const COLOR_FALLBACK = {
+  hairColor: HAIR_COLORS[0],
+  shirt: SHIRT_COLORS[0],
+  pants: PANTS_COLORS[0],
+  skin: SKIN_TONES[0],
+} as const;
+
+/**
+ * 格式回退:不是合法 `#rrggbb` 就換成該槽位的池首色。
+ *
+ * ⚠️ 三碼 hex(`#fff`)雖然是合法 CSS,這裡**一律視為不合法**——渲染層的 `shade()`
+ * 用 `hex.slice(1,3)`／`(3,5)`／`(5,7)` 硬切六碼,吃到三碼會 `parseInt("")` → `NaN`
+ * → 產生 `#ffNaNNaN` 這種無效 `fillStyle`,畫面直接壞掉。
+ */
+const coerceHex = (v: unknown, fallback: string): string =>
+  typeof v === "string" && hexToRgb(v) ? v : fallback;
+
 /**
  * 把一組外觀顏色消毒成「可辨識」的版本。
  *
  * 形狀刻意照抄 `sanitizeGrowthTags`:**純函式、無副作用、可重入、冪等**。
  * 掛在三處邊界(invite 源頭 / makeRuntime / load),既有存檔裡的髒顏色也會被就地修好。
  *
+ * - **格式回退**:四個槽位都先確認是合法 `#rrggbb`,否則換成該池首色。
  * - `skin`:snap 到 `SKIN_TONES` 最近一色(膚色沒有創意空間,零 RNG)。
  * - `hairColor` / `shirt` / `pants`:夾進亮度帶,**色相保留**。
  * - 最後把髮色與膚色拉開至少 `MIN_HAIR_SKIN_DELTA`(只動髮色)。
  *
- * 格式不合法的色碼**不在這裡處理** —— 由呼叫端(`pickColor`)先做格式回退,
- * 這樣連 `Math.random()` 的呼叫次數都完全不變。
+ * 格式回退**必須在這裡做**,不能只靠 `invite.ts` 的 `pickColor`:第 2、3 道防線
+ * (`makeRuntime` / `load`)沒有任何格式驗證,而 `importSave()` 會吃玩家提供的任意 JSON。
+ * 回退色本身都是池內色(在帶內、snap 為 identity),所以不影響冪等與護欄。
  */
 export function sanitizeAppearanceColors<T extends AppearanceColors>(ap: T): T {
-  const skin = nearestInPool(ap.skin, SKIN_TONES);
-  const clamped = clampLuma(ap.hairColor, HAIR_LUMA_BAND);
+  const skin = nearestInPool(coerceHex(ap.skin, COLOR_FALLBACK.skin), SKIN_TONES);
+  const clamped = clampLuma(coerceHex(ap.hairColor, COLOR_FALLBACK.hairColor), HAIR_LUMA_BAND);
   const hairColor = separateHairFromSkin(clamped, skin, HAIR_LUMA_BAND, MIN_HAIR_SKIN_DELTA);
   return {
     ...ap,
     hairColor,
-    shirt: clampLuma(ap.shirt, SHIRT_LUMA_BAND),
-    pants: clampLuma(ap.pants, PANTS_LUMA_BAND),
+    shirt: clampLuma(coerceHex(ap.shirt, COLOR_FALLBACK.shirt), SHIRT_LUMA_BAND),
+    pants: clampLuma(coerceHex(ap.pants, COLOR_FALLBACK.pants), PANTS_LUMA_BAND),
     skin,
   };
 }

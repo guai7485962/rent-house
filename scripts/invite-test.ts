@@ -200,17 +200,20 @@ check(`髮膚亮度差 >= ${MIN_HAIR_SKIN_DELTA}(${sepProbes.length}×${SKIN_TON
 const deepSkinSep = separateHairFromSkin("#241f2c", "#000000", HAIR_LUMA_BAND, MIN_HAIR_SKIN_DELTA);
 check("膚色極深時改往亮夾仍達標", dL(deepSkinSep, "#000000") >= MIN_HAIR_SKIN_DELTA && inBand(deepSkinSep, HAIR_LUMA_BAND), deepSkinSep);
 
-// 6f. 🔴 護欄:現有四個色池的**每一色**夾值後必須原樣返回。
+// 6f. 🔴 護欄:現有四個色池的**每一色**經 per-slot 夾值後必須原樣返回。
 // 這是本方案相對「vs 背景」方案的關鍵分野 —— 沒有它就無法證明沒把自家美術判違規。
+// ⚠️ 這幾條只驗 **per-slot 夾值**(只呼叫 clampLuma),**不經過髮膚 ΔL**。
+//    跨 slot 的 blast radius 由下面 6g 的「10 組」釘死,兩者不可互相取代。
 const guard = (name: string, pool: readonly string[], band: { lo: number; hi: number }) => {
   const bad = pool.filter((c) => clampLuma(c, band) !== c);
-  check(`護欄:${name} ${pool.length} 色夾值後全部原樣返回`, bad.length === 0, bad.join(","));
+  check(`護欄:${name} ${pool.length} 色 per-slot 夾值後原樣返回`, bad.length === 0, bad.join(","));
 };
 guard("HAIR_COLORS", HAIR_COLORS, HAIR_LUMA_BAND);
 guard("SHIRT_COLORS", SHIRT_COLORS, SHIRT_LUMA_BAND);
 guard("PANTS_COLORS", PANTS_COLORS, PANTS_LUMA_BAND);
+// ⚠️ 髮色寫死 #241f2c(L 0.0154)對 9 色膚色 ΔL 都遠超門檻,所以這條也**沒有觸發 ΔL 路徑**
 const skinBad = SKIN_TONES.filter((c) => sanitizeAppearanceColors({ hairColor: "#241f2c", shirt: "#5aa06a", pants: "#3d4257", skin: c }).skin !== c);
-check(`護欄:SKIN_TONES ${SKIN_TONES.length} 色 snap 後全部原樣返回`, skinBad.length === 0, skinBad.join(","));
+check(`護欄:SKIN_TONES ${SKIN_TONES.length} 色 snap 後原樣返回(未觸發 ΔL)`, skinBad.length === 0, skinBad.join(","));
 // 種子租客(SEED_APPEARANCES)的手繪配色也必須毫髮無傷 → ui:shot 才會 pixel 完全相同
 const seedAps = [
   { hairColor: "#3a3346", shirt: "#5f86b0", pants: "#464b63", skin: "#f0c19a" },
@@ -218,6 +221,65 @@ const seedAps = [
 ];
 const seedBad = seedAps.filter((a) => JSON.stringify(sanitizeAppearanceColors(a)) !== JSON.stringify(a));
 check("護欄:種子租客固定外觀消毒後不變", seedBad.length === 0, JSON.stringify(seedBad));
+
+// 6g. 🔴 釘死 ΔL 的 blast radius:自家 HAIR × SKIN 全交叉 8×9 = 72 組,恰好 10 組會被調整。
+// 這 10 組的**期望輸出**寫死在下表 —— 以後誰動亮度帶或膚色池,這個影響面就會被測試叫住,
+// 不會像現在這樣只靠日誌裡的一句話記錄。
+const DELTA_ADJUSTED: [hair: string, skin: string, expected: string][] = [
+  ["#4a3a2a", "#8d5524", "#32271d"],
+  ["#7a4530", "#8d5524", "#3d2318"],
+  ["#7a4530", "#a5673f", "#75422e"],
+  ["#b58a4a", "#b57a52", "#836436"],
+  ["#b58a4a", "#c68e6a", "#a17b42"],
+  ["#5a3020", "#8d5524", "#3f2217"],
+  ["#c8a050", "#d99a6c", "#b08d46"],
+  ["#c8a050", "#c68e6a", "#9c7d3e"],
+  ["#8a4a5a", "#8d5524", "#3e2128"],
+  ["#8a4a5a", "#a5673f", "#763f4d"],
+];
+const adjusted: string[] = [];
+const wrong: string[] = [];
+const expectedMap = new Map(DELTA_ADJUSTED.map(([h, s, e]) => [`${h}|${s}`, e]));
+for (const h of HAIR_COLORS) {
+  for (const s of SKIN_TONES) {
+    const out = sanitizeAppearanceColors({ hairColor: h, shirt: "#5aa06a", pants: "#3d4257", skin: s });
+    const exp = expectedMap.get(`${h}|${s}`);
+    if (out.hairColor !== h) adjusted.push(`${h}|${s}`);
+    if (exp === undefined && out.hairColor !== h) wrong.push(`未預期被調整 ${h}+${s} → ${out.hairColor}`);
+    if (exp !== undefined && out.hairColor !== exp) wrong.push(`${h}+${s} 期望 ${exp} 實得 ${out.hairColor}`);
+  }
+}
+check(
+  `ΔL blast radius 釘死:HAIR×SKIN ${HAIR_COLORS.length * SKIN_TONES.length} 組中恰 ${DELTA_ADJUSTED.length} 組被調整`,
+  adjusted.length === DELTA_ADJUSTED.length && wrong.length === 0,
+  `實得 ${adjusted.length} 組;${wrong.join(" / ")}`,
+);
+
+// 6h. 格式回退:第 2、3 道防線(makeRuntime / load)沒有 pickColor 擋在前面,
+// 而 importSave() 會吃玩家提供的任意 JSON。髒格式必須在消毒函式內部就被換掉,
+// 否則渲染層的 shade() 會 parseInt("") → NaN → 產生 #ffNaNNaN 這種無效 fillStyle。
+const isHex6 = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v);
+const dirtyColorCases: Record<string, unknown>[] = [
+  { hairColor: "red", shirt: "not-a-color", pants: "#GGGGGG", skin: "purple" },
+  { hairColor: "#fff", shirt: "#fff", pants: "#fff", skin: "#fff" }, // 三碼 hex 是合法 CSS,但渲染層吃不下
+  { hairColor: "", shirt: "#12345", pants: "#1234567", skin: "rgb(1,2,3)" },
+  { hairColor: null, shirt: undefined, pants: 12345, skin: { r: 1 } },
+];
+let dirtyOk = true;
+let dirtyDetail = "";
+for (const c of dirtyColorCases) {
+  const out = sanitizeAppearanceColors(c as any);
+  const allHex = isHex6(out.hairColor) && isHex6(out.shirt) && isHex6(out.pants) && isHex6(out.skin);
+  const bandOk = inBand(out.hairColor, HAIR_LUMA_BAND) && inBand(out.shirt, SHIRT_LUMA_BAND) && inBand(out.pants, PANTS_LUMA_BAND);
+  const skinOk = SKIN_TONES.includes(out.skin);
+  const sepOk2 = dL(out.hairColor, out.skin) >= MIN_HAIR_SKIN_DELTA;
+  const idem = JSON.stringify(sanitizeAppearanceColors(out)) === JSON.stringify(out);
+  if (!(allHex && bandOk && skinOk && sepOk2 && idem)) {
+    dirtyOk = false;
+    dirtyDetail = `${JSON.stringify(c)} → ${JSON.stringify(out)}`;
+  }
+}
+check(`髒格式色碼 ${dirtyColorCases.length} 組全部回退成合法池內色(且在帶內、冪等)`, dirtyOk, dirtyDetail);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

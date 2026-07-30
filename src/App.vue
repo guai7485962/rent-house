@@ -19,7 +19,10 @@ import FeedPanel from "./components/FeedPanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
-import { roomComfortBreakdown, comfortHints, COMFORT_LIMITS, COMFORT_BUCKET_LABELS } from "./sim/comfort";
+import {
+  roomComfortBreakdown, comfortHints, COMFORT_LIMITS, COMFORT_BUCKET_LABELS,
+  communalBreakdown, COMMUNAL_NEUTRAL,
+} from "./sim/comfort";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
 import { DIRECTIVES } from "./sim/directives";
@@ -508,6 +511,35 @@ const comfortParts = computed(() => {
   };
 });
 
+/**
+ * 🏢 公共空間拆解(**純呈現**:只把 sim 的 `communalBreakdown()` 攤開,不做任何舒適度數學)。
+ *
+ * 走的是與私人房完全分離的管道:共用區沒有租客也沒有 `rt.cleanliness`,分數 100% 由
+ * 家具擺放推導,所以這一列在四位租客的面板上都是同一個值——它描述的是「這棟樓的公共空間」。
+ * 預設收合,展開才顯示三區細項(390px 直式下四列全開會太長)。
+ */
+const communalOpen = ref(false);
+const communalParts = computed(() => {
+  const bd = communalBreakdown();
+  const vs = bd.quality - COMMUNAL_NEUTRAL;
+  return {
+    score: Math.round(bd.quality),
+    pct: Math.min(100, Math.max(0, bd.quality)),
+    neutral: Math.round(COMMUNAL_NEUTRAL),
+    vsText: `${vs >= 0 ? "+" : "−"}${Math.abs(Math.round(vs))}`,
+    vsColor: vs > 0.5 ? "var(--good)" : vs < -0.5 ? "var(--bad)" : "var(--text-dim)",
+    areas: bd.areas.map((a) => ({
+      id: a.id,
+      label: a.label,
+      score: Math.round(a.quality),
+      pct: Math.min(100, Math.max(0, a.quality)),
+      weightText: `權重 ${a.weight}`,
+      multText: `🧹×${a.cleanMult.toFixed(2)}`,
+      buckets: a.buckets.map((b) => ({ label: b.label, has: b.has })),
+    })),
+  };
+});
+
 /** 點數值名稱 → 一句話說明(8-5) */
 const STAT_HELP: Record<string, string> = {
   心情: "心情:短期情緒,會自然回到這個人的性格基準;戀愛/朋友會墊高基準。",
@@ -521,6 +553,7 @@ const STAT_HELP: Record<string, string> = {
   身心狀態: "身心狀態:把心情、壓力、精力與健康整理成一個閱讀用摘要；細項仍各自影響事件與生活。",
   房東信任: "房東信任:就是原本的好感，反映房客對你的信任，影響繳租與漲租接受度。",
   房間品質: "房間品質:沿用原本舒適度，受家具屬性、種類齊全、家具品質層級與整潔影響；生活機能另顯示作息設備是否完整。",
+  公共空間: "公共空間:交誼廳/浴室/洗衣間的佈置品質(加權 5:3:2),全樓共享。高於開場基準會「慢慢」墊高所有租客的心情與健康,低於基準則相反;與各自房間的舒適度分開計算、互不影響。",
 };
 function explainStat(key: string) {
   toast(STAT_HELP[key] ?? "", 4200);
@@ -775,6 +808,35 @@ function onChainResolve(choiceId: string) {
                 </template>
                 <template v-else>(未折損)</template>
               </span>
+            </div>
+          </div>
+          <!-- 🏢 公共空間:與私人房分開的獨立管道(全樓共享,不進上面的舒適度小計) -->
+          <div class="cbd cbd-communal">
+            <div class="cbd-row cbd-toggle" @click="communalOpen = !communalOpen">
+              <label @click.stop="explainStat('公共空間')">🏢 公共空間</label>
+              <div class="bar"><div class="cbd-comm" :style="{ width: communalParts.pct + '%' }"></div></div>
+              <span>{{ communalParts.score }}<i>{{ communalOpen ? " ▴" : " ▾" }}</i></span>
+            </div>
+            <div v-if="communalOpen" class="cbd-commbody">
+              <p class="cbd-commnote">
+                開場基準 {{ communalParts.neutral }} ·
+                目前 <b :style="{ color: communalParts.vsColor }">{{ communalParts.vsText }}</b> ·
+                全樓共享,與各自房間分開計算
+              </p>
+              <div v-for="a in communalParts.areas" :key="a.id" class="cbd-area">
+                <div class="cbd-row">
+                  <label>{{ a.label }}</label>
+                  <div class="bar"><div class="cbd-comm" :style="{ width: a.pct + '%' }"></div></div>
+                  <span>{{ a.score }}<i>/100</i></span>
+                </div>
+                <div class="cbd-buckets">
+                  <span class="cbucket cbmeta">{{ a.weightText }}</span>
+                  <span v-for="b in a.buckets" :key="b.label" class="cbucket" :class="{ miss: !b.has }">
+                    {{ b.has ? "✓" : "✗" }}{{ b.label }}
+                  </span>
+                  <span class="cbucket cbmeta">{{ a.multText }}</span>
+                </div>
+              </div>
             </div>
           </div>
           <div v-if="roomComfortHints.length" class="comfort-hints">
@@ -1080,6 +1142,16 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .cbd-clean strong { font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .cbd-calc { margin-left: auto; color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cbd-calc b { font-weight: 700; }
+
+/* 🏢 公共空間:沿用上面拆解列的形狀,只加寬標籤欄(「公共空間」比「家具屬性」多一個 emoji) */
+.cbd-communal { --cbar-label-w: 74px; --cbar-value-w: 46px; }
+.cbd-comm { height: 100%; border-radius: 4px; background: #67d391; transition: width 0.5s ease; }
+.cbd-toggle { cursor: pointer; }
+.cbd-toggle label { text-decoration: underline dotted rgba(255, 255, 255, 0.25); }
+.cbd-commbody { display: flex; flex-direction: column; gap: 6px; }
+.cbd-commnote { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--text-dim); }
+.cbd-area { display: flex; flex-direction: column; gap: 4px; }
+.cbucket.cbmeta { border-color: var(--line); color: var(--text-dim); background: rgba(255, 255, 255, 0.03); }
 
 .attrs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .attrs-title { font-size: 11px; color: var(--text-dim); }

@@ -49,7 +49,7 @@ import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
 import { placementFootprint, placementRotation } from "./placements";
-import { roomComfort, comfortBaselineDelta, cleanlinessBaseline } from "./comfort";
+import { roomComfort, comfortBaselineDelta, cleanlinessBaseline, communalQuality, communalBaselineDelta } from "./comfort";
 import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
 import { nextRotation } from "../furniture/rotation";
@@ -257,6 +257,12 @@ export function baselines(rt: TenantRuntime, comfort?: number): { mood: number; 
   const cdelta = comfortBaselineDelta(cft);
   mood += cdelta.mood;
   stress += cdelta.stress;
+  // 公共空間(交誼廳/浴室/洗衣間)品質:走 comfort.ts 的**獨立管道**再疊一層,
+  // 刻意不混進上面的 roomComfort——那個值同時是 cozyHomePass 的門檻,動它會位移慶祝日誌。
+  // 種子樓層 q 恰好等於 COMMUNAL_NEUTRAL → 三個 delta 皆 0,舊局/舊存檔數值完全不變。
+  const gdelta = communalBaselineDelta(communalQuality());
+  mood += gdelta.mood;
+  stress += gdelta.stress;
   return { mood: clamp(mood, 10, 90), stress: clamp(stress, 10, 90) };
 }
 
@@ -272,7 +278,7 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   s.affinity = clamp(s.affinity + clampDelta(d.affinity), 0, 100);
   s.energy = clamp(s.energy + clampDelta(d.energy), 0, 100);
   // wellbeing 也給極弱回歸(1%/h),避免黏死 100;舒適房把回歸錨點微微墊高、髒/簡陋房下修
-  const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing;
+  const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing + communalBaselineDelta(communalQuality()).wellbeing;
   s.wellbeing = clamp(s.wellbeing + (wbAnchor - s.wellbeing) * 0.01 + clampDelta(d.wellbeing), 0, 100);
   // 整潔慢變環境品質:朝「收納決定的自然水位」極慢回歸(生活會變髒/收納常保整潔),
   // 再吃本小時活動增量(煮飯/洗澡等)。收納家具墊高基準 = 減緩衰減,不逼玩家一直打掃。

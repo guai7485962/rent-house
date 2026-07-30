@@ -26,6 +26,8 @@ const { state, debugStepHour } = await import("../src/store");
 const {
   roomComfort, comfortBaselineDelta, cleanlinessBaseline, comfortHints, cleanlinessMultiplier,
   roomComfortBreakdown, COMFORT_LIMITS, COMFORT_BUCKET_LABELS,
+  communalAreaBreakdown, communalQuality, communalBaselineDelta,
+  COMMUNAL_LIMITS, COMMUNAL_AREA_IDS, COMMUNAL_NEUTRAL,
 } = await import("../src/sim/comfort");
 const { addPlacement } = await import("../src/sim/placements");
 const { baselines, cozyHomePass, resetCozyHomeCooldown } = await import("../src/sim/tick");
@@ -234,6 +236,54 @@ check(`品質部分不隨整潔改變(clean100 ${roomComfortBreakdown(tierProbe,
 // 既有語意不變:空房仍為 0(tier 加分是「逐件」的,沒家具就沒得加)
 check(`空房仍為 0、tierPart 也是 0(tier 不會憑空給底分)`,
   roomComfort("r_nonexistent_2", 100) === 0 && roomComfortBreakdown("r_nonexistent_2", 100).tierPart === 0);
+
+// --- 12. 共用區舒適度(細節見 communal-comfort-test.ts) ---
+// 這裡只補「與私人房對稱」的那幾條:同樣的加法恆等式、同樣的 ≤100 上限不變量、
+// 同樣的整潔乘子來源,以及最關鍵的「共用區走獨立管道、不影響 roomComfort」。
+// 本檔上面所有 addPlacement 都只動私人房(r301~r304 與探針房),沒碰過共用區三區。
+check(
+  `共用區的加法恆等式與私人房同形:quality =(屬性+齊全+品質)×整潔(${COMMUNAL_AREA_IDS.map((id) => `${id} ${communalAreaBreakdown(id).quality.toFixed(2)}`).join(" / ")})`,
+  COMMUNAL_AREA_IDS.every((id) => {
+    const a = communalAreaBreakdown(id);
+    return Math.abs(a.quality - (a.attrPart + a.categoryPart + a.tierPart) * a.cleanMult) < 1e-9;
+  }),
+);
+check(
+  "共用區也維持 attrMax + categoryMax + tierMax ≤ 100(自己那套不變量,clamp 永不生效)",
+  COMMUNAL_AREA_IDS.every(
+    (id) => COMMUNAL_LIMITS[id].attrMax + COMMUNAL_LIMITS[id].categoryMax + COMMUNAL_LIMITS[id].tierMax <= 100,
+  ),
+);
+check(
+  "共用區的整潔乘子就是 cleanlinessMultiplier(cleanlinessBaseline(區)) —— 零新狀態、不進存檔",
+  COMMUNAL_AREA_IDS.every((id) => {
+    const a = communalAreaBreakdown(id);
+    return a.cleanBase === cleanlinessBaseline(id) && a.cleanMult === cleanlinessMultiplier(a.cleanBase);
+  }),
+);
+// 私人房與共用區是兩套 bucket:共用區不該出現私人房的五類標籤(反之亦然)
+check(
+  "共用區用自己的 bucket 表,標籤與私人房五大類不重疊於「睡眠/娛樂/生活」",
+  COMMUNAL_AREA_IDS.every((id) =>
+    communalAreaBreakdown(id).buckets.every((b) => !["睡眠", "娛樂", "生活"].includes(b.label)),
+  ) && COMFORT_BUCKET_LABELS.includes("睡眠"),
+);
+// 🔴 獨立管道:動共用區不會改到任何私人房的 roomComfort(cozyHomePass 的門檻輸入)
+const rcBefore = (["r301", "r302", "r303", "r304"] as const).flatMap((r) =>
+  [0, 50, 83, 100].map((cl) => roomComfort(r, cl)),
+);
+addPlacement({ defId: "shared_sofa", room: "lounge", c: 24, r: 13 } as any);
+const rcAfter = (["r301", "r302", "r303", "r304"] as const).flatMap((r) =>
+  [0, 50, 83, 100].map((cl) => roomComfort(r, cl)),
+);
+check(
+  "往交誼廳加家具不改變任何私人房的 roomComfort(獨立管道,cozyHomePass 門檻不受影響)",
+  rcAfter.every((v, i) => v === rcBefore[i]),
+);
+check(
+  `但公共空間分數確實變了(${COMMUNAL_NEUTRAL.toFixed(3)} → ${communalQuality().toFixed(3)},delta.mood ${communalBaselineDelta(communalQuality()).mood.toFixed(3)})`,
+  communalQuality() > COMMUNAL_NEUTRAL && communalBaselineDelta(communalQuality()).mood > 0,
+);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

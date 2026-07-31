@@ -27,7 +27,7 @@ import { drawAppearanceOverlay } from "../pixel/parts";
 import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
-import { getPlacements } from "../sim/placements";
+import { getPlacements, placementInteract, placementFootprint } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
 import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 
@@ -366,10 +366,116 @@ function drawCookingCue(ctx: Ctx, a: Agent, pal: Palette) {
   rect(ctx, x - 1, y + 4, 3, 1, "#353943");
 }
 
-/** 桌前／電視前的單人座椅，先畫在角色背後，讓坐姿不會像蹲在地上。 */
+/** 活動椅造型:依身下家具種類分電競椅/辦公椅/矮凳,反查不到時回退原本的木椅。 */
+type ChairStyle = "gaming" | "office" | "stool" | "plain";
+
+/** 家具 sprite kind → 椅子造型。只有這三種 kind 會讓 tick.ts 給出 activitySurface="chair"。 */
+const CHAIR_STYLE_BY_KIND: Record<string, ChairStyle> = {
+  desk: "gaming", // 電競桌 → 電競椅
+  mic_desk: "office", // 直播設備台 → 一般辦公椅
+  tv: "stool", // 電視櫃/交誼廳電視 → 矮凳、軟座
+};
+
+/**
+ * 反查角色腳下這張活動椅是配哪一件家具(唯讀,不必在 Agent 上多存欄位)。
+ *
+ * `activitySurface === "chair"` 時 `activityTile` 是家具的**互動格**(catalog 的
+ * `interact` 偏移,電競桌/電視櫃是 `dr: 2`),或互動格被擋時退而求其次的外圈可走格,
+ * 所以 `furnitureAt(a.c, a.r)` 必定落空。實測初始擺設:tv_console 的座位落在家具
+ * **斜對角**、mic_desk 的座位離桌 **2 格**,連四鄰掃描都只命中 4 件中的 2 件;
+ * gaming_desk 的四鄰甚至會先撞到 single_bed。因此改成反向比對:
+ *   1. 互動格與角色所在格完全吻合 → 直接命中(mic_desk / lounge_tv 走這條)
+ *   2. 否則取 Chebyshev ≤ 2 內最近的一件(gaming_desk / tv_console 走這條;
+ *      也涵蓋 claimCrowdTarget 把人擠開一兩格的情形)
+ * 兩條都不中就回傳 "plain",畫回原本的棕色木椅,不拋錯也不會漏畫。
+ */
+function activityChairStyle(a: Agent): ChairStyle {
+  let best: ChairStyle = "plain";
+  let bestDist = Infinity;
+  for (const p of getPlacements()) {
+    const def = getDef(p.defId);
+    if (!("kind" in def.sprite)) continue;
+    const style = CHAIR_STYLE_BY_KIND[def.sprite.kind];
+    if (!style) continue;
+    const it = placementInteract(p);
+    if (it.c === a.c && it.r === a.r) return style;
+    const fp = placementFootprint(p);
+    const dx = Math.max(p.c - a.c, 0, a.c - (p.c + fp.w - 1));
+    const dy = Math.max(p.r - a.r, 0, a.r - (p.r + fp.h - 1));
+    const dist = Math.max(dx, dy);
+    if (dist <= 2 && dist < bestDist) {
+      bestDist = dist;
+      best = style;
+    }
+  }
+  return best;
+}
+
+/**
+ * 桌前／電視前的單人座椅,先畫在角色背後,讓坐姿不會像蹲在地上。
+ * 角色 sprite(11×14,畫在 +3/+1)會蓋掉椅子中央,所以三種造型的辨識度全靠
+ * **側緣輪廓 + 底座 + 色相**:電競椅有外露側翼與頭枕、辦公椅只有扶手、矮凳沒有椅背。
+ */
 function drawActivityChair(ctx: Ctx, a: Agent) {
   const x = a.px;
   const y = a.py;
+  switch (activityChairStyle(a)) {
+    case "gaming":
+      drawGamingChair(ctx, x, y);
+      break;
+    case "office":
+      drawOfficeChair(ctx, x, y);
+      break;
+    case "stool":
+      drawLoungeStool(ctx, x, y);
+      break;
+    default:
+      drawPlainChair(ctx, x, y);
+  }
+}
+
+/** 電競椅:高椅背過頭頂 + 外露包覆側翼 + 撞色紅 + 五爪底座。 */
+function drawGamingChair(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x + 3, y + 1, 10, 11, "#2c2f3d"); // 椅背主體
+  rect(ctx, x + 5, y, 6, 2, "#3a3e50"); // 頭枕:唯一高過頭頂的造型
+  rect(ctx, x + 6, y, 4, 1, "#b0453a");
+  rect(ctx, x + 1, y + 3, 2, 8, "#b0453a"); // 撞色側翼(包覆感;整片露在角色輪廓外)
+  rect(ctx, x + 13, y + 3, 2, 8, "#b0453a");
+  rect(ctx, x + 1, y + 3, 2, 1, "#8e372e"); // 側翼上緣壓深,做出前傾包覆的厚度
+  rect(ctx, x + 13, y + 3, 2, 1, "#8e372e");
+  rect(ctx, x + 2, y + 12, 12, 2, "#33374a"); // 椅座
+  rect(ctx, x + 7, y + 14, 2, 1, "#22242f"); // 氣壓中柱
+  rect(ctx, x + 3, y + 15, 10, 1, "#22242f"); // 五爪底座
+}
+
+/** 一般辦公椅:中高網布椅背 + 腰高扶手 + 單柱雙輪,灰藍色。 */
+function drawOfficeChair(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x + 3, y + 3, 10, 8, "#4c5364"); // 椅背外框(不過頭頂)
+  rect(ctx, x + 4, y + 4, 8, 6, "#5d6579"); // 網面
+  rect(ctx, x + 3, y + 5, 10, 1, "#6e7789"); // 網格橫紋(兩端露在角色外)
+  rect(ctx, x + 3, y + 8, 10, 1, "#6e7789");
+  rect(ctx, x + 1, y + 9, 2, 3, "#3b404e"); // 扶手
+  rect(ctx, x + 13, y + 9, 2, 3, "#3b404e");
+  rect(ctx, x + 2, y + 11, 12, 3, "#434a5a"); // 椅座
+  rect(ctx, x + 7, y + 14, 2, 1, "#2b2f3a"); // 單柱
+  rect(ctx, x + 4, y + 15, 2, 1, "#2b2f3a"); // 兩輪
+  rect(ctx, x + 10, y + 15, 2, 1, "#2b2f3a");
+}
+
+/** 交誼廳矮凳／軟座:完全沒有椅背,厚布面 + 外八木腳,橄欖綠與周圍暖木地板分開。 */
+function drawLoungeStool(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x + 3, y + 9, 10, 1, "#8d9a7c"); // 坐墊上緣亮面
+  rect(ctx, x + 2, y + 10, 12, 4, "#77836a"); // 厚布面
+  rect(ctx, x + 2, y + 11, 12, 1, "#8d9a7c"); // 布面壓線
+  rect(ctx, x + 3, y + 13, 10, 1, "#5d6653"); // 下緣陰影
+  rect(ctx, x + 2, y + 14, 2, 2, "#4a3d31"); // 外八木腳
+  rect(ctx, x + 12, y + 14, 2, 2, "#4a3d31");
+  rect(ctx, x + 5, y + 14, 1, 2, "#3c3128");
+  rect(ctx, x + 10, y + 14, 1, 2, "#3c3128");
+}
+
+/** 反查不到家具時的回退造型:維持本批之前的棕色木椅,像素完全不變。 */
+function drawPlainChair(ctx: Ctx, x: number, y: number) {
   rect(ctx, x + 3, y + 4, 10, 7, "#5b4636");
   rect(ctx, x + 4, y + 5, 8, 2, "#8a6444");
   rect(ctx, x + 2, y + 11, 12, 3, "#6d5236");

@@ -3,8 +3,6 @@
   "source_root": "../input_image/limezu-modern-interiors/extracted/modern-interiors/1_Interiors/16x16",
   "furniture_atlas": { "file": "public/assets/limezu/furniture.png", "width": 128, "height": 128 },
   "furniture": {
-    "tv_console": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_107.png", "crop": [0, 0, 32, 40], "atlas": [0, 0] },
-    "lounge_tv": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_113.png", "crop": [0, 0, 32, 40], "atlas": [32, 0] },
     "wardrobe": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_536.png", "crop": [0, 8, 16, 40], "atlas": [64, 0] },
     "fridge": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_160.png", "crop": [0, 7, 16, 36], "atlas": [80, 0] },
     "floor_lamp": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_83.png", "crop": [0, 8, 15, 33], "atlas": [96, 0] },
@@ -21,10 +19,7 @@
     "dresser": { "source": "Theme_Sorter_Singles/4_Bedroom_Singles/Bedroom_Singles_429.png", "crop": [1, 8, 15, 18], "atlas": [59, 70] },
     "counter": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_121.png", "crop": [2, 6, 29, 14], "atlas": [74, 70] },
     "bath_plant": { "source": "Theme_Sorter_Singles/2_Living_Room_Singles/Living_Room_Singles_15.png", "crop": [2, 6, 12, 14], "atlas": [103, 70] },
-    "shared_sofa": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [96, 176, 48, 26], "atlas": [0, 96] },
-    "loveseat": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [1, 254, 30, 18], "atlas": [48, 96] },
     "lounge_plant": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [240, 457, 16, 31], "atlas": [78, 96] },
-    "wood_chair": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [49, 186, 14, 22], "atlas": [94, 96] },
     "coffee_table": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [81, 81, 14, 14], "atlas": [108, 96] }
   },
   "wall_atlas": { "file": "public/assets/limezu/walls.png", "width": 64, "height": 48 },
@@ -54,6 +49,14 @@
     "lounge": { "row": 4, "cells": [[0, 20], [1, 20], [2, 20]] },
     "bathroom": { "row": 5, "cells": [[8, 31], [9, 31], [10, 31]] },
     "laundry": { "row": 6, "cells": [[12, 33], [13, 33], [14, 33]] }
+  },
+  "$replaced_comment": "以下 5 件曾在本清單中,但已被 src/furniture/render.ts 的專屬程序美術完全取代,且早就不在 src/art/limezu.ts 的 LIMEZU_FURNITURE_IDS runtime 白名單內。2026-07-31 從 furniture 區塊刪除,連同 atlas 上的死像素一併移除;其餘 18 個 frame 的 atlas 座標刻意維持不變,故 limezu.ts 與 limezu-art-test.ts 零改動。要復原請回查 git 歷史,不要直接重加(會與程序美術重複)。",
+  "replaced_by_procedural": {
+    "tv_console": "改用 render.ts 專屬程序圖(薄螢幕 + 白色直立主機 + 控制器);原 crop [0,0,32,40] @atlas [0,0]",
+    "lounge_tv": "改用 render.ts 專屬程序圖(滿版螢幕 + 聲霸 + 遙控器);原 crop [0,0,32,40] @atlas [32,0]",
+    "shared_sofa": "改用 render.ts 專屬程序圖(藍綠三座 + 暖色抱枕);原 crop [96,176,48,26] @atlas [0,96]",
+    "loveseat": "改用 render.ts 專屬程序圖(酒紅雙座 + 雙色抱枕);原 crop [1,254,30,18] @atlas [48,96]",
+    "wood_chair": "改用 render.ts 專屬程序圖(鏤空直條椅背);原 crop [49,186,14,22] @atlas [94,96]"
   },
   "skipped": {
     "double_bed": "Bedroom Singles 無橫向雙人床(Bd226/250/235 直向 2x3、125-130 雙層床側視);Generic 表唯一橫向床為 (60,253) 四柱床 61x62,寬 61 > footprint 3 格上限 52 且床架鏤空,其餘皆直向,保留程序繪圖",

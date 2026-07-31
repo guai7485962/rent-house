@@ -27,7 +27,7 @@ import { drawAppearanceOverlay } from "../pixel/parts";
 import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
-import { getPlacements, placementInteract, placementFootprint } from "../sim/placements";
+import { getPlacements, placementInteract, placementFootprint, placements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
 import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 
@@ -376,6 +376,9 @@ const CHAIR_STYLE_BY_KIND: Record<string, ChairStyle> = {
   tv: "stool", // 電視櫃/交誼廳電視 → 矮凳、軟座
 };
 
+/** 距離分支的搜尋半徑(Chebyshev)。放大只會擴大誤吸面積,不會提高正確率,理由見下方註解。 */
+const CHAIR_LOOKUP_RADIUS = 1;
+
 /**
  * 反查角色腳下這張活動椅是配哪一件家具(唯讀,不必在 Agent 上多存欄位)。
  *
@@ -384,12 +387,25 @@ const CHAIR_STYLE_BY_KIND: Record<string, ChairStyle> = {
  * 所以 `furnitureAt(a.c, a.r)` 必定落空。實測初始擺設:tv_console 的座位落在家具
  * **斜對角**、mic_desk 的座位離桌 **2 格**,連四鄰掃描都只命中 4 件中的 2 件;
  * gaming_desk 的四鄰甚至會先撞到 single_bed。因此改成反向比對:
- *   1. 互動格與角色所在格完全吻合 → 直接命中(mic_desk / lounge_tv 走這條)
- *   2. 否則取 Chebyshev ≤ 2 內最近的一件(gaming_desk / tv_console 走這條;
- *      也涵蓋 claimCrowdTarget 把人擠開一兩格的情形)
+ *   1. 互動格與角色所在格完全吻合 → 直接命中(mic_desk / lounge_tv 走這條;
+ *      注意 mic_desk 這條的幾何距離是 2,所以「互動格吻合」無法用距離推導出來,
+ *      必須當成獨立且更高優先的訊號)
+ *   2. 否則取 Chebyshev ≤ CHAIR_LOOKUP_RADIUS(=1)內最近的一件(gaming_desk / tv_console)
  * 兩條都不中就回傳 "plain",畫回原本的棕色木椅,不拋錯也不會漏畫。
+ *
+ * ⚠️ **半徑刻意是 1,不要放大**。實際四個座位全是「互動格吻合」或 dist=1,沒有一個需要 2;
+ * 而放到 2 會讓 r301 的兩件家具互相誤吸:gaming_desk 的使用者若停在 row 4
+ * (互動格 (4,3) 被佔、snap 失敗時會發生),到桌子 dy=3 出圈、到 tv_console dy=2 入圈,
+ * 於是**電競位被畫成矮凳**;反向 tv_console 的使用者停在 row 3 則會被畫成電競椅。
+ * 半徑 1 時兩者的涵蓋區完全不重疊。至於 claimCrowdTarget(`agents.ts:219-240`)
+ * 最遠會推到 **Manhattan 半徑 4**,本來就不是半徑 2 蓋得住的;被擠開的人
+ * **應該**安全回退成木椅,而不是用更大的半徑去猜一個可能錯的造型。
+ *
+ * ⚠️ **這是純幾何啟發式,完全不看牆與房間邊界**。靠牆擺放時可能隔牆吸到隔壁房的家具
+ * (例如 r301↔r302 之間的走道/牆帶同時落在兩房家具的半徑內);半徑收到 1 之後
+ * 風險大降但未消失。真正的解法是由上游直傳 defId,見第五節技術債。
  */
-function activityChairStyle(a: Agent): ChairStyle {
+function computeChairStyle(c: number, r: number): ChairStyle {
   let best: ChairStyle = "plain";
   let bestDist = Infinity;
   for (const p of getPlacements()) {
@@ -398,17 +414,49 @@ function activityChairStyle(a: Agent): ChairStyle {
     const style = CHAIR_STYLE_BY_KIND[def.sprite.kind];
     if (!style) continue;
     const it = placementInteract(p);
-    if (it.c === a.c && it.r === a.r) return style;
+    if (it.c === c && it.r === r) return style;
     const fp = placementFootprint(p);
-    const dx = Math.max(p.c - a.c, 0, a.c - (p.c + fp.w - 1));
-    const dy = Math.max(p.r - a.r, 0, a.r - (p.r + fp.h - 1));
+    const dx = Math.max(p.c - c, 0, c - (p.c + fp.w - 1));
+    const dy = Math.max(p.r - r, 0, r - (p.r + fp.h - 1));
     const dist = Math.max(dx, dy);
-    if (dist <= 2 && dist < bestDist) {
+    if (dist <= CHAIR_LOOKUP_RADIUS && dist < bestDist) {
       bestDist = dist;
       best = style;
     }
   }
   return best;
+}
+
+/**
+ * 以格座標記憶上面的掃描結果,家具一變(placements.version)就整份作廢。
+ *
+ * 沒有記憶時是「每幀 × 每個坐姿角色」各跑一次全表掃描(約 35 件 placements),
+ * 每件都要 getDef + placementInteract + placementFootprint,後兩者各配置一個新物件。
+ * 快取鍵是格座標而非 tenantId:同一格的答案與是誰坐在上面無關,租客換人也能命中。
+ *
+ * 為什麼不改用「找到就提前 break」:因為**優先序不是單調的**——「互動格吻合」的優先度
+ * 高於任何距離命中,但它的幾何距離可能是 2(mic_desk 就是),所以在單趟掃描裡
+ * 一旦因為距離命中就 break,會漏掉排在後面、其實該優先採用的互動格吻合項,答案會變。
+ * (而 `dist === 0` 這個看似安全的提前退出對本情境是死碼:家具佔位格是 blocked,
+ * 走「chair」分支的角色永遠站在家具**外面**的可走格,dist 不可能是 0。)
+ * `placements.version` 是可靠的作廢訊號:新增/移除/紀念物移除/讀檔都會 ++,
+ * 移動家具走的是 removePlacementAt + addPlacement 也會 ++;`pathfind.ts:41`
+ * 早就用同一個版本號快取障礙格,沿用同一套機制。
+ */
+let chairStyleCache: Map<string, ChairStyle> | null = null;
+let chairStyleCacheVersion = -1;
+
+function activityChairStyle(a: Agent): ChairStyle {
+  if (chairStyleCache === null || chairStyleCacheVersion !== placements.version) {
+    chairStyleCache = new Map();
+    chairStyleCacheVersion = placements.version;
+  }
+  const key = `${a.c},${a.r}`;
+  const cached = chairStyleCache.get(key);
+  if (cached !== undefined) return cached;
+  const style = computeChairStyle(a.c, a.r);
+  chairStyleCache.set(key, style);
+  return style;
 }
 
 /**

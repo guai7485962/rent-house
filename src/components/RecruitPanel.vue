@@ -6,6 +6,7 @@ import { requestInvite, sanitizeInvited, looksMinor, type InvitedPetChoice } fro
 import { moveIn, getApplicants } from "../store";
 import { relistApplicants, RELIST_COST } from "../sim/tenancy";
 import { petAttitude } from "../sim/pets";
+import { compatibilityDetail } from "../sim/social";
 import { state } from "../sim/gameState";
 import type { Gender, PetKind } from "../types";
 
@@ -23,6 +24,21 @@ function petNote(a: Applicant): string {
     if (kind === "dog") return attitude === "like" ? "🐕 親狗" : "😰 怕狗/潔癖";
     return attitude === "like" ? "🐈 親貓" : "🙀 怕貓/潔癖";
   }).filter(Boolean).join(" · ");
+}
+
+/** 與現住者逐一比對，完全由 coreTags 決定，不重抽應徵者或消耗 RNG。 */
+function socialRisk(a: Applicant): { cls: string; text: string } {
+  const residents = Object.values(state.runtimes);
+  if (residents.length === 0) return { cls: "ok", text: "✅ 第一位住戶，暫無相處風險" };
+  const risks = residents
+    .map((rt) => ({ rt, detail: compatibilityDetail(a, rt.tenant) }))
+    .sort((x, y) => x.detail.score - y.detail.score || x.rt.tenant.name.localeCompare(y.rt.tenant.name));
+  const worst = risks[0];
+  if (worst.detail.score <= -3) {
+    return { cls: "warn", text: `⚡ 高摩擦風險｜${worst.rt.tenant.name}：${worst.detail.conflicts[0] ?? "生活習慣不合"}` };
+  }
+  if (worst.detail.score < 0) return { cls: "mid", text: `⚡ 可能和 ${worst.rt.tenant.name} 磨合：${worst.detail.conflicts[0] ?? "生活習慣略有不同"}` };
+  return { cls: "ok", text: "✅ 與現有房客相處風險低" };
 }
 
 const props = defineProps<{ roomId: string }>();
@@ -135,6 +151,7 @@ function stars(n: number) {
             <span v-for="t in a.coreTags" :key="t.id" class="tag">{{ t.label }}</span>
             <span class="rent">月租 ${{ a.monthlyRent.toLocaleString() }}</span>
           </div>
+          <p class="social-risk" :class="socialRisk(a).cls">{{ socialRisk(a).text }}</p>
           <button class="accept" @click="accept(a)">讓 {{ a.name }} 入住</button>
         </div>
 
@@ -211,6 +228,9 @@ function stars(n: number) {
 .row2 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--accent-2); color: #c9befc; }
 .rent { margin-left: auto; font-size: 12px; color: var(--accent); }
+.social-risk { margin: -2px 0 8px; padding: 5px 7px; border-radius: 7px; font-size: 11px; line-height: 1.45; background: rgba(127,198,168,0.08); color: #9ddfc4; }
+.social-risk.mid { background: rgba(227,163,77,0.08); color: #e8c487; }
+.social-risk.warn { background: rgba(232,101,122,0.09); color: #ffadba; }
 .accept { width: 100%; background: linear-gradient(135deg, var(--accent-2), #7059d6); color: #fff; font-weight: 700; font-size: 13.5px; border-radius: 8px; padding: 9px 0; }
 
 .invite { margin-top: 2px; }

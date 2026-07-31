@@ -10,7 +10,7 @@
  */
 import type { GroupChoice, GroupEvent, GroupDelta } from "../types";
 import { state, addFlag, clamp, notify, pushSocialLog, type TenantRuntime } from "./gameState";
-import { adjustRelationship, getRel } from "./social";
+import { adjustGroupBond, adjustRelationship as adjustRelationshipBase, adjustTension, getRel } from "./social";
 import { clearNoiseMemories } from "./memoryEffects";
 import { addMoney } from "./economy";
 import { getPlacements, placementInteract, roomRect } from "./placements";
@@ -26,6 +26,12 @@ import { unlock } from "./legacy";
 import { startGroupScene, type GroupSceneLayout, type GroupSceneVenue } from "../floor/groupScene";
 
 type Rng = () => number;
+
+/** 雙人社群事件同步維護好感與積怨；正向合作會降溫，口角會留下心結。 */
+function adjustRelationship(aId: string, bId: string, delta: number) {
+  adjustRelationshipBase(aId, bId, delta);
+  adjustTension(aId, bId, delta < 0 ? Math.abs(delta) * 3 : -Math.max(1, delta));
+}
 
 function shuffle<T>(arr: T[], rng: Rng): T[] {
   const a = [...arr];
@@ -356,7 +362,7 @@ function pendingFridgePair(present: TenantRuntime[]): [TenantRuntime, TenantRunt
 /** 對一組人兩兩調整關係 */
 function bondAll(parts: TenantRuntime[], delta: number) {
   for (let i = 0; i < parts.length; i++)
-    for (let j = i + 1; j < parts.length; j++) adjustRelationship(parts[i].tenant.id, parts[j].tenant.id, delta);
+    for (let j = i + 1; j < parts.length; j++) adjustGroupBond(parts[i].tenant, parts[j].tenant, delta);
 }
 
 function bumpMood(rt: TenantRuntime, mood: number, stress: number) {
@@ -856,6 +862,10 @@ export function resolveGroupEvent(choiceId: string): boolean {
     rt.unhappyHours = 0;
   });
   if (choice.bond) bondAll(parts, choice.bond);
+  if (ev.id === "noise_verdict" && parts.length >= 2) {
+    const tensionDelta = choice.id === "soundproof" ? -15 : choice.id === "warn" ? 5 : 8;
+    for (let i = 1; i < parts.length; i++) adjustTension(parts[0].tenant.id, parts[i].tenant.id, tensionDelta);
+  }
   if (choice.clearsNoise) for (const rt of parts) clearNoiseMemories(rt.tenant); // 隔音選項:清掉噪音困擾記憶
   if ((choice.installsSoundproofing || (ev.id === "noise_verdict" && choice.id === "soundproof")) && parts[0]) {
     grantEventSoundproofing(parts[0].tenant.id); // 永久入 upgrades 存檔，不再只是清掉當下抱怨

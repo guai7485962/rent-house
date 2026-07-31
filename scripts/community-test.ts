@@ -27,6 +27,7 @@ const { generateApplicants } = await import("../src/sim/recruit");
 const { moveIn } = await import("../src/sim/tenancy");
 const { save, load } = await import("../src/sim/persistence");
 const { state } = await import("../src/store");
+const { socialPass } = await import("../src/sim/tick");
 
 let pass = 0;
 let fail = 0;
@@ -175,6 +176,30 @@ check("群體事件:rest 對其餘(滿意 +4)", p1.satisfaction === 54);
 check("群體事件:bond 兩兩關係上升", getRel(p1.tenant.id, p2.tenant.id)!.value > relB);
 check("resolveGroupEvent:無待決時回 false", resolveGroupEvent("go") === false);
 
+// 噪音裁決三種房東選擇，對「當事人 vs 抱怨者」積怨要有不同後果。
+function noiseChoiceTensions(choiceId: "warn" | "soundproof" | "tolerate"): number[] {
+  clearGroup();
+  for (const other of [p1, p2]) {
+    relationships[pairKey(p0.tenant.id, other.tenant.id)] = {
+      value: 20, tension: 50, lastConflictGameMs: 0, romantic: false, cohabitOffered: false,
+    };
+  }
+  state.pendingGroupEvent = {
+    id: "noise_verdict", title: "噪音裁決測試", description: "",
+    participantIds: [p0.tenant.id, p1.tenant.id, p2.tenant.id],
+    choices: [
+      { id: "warn", label: "警告", hint: "" },
+      { id: "soundproof", label: "隔音", hint: "", installsSoundproofing: true },
+      { id: "tolerate", label: "包容", hint: "" },
+    ],
+  };
+  resolveGroupEvent(choiceId);
+  return [p1, p2].map((other) => getRel(p0.tenant.id, other.tenant.id)!.tension);
+}
+check("噪音裁決:做隔音讓積怨明顯下降", noiseChoiceTensions("soundproof").every((v) => v === 35));
+check("噪音裁決:公開警告使當事人留下心結", noiseChoiceTensions("warn").every((v) => v === 55));
+check("噪音裁決:只叫大家包容最容易累積不滿", noiseChoiceTensions("tolerate").every((v) => v === 58));
+
 // 冷卻:剛解算過 → rollGroupEvent 在 3 日內不再觸發
 check("群體事件:剛解算後 3 日冷卻內不觸發", rollGroupEvent(rts, Math.random) === false);
 
@@ -230,6 +255,32 @@ for (let i = 0; i < 60 && !sawPartyOnWeekend; i++) {
   if (rollGroupEvent(partyPresent, Math.random) && state.pendingGroupEvent?.id === "floor_party") sawPartyOnWeekend = true;
 }
 check("floor_party:週末可被 rollGroupEvent 選中", sawPartyOnWeekend);
+
+// 自然社交全樓每日最多兩場明顯衝突，隔天固定重置同一組 key，不無限堆積。
+const capRts = Object.values(state.runtimes).slice(0, 3);
+capRts.forEach((rt) => { rt.inLounge = true; rt.pendingEvent = null; rt.tenant.stats.stress = 20; rt.log.splice(0); });
+capRts[0].tenant.coreTags = [mkTag("noisy"), mkTag("night_owl")];
+capRts[1].tenant.coreTags = [mkTag("sound_sensitive"), mkTag("early_bird")];
+capRts[2].tenant.coreTags = [mkTag("busybody")];
+for (let i = 0; i < capRts.length; i++) for (let j = i + 1; j < capRts.length; j++) {
+  relationships[pairKey(capRts[i].tenant.id, capRts[j].tenant.id)] = {
+    value: 0, tension: 0, lastConflictGameMs: 0, romantic: false, cohabitOffered: false,
+  };
+}
+delete state.interactionCooldowns.social_conflicts_day_index;
+delete state.interactionCooldowns.social_conflicts_day_count;
+const savedRandom = Math.random;
+Math.random = () => 0;
+socialPass();
+Math.random = savedRandom;
+let tensePairs = 0;
+for (let i = 0; i < capRts.length; i++) for (let j = i + 1; j < capRts.length; j++) {
+  if ((getRel(capRts[i].tenant.id, capRts[j].tenant.id)?.tension ?? 0) > 0) tensePairs++;
+}
+check("自然社交:全樓一天最多兩場衝突", state.interactionCooldowns.social_conflicts_day_count === 2 && tensePairs === 2,
+  `count=${state.interactionCooldowns.social_conflicts_day_count}, tensePairs=${tensePairs}`);
+const keyCount = Object.keys(state.interactionCooldowns).filter((k) => k.startsWith("social_conflicts_day")).length;
+check("自然社交:節流只使用固定兩個存檔 key，不會每日堆積", keyCount === 2, `keys=${keyCount}`);
 clearGroup();
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

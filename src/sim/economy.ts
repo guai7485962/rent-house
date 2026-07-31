@@ -4,7 +4,7 @@
  * 家具的買/擺/移/賣(含 8-2 預覽判定 canDropAt)。
  */
 import { getDef } from "../furniture/catalog";
-import { addPlacement, removePlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements, placementRotation } from "./placements";
+import { addPlacement, removePlacementAt, removeMemorialPlacementAt, findFreeSlot, canPlaceFree, furnitureAt, getPlacements, placementRotation } from "./placements";
 import { nextRotation, rotatedFootprint } from "../furniture/rotation";
 import { getUpgradeDef, roomUpgradeIds, upgradeState } from "./upgrades";
 import { state, clamp, fmt, gameDayIndex, notify, pushMemory, pushSocialLog, LOG_CAP, LEDGER_CAP, type TenantRuntime, type TxnCategory } from "./gameState";
@@ -394,4 +394,15 @@ export function sellFurnitureAt(c: number, r: number): { ok: boolean; refund?: n
   addMoney(refund, `賣出 ${def.name}`, "furniture");
   save();
   return { ok: true, refund };
+}
+
+/**
+ * 收起畢業紀念物：獨立於販售入口，0 退款，只移除房內展示。
+ * 歷任房客、告別信與成就不在 placements，完全不會被這個操作抹除。
+ */
+export function removeMemorialAt(c: number, r: number): { ok: boolean; reason?: string } {
+  const removed = removeMemorialPlacementAt(c, r);
+  if (!removed) return { ok: false, reason: "這不是可收起的畢業紀念物" };
+  save();
+  return { ok: true };
 }

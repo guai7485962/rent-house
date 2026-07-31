@@ -65,6 +65,21 @@ export function removePlacementAt(c: number, r: number): Placement | null {
   return removed;
 }
 
+/** 只移除命中格上的紀念物；不會誤刪同格或跨格覆蓋的一般家具。 */
+export function removeMemorialPlacementAt(c: number, r: number): Placement | null {
+  let idx = -1;
+  for (let i = placements.list.length - 1; i >= 0; i--) {
+    const p = placements.list[i];
+    if (!p.memorial) continue;
+    const fp = placementFootprint(p);
+    if (c >= p.c && c < p.c + fp.w && r >= p.r && r < p.r + fp.h) { idx = i; break; }
+  }
+  if (idx < 0) return null;
+  const [removed] = placements.list.splice(idx, 1);
+  placements.version++;
+  return removed;
+}
+
 /** 某房間由家具累積出的屬性總和(疊加一次性升級改建的永久加成) */
 export function roomAttributes(roomId: string): Partial<Record<RoomAttribute, number>> {
   const totals: Partial<Record<RoomAttribute, number>> = { ...upgradeAttributes(roomId) };

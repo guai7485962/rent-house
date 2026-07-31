@@ -50,7 +50,13 @@ const A = state.runtimes["tenant_chen_engineer"];
 const B = state.runtimes["tenant_lin_asmr"];
 A.targetTile = { c: 7, r: 10 };
 B.targetTile = { c: 7, r: 11 };
-relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 5, romantic: false, cohabitOffered: false };
+relationships[pairKey(A.tenant.id, B.tenant.id)] = {
+  value: 5,
+  tension: 80,
+  lastConflictGameMs: 0,
+  romantic: false,
+  cohabitOffered: false,
+};
 A.tenant.stats.stress = 95;
 B.tenant.stats.stress = 95;
 // compatibility ≤ -3 需要「吵 vs 安靜」:gamer vs perfectionist(見 social.compatibility)
@@ -70,7 +76,13 @@ legacyPass();
 check("四房住滿 → full_house", state.achievements.includes("full_house"));
 
 // 初戀輪詢:給一對 romantic 關係
-relationships[pairKey(A.tenant.id, B.tenant.id)] = { value: 90, romantic: true, cohabitOffered: false };
+relationships[pairKey(A.tenant.id, B.tenant.id)] = {
+  value: 90,
+  tension: 0,
+  lastConflictGameMs: 0,
+  romantic: true,
+  cohabitOffered: false,
+};
 state.achievements.splice(state.achievements.indexOf("first_love"), 1); // 移掉事件型解的,測輪詢也能補
 legacyPass();
 check("有戀愛關係 → 輪詢補 first_love", state.achievements.includes("first_love"));

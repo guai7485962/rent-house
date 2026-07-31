@@ -45,6 +45,7 @@ export {
   rotatePendingFurniture,
   canDropAt,
   sellFurnitureAt,
+  removeMemorialAt,
 } from "./sim/economy";
 
 export {

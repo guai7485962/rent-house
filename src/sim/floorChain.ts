@@ -20,7 +20,7 @@
  */
 import type { ChainEvent, FloorChainEntry, GroupChoice, GroupDelta } from "../types";
 import { state, addFlag, clamp, gameDayIndex, notify, pushSocialLog, type TenantRuntime } from "./gameState";
-import { adjustRelationship } from "./social";
+import { adjustGroupBond } from "./social";
 import { addMoney } from "./economy";
 import { save } from "./persistence";
 import { spawnFx } from "../floor/fx";
@@ -293,7 +293,7 @@ function applyChainDelta(rt: TenantRuntime, d?: GroupDelta) {
 
 function bondAll(parts: TenantRuntime[], delta: number) {
   for (let i = 0; i < parts.length; i++)
-    for (let j = i + 1; j < parts.length; j++) adjustRelationship(parts[i].tenant.id, parts[j].tenant.id, delta);
+    for (let j = i + 1; j < parts.length; j++) adjustGroupBond(parts[i].tenant, parts[j].tenant, delta);
 }
 
 /** 交誼廳大廳中央掛一個特效;現實時間與遊戲時間雙重過期,快轉不會殘留 */

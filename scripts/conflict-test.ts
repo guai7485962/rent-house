@@ -53,8 +53,8 @@ const tag = (id: string): CoreTag => ({ id, label: id, behaviorHint: "" });
 A.tenant.coreTags = [tag("noisy"), tag("gamer"), tag("early_bird")];
 B.tenant.coreTags = [tag("sound_sensitive"), tag("night_owl")];
 
-function setup(rel = 10, stressA = 90, stressB = 90) {
-  relationships[k] = { value: rel, romantic: false, cohabitOffered: false };
+function setup(rel = 10, stressA = 90, stressB = 90, tension = 80) {
+  relationships[k] = { value: rel, tension, lastConflictGameMs: 0, romantic: false, cohabitOffered: false };
   A.tenant.stats.stress = stressA;
   B.tenant.stats.stress = stressB;
   A.targetTile = { c: 7, r: 10 }; // 無頭初始沒定位,給 fx/session 一個錨點
@@ -72,6 +72,8 @@ setup(30);
 check("關係 30 → 不打", !tryFight(A, B, () => 0));
 setup(10, 70, 90);
 check("一方壓力 70 → 不打", !tryFight(A, B, () => 0));
+setup(10, 90, 90, 69);
+check("積怨未達 70 → 不打", !tryFight(A, B, () => 0));
 setup(10, 90, 90);
 state.feuds[k] = { untilMs: state.gameMs + MS_PER_GAME_HOUR };
 check("已在冷戰 → 不打(眼不見為淨)", !tryFight(A, B, () => 0));
@@ -100,9 +102,11 @@ check("通知有發", state.noticeLog.some((n) => n.text.includes("大打出手"
 
 // --- 房東抉擇:調解 → 冷戰解除 + 關係回補 ---
 const relBefore = getRel(A.tenant.id, B.tenant.id)!.value;
+const tensionBefore = getRel(A.tenant.id, B.tenant.id)!.tension;
 decide(A.tenant.id, "mediate", "☕ 出面調解,讓兩人把話說開");
 check("調解:冷戰解除", !feudActive(A.tenant.id, B.tenant.id));
 check("調解:關係回補", getRel(A.tenant.id, B.tenant.id)!.value > relBefore);
+check("調解:積怨精確降低 30", getRel(A.tenant.id, B.tenant.id)!.tension === Math.max(0, tensionBefore - 30));
 check("調解:[冷戰中]記憶移除", !A.tenant.memoryTags.some((m) => m.label === "[冷戰中]"));
 check("調解:留下[房東調解]記憶", A.tenant.memoryTags.some((m) => m.label === "[房東調解]"));
 
@@ -111,10 +115,12 @@ setup();
 tryFight(A, B, () => 0);
 const affA = A.tenant.stats.affinity;
 const affB = B.tenant.stats.affinity;
+const warnTension = getRel(A.tenant.id, B.tenant.id)!.tension;
 decide(A.tenant.id, "warn_one", "⚠️ 只警告動手較兇的一方");
 check("警告:被警告方好感↓", A.tenant.stats.affinity < affA);
 check("警告:另一方好感↑", B.tenant.stats.affinity > affB);
 check("警告:冷戰仍在", feudActive(A.tenant.id, B.tenant.id));
+check("警告:偏袒不會讓積怨降溫", getRel(A.tenant.id, B.tenant.id)!.tension >= warnTension);
 
 // --- 冷戰行為 ---
 check("冷戰中互動全擋(canInteract)", INTERACTIONS.every((d) => !canInteract(d, A.tenant, B.tenant, { hour: 22, thirdPresent: false, adultMode: true, cohabiting: true, furniture: new Set(["double_bed", "tv_console", "shared_sofa", "lounge_tv"]) })));
@@ -135,6 +141,9 @@ check("期滿:[冷戰中]記憶移除", !B.tenant.memoryTags.some((m) => m.label
 check("期滿:降溫日誌", A.log.some((e) => e.text.includes("冷戰慢慢降溫")));
 
 // --- 大吵升級冷戰(maybeFeudAfterConflict)---
+setup(10, 90, 90, 5);
+startFeud(A, B, true, false);
+check("任何既有冷戰入口都會把積怨拉到冷戰門檻", getRel(A.tenant.id, B.tenant.id)!.tension >= 70);
 setup(10);
 maybeFeudAfterConflict(A, B, () => 0);
 check("低關係+相容差+大吵 → 升級冷戰", feudActive(A.tenant.id, B.tenant.id));
@@ -146,10 +155,13 @@ check("關係 50 → 吵完就過,不冷戰", !feudActive(A.tenant.id, B.tenant.
 
 // --- 存檔往返 ---
 startFeud(A, B, true);
+const savedTension = getRel(A.tenant.id, B.tenant.id)!.tension;
 save();
 delete state.feuds[k];
+relationships[k].tension = 0;
 check("讀檔成功", load());
 check("讀檔後冷戰仍在", !!state.feuds[k]);
+check("完整存檔往返保留積怨", getRel(A.tenant.id, B.tenant.id)!.tension === savedTension);
 endFeud(A.tenant.id, B.tenant.id, "expired");
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

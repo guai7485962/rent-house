@@ -8,6 +8,10 @@ import type { Gender, Tenant } from "../types";
 
 export interface Relationship {
   value: number; // 0~100 熟悉度/好感
+  /** 近期累積的不滿；與好感分開，兩人可以「熟但互有心結」。 */
+  tension: number; // 0~100
+  /** 上一次自然口角的遊戲時間；舊存檔補 0。 */
+  lastConflictGameMs: number;
   romantic: boolean; // 是否為情侶
   cohabitOffered: boolean; // 是否已觸發過同居抉擇
 }
@@ -44,8 +48,12 @@ export function pairKey(a: string, b: string): string {
 
 function ensureRel(a: string, b: string): Relationship {
   const k = pairKey(a, b);
-  if (!relationships[k]) relationships[k] = { value: 0, romantic: false, cohabitOffered: false };
-  return relationships[k];
+  if (!relationships[k]) relationships[k] = { value: 0, tension: 0, lastConflictGameMs: 0, romantic: false, cohabitOffered: false };
+  const rel = relationships[k];
+  // 測試 fixture 與 v6 舊存檔可能只有舊三欄；所有寫入入口先就地正規化。
+  if (!Number.isFinite(rel.tension)) rel.tension = 0;
+  if (!Number.isFinite(rel.lastConflictGameMs)) rel.lastConflictGameMs = 0;
+  return rel;
 }
 
 export function getRel(a: string, b: string): Relationship | undefined {
@@ -83,6 +91,7 @@ export function romanticPartnerId(tenantId: string): string | null {
 /** 正式交往共用守門：取向／成年合法，且雙方都沒有另一位正式伴侶。 */
 export function canBecomeCouple(a: Tenant, b: Tenant): boolean {
   if (!canRomance(a, b)) return false;
+  if (compatibility(a, b) < 0 || (getRel(a.id, b.id)?.tension ?? 0) >= 50) return false;
   const aPartner = romanticPartnerId(a.id);
   const bPartner = romanticPartnerId(b.id);
   return (!aPartner || aPartner === b.id) && (!bPartner || bPartner === a.id);
@@ -92,6 +101,29 @@ export function canBecomeCouple(a: Tenant, b: Tenant): boolean {
 export function adjustRelationship(aId: string, bId: string, delta: number) {
   const rel = ensureRel(aId, bId);
   rel.value = clamp(rel.value + delta, 0, 100);
+}
+
+/** 夾值調整積怨。正值累積心結、負值代表降溫或房東調解。 */
+export function adjustTension(aId: string, bId: string, delta: number) {
+  const rel = ensureRel(aId, bId);
+  rel.tension = clamp(rel.tension + delta, 0, 100);
+}
+
+export type TensionLevel = "calm" | "friction" | "resentment" | "cold_war_risk";
+
+export function tensionLevel(tension: number): TensionLevel {
+  if (tension >= 70) return "cold_war_risk";
+  if (tension >= 50) return "resentment";
+  if (tension >= 25) return "friction";
+  return "calm";
+}
+
+export function tensionLabel(tension: number): string {
+  const level = tensionLevel(tension);
+  if (level === "cold_war_risk") return "❄️ 冷戰風險";
+  if (level === "resentment") return "💢 積怨已深";
+  if (level === "friction") return "⚡ 容易摩擦";
+  return "相處平穩";
 }
 
 /** 設定/解除情侶關係；所有自然／AI 入口都必須由此套用唯一伴侶與取向限制。 */
@@ -164,37 +196,56 @@ export function pruneRomanceIntegrity(
   return removed;
 }
 
-/** 個性相容度(-5 排斥 ~ +5 契合),由核心標籤推得 */
-export function compatibility(a: Tenant, b: Tenant): number {
-  const ta = a.coreTags.map((t) => t.id);
-  const tb = b.coreTags.map((t) => t.id);
+export interface CompatibilityDetail {
+  score: number;
+  /** 玩家看得懂的主要生活摩擦；順序固定，規則不靠 RNG。 */
+  conflicts: string[];
+  strengths: string[];
+}
+
+/** 個性相容細節(-5 排斥 ~ +5 契合),由核心標籤決定性推得。 */
+export function compatibilityDetail(a: Pick<Tenant, "coreTags">, b: Pick<Tenant, "coreTags">): CompatibilityDetail {
+  // 舊測試／外部匯入的精簡租客資料可能沒有 coreTags；視為沒有可判定的相性，
+  // 避免戀愛守門在處理舊資料時直接拋錯。
+  const ta = (a.coreTags ?? []).map((t) => t.id);
+  const tb = (b.coreTags ?? []).map((t) => t.id);
   const hasA = (id: string) => ta.includes(id);
   const hasB = (id: string) => tb.includes(id);
   let c = 0;
+  const conflicts: string[] = [];
+  const strengths: string[] = [];
 
   const nightA = hasA("night_owl") || hasA("late_return");
   const nightB = hasB("night_owl") || hasB("late_return");
   const dayA = hasA("early_bird") || hasA("punctual");
   const dayB = hasB("early_bird") || hasB("punctual");
-  if (nightA && nightB) c += 2; // 都是夜貓,作息合
-  if (dayA && dayB) c += 1;
-  if ((nightA && dayB) || (dayA && nightB)) c -= 2; // 作息相反
+  if (nightA && nightB) { c += 2; strengths.push("作息相近，都是夜貓子"); }
+  if (dayA && dayB) { c += 1; strengths.push("作息相近，都習慣早起"); }
+  if ((nightA && dayB) || (dayA && nightB)) { c -= 2; conflicts.push("作息相反：一人晚睡、一人需要早起"); }
 
   const noisyA = hasA("noisy") || hasA("gamer");
   const noisyB = hasB("noisy") || hasB("gamer");
   const quietA = hasA("sound_sensitive") || hasA("perfectionist") || hasA("wfh");
   const quietB = hasB("sound_sensitive") || hasB("perfectionist") || hasB("wfh");
-  if ((noisyA && quietB) || (noisyB && quietA)) c -= 3; // 吵 vs 安靜,水火不容
+  if ((noisyA && quietB) || (noisyB && quietA)) { c -= 3; conflicts.push("噪音需求衝突：一人活動聲大、一人需要安靜"); }
   if (noisyA && noisyB) c += 1;
-  if (hasA("gamer") && hasB("gamer")) c += 2; // 電競同好
+  if (hasA("gamer") && hasB("gamer")) { c += 2; strengths.push("都是遊戲同好"); }
 
   // 角色庫擴充(§9-2)的新標籤
-  if (hasA("fitness") && hasB("fitness")) c += 2; // 運動同好,相約晨跑
+  if (hasA("fitness") && hasB("fitness")) { c += 2; strengths.push("都是運動同好"); }
   if (hasA("caring") || hasB("caring")) c += 1; // 會照顧人的,跟誰都處得來
   if (hasA("foodie") || hasB("foodie")) c += 1; // 會分食物的,人緣好
-  if ((hasA("busybody") && (quietB || nightB)) || (hasB("busybody") && (quietA || nightA))) c -= 2; // 愛管閒事 vs 想清靜/在補眠的
+  if ((hasA("busybody") && (quietB || nightB)) || (hasB("busybody") && (quietA || nightA))) {
+    c -= 2;
+    conflicts.push("界線感不合：一人愛關心追問、一人需要私人空間");
+  }
 
-  return clamp(c, -5, 5);
+  return { score: clamp(c, -5, 5), conflicts, strengths };
+}
+
+/** 相容分數的舊入口；戀愛與既有測試繼續使用同一套規則。 */
+export function compatibility(a: Pick<Tenant, "coreTags">, b: Pick<Tenant, "coreTags">): number {
+  return compatibilityDetail(a, b).score;
 }
 
 const FRIEND_LINES = [
@@ -248,15 +299,40 @@ function fill(line: string, other: string): string {
 }
 
 /** 一次交誼廳相遇的互動,回傳結果(並就地更新關係) */
-export function encounter(a: Tenant, b: Tenant): EncounterResult {
+const CONFLICT_COOLDOWN_HOURS = 12;
+const GAME_HOUR_MS = 60 * 60 * 1000;
+
+export interface EncounterOptions {
+  gameMs?: number;
+  /** 全樓每日節流由 tick 注入；false 時本次只會是一般相處。 */
+  allowConflict?: boolean;
+}
+
+export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}): EncounterResult {
   const rel = ensureRel(a.id, b.id);
-  const comp = compatibility(a, b);
+  const detail = compatibilityDetail(a, b);
+  const comp = detail.score;
   const res: EncounterResult = { a: a.id, b: b.id, textA: "", textB: "", importance: "minor", tone: rel.romantic ? "romantic" : "friendly" };
 
-  const conflictChance = comp < 0 ? 0.2 + -comp * 0.08 : 0.03;
-  if (Math.random() < conflictChance) {
+  const tension = Number.isFinite(rel.tension) ? rel.tension : 0;
+  rel.tension = tension;
+  rel.lastConflictGameMs = Number.isFinite(rel.lastConflictGameMs) ? rel.lastConflictGameMs : 0;
+  const cooldownReady = options.gameMs === undefined
+    || rel.lastConflictGameMs <= 0
+    || options.gameMs - rel.lastConflictGameMs >= CONFLICT_COOLDOWN_HOURS * GAME_HOUR_MS;
+  // 相合／中性配對維持舊版 3%，避免既有平衡局被重寫；負相性才吃相性與積怨加成。
+  const conflictChance = comp >= 0
+    ? 0.03
+    : clamp(0.04 + -comp * 0.08 + tension * 0.0035, 0.03, 0.65);
+  // 無論冷卻／全樓節流是否擋住，都維持舊版每次 encounter 固定先吃一次衝突 roll。
+  const conflictRoll = Math.random();
+  if (options.allowConflict !== false && cooldownReady && conflictRoll < conflictChance) {
     rel.value = clamp(rel.value - (2 + Math.max(0, -comp)), 0, 100);
-    const reason = pick(CONFLICT_REASONS);
+    rel.tension = clamp(rel.tension + 10 + Math.max(0, -comp) * 2, 0, 100);
+    if (options.gameMs !== undefined) rel.lastConflictGameMs = options.gameMs;
+    // 保留舊版衝突文案抽樣的 RNG 骨架；有具體相性原因時只替換呈現文字。
+    const fallbackReason = pick(CONFLICT_REASONS);
+    const reason = detail.conflicts[0] ?? fallbackReason;
     res.textA = `和 ${b.name} ${reason}`;
     res.textB = `和 ${a.name} ${reason}`;
     res.importance = "notable";
@@ -265,7 +341,11 @@ export function encounter(a: Tenant, b: Tenant): EncounterResult {
     res.effectB = { stress: 4 };
   } else {
     const before = rel.value;
-    rel.value = clamp(rel.value + (2.5 + Math.max(0, comp) * 1.0 + Math.random() * 2.5), 0, 100);
+    const gain = comp < 0
+      ? 0.15 + Math.random() * 0.35
+      : 2.5 + comp * 1.0 + Math.random() * 2.5;
+    rel.value = clamp(rel.value + gain, 0, 100);
+    rel.tension = clamp(rel.tension - (comp > 0 ? 2 : 1), 0, 100);
     const line = rel.romantic ? pick(ROMANTIC_LINES) : pick(FRIEND_LINES);
     res.textA = fill(line, b.name);
     res.textB = fill(line, a.name);
@@ -320,10 +400,14 @@ export function tierLabel(rel: Relationship, a?: Tenant, b?: Tenant): string {
 
 /** 給關係頁的下一步說明：把戀愛守門條件翻成玩家看得懂的原因。 */
 export function relationshipProgressHint(
-  rel: Pick<Relationship, "value" | "romantic">,
+  rel: Pick<Relationship, "value" | "romantic" | "tension">,
   a: Tenant,
   b: Tenant,
 ): string {
+  if (rel.tension >= 50) {
+    const reason = compatibilityDetail(a, b).conflicts[0] ?? "近期相處累積了不少心結";
+    return `${reason}；房東調解或一起完成事情，才能讓積怨降溫。`;
+  }
   if (rel.romantic) {
     return rel.value >= 92
       ? "已是情侶；關係夠穩定時，可能提出同居。"
@@ -348,20 +432,53 @@ export function relationshipProgressHint(
 }
 
 /** 給 UI:列出所有已建立(value>0 或情侶)的關係 */
-export function listRelationships(getTenant?: (id: string) => Tenant | undefined): { aId: string; bId: string; value: number; romantic: boolean; label: string }[] {
-  const out: { aId: string; bId: string; value: number; romantic: boolean; label: string }[] = [];
+export interface RelationshipView {
+  aId: string; bId: string; value: number; tension: number; romantic: boolean; label: string;
+  compatibility: number; reasons: string[]; tensionLabel: string;
+}
+
+export function listRelationships(getTenant?: (id: string) => Tenant | undefined): RelationshipView[] {
+  const out: RelationshipView[] = [];
   for (const [k, rel] of Object.entries(relationships)) {
-    if (rel.value <= 0 && !rel.romantic) continue;
+    const tension = Number.isFinite(rel.tension) ? rel.tension : 0;
+    rel.tension = tension;
+    rel.lastConflictGameMs = Number.isFinite(rel.lastConflictGameMs) ? rel.lastConflictGameMs : 0;
+    if (rel.value <= 0 && tension <= 0 && !rel.romantic) continue;
     const [aId, bId] = k.split("|");
+    const a = getTenant?.(aId);
+    const b = getTenant?.(bId);
+    const detail = a && b ? compatibilityDetail(a, b) : { score: 0, conflicts: [], strengths: [] };
     out.push({
       aId,
       bId,
       value: Math.round(rel.value),
+      tension: Math.round(tension),
       romantic: rel.romantic,
-      label: tierLabel(rel, getTenant?.(aId), getTenant?.(bId)),
+      label: tierLabel(rel, a, b),
+      compatibility: detail.score,
+      reasons: detail.conflicts,
+      tensionLabel: tensionLabel(tension),
     });
   }
-  return out.sort((x, y) => Number(y.romantic) - Number(x.romantic) || y.value - x.value);
+  return out.sort((x, y) => Number(y.tension >= 25) - Number(x.tension >= 25) || Number(y.romantic) - Number(x.romantic) || y.value - x.value);
+}
+
+/** 群體活動依生活相性折算；水火不容不會因同場活動無條件變好友。 */
+export function adjustGroupBond(a: Tenant, b: Tenant, delta: number) {
+  const comp = compatibility(a, b);
+  if (delta > 0) {
+    const scaled = comp <= -2 ? 0 : comp === -1 ? Math.ceil(delta / 2) : delta;
+    if (scaled) adjustRelationship(a.id, b.id, scaled);
+    adjustTension(a.id, b.id, comp <= -2 ? -2 : -Math.max(1, Math.ceil(delta / 2)));
+  } else if (delta < 0) {
+    adjustRelationship(a.id, b.id, delta);
+    adjustTension(a.id, b.id, Math.abs(delta) * 2);
+  }
+}
+
+/** 每日自然降溫；不抹掉好感，也不靠 RNG。 */
+export function relationshipDailyPass() {
+  for (const rel of Object.values(relationships)) rel.tension = clamp((rel.tension ?? 0) - 2, 0, 100);
 }
 
 /** 租客搬走:清掉所有牽涉他的關係 */
@@ -375,7 +492,13 @@ export function removeTenantRelations(id: string) {
 export function serializeRelationships() {
   return Object.entries(relationships).map(([key, r]) => ({ key, ...r }));
 }
-export function loadRelationships(arr: { key: string; value: number; romantic: boolean; cohabitOffered: boolean }[]) {
+export function loadRelationships(arr: { key: string; value: number; tension?: number; lastConflictGameMs?: number; romantic: boolean; cohabitOffered: boolean }[]) {
   for (const k of Object.keys(relationships)) delete relationships[k];
-  for (const r of arr ?? []) relationships[r.key] = { value: r.value, romantic: r.romantic, cohabitOffered: r.cohabitOffered };
+  for (const r of arr ?? []) relationships[r.key] = {
+    value: clamp(r.value ?? 0, 0, 100),
+    tension: clamp(r.tension ?? 0, 0, 100),
+    lastConflictGameMs: Math.max(0, r.lastConflictGameMs ?? 0),
+    romantic: !!r.romantic,
+    cohabitOffered: !!r.cohabitOffered,
+  };
 }

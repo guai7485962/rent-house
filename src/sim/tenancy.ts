@@ -10,6 +10,7 @@ import {
   getRel,
   listRelationships,
   adjustRelationship,
+  adjustTension,
   setCouple,
   canRomance,
 } from "./social";
@@ -324,6 +325,7 @@ export function moveOut(tenantId: string, reason: string, opts?: { followPartner
   }
   delete state.cohabits[tenantId];
   state.pendingDiaries.splice(0, state.pendingDiaries.length, ...state.pendingDiaries.filter((job) => job.tenantId !== tenantId));
+  for (const key of Object.keys(state.feuds)) if (key.split("|").includes(tenantId)) delete state.feuds[key];
   delete state.runtimes[tenantId];
   removeTenantRelations(tenantId);
   // 其他租客身上「提到他」的記憶標籤一併移除(人都走了,AI 不該再寫跟他的互動)
@@ -634,7 +636,10 @@ function applyCrossTenant(aId: string, bId: string, eff: EventEffect) {
     if (eff.other.satisfaction) b.satisfaction = clamp(b.satisfaction + eff.other.satisfaction, 0, 100);
   }
   if (eff.rel) {
-    if (typeof eff.rel.delta === "number" && eff.rel.delta) adjustRelationship(aId, bId, eff.rel.delta);
+    if (typeof eff.rel.delta === "number" && eff.rel.delta) {
+      adjustRelationship(aId, bId, eff.rel.delta);
+      adjustTension(aId, bId, eff.rel.delta > 0 ? -Math.ceil(eff.rel.delta * 1.5) : Math.abs(eff.rel.delta) * 2);
+    }
     const a = state.runtimes[aId];
     if (eff.rel.breakup) setCouple(aId, bId, false);
     else if (eff.rel.couple && a && canRomance(a.tenant, b.tenant)) {
@@ -654,6 +659,7 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
   const title = rt.pendingEvent.title;
   const withId = rt.pendingEvent.withId;
   const eventId = rt.pendingEvent.id;
+  const tensionBefore = withId ? (getRel(tenantId, withId)?.tension ?? 0) : 0;
   const choice = rt.pendingEvent.choices.find((c) => c.id === choiceId);
   rt.decisions.push(choiceId);
   rt.pendingEvent = null;
@@ -670,7 +676,13 @@ export function decide(tenantId: string, choiceId: string, choiceLabel: string) 
     if (withId) applyCrossTenant(tenantId, withId, choice.effect);
     if (choice.effect.evict) moveOut(tenantId, "你請他搬走了");
     // 打架事件(§10-2):房東出面調解成功 → 冷戰直接解除
-    if (eventId === "fight_decision" && choiceId === "mediate" && withId) endFeud(tenantId, withId, "mediated");
+    if (eventId === "fight_decision" && choiceId === "mediate" && withId) {
+      endFeud(tenantId, withId, "mediated");
+      const current = getRel(tenantId, withId)?.tension ?? 0;
+      adjustTension(tenantId, withId, Math.max(0, tensionBefore - 30) - current);
+    }
+    if (eventId === "fight_decision" && choiceId === "scold_both" && withId) adjustTension(tenantId, withId, 5);
+    if (eventId === "fight_decision" && choiceId === "warn_one" && withId) adjustTension(tenantId, withId, 15);
     // 圓夢畢業的貓去留(wishes.maybeAttachCatFarewell):留下 → 轉樓貓;帶走 → 離開日隨主人走
     if (eventId === "wish_cat_farewell" || eventId === "wish_pet_farewell") resolvePetFarewell(rt, choiceId);
     // AI 提議互動(§10-3):玩家拍板 → 白名單+門檻把關後在畫面上演出來;不放行就靜默略過

@@ -8,7 +8,7 @@
  */
 import type { Tenant } from "../types";
 import type { EventDef } from "./events";
-import { pairKey, getRel, adjustRelationship, compatibility } from "./social";
+import { pairKey, getRel, adjustRelationship, adjustTension, compatibility } from "./social";
 import { state, clamp, notify, pushMemory, pushSocialLog, roomOfTenant, type TenantRuntime } from "./gameState";
 import { triggerBreakdown } from "./maintenance";
 import { spawnFx } from "../floor/fx";
@@ -35,6 +35,8 @@ export function avoidLounge(tenantId: string): boolean {
 
 /** 開始冷戰:登記期限 + 雙方記憶/日誌(玩家與 AI 都看得到「正在互相迴避」) */
 export function startFeud(A: TenantRuntime, B: TenantRuntime, quiet = false, animate = true) {
+  const currentTension = getRel(A.tenant.id, B.tenant.id)?.tension ?? 0;
+  if (currentTension < 70) adjustTension(A.tenant.id, B.tenant.id, 70 - currentTension);
   state.feuds[pairKey(A.tenant.id, B.tenant.id)] = { untilMs: state.gameMs + FEUD_DAYS * 24 * MS_PER_GAME_HOUR };
   pushMemory(A.tenant, FEUD_MEMORY, `和${B.tenant.name}徹底鬧翻,現在連交誼廳都刻意錯開。`, "ai_event");
   pushMemory(B.tenant, FEUD_MEMORY, `和${A.tenant.name}徹底鬧翻,現在連交誼廳都刻意錯開。`, "ai_event");
@@ -93,6 +95,7 @@ export function endFeud(aId: string, bId: string, reason: "expired" | "mediated"
   const k = pairKey(aId, bId);
   if (!state.feuds[k]) return;
   delete state.feuds[k];
+  if (reason === "expired") adjustTension(aId, bId, -8);
   for (const id of [aId, bId]) {
     const rt = state.runtimes[id];
     if (!rt) continue;
@@ -123,6 +126,7 @@ export function feudPass() {
 export function maybeFeudAfterConflict(A: TenantRuntime, B: TenantRuntime, rng: () => number = Math.random) {
   if (feudActive(A.tenant.id, B.tenant.id)) return;
   const rel = getRel(A.tenant.id, B.tenant.id);
+  if ((rel?.tension ?? 0) < 70) return;
   if ((rel?.value ?? 0) >= 30) return; // 還有點交情,吵完就過了
   if (compatibility(A.tenant, B.tenant) > -2) return;
   if (rng() > 0.35) return;
@@ -178,7 +182,9 @@ function fightDecision(a: Tenant, b: Tenant): EventDef {
  * 關係 <20 + 相容度 ≤ -3 + 雙方壓力 ≥80 + 非冷戰中。回傳 true = 打起來了(這對這小時到此為止)。
  */
 export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number = Math.random): boolean {
-  if ((getRel(A.tenant.id, B.tenant.id)?.value ?? 0) >= 20) return false;
+  const rel = getRel(A.tenant.id, B.tenant.id);
+  if ((rel?.value ?? 0) >= 20) return false;
+  if ((rel?.tension ?? 0) < 70) return false;
   if (compatibility(A.tenant, B.tenant) > -3) return false;
   if (A.tenant.stats.stress < 80 || B.tenant.stats.stress < 80) return false;
   if (feudActive(A.tenant.id, B.tenant.id)) return false;
@@ -194,6 +200,7 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
     rt.satisfaction = clamp(rt.satisfaction - 8, 0, 100);
   }
   adjustRelationship(A.tenant.id, B.tenant.id, -15);
+  adjustTension(A.tenant.id, B.tenant.id, 20);
   const line = (o: string) => `💢 和 ${o} 大打出手,場面一度失控,兩人都掛了彩!`;
   pushSocialLog(A, line(B.tenant.name), "major");
   pushSocialLog(B, line(A.tenant.name), "major");

@@ -60,6 +60,7 @@ import {
   placeAt,
   cancelPlacing,
   sellFurnitureAt,
+  removeMemorialAt,
   roomOfTenant,
   startMoving,
   cancelMoving,
@@ -295,6 +296,21 @@ function onSell() {
   inspectItem.value = null;
   if (res.ok) toast(`已賣掉:${name},退回 $${res.refund?.toLocaleString()}`);
   else if (res.reason) toast(res.reason);
+}
+
+function onRemoveMemorial() {
+  const item = inspectItem.value;
+  if (!item) return;
+  const name = getDef(item.defId).name;
+  const confirmed = window.confirm(
+    `確定要收起「${name}」嗎？\n\n不會獲得退款；只會移除房內展示，歷任房客、告別信與成就回憶仍會保留。`,
+  );
+  if (!confirmed) return;
+  const res = removeMemorialAt(item.c, item.r);
+  if (res.ok) {
+    inspectItem.value = null;
+    toast(`已收起:${name}（回憶仍保留）`);
+  } else if (res.reason) toast(res.reason);
 }
 
 const allTags = computed(() => [
@@ -995,6 +1011,7 @@ function onChainResolve(choiceId: string) {
     @close="inspectItem = null"
     @sell="onSell"
     @move="onStartMove"
+    @remove-memorial="onRemoveMemorial"
   />
 </template>
 

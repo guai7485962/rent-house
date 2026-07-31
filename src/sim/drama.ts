@@ -5,7 +5,7 @@
  * - 被撞見(maybeWitness 由 interactions 在 🔞 互動觸發後呼叫):第三位租客撞見,三方尷尬。
  * 全部走既有安全機制:夾值、記憶標籤接 AI、冷戰接 conflicts、冷卻用 interactionCooldowns。
  */
-import { relationships, getRel, pairKey, canRomance, isBestFriend, tierLabel, setCouple, adjustRelationship } from "./social";
+import { relationships, getRel, pairKey, canRomance, isBestFriend, tierLabel, setCouple, adjustRelationship, adjustTension } from "./social";
 import { state, clamp, notify, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { startFeud } from "./conflicts";
 import { endCohabitOnBreakup } from "./tenancy";
@@ -131,6 +131,7 @@ export function fridgePass(rng: () => number = Math.random): boolean {
       if (rng() > FRIDGE_CHANCE) continue;
 
       adjustRelationship(thief.tenant.id, victim.tenant.id, -8);
+      adjustTension(thief.tenant.id, victim.tenant.id, 18);
       const vs = victim.tenant.stats;
       vs.stress = clamp(vs.stress + 5, 0, 100);
       vs.mood = clamp(vs.mood - 5, 0, 100);

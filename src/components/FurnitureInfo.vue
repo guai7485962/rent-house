@@ -6,7 +6,7 @@ import { tierChipText, tierOf } from "../furniture/tier";
 import { furnitureAt } from "../sim/placements";
 
 const props = defineProps<{ c: number; r: number; defId: string; rotation: FurnitureRotation }>();
-const emit = defineEmits<{ close: []; sell: []; move: [] }>();
+const emit = defineEmits<{ close: []; sell: []; move: []; removeMemorial: [] }>();
 
 const def = computed(() => getDef(props.defId));
 // 畢業生紀念物:綁房間、不可移動/變賣
@@ -51,7 +51,10 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
           <button class="move" @click="emit('move')">📦 移動／旋轉</button>
           <button class="sell" @click="emit('sell')">賣掉(退 ${{ refund.toLocaleString() }})</button>
         </template>
-        <span v-else class="keepsake">🎁 畢業生的紀念物,會一直留在這間房</span>
+        <template v-else>
+          <div class="keepsake">🎁 收起只會移除房內展示；歷任房客、告別信與成就回憶都會保留。</div>
+          <button class="remove" @click="emit('removeMemorial')">📦 收起紀念物（$0）</button>
+        </template>
       </div>
     </div>
   </div>
@@ -83,4 +86,5 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 .move { flex: 1; background: rgba(143,123,255,0.14); border: 1px solid var(--accent-2); color: #cdbcff; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 .sell { flex: 1; background: rgba(232,101,122,0.14); border: 1px solid var(--bad); color: #ff9aa8; font-weight: 700; border-radius: 10px; padding: 10px 0; font-size: 13.5px; }
 .keepsake { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: #cdbcff; border: 1px dashed var(--accent-2); border-radius: 10px; padding: 8px 10px; line-height: 1.4; }
+.remove { flex: 0.8; background: rgba(232,101,122,0.12); border: 1px solid var(--bad); color: #ffadba; font-weight: 700; border-radius: 10px; padding: 8px 10px; font-size: 12px; line-height: 1.35; }
 </style>

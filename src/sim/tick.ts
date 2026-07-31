@@ -7,7 +7,7 @@ import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot, resolveTarget, type Role } from "./routine";
 import { rollEvent } from "./events";
-import { encounter, listRelationships, pairKey, getRel } from "./social";
+import { encounter, listRelationships, pairKey, getRel, relationshipDailyPass } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
 import { DIRECTIVES } from "./directives";
 import { generateHourly } from "./generate";
@@ -562,6 +562,7 @@ export function hourlyTick(live = false) {
     cozyHomePass(day); // 整潔舒適房 → 偶爾正向慶祝(每 3 日一次,心情/滿意小升;dirtyComplaint 的對稱正向鉤子)
     maintenancePass(); // 設備故障擲骰 + 未修的拖延懲罰(§7-1)
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
+    relationshipDailyPass(); // 積怨每天自然降溫；好感與戀愛狀態不受影響
     collectRent();
     resetDiaryQuota(); // AI 額度每日重置 → 新的一天重新嘗試
     legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
@@ -656,8 +657,16 @@ function pruneStaleMemories() {
 }
 
 /** 鄰居社交:找出同在交誼廳的租客,兩兩相遇互動(skip = 這小時已由互動目錄處理過的配對) */
-function socialPass(skip: Set<string> = new Set()) {
+export function socialPass(skip: Set<string> = new Set()) {
   const inLounge = Object.values(state.runtimes).filter((rt) => rt.inLounge && !rt.pendingEvent);
+  const conflictDayKey = "social_conflicts_day_index";
+  const conflictCountKey = "social_conflicts_day_count";
+  const day = gameDayIndex();
+  if (state.interactionCooldowns[conflictDayKey] !== day) {
+    state.interactionCooldowns[conflictDayKey] = day;
+    state.interactionCooldowns[conflictCountKey] = 0;
+  }
+  let conflictsToday = state.interactionCooldowns[conflictCountKey] ?? 0;
   for (let i = 0; i < inLounge.length; i++) {
     for (let j = i + 1; j < inLounge.length; j++) {
       if (Math.random() > 0.55) continue; // 不是每小時都會互動
@@ -667,8 +676,16 @@ function socialPass(skip: Set<string> = new Set()) {
       // 冷戰中 → 互相當作看不見,不相遇(§10-2)
       if (feudActive(A.tenant.id, B.tenant.id)) continue;
       // 積怨已深 + 雙方都緊繃 → 可能直接打起來(打鬥雲 + 家具損壞 + 房東抉擇)
-      if (tryFight(A, B)) continue;
-      const res = encounter(A.tenant, B.tenant);
+      if (conflictsToday < 2 && tryFight(A, B)) {
+        conflictsToday += 1;
+        state.interactionCooldowns[conflictCountKey] = conflictsToday;
+        continue;
+      }
+      const res = encounter(A.tenant, B.tenant, { gameMs: state.gameMs, allowConflict: conflictsToday < 2 });
+      if (res.tone === "conflict") {
+        conflictsToday += 1;
+        state.interactionCooldowns[conflictCountKey] = conflictsToday;
+      }
       pushSocialLog(A, res.textA, res.importance);
       pushSocialLog(B, res.textB, res.importance);
       applySocialEffect(A, res.effectA);

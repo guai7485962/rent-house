@@ -29,7 +29,7 @@ const { gameDayIndex, calendarGameDayIndex, makeRuntime, tenants, GAME_START } =
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { save, load } = await import("../src/sim/persistence");
 const { moveOut, graduateFarewell, decide, farewellSendoff, moveIn } = await import("../src/sim/tenancy");
-const { DEPOSIT_MONTHS, sellFurnitureAt } = await import("../src/sim/economy");
+const { DEPOSIT_MONTHS, sellFurnitureAt, removeMemorialAt } = await import("../src/sim/economy");
 const { getPlacements } = await import("../src/sim/placements");
 const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
 const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
@@ -440,6 +440,19 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
   // 空房招租新租客 → 紀念物仍保留(綁房間不綁租客)
   moveIn("r304", generateApplicants("r304")[0]);
   check("招租後仍在原房間(綁房間不綁租客)", getPlacements().some((p) => p.room === "r304" && p.memorial));
+  const alumniBefore = state.alumni.length;
+  const moneyBefore = state.money;
+  const farewellBefore = state.alumni[0]?.farewell;
+  const ordinaryBefore = getPlacements().filter((p) => !p.memorial).length;
+  const memorialBefore = getPlacements().filter((p) => p.memorial).length;
+  const removed = mem ? removeMemorialAt(mem.c, mem.r) : { ok: false };
+  check("玩家可收起一件紀念物，並真正從 placements 移除", removed.ok && getPlacements().filter((p) => p.memorial).length === memorialBefore - 1);
+  check("收起紀念物是 0 退款", state.money === moneyBefore);
+  check("收起紀念物不會誤刪底下／同格的一般家具", getPlacements().filter((p) => !p.memorial).length === ordinaryBefore);
+  check("收起只移除展示，不刪歷任房客與告別信", state.alumni.length === alumniBefore && state.alumni[0]?.farewell === farewellBefore);
+  save();
+  load();
+  check("收起紀念物後存檔往返仍不會復活", getPlacements().filter((p) => p.memorial).length === memorialBefore - 1);
 }
 
 // --- 21. 🏛️ 名人堂(五位畢業生) ---

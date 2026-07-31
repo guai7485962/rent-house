@@ -25,7 +25,7 @@ const rels = computed(() =>
 /** 這一「對」是否真的同居中；共用模擬層的一對一判定，避免 UI 與規則分歧。 */
 const isCohabit = (r: { aId: string; bId: string }) => cohabitingPartnerId(r.aId) === r.bId;
 
-const progressHint = (r: { aId: string; bId: string; value: number; romantic: boolean }): string => {
+const progressHint = (r: { aId: string; bId: string; value: number; tension: number; romantic: boolean }): string => {
   const a = state.runtimes[r.aId]?.tenant;
   const b = state.runtimes[r.bId]?.tenant;
   return a && b ? relationshipProgressHint(r, a, b) : "";
@@ -33,15 +33,18 @@ const progressHint = (r: { aId: string; bId: string; value: number; romantic: bo
 
 const bestFriendLabels = new Set(["閨密", "哥們", "摯友"]);
 
-/** 分組:情侶(置頂)/ 曖昧 / 摯友 / 朋友 / 認識中 */
+/** 先把需要房東注意的摩擦拉到上方，再列平穩關係。 */
 const groups = computed(() => {
   const all = rels.value;
   return [
-    { title: "❤️ 情侶", rows: all.filter((r) => r.romantic) },
-    { title: "💕 曖昧", rows: all.filter((r) => !r.romantic && r.label === "曖昧") },
-    { title: "🌟 摯友", rows: all.filter((r) => !r.romantic && bestFriendLabels.has(r.label)) },
-    { title: "🤝 朋友", rows: all.filter((r) => !r.romantic && r.value >= 35 && r.value < 75) },
-    { title: "👋 認識中", rows: all.filter((r) => !r.romantic && r.value < 35) },
+    { title: "❄️ 冷戰風險", rows: all.filter((r) => r.tension >= 70) },
+    { title: "💢 積怨已深", rows: all.filter((r) => r.tension >= 50 && r.tension < 70) },
+    { title: "⚡ 容易摩擦", rows: all.filter((r) => r.tension >= 25 && r.tension < 50) },
+    { title: "❤️ 情侶", rows: all.filter((r) => r.tension < 25 && r.romantic) },
+    { title: "💕 曖昧", rows: all.filter((r) => r.tension < 25 && !r.romantic && r.label === "曖昧") },
+    { title: "🌟 摯友", rows: all.filter((r) => r.tension < 25 && !r.romantic && bestFriendLabels.has(r.label)) },
+    { title: "🤝 朋友", rows: all.filter((r) => r.tension < 25 && !r.romantic && r.value >= 35 && r.value < 75) },
+    { title: "👋 認識中", rows: all.filter((r) => r.tension < 25 && !r.romantic && r.value < 35) },
   ].filter((g) => g.rows.length > 0);
 });
 </script>
@@ -69,8 +72,11 @@ const groups = computed(() => {
               <span v-if="isCohabit(r)" class="cohab">🏠 同居中</span>
               <span v-if="feudActive(r.aId, r.bId)" class="feud">❄️ 冷戰中</span>
             </span>
-            <span class="tier">{{ r.label }} <b class="val">{{ r.value }}</b></span>
+            <span class="tier">{{ r.label }} · {{ r.tensionLabel }}</span>
+            <div class="meter-label"><span>關係 {{ r.value }}</span><span>積怨 {{ r.tension }}</span></div>
             <div class="bar"><div :style="{ width: r.value + '%' }"></div></div>
+            <div class="bar tension"><div :style="{ width: r.tension + '%' }"></div></div>
+            <p v-if="r.reasons.length" class="reason">相性 {{ r.compatibility }} · {{ r.reasons.join('；') }}</p>
             <p class="next">{{ progressHint(r) }}</p>
           </div>
         </template>
@@ -104,8 +110,11 @@ const groups = computed(() => {
 .g-miss { color: #ff6b6b; }
 .amp { color: var(--text-dim); margin: 0 2px; }
 .tier { font-size: 12px; color: var(--accent); text-align: right; }
+.meter-label { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--text-dim); font-size: 10.5px; margin-top: 2px; }
 .bar { grid-column: 1 / -1; height: 6px; background: #17151f; border-radius: 4px; overflow: hidden; }
 .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), #d9548a); border-radius: 4px; transition: width 0.5s; }
+.bar.tension > div { background: linear-gradient(90deg, #e3a34d, #e8657a); }
+.reason { grid-column: 1 / -1; margin: 2px 0 0; color: #efb86a; font-size: 11px; line-height: 1.5; }
 .next { grid-column: 1 / -1; margin: 2px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.55; }
 .foot { font-size: 11.5px; color: var(--text-dim); padding: 8px 16px 16px; line-height: 1.6; }
 </style>

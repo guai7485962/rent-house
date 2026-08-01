@@ -6,7 +6,7 @@ import { netWorth, monthlyFlow, monthReport, dailyFlow } from "../sim/finance";
 const emit = defineEmits<{ close: [] }>();
 
 const CAT_LABEL: Record<TxnCategory, string> = {
-  rent: "租金收入", furniture: "家具", upgrade: "房間改建", event: "事件", upkeep: "管理費", other: "其他",
+  rent: "租金收入", furniture: "家具", upgrade: "房間改建", event: "事件", upkeep: "管理費", cafe: "咖啡廳", other: "其他",
 };
 
 const DAY = 24 * 3600 * 1000;

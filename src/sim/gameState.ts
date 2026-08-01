@@ -32,7 +32,8 @@ export const LOG_CAP = 60;
 export const LEDGER_CAP = 60;
 export const MEMORY_CAP = 8; // 記憶標籤上限,超過丟最舊(避免無限增長)
 
-export type TxnCategory = "rent" | "furniture" | "upgrade" | "event" | "upkeep" | "other";
+// "cafe" 是 CAFE-13 追加的:一樓咖啡廳的營收/進貨/固定開銷。扁平 union,純 additive。
+export type TxnCategory = "rent" | "furniture" | "upgrade" | "event" | "upkeep" | "cafe" | "other";
 export interface Txn {
   gameMs: number;
   label: string;

@@ -26,9 +26,25 @@ import {
   roomOfTenant,
   canStartCohabit,
   LOG_CAP,
+  CAFE_HISTORY_CAP,
   type TenantRuntime,
 } from "./gameState";
-import { collectRent } from "./economy";
+import { addMoney, collectRent } from "./economy";
+import { weatherForDay } from "./weather";
+import { weekdayOf } from "./week";
+import {
+  applySpoilage,
+  cafeCapability,
+  cafeCrowd,
+  cafeDailyLine,
+  cafeTicketPrice,
+  CAFE_FIXED_COST,
+  consumeStock,
+  dailyDemand,
+  getCafeIngredient,
+  nextCafePopularity,
+  restockPlan,
+} from "./cafe";
 import { maintenancePass } from "./maintenance";
 import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } from "./conflicts";
 import { dramaPass } from "./drama";
@@ -537,6 +553,113 @@ export function cafeGuestPass(hour: number) {
   if (appendCafeGuest(cafe.guests, guest).length > cafe.guests.length) cafe.guests.push(guest);
 }
 
+/**
+ * 咖啡廳日結日誌的落點。
+ *
+ * 日結沒有「當事租客」,但這則日誌**必須進得了 `rt.log`**——`narration.buildNarrateCtx()`
+ * 只讀 `rt.log`,只有進得去才有機會成為 AI 素材(這正是選一個不在
+ * `/^[🔮🌀🌱💤]/u` 裡的前綴的用意)。作法直接抄 `pets.catJournalPass()` 的樓貓筆記:
+ * 掛在任一位在住租客身上,Feed 會彙整全樓日誌,玩家照樣看得到。
+ *
+ * **依 id 排序取第一位**(而不是 `Object.values()[0]`):鍵的插入序會被搬入/搬出改變,
+ * 那會讓同一存檔在不同 session 把日誌掛到不同人身上(同 `outing.ts` 的固定迭代次序規則)。
+ * 全樓沒人時退回 `notify()`,兩條路都到得了動態頁。
+ */
+function pushCafeLog(text: string) {
+  const host = Object.values(state.runtimes).sort((a, b) => a.tenant.id.localeCompare(b.tenant.id))[0];
+  if (host) pushSocialLog(host, text, "notable");
+  else notify(text);
+}
+
+/**
+ * 咖啡廳日結(CAFE-13,設計文件 §5.1 §5.2 §5.5)。
+ *
+ * 掛在換日區塊 `collectRent()` 的**正後方**,讓咖啡廳損益與租金/管理費落在同一個帳日。
+ * 既有 pass 的順序一行未動。
+ *
+ * ## 零漂移
+ *
+ * 第一行就是 `if (!state.cafe.open) return;`。開張要玩家花錢(CAFE-14),無頭的
+ * balance 快照局永遠不會開張 ⇒ `money`、`ledgerCount`、`logs` 全部碰不到。
+ * 這比日數閘門乾淨,連 `CAFE_FIRST_DAY` 都不需要。
+ *
+ * ## 零 RNG
+ *
+ * 天氣走 `weatherForDay()`(splitmix32)、星期走 `weekdayOf()`(讀日曆)、
+ * 選句走 `cafeDailyLine()` 內的 FNV-1a。整個 pass 沒有一次 `Math.random()`。
+ *
+ * ## 為什麼 `crowdMultiplier` 乘的是「當日」客流
+ *
+ * CAFE-12 把這個決定留給本項。選當日,兩個理由:
+ *
+ * 1. **`CafeState` 的形狀被凍結**(不得改 schema)。隔日折扣需要一個跨日欄位來存
+ *    「昨天缺了幾種」,而咖啡廳只有一個 top-level key、欄位已經定死——
+ *    隔日方案根本沒有地方存,只能靠 `history` 反推,那是更脆的耦合。
+ * 2. **同一帳日內因果閉合**。玩家翻 `history` 看到「客人少、營收低、缺貨」在同一列,
+ *    三個數字互相解釋;隔日折扣會讓第 N 天的低客流要回頭翻第 N−1 天才看得懂。
+ *    體感上就是「今天下午三點賣完了,後面的客人看看菜單就走」——這也正是日誌文案的樣子。
+ *
+ * ## 營收為什麼同時乘 `crowdMultiplier` 與 `fulfillment`
+ *
+ * 只乘 `crowdMultiplier` 會開一個洞:常備量全設 0 → 沒有進貨成本,卻仍能拿到
+ * 七成營收(`CROWD_MULTIPLIER_FLOOR = 0.7`)⇒ 不進貨變成最優解。再乘 `fulfillment`
+ * (實際用掉/需要的原料比)之後,空櫃子 = 零營收,而這不是懲罰、是算術:沒有料就沒有東西賣。
+ */
+export function cafeDailyPass() {
+  const cafe = state.cafe;
+  if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
+
+  const day = gameDayIndex();
+  const cap = cafeCapability(cafe.upgrades);
+  const crowd = cafeCrowd({
+    weather: weatherForDay(day),
+    weekday: weekdayOf(state.gameMs),
+    signLevel: cap.signLevel,
+    capacity: cap.capacity,
+    popularity: cafe.popularity,
+    outdoorSeats: cap.outdoorSeats,
+  });
+
+  // 1) 客流 → 需求 → 消耗
+  const use = consumeStock(cafe.stock, dailyDemand(crowd.guests));
+  const served = Math.max(0, Math.round(crowd.guests * use.crowdMultiplier * use.fulfillment));
+
+  // 2) 營收先進帳(補貨才有錢可用;restockPlan 保證不超支)
+  const moneyBefore = state.money;
+  const revenue = served * cafeTicketPrice(cafe.completed);
+  if (revenue > 0) addMoney(revenue, "咖啡廳營收", "cafe");
+
+  // 3) 補貨 → 扣款 → 固定成本(addMoney 下限 0,錢不夠也不會變負)
+  const plan = restockPlan(cafe.standingOrders, use.stock, state.money);
+  if (plan.totalCost > 0) addMoney(-plan.totalCost, "咖啡廳進貨", "cafe");
+  addMoney(-CAFE_FIXED_COST, "咖啡廳固定開銷", "cafe");
+
+  // 4) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)
+  const rot = applySpoilage(plan.stock, cap.spoilage);
+  cafe.stock = rot.stock;
+  cafe.popularity = nextCafePopularity(cafe.popularity, { shortages: use.shortages.length, underfunded: plan.underfunded });
+
+  // 5) 日結紀錄。cost 取「實際扣掉的錢」而非帳面應付,才會與 money/ledger 三方對得起來
+  //    (帳上不夠時 addMoney 會夾在 0,這遊戲不讓玩家欠債)。
+  const cost = revenue - (state.money - moneyBefore);
+  cafe.history.push({ day, guests: served, revenue, cost, net: revenue - cost });
+  if (cafe.history.length > CAFE_HISTORY_CAP) cafe.history.splice(0, cafe.history.length - CAFE_HISTORY_CAP);
+
+  // 6) 敘事:三個旗標各有一組句子,**一天最多推一則**(稀疏哲學同 floorChain 的「每次 pass 最多推一話」;
+  //    日結每天都跑,三則全推會讓咖啡廳淹掉整個動態頁)。優先序 = 玩家最該知道的先講:
+  //    缺貨(客人真的被擋在門外)> 補不滿(錢的問題)> 損耗(最不痛不癢)。
+  //    平順的一天不推日誌,只留 history —— 那是 CAFE-15 面板要顯示的東西。
+  const shortageName = use.shortages.length > 0 ? getCafeIngredient(use.shortages[0])?.name ?? "備料" : "";
+  const missingLine = plan.lines.find((line) => line.bought < line.want);
+  if (shortageName) {
+    pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: shortageName }));
+  } else if (plan.underfunded && missingLine) {
+    pushCafeLog(cafeDailyLine({ kind: "underfunded", day, subject: missingLine.name, fulfillment: plan.fulfillment }));
+  } else if (rot.totalSpoiled > 0) {
+    pushCafeLog(cafeDailyLine({ kind: "spoilage", day, subject: rot.lines[0].name }));
+  }
+}
+
 /** 推進一個遊戲小時(live=true 才在換日時打 AI;補進度/快轉用模板避免大量 API 呼叫) */
 export function hourlyTick(live = false) {
   const prevDay = new Date(state.gameMs).getDate();
@@ -615,6 +738,7 @@ export function hourlyTick(live = false) {
     feudPass(); // 冷戰:關係每日小扣、期滿氣消(§10-2)
     relationshipDailyPass(); // 積怨每天自然降溫；好感與戀愛狀態不受影響
     collectRent();
+    cafeDailyPass(); // 一樓咖啡廳日結:與租金/管理費同一帳日;未開張直接 return(零 RNG、快照零漂移)
     resetDiaryQuota(); // AI 額度每日重置 → 新的一天重新嘗試
     legacyPass(); // 累積型成就輪詢:客滿/滿 30 天/資產破 15 萬/初戀(§G-7)
     for (const g of wishPass()) graduateFarewell(g.id, g.reason); // 人生心願每日推進;到期者圓夢離開(紅包+退押金+口碑)

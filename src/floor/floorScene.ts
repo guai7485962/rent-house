@@ -19,6 +19,7 @@ import {
   type CharView,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
+import type { GuestAgent } from "./guestAgents";
 import type { PetAgent } from "./petAgents";
 import { isVacuumDef, type VacuumAgent } from "./vacuumAgents";
 import { activeFx, type Fx } from "./fx";
@@ -30,6 +31,7 @@ import { drawDef } from "../furniture/render";
 import { getPlacements, placementInteract, placementFootprint, placements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
 import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
+import type { Appearance } from "../types";
 
 export const FLOOR_W = GRID_W * TILE; // 256
 export const FLOOR_H = GRID_H * TILE; // 832
@@ -74,6 +76,21 @@ function charPalette(tenantId: string): Palette {
   };
 }
 
+function guestPalette(appearance: Appearance): Palette {
+  return {
+    ...BASE_PAL,
+    h: appearance.hairColor,
+    H: shade(appearance.hairColor, 26),
+    F: appearance.skin,
+    f: shade(appearance.skin, -16),
+    t: appearance.shirt,
+    T: shade(appearance.shirt, 20),
+    j: shade(appearance.shirt, -22),
+    d: appearance.pants,
+    D: shade(appearance.pants, -22),
+  };
+}
+
 /** 樓層警示標記(維修系統等):在某格上方畫閃爍的警告小圖示 */
 export interface FloorMark {
   c: number;
@@ -90,7 +107,7 @@ export function dayNightTint(hour: number): { color: string; alpha: number } | n
   return { color: "#141840", alpha: 0.24 }; // 入夜
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[]) {
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[], guests?: GuestAgent[]) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -111,8 +128,8 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
   }
 
-  if (agents || pets || vacuums) {
-    // 人、寵物與掃地機依 y 混排,讓靠下(近鏡頭)的蓋住上方;外出者不畫
+  if (agents || pets || vacuums || guests) {
+    // 租客、咖啡廳顧客、寵物與掃地機依 y 混排,讓靠下(近鏡頭)的蓋住上方。
     const items: { y: number; draw: () => void }[] = [];
     const petPairs = activePetPairs(pets ?? []);
     for (const [a, b] of petPairs) {
@@ -121,6 +138,10 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     for (const a of agents ?? []) {
       if (a.hidden) continue;
       items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
+    }
+    for (const guest of guests ?? []) {
+      if (guest.hidden || guest.phase === "departed") continue;
+      items.push({ y: guest.py, draw: () => drawGuest(ctx, guest) });
     }
     for (const v of vacuums ?? []) items.push({ y: v.py + 6, draw: () => drawVacuum(ctx, v, frame) });
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
@@ -150,6 +171,24 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     ctx.restore();
   }
   if (marks) for (const m of marks) drawWarnMark(ctx, m, frame); // 設備故障等警示(§7-1)
+}
+
+/** CAFE-08：顧客沿用四方向人物骨架，但外觀直接讀 CafeGuest snapshot，不查 TenantRuntime。 */
+export function drawGuest(ctx: Ctx, agent: GuestAgent) {
+  const appearance = agent.guest.appearance;
+  const palette = guestPalette(appearance);
+  groundShadow(ctx, agent.px + TILE / 2, agent.py + TILE - 1, 11);
+  if (!agent.moving && agent.phase === "seated") {
+    drawSprite(ctx, CHAR_SIT, agent.px + 3, agent.py + 1, palette);
+    drawAppearanceOverlay(ctx, appearance, agent.px + 3, agent.py + 1, "front");
+    return;
+  }
+  const sprites = CHAR_SPRITES[agent.view];
+  const secondStep = agent.moving && Math.floor(agent.walkPhase) % 2 !== 0;
+  const sprite = agent.moving ? (secondStep ? sprites.walkB : sprites.walkA) : sprites.stand;
+  const yoff = secondStep ? -1 : 0;
+  drawSprite(ctx, sprite, agent.px + 3, agent.py - 4 + yoff, palette);
+  drawAppearanceOverlay(ctx, appearance, agent.px + 3, agent.py - 4 + yoff, agent.view);
 }
 
 /** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */

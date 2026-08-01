@@ -1,10 +1,12 @@
 /**
  * 離線渲染樓層地圖 → PNG(開發檢視用)
- * 用法: npx tsx scripts/render-floor.ts <輸出.png> [遊戲小時 0-23(疊日夜色調)]
+ * 用法: npx tsx scripts/render-floor.ts <輸出.png> [遊戲小時 0-23(疊日夜色調)] [--cafe-guests]
  */
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
 import { composeFloor, FLOOR_W, FLOOR_H } from "../src/floor/floorScene";
+import { generateCafeGuest } from "../src/sim/cafeGuests";
+import { createGuestAgents, tickGuestAgents } from "../src/floor/guestAgents";
 
 function parseColor(c: string): [number, number, number, number] {
   if (c.startsWith("#")) {
@@ -98,8 +100,13 @@ function encodePNG(rgba: Uint8ClampedArray, w: number, h: number) {
 
 const SCALE = 3;
 const ctx = new FakeCtx(FLOOR_W, FLOOR_H);
-const hourArg = process.argv[3] != null ? Number(process.argv[3]) : undefined;
-composeFloor(ctx as any, 0, undefined, undefined, hourArg);
+const hourArg = process.argv[3] != null && !process.argv[3].startsWith("--") ? Number(process.argv[3]) : undefined;
+const withCafeGuests = process.argv.includes("--cafe-guests");
+const cafeGuests = withCafeGuests
+  ? createGuestAgents(Array.from({ length: 3 }, (_, sequence) => generateCafeGuest({ seed: "offline-cafe", arrivedMs: 0, sequence })))
+  : undefined;
+if (cafeGuests) for (let i = 0; i < 240; i++) tickGuestAgents(cafeGuests, 0.05, 0);
+composeFloor(ctx as any, 0, undefined, undefined, hourArg, undefined, undefined, cafeGuests);
 
 const outW = FLOOR_W * SCALE;
 const outH = FLOOR_H * SCALE;
@@ -116,4 +123,4 @@ for (let y = 0; y < outH; y++)
 
 const outPath = process.argv[2] ?? "floor.png";
 writeFileSync(outPath, encodePNG(out, outW, outH));
-console.log(`寫出 ${outPath} (${outW}x${outH})`);
+console.log(`寫出 ${outPath} (${outW}x${outH})${cafeGuests ? `，含 ${cafeGuests.length} 位咖啡廳顧客` : ""}`);

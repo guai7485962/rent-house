@@ -1,3 +1,4 @@
+import type { CafeGuestIntent } from "../types";
 import type { Ctx } from "../pixel/sprites";
 
 /**
@@ -74,7 +75,7 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   coffee_table: { sx: 108, sy: 96, sw: 14, sh: 14, dx: 1, dy: 2 },
 };
 
-/** CAFE-05 獨立 144x64 atlas；不佔用既有家具 atlas 的任何座標。 */
+/** CAFE-05 獨立 144x80 atlas；y=64 起由 CAFE-10 append 顧客意圖幀。 */
 export const LIMEZU_CAFE_IDS = [
   "cafe_menu_board",
   "cafe_sign",
@@ -110,6 +111,33 @@ export const LIMEZU_CAFE_FRAMES: Readonly<Record<LimezuCafeId, CafeFrame>> = {
   cafe_counter: { sx: 36, sy: 32, sw: 27, sh: 20, dx: 2, dy: -4 },
   cafe_drink_station: { sx: 64, sy: 32, sw: 27, sh: 27, dx: 2, dy: 5 },
   cafe_cone_station: { sx: 92, sy: 32, sw: 27, sh: 32, dx: 3, dy: 0 },
+};
+
+export const LIMEZU_CAFE_EMOTE_IDS = [
+  "thinking_emote_coffee_a",
+  "thinking_emote_coffee_b",
+  "thinking_emote_adopt_a",
+  "thinking_emote_adopt_b",
+  "thinking_emote_rent_a",
+  "thinking_emote_rent_b",
+] as const;
+
+export type LimezuCafeEmoteId = (typeof LIMEZU_CAFE_EMOTE_IDS)[number];
+
+/** 原 sheet 每個 16x16 cell 的透明外框已裁掉，dx/dy 還原 cell 內對齊以免動畫抖動。 */
+export const LIMEZU_CAFE_EMOTE_FRAMES: Readonly<Record<LimezuCafeEmoteId, CafeFrame>> = {
+  thinking_emote_coffee_a: { sx: 0, sy: 64, sw: 13, sh: 15, dx: 1, dy: 1 },
+  thinking_emote_coffee_b: { sx: 16, sy: 64, sw: 13, sh: 15, dx: 1, dy: 1 },
+  thinking_emote_adopt_a: { sx: 32, sy: 64, sw: 14, sh: 15, dx: 1, dy: 1 },
+  thinking_emote_adopt_b: { sx: 48, sy: 64, sw: 14, sh: 15, dx: 1, dy: 0 },
+  thinking_emote_rent_a: { sx: 64, sy: 64, sw: 14, sh: 15, dx: 1, dy: 1 },
+  thinking_emote_rent_b: { sx: 80, sy: 64, sw: 14, sh: 15, dx: 1, dy: 1 },
+};
+
+const CAFE_EMOTE_FRAMES_BY_INTENT: Readonly<Record<CafeGuestIntent, readonly [CafeFrame, CafeFrame]>> = {
+  coffee: [LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_coffee_a, LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_coffee_b],
+  adopt: [LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_adopt_a, LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_adopt_b],
+  rent: [LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_rent_a, LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_rent_b],
 };
 
 /** 地板 atlas 中有專屬三變體列的房間(與 manifest floors 的 row 順序同步)。 */
@@ -435,6 +463,36 @@ export function tryDrawLimezuFurniture(
   } catch (error) {
     if (cafeFrame) warnCafeOnce("咖啡廳 atlas 繪製失敗,改用 recipe 繪圖。", error);
     else warnOnce("家具 atlas 繪製失敗,改用程序繪圖。", error);
+    return false;
+  }
+}
+
+/** CAFE-10：沿用已預載的 cafe atlas，1:1 畫出指定意圖的兩幀思考泡泡。 */
+export function tryDrawLimezuThinkingEmote(
+  ctx: Ctx,
+  intent: CafeGuestIntent,
+  phase: number,
+  x: number,
+  y: number,
+): boolean {
+  if (!cafeAtlas) return false;
+  const frames = CAFE_EMOTE_FRAMES_BY_INTENT[intent];
+  const frame = frames[Math.abs(Math.trunc(phase)) % frames.length];
+  try {
+    ctx.drawImage(
+      cafeAtlas,
+      frame.sx,
+      frame.sy,
+      frame.sw,
+      frame.sh,
+      x + frame.dx,
+      y + frame.dy,
+      frame.sw,
+      frame.sh,
+    );
+    return true;
+  } catch (error) {
+    warnCafeOnce("顧客意圖泡泡繪製失敗,改用程序像素泡泡。", error);
     return false;
   }
 }

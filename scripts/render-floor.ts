@@ -102,8 +102,9 @@ const SCALE = 3;
 const ctx = new FakeCtx(FLOOR_W, FLOOR_H);
 const hourArg = process.argv[3] != null && !process.argv[3].startsWith("--") ? Number(process.argv[3]) : undefined;
 const withCafeGuests = process.argv.includes("--cafe-guests");
+const offlineIntents = ["coffee", "adopt", "rent"] as const;
 const cafeGuests = withCafeGuests
-  ? createGuestAgents(Array.from({ length: 3 }, (_, sequence) => generateCafeGuest({ seed: "offline-cafe", arrivedMs: 0, sequence })))
+  ? createGuestAgents(Array.from({ length: 3 }, (_, sequence) => generateCafeGuest({ seed: "offline-cafe", arrivedMs: 0, sequence, intent: offlineIntents[sequence] })))
   : undefined;
 if (cafeGuests) for (let i = 0; i < 240; i++) tickGuestAgents(cafeGuests, 0.05, 0);
 composeFloor(ctx as any, 0, undefined, undefined, hourArg, undefined, undefined, cafeGuests);

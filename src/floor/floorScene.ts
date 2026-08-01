@@ -30,7 +30,7 @@ import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements, placementInteract, placementFootprint, placements } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
-import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
+import { tryDrawLimezuFloor, tryDrawLimezuThinkingEmote, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 import type { Appearance } from "../types";
 
 export const FLOOR_W = GRID_W * TILE; // 256
@@ -146,6 +146,8 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     for (const v of vacuums ?? []) items.push({ y: v.py + 6, draw: () => drawVacuum(ctx, v, frame) });
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
+    // 意圖泡泡是資訊層，統一蓋在人物／家具之上；只有已入座顧客顯示。
+    for (const guest of guests ?? []) drawIntentBubble(ctx, guest, frame);
     for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
@@ -189,6 +191,37 @@ export function drawGuest(ctx: Ctx, agent: GuestAgent) {
   const yoff = secondStep ? -1 : 0;
   drawSprite(ctx, sprite, agent.px + 3, agent.py - 4 + yoff, palette);
   drawAppearanceOverlay(ctx, appearance, agent.px + 3, agent.py - 4 + yoff, agent.view);
+}
+
+/** CAFE-10：已入座顧客的 coffee／adopt／rent 兩幀意圖泡泡。 */
+export function drawIntentBubble(ctx: Ctx, agent: GuestAgent, frame: number) {
+  if (agent.hidden || agent.phase !== "seated" || agent.moving) return;
+  // FloorMap 每 500ms 推進一格 frame；偶數／奇數切幀，形成約 1 秒循環。
+  const phase = Math.floor(Math.max(0, frame)) % 2;
+  const x = Math.round(agent.px);
+  const y = Math.round(agent.py) - 18;
+  if (tryDrawLimezuThinkingEmote(ctx, agent.guest.intent, phase, x, y)) return;
+
+  // atlas 未載入／繪製失敗時的簡潔程序 fallback；不修改共用人物 sprite。
+  rect(ctx, x + 1, y + 1, 14, 11, "#4a4764");
+  rect(ctx, x + 2, y, 12, 11, "#f5f1ff");
+  rect(ctx, x + 6, y + 11, 4, 2, "#f5f1ff");
+  rect(ctx, x + 7, y + 13, 2, 2, "#d8d1ed");
+  if (agent.guest.intent === "adopt") {
+    rect(ctx, x + 5, y + 4, 2, 2, "#e95a72");
+    rect(ctx, x + 9, y + 4, 2, 2, "#e95a72");
+    rect(ctx, x + 4, y + 5, 8, 2, "#e95a72");
+    rect(ctx, x + 6, y + 7, 4, 2, "#c93f5b");
+  } else if (agent.guest.intent === "rent") {
+    rect(ctx, x + 4, y + 4, 8, 5, "#5f83c1");
+    rect(ctx, x + 5, y + 5, 3, 1, "#f5f1ff");
+    rect(ctx, x + 8, y + 6, 3, 1, "#f5f1ff");
+  } else {
+    rect(ctx, x + 5, y + 5, 6, 4, "#a86942");
+    rect(ctx, x + 11, y + 6, 2, 2, "#a86942");
+    rect(ctx, x + 6, y + 3, 1, 2, "#d9b28f");
+    rect(ctx, x + 9, y + 3, 1, 2, "#d9b28f");
+  }
 }
 
 /** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */

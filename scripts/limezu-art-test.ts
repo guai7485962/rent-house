@@ -2,6 +2,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  LIMEZU_CAFE_EMOTE_FRAMES,
+  LIMEZU_CAFE_EMOTE_IDS,
   LIMEZU_CAFE_IDS,
   LIMEZU_CAFE_FRAMES,
   LIMEZU_FURNITURE_IDS,
@@ -20,6 +22,7 @@ import {
   resetLimezuWallAtlasForTests,
   tryDrawLimezuFurniture,
   tryDrawLimezuFloor,
+  tryDrawLimezuThinkingEmote,
   tryDrawLimezuWallPiece,
 } from "../src/art/limezu";
 import { getDef } from "../src/furniture/catalog";
@@ -106,8 +109,8 @@ check(
     && manifest.floor_atlas.height === floorsPng.height,
 );
 check(
-  "cafe.png 是獨立 144x64 atlas",
-  cafePng.width === 144 && cafePng.height === 64
+  "cafe.png 是獨立 144x80 atlas（底列為 CAFE-10 意圖幀）",
+  cafePng.width === 144 && cafePng.height === 80
     && manifest.cafe_atlas.width === cafePng.width
     && manifest.cafe_atlas.height === cafePng.height,
 );
@@ -119,10 +122,20 @@ const CAFE_IDS = [
   "cafe_chair_front", "cafe_chair_side", "cafe_counter",
   "cafe_drink_station", "cafe_cone_station",
 ] as const;
+const CAFE_EMOTE_IDS = [
+  "thinking_emote_coffee_a", "thinking_emote_coffee_b",
+  "thinking_emote_adopt_a", "thinking_emote_adopt_b",
+  "thinking_emote_rent_a", "thinking_emote_rent_b",
+] as const;
 check(
   "CAFE-05 runtime 清單 = manifest 的 13 個咖啡廳元件",
   JSON.stringify(LIMEZU_CAFE_IDS) === JSON.stringify(CAFE_IDS)
-    && JSON.stringify(Object.keys(manifest.cafe)) === JSON.stringify(CAFE_IDS),
+    && JSON.stringify(Object.keys(manifest.cafe).slice(0, CAFE_IDS.length)) === JSON.stringify(CAFE_IDS),
+);
+check(
+  "CAFE-10 runtime 清單 = manifest append 的 6 個意圖幀",
+  JSON.stringify(LIMEZU_CAFE_EMOTE_IDS) === JSON.stringify(CAFE_EMOTE_IDS)
+    && JSON.stringify(Object.keys(manifest.cafe).slice(CAFE_IDS.length)) === JSON.stringify(CAFE_EMOTE_IDS),
 );
 const cafeFrames = Object.entries(LIMEZU_CAFE_FRAMES);
 check(
@@ -136,11 +149,23 @@ check(
       && f.sx + f.sw <= cafePng.width && f.sy + f.sh <= cafePng.height;
   }),
 );
-const cafeOverlaps = cafeFrames.some(([, a], index) => cafeFrames.slice(index + 1).some(([, b]) =>
+const cafeEmoteFrames = Object.entries(LIMEZU_CAFE_EMOTE_FRAMES);
+const allCafeFrames = [...cafeFrames, ...cafeEmoteFrames];
+const cafeOverlaps = allCafeFrames.some(([, a], index) => allCafeFrames.slice(index + 1).some(([, b]) =>
   a.sx < b.sx + b.sw && a.sx + a.sw > b.sx
   && a.sy < b.sy + b.sh && a.sy + a.sh > b.sy,
 ));
-check("13 個咖啡廳 frame 互不重疊", !cafeOverlaps);
+check("13 個家具 frame + 6 個意圖幀互不重疊", !cafeOverlaps);
+check(
+  "六個意圖幀與 manifest 一致、位於 y=64 append 帶且都在 atlas 內",
+  CAFE_EMOTE_IDS.every((id) => {
+    const m = manifest.cafe[id];
+    const f = LIMEZU_CAFE_EMOTE_FRAMES[id];
+    return m.atlas[0] === f.sx && m.atlas[1] === f.sy
+      && m.crop[2] === f.sw && m.crop[3] === f.sh
+      && f.sy === 64 && f.sx + f.sw <= cafePng.width && f.sy + f.sh <= cafePng.height;
+  }),
+);
 check(
   "咖啡廳素材只取 Ice Cream Shop singles 與既有 Kitchen espresso single",
   CAFE_IDS.every((id) => manifest.cafe[id].source.startsWith(
@@ -148,6 +173,10 @@ check(
       ? "Theme_Sorter_Singles/12_Kitchen_Singles/"
       : "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/",
   )),
+);
+check(
+  "意圖幀只取已授權的 16x16 thinking emote sheet",
+  CAFE_EMOTE_IDS.every((id) => manifest.cafe[id].source === "../../4_User_Interface_Elements/UI_thinking_emotes_animation_16x16.png"),
 );
 const floorSceneSource = readFileSync(
   fileURLToPath(new URL("../src/floor/floorScene.ts", import.meta.url)),
@@ -312,6 +341,18 @@ check(
     && cafeArgs[5] === 11 + cafeCounterFrame.dx && cafeArgs[6] === 13 + cafeCounterFrame.dy
     && cafeArgs[7] === cafeCounterFrame.sw && cafeArgs[8] === cafeCounterFrame.sh,
 );
+const emoteAtlasCtx = new FakeCtx();
+const emoteDrawn = tryDrawLimezuThinkingEmote(emoteAtlasCtx as any, "adopt", 1, 20, 30);
+const adoptFrame = LIMEZU_CAFE_EMOTE_FRAMES.thinking_emote_adopt_b;
+const emoteArgs = emoteAtlasCtx.drawCalls[0] ?? [];
+check("已載入 cafe atlas 可繪製顧客意圖泡泡", emoteDrawn && emoteAtlasCtx.drawCalls.length === 1);
+check(
+  "意圖泡泡使用正確兩幀來源並維持 1:1 cell 對齊",
+  emoteArgs[1] === adoptFrame.sx && emoteArgs[2] === adoptFrame.sy
+    && emoteArgs[3] === adoptFrame.sw && emoteArgs[4] === adoptFrame.sh
+    && emoteArgs[5] === 20 + adoptFrame.dx && emoteArgs[6] === 30 + adoptFrame.dy
+    && emoteArgs[7] === adoptFrame.sw && emoteArgs[8] === adoptFrame.sh,
+);
 check(
   "跳過件 id(double_bed)不會誤畫 atlas",
   !tryDrawLimezuFurniture(atlasCtx as any, "double_bed", 0, 0, 48, 32) && atlasCtx.drawCalls.length === 1,
@@ -393,7 +434,8 @@ warnings = 0;
 console.warn = () => { warnings++; };
 const throwingCafeCtx = new ThrowingDrawCtx();
 drawDef(throwingCafeCtx as any, getDef("cafe_counter"), 0, 0);
-check("咖啡廳 drawImage 失敗時回退 recipe 且只警告一次", throwingCafeCtx.fillCount > 0 && warnings === 1);
+const throwingEmote = tryDrawLimezuThinkingEmote(throwingCafeCtx as any, "coffee", 0, 0, 0);
+check("咖啡廳家具／意圖 drawImage 失敗時回退且共用一次警告", throwingCafeCtx.fillCount > 0 && !throwingEmote && warnings === 1);
 console.warn = originalWarn;
 
 resetLimezuFurnitureAtlasForTests();

@@ -14,6 +14,7 @@ const mem: Record<string, string> = {};
 const { composeFloor, FLOOR_W, FLOOR_H } = await import("../src/floor/floorScene");
 const { createAgents, tickAgents } = await import("../src/floor/agents");
 const { TILE } = await import("../src/floor/map");
+const { centeredViewportRect, renderFloorViewport, viewportRect } = await import("../src/floor/viewport");
 const { roomRect } = await import("../src/sim/placements");
 const { generateApplicants } = await import("../src/sim/recruit");
 const { moveIn } = await import("../src/sim/tenancy");
@@ -84,12 +85,16 @@ function cameraTarget(agents: ReturnType<typeof createAgents>, tid: string): { x
 /** 一位租客的房間鏡頭渲染一幀,回傳亮度 */
 function renderCam(agents: ReturnType<typeof createAgents>, tid: string): number {
   const tgt = cameraTarget(agents, tid);
-  const camX = clampCam(tgt.x - VIEW_W / 2, FLOOR_W - VIEW_W);
-  const camY = clampCam(tgt.y - VIEW_H / 2, FLOOR_H - VIEW_H);
+  const rect = centeredViewportRect(tgt.x, tgt.y, VIEW_W, VIEW_H, FLOOR_W, FLOOR_H);
   const ctx = new FakeCtx(CANVAS_W, CANVAS_H);
-  ctx.setTransform(SCALE, 0, 0, SCALE, -Math.round(camX * SCALE), -Math.round(camY * SCALE));
-  composeFloor(ctx as any, 0, agents, undefined, 12);
+  renderFloorViewport(ctx, rect, SCALE, () => composeFloor(ctx as any, 0, agents, undefined, 12));
   return ctx.brightness();
+}
+
+function samePixels(a: Uint8ClampedArray, b: Uint8ClampedArray): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 // 招滿 4 房 + 跑幾小時讓 agent 定位
@@ -99,6 +104,17 @@ let agents = createAgents();
 for (let i = 0; i < 6; i++) { debugStepHour(); tickAgents(agents, 0.05); }
 agents = createAgents();
 tickAgents(agents, 0.05);
+
+// 共用 viewport 必須與重構前的直接 setTransform 產生逐位元相同的畫面
+const legacyCtx = new FakeCtx(CANVAS_W, CANVAS_H);
+const sharedCtx = new FakeCtx(CANVAS_W, CANVAS_H);
+const regressionRect = viewportRect(19.25, 41.75, VIEW_W, VIEW_H);
+legacyCtx.imageSmoothingEnabled = false;
+legacyCtx.setTransform(SCALE, 0, 0, SCALE, -Math.round(regressionRect.x * SCALE), -Math.round(regressionRect.y * SCALE));
+composeFloor(legacyCtx as any, 0, agents, undefined, 12);
+legacyCtx.setTransform(1, 0, 0, 1, 0, 0);
+renderFloorViewport(sharedCtx, regressionRect, SCALE, () => composeFloor(sharedCtx as any, 0, agents, undefined, 12));
+check("FloorViewport 與舊鏡頭逐位元相同", samePixels(legacyCtx.buf, sharedCtx.buf));
 
 // 相機目標永遠落在合法範圍
 for (const tid of Object.values(state.occupancy)) {

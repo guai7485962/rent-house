@@ -13,6 +13,7 @@ import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
 import { TILE } from "../floor/map";
+import { centeredViewportRect, renderFloorViewport, viewportRect } from "../floor/viewport";
 import { roomRect } from "../sim/placements";
 import { state, roomOfTenant } from "../store";
 
@@ -23,8 +24,9 @@ const props = defineProps<{
 }>();
 
 // 相機視窗:8×7 格,放大 3 倍(canvas 自帶 384×336,CSS 再等比縮到面板寬)
-const VIEW_W = 8 * TILE;
-const VIEW_H = 7 * TILE;
+const ROOM_VIEWPORT = viewportRect(0, 0, 8 * TILE, 7 * TILE);
+const VIEW_W = ROOM_VIEWPORT.width;
+const VIEW_H = ROOM_VIEWPORT.height;
 const SCALE = 3;
 const CANVAS_W = VIEW_W * SCALE;
 const CANVAS_H = VIEW_H * SCALE;
@@ -79,8 +81,6 @@ function cameraTarget(): { x: number; y: number } {
   return { x: FLOOR_W / 2, y: FLOOR_H / 2 };
 }
 
-const clampCam = (v: number, max: number) => Math.min(Math.max(v, 0), max);
-
 function loop(t: number) {
   try {
     const dt = last ? Math.min(0.05, (t - last) / 1000) : 0;
@@ -105,8 +105,9 @@ function loop(t: number) {
     if (el) {
       // 鏡頭緩動跟隨(首幀直接就位)
       const tgt = cameraTarget();
-      const wantX = clampCam(tgt.x - VIEW_W / 2, FLOOR_W - VIEW_W);
-      const wantY = clampCam(tgt.y - VIEW_H / 2, FLOOR_H - VIEW_H);
+      const wantedViewport = centeredViewportRect(tgt.x, tgt.y, VIEW_W, VIEW_H, FLOOR_W, FLOOR_H);
+      const wantX = wantedViewport.x;
+      const wantY = wantedViewport.y;
       if (camX < 0) {
         camX = wantX;
         camY = wantY;
@@ -116,11 +117,10 @@ function loop(t: number) {
       }
 
       const ctx = el.getContext("2d")!;
-      ctx.imageSmoothingEnabled = false;
       // 把整張樓層以 3 倍縮放、平移到相機角落畫進來;canvas 只露出相機窗格
-      ctx.setTransform(SCALE, 0, 0, SCALE, -Math.round(camX * SCALE), -Math.round(camY * SCALE));
-      composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      renderFloorViewport(ctx, viewportRect(camX, camY, VIEW_W, VIEW_H), SCALE, () => {
+        composeFloor(ctx, Math.floor(t / 500), agents, undefined, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
+      });
     }
   } finally {
     // 單幀出錯也不讓渲染迴圈死掉(否則房間圖會永久消失/停格)

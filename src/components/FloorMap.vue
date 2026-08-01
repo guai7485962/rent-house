@@ -27,16 +27,23 @@ const emit = defineEmits<{
 
 const FLOOR_VIEWS = {
   "3f": { id: "3f", floor: "3F", label: "租屋樓", rect: viewportRect(0, 0, 16 * TILE, 33 * TILE) },
-  "1f": { id: "1f", floor: "1F", label: "咖啡廳", rect: viewportRect(0, 34 * TILE, 16 * TILE, 18 * TILE) },
+  "1f": { id: "1f", floor: "1F", label: "寵物咖啡廳", rect: viewportRect(0, 34 * TILE, 16 * TILE, 18 * TILE) },
 } as const;
 type FloorViewId = keyof typeof FLOOR_VIEWS;
 
-const floorViews = Object.values(FLOOR_VIEWS);
 const floorView = ref<FloorViewId>("3f");
 const activeFloorView = computed(() => FLOOR_VIEWS[floorView.value]);
 const canvasWidth = computed(() => activeFloorView.value.rect.width);
 const canvasHeight = computed(() => activeFloorView.value.rect.height);
 const isTenantFloor = computed(() => floorView.value === "3f");
+const floorPageNavigation = computed(() => isTenantFloor.value
+  ? { target: "1f" as const, icon: "☕", label: "前往 1F 寵物咖啡廳" }
+  : { target: "3f" as const, icon: "🏠", label: "返回 3F 租屋樓" });
+
+/** 玩家看到的是兩個獨立樓層頁面；底層仍只切換共用 grid 的固定 viewport。 */
+function switchFloorPage() {
+  floorView.value = floorPageNavigation.value.target;
+}
 
 const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);
 
@@ -203,22 +210,28 @@ function onClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="floor-shell">
-    <div class="floor-switcher" role="tablist" aria-label="樓層切換">
+  <section
+    class="floor-shell"
+    :class="`floor-page-${floorView}`"
+    :aria-label="`${activeFloorView.floor} ${activeFloorView.label}頁面`"
+  >
+    <header class="floor-page-header">
+      <div class="floor-page-heading">
+        <span>目前樓層</span>
+        <h2>{{ isTenantFloor ? "🏠" : "☕" }} {{ activeFloorView.floor }} {{ activeFloorView.label }}</h2>
+      </div>
       <button
-        v-for="view in floorViews"
-        :key="view.id"
         type="button"
-        role="tab"
-        :class="{ on: floorView === view.id }"
-        :aria-selected="floorView === view.id"
-        :aria-label="`${view.floor} ${view.label}`"
-        @click="floorView = view.id"
+        class="floor-page-nav"
+        :aria-label="floorPageNavigation.label"
+        @click="switchFloorPage"
       >
-        <strong>{{ view.floor }}</strong><span>{{ view.label }}</span>
+        <span class="floor-page-nav-icon">{{ floorPageNavigation.icon }}</span>
+        <span>{{ floorPageNavigation.label }}</span>
+        <span class="floor-page-nav-arrow" aria-hidden="true">›</span>
       </button>
-    </div>
-    <div class="floor-wrap">
+    </header>
+    <div :key="floorView" class="floor-wrap">
       <canvas
         ref="canvas"
         :width="canvasWidth"
@@ -264,7 +277,7 @@ function onClick(e: MouseEvent) {
         {{ tag.name }}
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
@@ -273,38 +286,69 @@ function onClick(e: MouseEvent) {
   flex-direction: column;
   gap: 6px;
 }
-.floor-switcher {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 6px;
-  line-height: 1.2;
-  background: rgba(36, 31, 51, 0.78);
-  border-bottom: 1px solid var(--line);
-}
-.floor-switcher button {
+.floor-page-header {
   display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 6px 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px;
+  background: rgba(36, 31, 51, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  line-height: 1.2;
+}
+.floor-page-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.floor-page-heading > span {
   color: var(--text-dim);
-  background: rgba(13, 12, 18, 0.55);
-  border: 1px solid transparent;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.floor-page-heading h2 {
+  margin: 0;
+  color: #fff4df;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.floor-page-nav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  padding: 6px 8px;
+  color: #fff4df;
+  background: rgba(255, 180, 94, 0.14);
+  border: 1px solid rgba(255, 180, 94, 0.62);
   border-radius: 8px;
   cursor: pointer;
+  font-size: 10px;
+  text-align: left;
 }
-.floor-switcher button.on {
-  color: #fff4df;
-  background: rgba(255, 180, 94, 0.15);
-  border-color: rgba(255, 180, 94, 0.65);
+.floor-page-nav:hover {
+  background: rgba(255, 180, 94, 0.22);
 }
-.floor-switcher strong { color: var(--accent); font-size: 12px; }
-.floor-switcher span { font-size: 11px; }
+.floor-page-nav-icon { font-size: 14px; }
+.floor-page-nav-arrow { color: var(--accent); font-size: 18px; line-height: 1; }
+.floor-page-1f .floor-page-header {
+  background: linear-gradient(135deg, rgba(62, 45, 50, 0.92), rgba(36, 31, 51, 0.82));
+  border-color: rgba(255, 180, 94, 0.42);
+}
 .floor-wrap {
   position: relative;
   line-height: 0;
+  animation: floor-page-enter 160ms ease-out;
+}
+@keyframes floor-page-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floor-wrap { animation: none; }
 }
 .event-scene {
   position: absolute;

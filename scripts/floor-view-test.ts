@@ -1,4 +1,4 @@
-/** CAFE-02 樓層切換器的 SFC 合約測試。 */
+/** CAFE-02 獨立樓層頁面切換的 SFC 合約測試。 */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +17,21 @@ check("1F 機位固定為 row 34 起的 16×18 格", /viewportRect\(0, 34 \* TIL
 check("FloorMap 透過共用 FloorViewport 繪製", source.includes("renderFloorViewport(ctx, view, 1"));
 check("canvas 尺寸跟隨目前樓層矩形", source.includes(':width="canvasWidth"') && source.includes(':height="canvasHeight"'));
 check("點擊座標加回目前 viewport 原點", source.includes("const cx = view.x +") && source.includes("const cy = view.y +"));
-check("樓層切換具 tab 語意與選取狀態", source.includes('role="tablist"') && source.includes(':aria-selected="floorView === view.id"'));
+check(
+  "樓層以頁面區域呈現且切換時替換整個 floor-wrap",
+  source.includes(':aria-label="`${activeFloorView.floor} ${activeFloorView.label}頁面`"')
+    && source.includes('<div :key="floorView" class="floor-wrap">'),
+);
+check(
+  "3F 只有前往咖啡廳按鈕、1F 只有返回租屋樓按鈕",
+  source.includes('label: "前往 1F 寵物咖啡廳"')
+    && source.includes('label: "返回 3F 租屋樓"')
+    && source.includes('@click="switchFloorPage"'),
+);
+check(
+  "不再使用同頁雙 tab 樣式",
+  !source.includes('role="tablist"') && !source.includes('role="tab"') && !source.includes("floor-switcher"),
+);
 check("沒有加入自由捲動或縮放手勢", !/@(?:wheel|pointerdown|touchstart)=/.test(source));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

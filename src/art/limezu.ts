@@ -5,11 +5,12 @@ import type { Ctx } from "../pixel/sprites";
  *
  * 原始付費素材不進版控;只把遊戲實際使用的核准素材重組成專案小圖
  * (由 scripts/build-limezu-atlas.py 依 scripts/limezu-manifest.json 產生,
- * 兩張 atlas 的 frame 表與 manifest 一一對應,limezu-art-test.ts 交叉驗證)。
+ * 各 atlas 的 frame 表與 manifest 一一對應,limezu-art-test.ts 交叉驗證)。
  * atlas 尚未載入、瀏覽器不支援 Image、或繪製失敗時一律回傳 false,
  * 由 furniture/render.ts 與 floorScene.ts 保留的程序繪圖完整接手。
  */
 export const LIMEZU_ATLAS_URL = "/assets/limezu/furniture.png";
+export const LIMEZU_CAFE_ATLAS_URL = "/assets/limezu/cafe.png";
 export const LIMEZU_FLOOR_ATLAS_URL = "/assets/limezu/floors.png";
 export const LIMEZU_WALL_ATLAS_URL = "/assets/limezu/walls.png";
 
@@ -71,6 +72,49 @@ export const LIMEZU_FURNITURE_FRAMES: Readonly<Record<LimezuFurnitureId, AtlasFr
   laundry_washer: { sx: 42, sy: 40, sw: 20, sh: 29, dx: -2, dy: -13 },
   lounge_plant: { sx: 78, sy: 96, sw: 16, sh: 31, dx: 0, dy: -15 },
   coffee_table: { sx: 108, sy: 96, sw: 14, sh: 14, dx: 1, dy: 2 },
+};
+
+/** CAFE-05 獨立 144x64 atlas；不佔用既有家具 atlas 的任何座標。 */
+export const LIMEZU_CAFE_IDS = [
+  "cafe_menu_board",
+  "cafe_sign",
+  "cafe_display_empty",
+  "cafe_display_stocked",
+  "cafe_display_corner",
+  "cafe_register",
+  "espresso_machine",
+  "cafe_table",
+  "cafe_chair_front",
+  "cafe_chair_side",
+  "cafe_counter",
+  "cafe_drink_station",
+  "cafe_cone_station",
+] as const;
+
+export type LimezuCafeId = (typeof LIMEZU_CAFE_IDS)[number];
+
+interface CafeFrame {
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+}
+
+/** 咖啡廳元件來源框；CAFE-06 接線時再依家具 footprint 決定目的地偏移。 */
+export const LIMEZU_CAFE_FRAMES: Readonly<Record<LimezuCafeId, CafeFrame>> = {
+  cafe_menu_board: { sx: 0, sy: 0, sw: 28, sh: 28 },
+  cafe_sign: { sx: 28, sy: 0, sw: 28, sh: 25 },
+  cafe_display_empty: { sx: 56, sy: 0, sw: 15, sh: 25 },
+  cafe_display_stocked: { sx: 72, sy: 0, sw: 16, sh: 25 },
+  cafe_display_corner: { sx: 88, sy: 0, sw: 16, sh: 25 },
+  cafe_register: { sx: 104, sy: 0, sw: 12, sh: 16 },
+  espresso_machine: { sx: 120, sy: 0, sw: 14, sh: 19 },
+  cafe_table: { sx: 0, sy: 32, sw: 12, sh: 31 },
+  cafe_chair_front: { sx: 12, sy: 32, sw: 11, sh: 20 },
+  cafe_chair_side: { sx: 24, sy: 32, sw: 11, sh: 20 },
+  cafe_counter: { sx: 36, sy: 32, sw: 27, sh: 20 },
+  cafe_drink_station: { sx: 64, sy: 32, sw: 27, sh: 27 },
+  cafe_cone_station: { sx: 92, sy: 32, sw: 27, sh: 32 },
 };
 
 /** 地板 atlas 中有專屬三變體列的房間(與 manifest floors 的 row 順序同步)。 */

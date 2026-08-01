@@ -2,6 +2,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  LIMEZU_CAFE_IDS,
+  LIMEZU_CAFE_FRAMES,
   LIMEZU_FURNITURE_IDS,
   LIMEZU_FURNITURE_FRAMES,
   LIMEZU_FLOOR_ROOM_IDS,
@@ -55,11 +57,18 @@ interface ManifestFurniture {
   atlas?: [number, number];
   alias?: string;
 }
+interface ManifestCafePiece {
+  source: string;
+  crop: [number, number, number, number];
+  atlas: [number, number];
+}
 const manifest = JSON.parse(
   readFileSync(fileURLToPath(new URL("./limezu-manifest.json", import.meta.url)), "utf8"),
 ) as {
   furniture_atlas: { width: number; height: number };
   furniture: Record<string, ManifestFurniture>;
+  cafe_atlas: { width: number; height: number };
+  cafe: Record<string, ManifestCafePiece>;
   wall_atlas: { width: number; height: number };
   walls: Record<string, { source: string; crop: [number, number, number, number]; atlas: [number, number] }>;
   floor_atlas: { width: number; height: number };
@@ -71,6 +80,7 @@ const pngSize = (rel: string) => {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 };
 const atlasPng = pngSize("../public/assets/limezu/furniture.png");
+const cafePng = pngSize("../public/assets/limezu/cafe.png");
 const floorsPng = pngSize("../public/assets/limezu/floors.png");
 
 check(
@@ -92,6 +102,59 @@ check(
   floorsPng.width === 48 && floorsPng.height === 112
     && manifest.floor_atlas.width === floorsPng.width
     && manifest.floor_atlas.height === floorsPng.height,
+);
+check(
+  "cafe.png 是獨立 144x64 atlas",
+  cafePng.width === 144 && cafePng.height === 64
+    && manifest.cafe_atlas.width === cafePng.width
+    && manifest.cafe_atlas.height === cafePng.height,
+);
+
+const CAFE_IDS = [
+  "cafe_menu_board", "cafe_sign",
+  "cafe_display_empty", "cafe_display_stocked", "cafe_display_corner",
+  "cafe_register", "espresso_machine", "cafe_table",
+  "cafe_chair_front", "cafe_chair_side", "cafe_counter",
+  "cafe_drink_station", "cafe_cone_station",
+] as const;
+check(
+  "CAFE-05 runtime 清單 = manifest 的 13 個咖啡廳元件",
+  JSON.stringify(LIMEZU_CAFE_IDS) === JSON.stringify(CAFE_IDS)
+    && JSON.stringify(Object.keys(manifest.cafe)) === JSON.stringify(CAFE_IDS),
+);
+const cafeFrames = Object.entries(LIMEZU_CAFE_FRAMES);
+check(
+  "咖啡廳 frame 與 manifest 完全一致且都在 cafe.png 邊界內",
+  CAFE_IDS.every((id) => {
+    const m = manifest.cafe[id];
+    const f = LIMEZU_CAFE_FRAMES[id];
+    return m.atlas[0] === f.sx && m.atlas[1] === f.sy
+      && m.crop[2] === f.sw && m.crop[3] === f.sh
+      && f.sx >= 0 && f.sy >= 0 && f.sw > 0 && f.sh > 0
+      && f.sx + f.sw <= cafePng.width && f.sy + f.sh <= cafePng.height;
+  }),
+);
+const cafeOverlaps = cafeFrames.some(([, a], index) => cafeFrames.slice(index + 1).some(([, b]) =>
+  a.sx < b.sx + b.sw && a.sx + a.sw > b.sx
+  && a.sy < b.sy + b.sh && a.sy + a.sh > b.sy,
+));
+check("13 個咖啡廳 frame 互不重疊", !cafeOverlaps);
+check(
+  "咖啡廳素材只取 Ice Cream Shop singles 與既有 Kitchen espresso single",
+  CAFE_IDS.every((id) => manifest.cafe[id].source.startsWith(
+    id === "espresso_machine"
+      ? "Theme_Sorter_Singles/12_Kitchen_Singles/"
+      : "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/",
+  )),
+);
+const floorSceneSource = readFileSync(
+  fileURLToPath(new URL("../src/floor/floorScene.ts", import.meta.url)),
+  "utf8",
+);
+check(
+  "六個咖啡廳 Region 都有專屬 FLOOR_TINT",
+  ["stairs", "cafe_floor", "cafe_counter", "cafe_pet", "cafe_back", "cafe_entrance"]
+    .every((id) => new RegExp(`\\b${id}:\\s*\"#[0-9a-f]{6}\"`, "i").test(floorSceneSource)),
 );
 
 const frames = Object.entries(LIMEZU_FURNITURE_FRAMES);

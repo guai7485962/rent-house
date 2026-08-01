@@ -5,6 +5,7 @@
 (不進版控)重組出:
 
   public/assets/limezu/furniture.png  — 家具 atlas(裁透明邊後 1:1 貼入)
+  public/assets/limezu/cafe.png       — 咖啡廳專用 atlas(與既有家具隔離)
   public/assets/limezu/floors.png     — 地板 atlas(每房一列 3 個 16x16 變體)
   public/assets/limezu/walls.png      — 牆面 atlas(頂蓋/牆身 8 件 + 踢腳條)
 
@@ -32,6 +33,17 @@ def load_source(root: str, rel: str) -> Image.Image:
     if not os.path.exists(path):
         fail(f"來源檔不存在:{path}")
     return Image.open(path).convert("RGBA")
+
+
+def save_if_pixels_changed(image: Image.Image, path: str) -> bool:
+    """既有 PNG 像素相同時保留原檔 bytes，避免 Pillow 版本只改壓縮結果。"""
+    if os.path.exists(path):
+        with Image.open(path) as current:
+            rgba = current.convert("RGBA")
+            if rgba.size == image.size and rgba.tobytes() == image.tobytes():
+                return False
+    image.save(path)
+    return True
 
 
 def main() -> None:
@@ -71,6 +83,28 @@ def main() -> None:
     for fid, spec in entries.items():
         if "alias" in spec and spec["alias"] not in placed:
             fail(f"{fid} 的 alias 目標 {spec['alias']} 不存在")
+
+    # ---------------- cafe atlas ----------------
+    ca = manifest["cafe_atlas"]
+    cafe_atlas = Image.new("RGBA", (ca["width"], ca["height"]), (0, 0, 0, 0))
+    cafe_placed: dict[str, tuple[int, int, int, int]] = {}
+    for cid, spec in manifest["cafe"].items():
+        src = load_source(source_root, spec["source"])
+        x, y, w, h = spec["crop"]
+        if x < 0 or y < 0 or x + w > src.width or y + h > src.height:
+            fail(f"咖啡廳件 {cid} 裁切框 {spec['crop']} 超出來源 {src.size}")
+        crop = src.crop((x, y, x + w, y + h))
+        bbox = crop.getchannel("A").getbbox()
+        if bbox != (0, 0, w, h):
+            fail(f"咖啡廳件 {cid} 裁切框未貼齊不透明範圍(實際 bbox={bbox}),manifest 需修正")
+        ax, ay = spec["atlas"]
+        if ax < 0 or ay < 0 or ax + w > ca["width"] or ay + h > ca["height"]:
+            fail(f"咖啡廳件 {cid} atlas 位置 ({ax},{ay}) + {w}x{h} 超出 atlas {ca['width']}x{ca['height']}")
+        for other, (ox, oy, ow, oh) in cafe_placed.items():
+            if ax < ox + ow and ax + w > ox and ay < oy + oh and ay + h > oy:
+                fail(f"咖啡廳件 {cid} 與 {other} 在 atlas 上重疊")
+        cafe_atlas.alpha_composite(crop, (ax, ay))
+        cafe_placed[cid] = (ax, ay, w, h)
 
     # ---------------- wall atlas ----------------
     wa = manifest["wall_atlas"]
@@ -120,13 +154,16 @@ def main() -> None:
 
     # ---------------- 全部驗證通過才落地 ----------------
     out_furniture = os.path.join(REPO, fa["file"])
+    out_cafe = os.path.join(REPO, ca["file"])
     out_floors = os.path.join(REPO, fl["file"])
     out_walls = os.path.join(REPO, wa["file"])
     os.makedirs(os.path.dirname(out_furniture), exist_ok=True)
-    atlas.save(out_furniture)
-    floors.save(out_floors)
-    wall_atlas.save(out_walls)
+    save_if_pixels_changed(atlas, out_furniture)
+    save_if_pixels_changed(cafe_atlas, out_cafe)
+    save_if_pixels_changed(floors, out_floors)
+    save_if_pixels_changed(wall_atlas, out_walls)
     print(f"OK furniture atlas {fa['width']}x{fa['height']} → {out_furniture}({len(placed)} frames,{len(entries) - len(placed)} alias)")
+    print(f"OK cafe atlas {ca['width']}x{ca['height']} → {out_cafe}({len(cafe_placed)} pieces)")
     print(f"OK floor atlas {fl['width']}x{fl['height']} → {out_floors}({len(rows_seen)} rooms)")
     print(f"OK wall atlas {wa['width']}x{wa['height']} → {out_walls}({len(wall_placed)} pieces)")
 

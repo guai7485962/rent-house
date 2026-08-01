@@ -47,6 +47,12 @@ const FLOOR_TINT: Record<string, string> = {
   laundry: "#9aa2a8", // 灰磁磚(洗衣間)
   door: "#9a7a52",
   entrance: "#8a6a44",
+  stairs: "#9c7652", // 暖木樓梯
+  cafe_floor: "#c89b6b", // 蜂蜜木色(主座位區)
+  cafe_counter: "#b97572", // 玫瑰陶磚(吧台／點餐區)
+  cafe_pet: "#91ad8e", // 鼠尾草綠(寵物遊戲區)
+  cafe_back: "#7f8992", // 灰藍工作地坪(後場)
+  cafe_entrance: "#a17a54", // 暖木門檻
 };
 
 /** 磁磚地板的區域(方格縫,而非木紋)*/

@@ -22,6 +22,23 @@
     "lounge_plant": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [240, 457, 16, 31], "atlas": [78, 96] },
     "coffee_table": { "source": "Theme_Sorter/1_Generic_16x16.png", "crop": [81, 81, 14, 14], "atlas": [108, 96] }
   },
+  "cafe_atlas": { "file": "public/assets/limezu/cafe.png", "width": 144, "height": 64 },
+  "$cafe_comment": "CAFE-05:咖啡廳專用 atlas。冰淇淋店選件來自獨立 singles，濃縮咖啡機沿用 Kitchen single；與既有 furniture/floors/walls atlas 完全隔離，供後續 CAFE-06 家具條目接線。",
+  "cafe": {
+    "cafe_menu_board": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_12.png", "crop": [2, 9, 28, 28], "atlas": [0, 0] },
+    "cafe_sign": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_16.png", "crop": [2, 7, 28, 25], "atlas": [28, 0] },
+    "cafe_display_empty": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_20.png", "crop": [1, 7, 15, 25], "atlas": [56, 0] },
+    "cafe_display_stocked": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_36.png", "crop": [0, 7, 16, 25], "atlas": [72, 0] },
+    "cafe_display_corner": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_41.png", "crop": [0, 7, 16, 25], "atlas": [88, 0] },
+    "cafe_register": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_80.png", "crop": [2, 0, 12, 16], "atlas": [104, 0] },
+    "espresso_machine": { "source": "Theme_Sorter_Singles/12_Kitchen_Singles/Kitchen_Singles_177.png", "crop": [1, 11, 14, 19], "atlas": [120, 0] },
+    "cafe_table": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_75.png", "crop": [2, 1, 12, 31], "atlas": [0, 32] },
+    "cafe_chair_front": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_76.png", "crop": [3, 8, 11, 20], "atlas": [12, 32] },
+    "cafe_chair_side": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_77.png", "crop": [2, 8, 11, 20], "atlas": [24, 32] },
+    "cafe_counter": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_100.png", "crop": [2, 12, 27, 20], "atlas": [36, 32] },
+    "cafe_drink_station": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_101.png", "crop": [2, 5, 27, 27], "atlas": [64, 32] },
+    "cafe_cone_station": { "source": "Theme_Sorter_Singles/24_Ice_Cream_Shop_Singles/Ice_Cream_Shop_Singles_102.png", "crop": [3, 0, 27, 32], "atlas": [92, 32] }
+  },
   "wall_atlas": { "file": "public/assets/limezu/walls.png", "width": 64, "height": 64 },
   "$walls_comment": "第三批:整棟牆面。牆身/頂蓋取 Room_Builder 牆面表,踢腳線取踢腳板表。CAFE-04 在既有座標不動的前提下,把 Visible Upstairs 的兩塊不透明木階踏面與暖灰樓板切面 append 到 y=48；樓梯側軌由 floorScene 程序線條組合。",
   "walls": {

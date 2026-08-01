@@ -12,7 +12,7 @@
  * pet.ownerId 會改成哨兵值 "landlord"，state.pets 的 key 維持原飼主 id；
  * 永久與公寓中途照常參與樓層活動，合作中途則暫時離開現場，媒合完成後寫入幸福新家紀錄。
  */
-import type { Pet, PetKind, PetPairAction, PetRehomingDestination } from "../types";
+import type { CafeGuest, Pet, PetKind, PetPairAction, PetRehomingDestination } from "../types";
 import { state, clamp, pushSocialLog, notify, roomOfTenant, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { adjustRelationship } from "./social";
@@ -62,6 +62,7 @@ const isHousePet = (pet: Pet) => pet.ownerId === HOUSE_PET_OWNER;
 export const PERMANENT_HOUSE_PET_LIMIT = 2;
 export const IN_HOUSE_FOSTER_LIMIT = 1;
 export const PET_HOME_CAP = 50;
+export const CAFE_GUEST_ADOPTION_DESTINATION = "咖啡廳客人領養";
 const DAY_MS = 24 * 3600 * 1000;
 const REHOME_MIN_DAYS = 5;
 const REHOME_MAX_DAYS = 8;
@@ -159,6 +160,43 @@ function finishRehoming(petId: string, pet: Pet) {
   clearPetLinks(petId);
   delete state.pets[petId];
   notify(`${petIcon(pet)} 「${pet.name}」${reunion ? `由 ${owner} 接回` : "找到幸福新家"}，離開公寓展開新生活`);
+}
+
+/**
+ * CAFE-09：玩家接受認養意圖後立即完成送養。
+ *
+ * 這條入口只接受尚未媒合的永久樓寵物，並直接重用既有 finishRehoming() 的退場、
+ * pair/cooldown 清理、名冊 cap 與通知；不把顧客塞進 TenantRuntime，也不啟動 5～8 日媒合。
+ */
+export function acceptCafeGuestAdoption(
+  guest: Pick<CafeGuest, "id" | "name" | "intent">,
+  petId: string,
+): { ok: boolean; text: string } {
+  if (guest.intent !== "adopt") return { ok: false, text: "這位顧客目前沒有認養意願" };
+  if (!guest.id.trim() || !guest.name.trim()) return { ok: false, text: "顧客資料不完整" };
+
+  const cafeHomeId = `cafe:${guest.id}`;
+  if (state.petHomes.some((entry) => entry.id === cafeHomeId)) {
+    return { ok: false, text: "這位顧客的認養已經處理完成" };
+  }
+
+  const pet = state.pets[petId];
+  if (!pet || !isHousePet(pet)) return { ok: false, text: "只有樓寵物能由咖啡廳顧客認養" };
+  if ((pet.housePlacement ?? "permanent") !== "permanent" || pet.rehomingAtMs != null || pet.rehomingDestination != null) {
+    return { ok: false, text: "這隻動物已經在媒合中" };
+  }
+
+  const genericHomeId = `${petId}:${state.gameMs}`;
+  const petName = pet.name;
+  finishRehoming(petId, pet);
+  const home = state.petHomes.find((entry) => entry.id === genericHomeId);
+  if (home) {
+    home.id = cafeHomeId;
+    home.destination = CAFE_GUEST_ADOPTION_DESTINATION;
+    home.note = `「${petName}」在一樓寵物咖啡廳與 ${guest.name} 相遇，完成審核後一起回到新家。`;
+  }
+  save();
+  return { ok: true, text: `${petIcon(pet)} 「${petName}」由咖啡廳客人 ${guest.name} 領養，幸福新家名冊已更新` };
 }
 
 /** 玩家從寵物面板替永久樓寵物媒合新家。 */

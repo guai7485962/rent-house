@@ -6,7 +6,7 @@
  * 長髮=兩側垂下、馬尾=右後方辮子、刺蝟=頭頂尖刺、鮑伯=兩側加寬。
  * 配件畫在最上層(眼鏡/圓框眼鏡/棒球帽/蝴蝶結/耳機)。
  */
-import { shade, type Ctx } from "./sprites";
+import { shade, type CharView, type Ctx } from "./sprites";
 import { clampLuma, hexToRgb, nearestInPool, separateHairFromSkin, type LumaBand } from "./color";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 
@@ -24,11 +24,14 @@ interface HairOverlay {
   accent?: Overlay;
 }
 
-function pat(ctx: Ctx, rows: string[], x: number, y: number, color: string) {
+/** 角色 sprite 的固定寬度;疊層鏡射一律以這個寬度為軸,不用逐列長度(避免短列位移) */
+const SPRITE_W = 11;
+
+function pat(ctx: Ctx, rows: string[], x: number, y: number, color: string, mirror = false) {
   ctx.fillStyle = color;
   for (let r = 0; r < rows.length; r++)
     for (let c = 0; c < rows[r].length; c++)
-      if (rows[r][c] === "X") ctx.fillRect(x + c, y + r, 1, 1);
+      if (rows[r][c] === "X") ctx.fillRect(x + (mirror ? SPRITE_W - 1 - c : c), y + r, 1, 1);
 }
 
 /** 髮型圖層(short 保留基底輪廓，只補一小段高光) */
@@ -117,13 +120,218 @@ const ACCESSORY_OVERLAYS: Record<AccessoryKind, Overlay[]> = {
   ],
 };
 
-/** 在基底 sprite 上疊畫髮型與配件((x,y) = sprite 繪製原點) */
-export function drawAppearanceOverlay(ctx: Ctx, ap: Appearance, x: number, y: number) {
-  const hair = HAIR_OVERLAYS[ap.hairStyle];
-  if (hair.base) pat(ctx, hair.base.rows, x, y + hair.base.dy, ap.hairColor);
-  if (hair.accent) pat(ctx, hair.accent.rows, x, y + hair.accent.dy, shade(ap.hairColor, 24));
-  for (const seg of ACCESSORY_OVERLAYS[ap.accessory] ?? []) {
-    pat(ctx, seg.rows, x, y + seg.dy, seg.color!);
+// ---------------------------------------------------------------------------
+// 四方向:背面／側面的髮型與配件疊層
+//
+// ⚠️ 這裡**只新增 Record 的 value**(新視角常數),`ALL_HAIR_STYLES` /
+//    `ALL_ACCESSORIES` / `SKIN_TONES` 三個陣列一個字元都沒動 —— 它們被
+//    `randomAppearance()` 的 `pick()` 消耗,動了會位移 seeded 序列。
+//
+// 座標系與正面完全相同(11 寬、以 sprite 原點為 (0,0)),因此:
+// - 背面基底的頭部是 rows0-8 全髮 → 髮型疊層只有「超出頭部輪廓」的部分看得見,
+//   所以背面版刻意把長髮/鮑伯畫成**蓋住後頸與上背的簾子**、馬尾畫成**沿背脊垂下的辮子**,
+//   這些都是正面看不到、背面才成立的辨識點。
+// - 側面基底的頭部是 cols1-4 髮、cols5-9 臉 → 髮量往**後腦(左)**堆,朝右版本畫一份,
+//   朝左由 `drawAppearanceOverlay` 以 SPRITE_W 為軸鏡射。
+// ---------------------------------------------------------------------------
+
+/** 疊層視角:side_r / side_l 共用同一份 "side" 圖層(繪製時鏡射) */
+type OverlayView = "front" | "back" | "side";
+
+/** 背面髮型:沒有瀏海遮擋,改用「後腦簾子/辮子」當辨識點 */
+const HAIR_OVERLAYS_BACK: Record<HairStyle, HairOverlay> = {
+  short: {
+    accent: { dy: 1, rows: ["...XXX.....", "..X........"] }, // 頭頂反光
+  },
+  long: {
+    base: {
+      dy: 2,
+      rows: [
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        "..XXXXXX...",
+        "...XXXX....",
+        "...XXXX....", // 一路蓋過後頸與上背:背面才成立的「長」
+      ],
+    },
+    accent: { dy: 3, rows: [".XX........", ".X.........", ".X........."] },
+  },
+  ponytail: {
+    base: {
+      dy: 5,
+      rows: [
+        "....XXX....",
+        "....XXX....",
+        "....XXX....",
+        "....XXX....",
+        "....XXX....",
+        "....XXX....",
+        ".....XX....",
+        ".....X.....", // 沿背脊垂下的辮子:背面獨有
+      ],
+    },
+    accent: { dy: 4, rows: ["...XXXXX...", "....XXX...."] }, // 束起的髮圈
+  },
+  spiky: {
+    base: { dy: -2, rows: ["..X.X.X.X..", "..XXXXXXX.."] }, // 尖刺從背後看仍然一樣
+    accent: { dy: -2, rows: ["....X.X...."] },
+  },
+  bob: {
+    base: {
+      dy: 2,
+      rows: [
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        ".XXXXXXXX..",
+        "XXXXXXXXXX.", // 下擺外翻:鮑伯的招牌
+      ],
+    },
+    accent: { dy: 2, rows: ["..XXX......"] },
+  },
+};
+
+/** 側面髮型(朝右;朝左鏡射):髮量堆在後腦(左),輪廓往左外擴 */
+const HAIR_OVERLAYS_SIDE: Record<HairStyle, HairOverlay> = {
+  short: {
+    accent: { dy: 1, rows: ["..XX.......", ".X........."] },
+  },
+  long: {
+    base: {
+      dy: 2,
+      rows: [
+        ".XX........",
+        ".XX........",
+        "XXX........",
+        "XXX........",
+        "XXX........",
+        "XXX........",
+        ".XX........",
+        ".XX........",
+        ".XX........",
+        "..X........", // 垂到肩胛下
+      ],
+    },
+    accent: { dy: 3, rows: [".X.........", ".X........."] },
+  },
+  ponytail: {
+    base: {
+      dy: 1,
+      rows: [
+        "..X........",
+        "XXX........",
+        "XX.........",
+        "X..........",
+        "X..........",
+        "X..........",
+        ".X.........", // 往後翹再垂下:側面最好認的一種
+      ],
+    },
+    accent: { dy: 1, rows: ["..XX.......", "..X........"] },
+  },
+  spiky: {
+    base: { dy: -2, rows: ["..X.X.X....", "..XXXXX...."] },
+    accent: { dy: -2, rows: ["...X.X....."] },
+  },
+  bob: {
+    base: {
+      dy: 2,
+      rows: [
+        ".XX........",
+        "XXX........",
+        "XXX........",
+        "XXX........",
+        "XXXX.......", // 齊下巴、下擺外翻
+        ".XXX.......",
+      ],
+    },
+    accent: { dy: 2, rows: ["..XX......."] },
+  },
+};
+
+/**
+ * 背面配件:**看不見的就不畫**(比硬畫更正確)。
+ * - `glasses` / `round_glasses` → 空陣列(從背後完全看不到鏡片)
+ * - `cap` → 畫,但去掉向前的帽簷、補一條後扣帶
+ * - `bow` → 畫(髮上的蝴蝶結從背後最清楚;位置是正面的鏡射)
+ * - `headphones` → 畫(頭帶 + 雙耳罩,背面反而最完整)
+ */
+const ACCESSORY_OVERLAYS_BACK: Record<AccessoryKind, Overlay[]> = {
+  none: [],
+  glasses: [],
+  round_glasses: [],
+  cap: [
+    { dy: -1, color: "#3a66aa", rows: ["..XXXXXX...", ".XXXXXXXX..", ".XXXXXXXX.."] },
+    { dy: 2, color: "#31578e", rows: ["....XX....."] }, // 後扣帶
+  ],
+  bow: [{ dy: 2, color: "#ff88b0", rows: [".X.X.......", "..X........"] }],
+  headphones: [
+    { dy: 1, color: "#2a2d38", rows: [".XXXXXXXX.."] },
+    { dy: 4, color: "#2a2d38", rows: ["XX......XX.", "XX......XX."] },
+  ],
+};
+
+/**
+ * 側面配件:多數可見但要改位置。
+ * - `glasses` / `round_glasses` → 只剩**一片鏡片 + 一根鏡腳**往後延到耳朵
+ * - `cap` → 帽簷**向前伸出**輪廓外,是側面最強的辨識點
+ * - `bow` → 移到腦後
+ * - `headphones` → 頭帶 + **單邊耳罩**(遠側那顆被頭擋住)
+ */
+const ACCESSORY_OVERLAYS_SIDE: Record<AccessoryKind, Overlay[]> = {
+  none: [],
+  glasses: [{ dy: 5, color: "#23252e", rows: ["....XXXXX.."] }], // 單片鏡片(col7 眼睛)+ 往後的鏡腳
+  round_glasses: [
+    { dy: 4, color: "#34313b", rows: ["......XXX..", "....XXX.X..", "......XX..."] },
+  ],
+  cap: [
+    { dy: -1, color: "#3a66aa", rows: ["..XXXX.....", ".XXXXXX....", ".XXXXXXX..."] },
+    { dy: 2, color: "#31578e", rows: [".....XXXXX."] }, // 向前伸出的帽簷,側面最強辨識點
+  ],
+  bow: [{ dy: 1, color: "#ff88b0", rows: [".X.X.......", "..X........"] }],
+  headphones: [
+    { dy: 1, color: "#2a2d38", rows: [".XXXXXXX..."] },
+    { dy: 4, color: "#2a2d38", rows: ["...XX......", "...XX......"] },
+  ],
+};
+
+const HAIR_BY_VIEW: Record<OverlayView, Record<HairStyle, HairOverlay>> = {
+  front: HAIR_OVERLAYS,
+  back: HAIR_OVERLAYS_BACK,
+  side: HAIR_OVERLAYS_SIDE,
+};
+
+const ACCESSORY_BY_VIEW: Record<OverlayView, Record<AccessoryKind, Overlay[]>> = {
+  front: ACCESSORY_OVERLAYS,
+  back: ACCESSORY_OVERLAYS_BACK,
+  side: ACCESSORY_OVERLAYS_SIDE,
+};
+
+/** 視角 → (疊層表, 是否水平鏡射)。只有朝左的側面需要鏡射。 */
+export function overlayViewOf(view: CharView): { key: OverlayView; mirror: boolean } {
+  if (view === "back") return { key: "back", mirror: false };
+  if (view === "side_r") return { key: "side", mirror: false };
+  if (view === "side_l") return { key: "side", mirror: true };
+  return { key: "front", mirror: false };
+}
+
+/**
+ * 在基底 sprite 上疊畫髮型與配件((x,y) = sprite 繪製原點)。
+ * `view` 預設 `"front"`,所以既有呼叫端(坐姿、離線 renderer)行為完全不變。
+ */
+export function drawAppearanceOverlay(ctx: Ctx, ap: Appearance, x: number, y: number, view: CharView = "front") {
+  const { key, mirror } = overlayViewOf(view);
+  const hair = HAIR_BY_VIEW[key][ap.hairStyle];
+  if (hair.base) pat(ctx, hair.base.rows, x, y + hair.base.dy, ap.hairColor, mirror);
+  if (hair.accent) pat(ctx, hair.accent.rows, x, y + hair.accent.dy, shade(ap.hairColor, 24), mirror);
+  for (const seg of ACCESSORY_BY_VIEW[key][ap.accessory] ?? []) {
+    pat(ctx, seg.rows, x, y + seg.dy, seg.color!, mirror);
   }
 }
 

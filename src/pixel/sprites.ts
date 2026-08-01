@@ -245,6 +245,179 @@ export const CHAR_SIT_BACK = [
   ".ddd..ddd..",
 ];
 
+// ---------------------------------------------------------------------------
+// 四方向人物:背面(上)與側面(左右)。正面沿用上方既有 sprite。
+//
+// 設計語言(三個視角共用 11 寬骨架,所以髮型/配件疊層座標可共用一套原點):
+// - **背面**:rows0-8 全是髮色,**沒有 `k` 眼睛、沒有 `m` 嘴**,後頸露一小段暗膚 `f`。
+//   這是「這個人背對鏡頭」唯一且最強的辨識訊號;衣服改用 `CHAR_SIT_BACK` 的
+//   「左亮右暗、無領口」打光,和正面的對稱領口分開。
+// - **側面**:頭部左半是髮、右半是臉,**只有一顆眼睛**。臉的右緣逐列外推再內收
+//   (row2→col8 額、row3-5→col9 眉/鼻樑/鼻尖、row6→col7 人中內縮兩格、row7→col7 唇、
+//   row8→col5 頸),這條起伏才是「這是側臉不是正臉」的關鍵;頭頂也往後(左)偏一格。
+//   軀幹收窄成 6 寬(正面是 8 寬)、**只露一隻手**,腳掌朝前伸出。
+//   側面只畫「朝右」一份,朝左用 `mirrorSprite()` 水平鏡射(見下方常數)。
+// ---------------------------------------------------------------------------
+
+/** 人物視角。side_l 是 side_r 的水平鏡射,不另外手繪。 */
+export type CharView = "front" | "back" | "side_r" | "side_l";
+
+/** 水平鏡射一張點陣圖(逐列反轉;所有角色 sprite 都是等寬的定寬列) */
+export function mirrorSprite(rows: string[]): string[] {
+  return rows.map((row) => [...row].reverse().join(""));
+}
+
+/** 站姿(背對)11x19 */
+export const CHAR_STAND_BACK = [
+  "...hHh.....",
+  "..hHHhhh...",
+  ".hHHhhhhh..",
+  ".hHhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  "..hhhhhh...",
+  "...ffff....",
+  "..TTtttj...",
+  ".TTttttjj..",
+  ".FTTttttjF.",
+  ".FTTtttjjF.",
+  "..Ttttjj...",
+  "..dddddd...",
+  "..dDDDDd...",
+  "..dd..dd...",
+  "..dd..dd...",
+  "..kk..kk...",
+];
+
+/** 走路 A(背對;下半身左移)11x19 */
+export const CHAR_WALK_BACK_A = [
+  "...hHh.....",
+  "..hHHhhh...",
+  ".hHHhhhhh..",
+  ".hHhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  "..hhhhhh...",
+  "...ffff....",
+  "..TTtttj...",
+  ".TTttttjjF.",
+  ".TTttttjjF.",
+  "FTTtttjj...",
+  "..Ttttj....",
+  "..dddddd...",
+  "..dDDDDd...",
+  "...dd...dd.",
+  "..dd.....dd",
+  "..kk.....kk",
+];
+
+/** 走路 B(背對;下半身右移)11x19 */
+export const CHAR_WALK_BACK_B = [
+  "...hHh.....",
+  "..hHHhhh...",
+  ".hHHhhhhh..",
+  ".hHhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  ".hhhhhhhh..",
+  "..hhhhhh...",
+  "...ffff....",
+  "..TTtttj...",
+  "FTTttttjj..",
+  "FTTttttjj..",
+  "..TTtttjjF.",
+  "...Ttttj...",
+  "..dddddd...",
+  "..dDDDDd...",
+  ".dd...dd...",
+  "dd.....dd..",
+  "kk.....kk..",
+];
+
+/** 站姿(側面朝右)11x19 */
+export const CHAR_STAND_SIDE_R = [
+  "..hHh......",
+  ".hHHhhhh...",
+  ".hhhhhFFf..",
+  ".hhhhFFFf..",
+  ".hhhhFFFFf.",
+  ".hhhhFFkFf.",
+  ".hhhhFFf...",
+  "..hhFFmf...",
+  "...fff.....",
+  "..jTTttj...",
+  "..jTTttj...",
+  ".FjTTttj...",
+  ".FjTTttj...",
+  "..jTtttj...",
+  "..ddddd....",
+  "..dDDDd....",
+  "..dddd.....",
+  "...ddd.....",
+  "...kkkk....",
+];
+
+/** 走路 A(側面朝右;開步)11x19 */
+export const CHAR_WALK_SIDE_R_A = [
+  "..hHh......",
+  ".hHHhhhh...",
+  ".hhhhhFFf..",
+  ".hhhhFFFf..",
+  ".hhhhFFFFf.",
+  ".hhhhFFkFf.",
+  ".hhhhFFf...",
+  "..hhFFmf...",
+  "...fff.....",
+  "..jTTttj...",
+  "..jTTttjF..",
+  "..jTTttjF..",
+  ".FjTTttj...",
+  "..jTtttj...",
+  "..ddddd....",
+  "..dDDDd....",
+  "..dd.dd....",
+  ".dd...dd...",
+  ".kkk..kkk..",
+];
+
+/** 走路 B(側面朝右;過步)11x19 */
+export const CHAR_WALK_SIDE_R_B = [
+  "..hHh......",
+  ".hHHhhhh...",
+  ".hhhhhFFf..",
+  ".hhhhFFFf..",
+  ".hhhhFFFFf.",
+  ".hhhhFFkFf.",
+  ".hhhhFFf...",
+  "..hhFFmf...",
+  "...fff.....",
+  "..jTTttj...",
+  ".FjTTttj...",
+  ".FjTTttj...",
+  "..jTTttjF..",
+  "..jTtttj...",
+  "..ddddd....",
+  "..dDDDd....",
+  "..ddddd....",
+  "..dd.dd....",
+  "..kk..kkk..",
+];
+
+/** 側面朝左:朝右版本的水平鏡射,不另外手繪(單一事實來源) */
+export const CHAR_STAND_SIDE_L = mirrorSprite(CHAR_STAND_SIDE_R);
+export const CHAR_WALK_SIDE_L_A = mirrorSprite(CHAR_WALK_SIDE_R_A);
+export const CHAR_WALK_SIDE_L_B = mirrorSprite(CHAR_WALK_SIDE_R_B);
+
+/** 依視角查站/走 A/走 B 三張基底 sprite */
+export const CHAR_SPRITES: Record<CharView, { stand: string[]; walkA: string[]; walkB: string[] }> = {
+  front: { stand: CHAR_STAND, walkA: CHAR_WALK_A, walkB: CHAR_WALK_B },
+  back: { stand: CHAR_STAND_BACK, walkA: CHAR_WALK_BACK_A, walkB: CHAR_WALK_BACK_B },
+  side_r: { stand: CHAR_STAND_SIDE_R, walkA: CHAR_WALK_SIDE_R_A, walkB: CHAR_WALK_SIDE_R_B },
+  side_l: { stand: CHAR_STAND_SIDE_L, walkA: CHAR_WALK_SIDE_L_A, walkB: CHAR_WALK_SIDE_L_B },
+};
+
 /** 躺姿 22x7(頭在左,蓋毯子) */
 export const CHAR_LIE = [
   "...hhh................",

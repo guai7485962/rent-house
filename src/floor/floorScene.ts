@@ -14,9 +14,9 @@ import {
   groundShadow,
   drawSprite,
   CHAR_STAND,
-  CHAR_WALK_A,
-  CHAR_WALK_B,
   CHAR_SIT,
+  CHAR_SPRITES,
+  type CharView,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
 import type { PetAgent } from "./petAgents";
@@ -314,6 +314,67 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 四方向朝向:**在 renderer 內唯讀推導,零 `agents.ts` 改動**
+// ---------------------------------------------------------------------------
+
+/**
+ * 每位租客「最後一次確定的朝向」。
+ *
+ * 刻意放在 renderer 而不是寫回 `Agent`:
+ * 1. `agents.ts` 是模擬層,朝向純粹是畫面問題,寫回去會讓模擬多背一個沒人用的欄位;
+ *    而且該檔目前是別的 agent 的活動區,本批的硬性約束就是不碰它。
+ * 2. 靜止時要「沿用最後方向」需要跨幀記憶,而 `Agent` 每幀由 `tickAgents` 重寫
+ *    `facing`(`agents.ts:103`),放在那裡會被覆蓋。
+ * 3. **決定性**:離線單幀渲染(`render-floor.ts` / `roomcam-test`)時這張表是空的,
+ *    規則 3 落空 → 一律回退規則 4 的正面,和舊行為完全一致,不會因為 Map 的殘留而漂移。
+ *
+ * 鍵是 tenantId,大小上限 = 樓層租客數(個位數),不需要主動清理。
+ */
+const lastFacingDir = new Map<string, CharView>();
+
+/** 測試/離線渲染重置用:清掉跨幀朝向記憶,讓渲染回到「零記憶」的決定性狀態。 */
+export function clearFacingMemory() {
+  lastFacingDir.clear();
+}
+
+/**
+ * 朝向推導的優先序(由高到低):
+ * 1. `pairSession` 的 `stand_face` facing → 維持既有行為,側面朝向對方
+ * 2. 移動中 → 由 `a.path[0]` 減 `{a.c, a.r}` 推導。`findPath()` 是 **4 鄰 BFS(無對角)**
+ *    (`pathfind.ts:57-62`),所以差值保證是正交四方向之一
+ * 3. 靜止 → 沿用最後已知方向(上面那張 Map)
+ * 4. 都沒有 → 正面
+ *
+ * 例外:`cook_pair` 一律回正面 —— 既有的 `drawCookingCue()` 是照**正面基底**畫的
+ * 抬手 + 鍋鏟像素,套在背面/側面骨架上會錯位。並肩料理本來就面向流理台,維持正面不失真。
+ *
+ * export 是為了讓 `scripts/appearance-test.ts` 能直接斷言這條優先序(不必架整張畫布)。
+ * ⚠️ 有副作用:規則 1、2 命中時會寫入 `lastFacingDir`,測試前請先 `clearFacingMemory()`。
+ */
+export function agentView(a: Agent): CharView {
+  if (a.pose === "cook_pair") return "front";
+  if (!a.moving && a.pose === "stand_face" && a.facing !== 0) {
+    const dir: CharView = a.facing > 0 ? "side_r" : "side_l";
+    lastFacingDir.set(a.tenantId, dir);
+    return dir;
+  }
+  if (a.moving) {
+    const next = a.path[0];
+    if (next) {
+      const dc = next.c - a.c;
+      const dr = next.r - a.r;
+      const dir: CharView | null =
+        dc !== 0 ? (dc > 0 ? "side_r" : "side_l") : dr !== 0 ? (dr > 0 ? "front" : "back") : null;
+      if (dir) {
+        lastFacingDir.set(a.tenantId, dir);
+        return dir;
+      }
+    }
+  }
+  return lastFacingDir.get(a.tenantId) ?? "front";
+}
+
 function drawAgent(ctx: Ctx, a: Agent) {
   const pal = charPalette(a.tenantId);
   // §10-6 雙人圖式:互動 session 抵達定點後坐下/躺下(還在走路時照常走)
@@ -330,30 +391,24 @@ function drawAgent(ctx: Ctx, a: Agent) {
     if (apSit) drawAppearanceOverlay(ctx, apSit, a.px + 3, a.py + 1);
     return;
   }
-  let sprite = CHAR_STAND;
+  // 四方向:先推導視角,再查該視角的站/走 A/走 B
+  const view = agentView(a);
+  const set = CHAR_SPRITES[view];
+  let sprite = set.stand;
   let yoff = 0;
   if (a.moving) {
     const step = Math.floor(a.walkPhase) % 2 === 0;
-    sprite = step ? CHAR_WALK_A : CHAR_WALK_B;
+    sprite = step ? set.walkA : set.walkB;
     yoff = step ? 0 : -1; // 走路上下彈跳
   }
   drawSprite(ctx, sprite, a.px + 3, a.py - 4 + yoff, pal);
-  // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件
+  // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件(依視角換圖層;朝左會鏡射)
   const ap = getCustomAppearance(a.tenantId);
-  if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff);
-  if (!a.moving && a.pose === "stand_face") drawFacingCue(ctx, a, pal);
-  else if (!a.moving && a.pose === "cook_pair") drawCookingCue(ctx, a, pal);
-}
-
-/** 正面基底上補一顆朝同伴方向的眼睛與鼻尖，讓相鄰兩人明確互看。 */
-function drawFacingCue(ctx: Ctx, a: Agent, pal: Palette) {
-  if (!a.facing) return;
-  const x = a.px + 3;
-  const y = a.py - 4;
-  const eyeX = a.facing > 0 ? x + 6 : x + 3;
-  const noseX = a.facing > 0 ? x + 8 : x + 1;
-  rect(ctx, eyeX, y + 5, 1, 1, shade(pal.F, -55));
-  rect(ctx, noseX, y + 6, 1, 1, pal.F);
+  if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff, view);
+  // 舊的 drawFacingCue()(在正面基底上補一顆側眼與鼻尖)已移除:
+  // stand_face 且 facing !== 0 現在直接畫**真正的側面 sprite**,側臉本身就自帶
+  // 單眼與凸出的鼻樑,再補一顆點會落在錯的位置。facing === 0(垂直相鄰)舊版本來就不畫。
+  if (!a.moving && a.pose === "cook_pair") drawCookingCue(ctx, a, pal);
 }
 
 /** 並肩料理:抬起靠流理台的一隻手，搭配鍋鏟像素，和一般站姿區分。 */

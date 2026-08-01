@@ -15,7 +15,7 @@ import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
 import { sanitizeAppearanceInPlace } from "../pixel/parts";
-import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, type Txn } from "./gameState";
+import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, sanitizeCafeState, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { ensureWishes } from "./wishes";
@@ -152,6 +152,7 @@ export function save() {
         lastChainEndDay: state.lastChainEndDay,
         pendingChainEvent: state.pendingChainEvent,
         pendingDiaries: state.pendingDiaries,
+        cafe: state.cafe,
         runtimes,
       }),
     );
@@ -244,6 +245,9 @@ export function load(): boolean {
     state.lastChainEndDay = typeof s.lastChainEndDay === "number" ? s.lastChainEndDay : -99;
     state.pendingChainEvent = s.pendingChainEvent ?? null;
     state.pendingDiaries.splice(0, state.pendingDiaries.length, ...(s.pendingDiaries ?? []));
+    // 一樓寵物咖啡廳(選填欄位,舊檔沒有就從 defaultCafe() 開始,不需要升 SAVE_VERSION)。
+    // guests 入存檔,但正規化時已用 gameMs 濾掉到點的客人 → 離線久了店裡自然是空的。
+    Object.assign(state.cafe, sanitizeCafeState(s.cafe, state.gameMs));
 
     // 重建所有租客 runtime(含動態入住者)
     for (const k of Object.keys(state.runtimes)) delete state.runtimes[k];

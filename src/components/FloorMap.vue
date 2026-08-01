@@ -5,6 +5,9 @@ import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
+import { createGuestAgents, departedGuestIds, guestAgentSignature, tickGuestAgents, type GuestAgent } from "../floor/guestAgents";
+import { removeCafeGuest } from "../sim/cafeGuests";
+import type { CafeGuest } from "../types";
 import { layoutFloorTags } from "../floor/tagLayout";
 import { groupSceneView, type GroupScene } from "../floor/groupScene";
 import { renderFloorViewport, viewportRect } from "../floor/viewport";
@@ -53,6 +56,8 @@ let petAgents: PetAgent[] = [];
 let petSignature = "";
 let vacuumAgents: VacuumAgent[] = [];
 let vacuumSignature = "";
+let guestAgents: GuestAgent[] = [];
+let guestSignature = "";
 let raf = 0;
 let last = 0;
 
@@ -92,6 +97,20 @@ function loop(t: number) {
       petSignature = nextPetSignature;
     }
     tickPetAgents(petAgents, dt);
+    // 一樓咖啡廳顧客(CAFE-11 接線):state.cafe.guests 是唯一來源,未開張時就是空陣列。
+    // 顧客走回門口才標 departed,這裡再把 id 從 cafe state 移掉,不會原地消失也不留殘留。
+    const nextGuestSignature = guestAgentSignature(state.cafe.guests);
+    if (nextGuestSignature !== guestSignature) {
+      guestAgents = createGuestAgents(state.cafe.guests);
+      guestSignature = nextGuestSignature;
+    }
+    tickGuestAgents(guestAgents, dt, state.gameMs, vacuumBlocked);
+    const departed = departedGuestIds(guestAgents);
+    if (departed.length > 0) {
+      let remaining: CafeGuest[] = state.cafe.guests;
+      for (const id of departed) remaining = removeCafeGuest(remaining, id);
+      state.cafe.guests.splice(0, state.cafe.guests.length, ...remaining);
+    }
     eventScene.value = groupSceneView(state.gameMs);
     const el = canvas.value;
     if (el) {
@@ -107,7 +126,7 @@ function loop(t: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, el.width, el.height);
       renderFloorViewport(ctx, view, 1, () => {
-        composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
+        composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents, guestAgents);
         const pv = props.preview;
         if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
       });

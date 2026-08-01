@@ -41,6 +41,7 @@ import { communityPass, scheduledCommunityPass } from "./community";
 import { floorChainPass } from "./floorChain";
 import { dreamPass } from "./dreams";
 import { outingEncounterPass, outingSpot } from "./outing";
+import { appendCafeGuest, cafeGuestHash, CAFE_GUEST_CAP, generateCafeGuest, removeDepartedCafeGuests } from "./cafeGuests";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -487,6 +488,55 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
   if (rt.log.length > LOG_CAP) rt.log.splice(0, rt.log.length - LOG_CAP);
 }
 
+/** 咖啡廳營業時段(含頭含尾);非營業時段只做離場,不生客。 */
+export const CAFE_OPEN_HOUR = 10;
+export const CAFE_CLOSE_HOUR = 20;
+/** 營業時段每小時的來客機率(0~100 的決定性門檻;真正的客流公式是 CAFE-13 的事) */
+export const CAFE_ARRIVAL_CHANCE = 55;
+/**
+ * 到點顧客的「走出去」寬限:過了 leavesMs 之後,資料層再留這麼久才強制清掉。
+ *
+ * 設計文件 §6.2 要求顧客走回 cafe_entrance 才消失(不原地消失)。那段演出由
+ * FloorMap 的 departedGuestIds() 負責,但玩家可能整場都沒打開 1F 頁面,
+ * 演出永遠不會發生 → 過期顧客會塞滿 cap。所以資料層留一個保險絲:
+ * 寬限期內交給畫面演,超過寬限期(或離線補進度一次跑掉很多小時)才自己收乾淨。
+ */
+export const CAFE_GUEST_LINGER_MS = 2 * MS_PER_GAME_HOUR;
+
+/**
+ * 咖啡廳顧客的生成與離場(CAFE-11)。
+ *
+ * 零漂移三條:
+ * 1. **第一行就是 `if (!state.cafe.open) return;`** —— 開張要玩家花錢,無頭的
+ *    balance 快照局永遠不會開張,整個 pass 連碰都碰不到。比日數閘門更乾淨。
+ * 2. **零新增 `Math.random()`** —— 來客與否走 `cafeGuestHash(日|時)`,顧客內容走
+ *    `generateCafeGuest` 既有的決定性雜湊;同一存檔同一小時永遠得到同一位客人。
+ * 3. **不碰 state.runtimes** —— 顧客是平行的輕量體,收租/社交/日記/成就全數不受影響。
+ *
+ * 本期刻意不做客流公式(招牌等級 × 天氣 × 星期,CAFE-13)與開張 UI(CAFE-15)。
+ */
+export function cafeGuestPass(hour: number) {
+  const cafe = state.cafe;
+  if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
+  // 1) 過了寬限期還在的顧客直接收掉。寬限期內的離場交給 FloorMap 走回門口的演出,
+  //    這裡只當保險絲,確保沒開 1F 頁面/離線補進度時也不會殘留。
+  const stayed = removeDepartedCafeGuests(cafe.guests, state.gameMs - CAFE_GUEST_LINGER_MS);
+  if (stayed.length !== cafe.guests.length) cafe.guests.splice(0, cafe.guests.length, ...stayed);
+  // 2) 只有營業時段才可能來客,且滿座就不再收
+  if (hour < CAFE_OPEN_HOUR || hour > CAFE_CLOSE_HOUR) return;
+  if (cafe.guests.length >= CAFE_GUEST_CAP) return;
+  const slot = `${gameDayIndex()}|${hour}`;
+  if (cafeGuestHash(`cafe-arrival|${slot}`) % 100 >= CAFE_ARRIVAL_CHANCE) return;
+  const guest = generateCafeGuest({
+    seed: `cafe|${slot}`,
+    arrivedMs: state.gameMs,
+    sequence: cafe.guests.length,
+    excludeNames: cafe.guests.map((entry) => entry.name), // 同時在店的客人不撞名
+  });
+  // cap 與去重的判斷一律交給 appendCafeGuest,不在這裡另寫一套規則。
+  if (appendCafeGuest(cafe.guests, guest).length > cafe.guests.length) cafe.guests.push(guest);
+}
+
 /** 推進一個遊戲小時(live=true 才在換日時打 AI;補進度/快轉用模板避免大量 API 呼叫) */
 export function hourlyTick(live = false) {
   const prevDay = new Date(state.gameMs).getDate();
@@ -548,6 +598,7 @@ export function hourlyTick(live = false) {
 
   dreamPass(hour); // 夢境彩蛋:全員本小時 visualState 已定,睡著者每 3~4 遊戲日留一則夢(零 RNG、零數值)
   outingEncounterPass(hour); // 樓外巧遇:同理由要等全員 visualState 定案,同時外出的兩人每 4~5 日低頻碰面(零 RNG)
+  cafeGuestPass(hour); // 一樓咖啡廳來客/離場:未開張直接 return(零 RNG、不碰 runtimes,故快照零漂移)
   roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動
   pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)

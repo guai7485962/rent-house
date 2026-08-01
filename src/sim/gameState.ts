@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeResearch, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -19,12 +19,13 @@ import type { AiFallbackReason, AiProvider, NarrateCtx } from "./narrate";
 import type { Tile } from "../floor/pathfind";
 import { sanitizeGrowthTags } from "./growth";
 import { setAppearance, hasFixedTheme, THEME_POOL_SIZE, setCustomAppearance } from "../pixel/scene";
-import { sanitizeAppearanceInPlace } from "../pixel/parts";
+import { ALL_ACCESSORIES, ALL_HAIR_STYLES, sanitizeAppearanceInPlace } from "../pixel/parts";
 import type { Appearance, HairStyle, AccessoryKind } from "../types";
 import type { FurnitureRotation } from "../furniture/rotation";
 import type { WeeklyReport } from "./weeklyReport";
 import { save } from "./persistence";
 import { weekdayShort } from "./week";
+import { CAFE_GUEST_CAP, removeDepartedCafeGuests } from "./cafeGuests";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 export const LOG_CAP = 60;
@@ -178,6 +179,112 @@ export function addFlag(rt: TenantRuntime, flag: string) {
   if (rt.flags.length > 12) rt.flags.splice(0, rt.flags.length - 12);
 }
 
+/** 咖啡廳日結紀錄上限(同 LOG_CAP/LEDGER_CAP 的稀疏哲學,只留最近 60 天) */
+export const CAFE_HISTORY_CAP = 60;
+
+/**
+ * 咖啡廳的預設狀態(設計文件 §8)。
+ *
+ * 整個咖啡廳只佔 1 個 top-level key,舊存檔沒有這個欄位就直接拿這份預設值,
+ * 因此**不需要升 SAVE_VERSION**(慣例見 persistence.ts 的 floorChain 選填欄位)。
+ * 形狀一次定義完整,後續分期(12/13/14/16)只填內容不再改 schema。
+ */
+export function defaultCafe(): CafeState {
+  return {
+    open: false,
+    standingOrders: {},
+    stock: {},
+    research: null,
+    completed: [],
+    upgrades: [],
+    guests: [],
+    popularity: 0,
+    history: [],
+  };
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const finiteOr = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+const stringList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+const numberRecord = (v: unknown): Record<string, number> => {
+  if (!isPlainObject(v)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, n] of Object.entries(v)) if (typeof n === "number" && Number.isFinite(n)) out[k] = n;
+  return out;
+};
+const CAFE_INTENTS: readonly CafeGuestIntent[] = ["coffee", "adopt", "rent"];
+
+/** 存檔裡的顧客可能是舊版、手改或壞資料;逐欄檢查後才放行,壞的整筆丟掉。 */
+function sanitizeCafeGuest(raw: unknown): CafeGuest | null {
+  if (!isPlainObject(raw)) return null;
+  const { id, name, appearance, intent, arrivedMs, leavesMs, seatTile } = raw;
+  if (typeof id !== "string" || !id || typeof name !== "string" || !name) return null;
+  if (!isPlainObject(appearance)) return null;
+  if (typeof appearance.hairStyle !== "string" || !(ALL_HAIR_STYLES as readonly string[]).includes(appearance.hairStyle)) return null;
+  if (typeof appearance.accessory !== "string" || !(ALL_ACCESSORIES as readonly string[]).includes(appearance.accessory)) return null;
+  if (typeof arrivedMs !== "number" || !Number.isFinite(arrivedMs)) return null;
+  if (typeof leavesMs !== "number" || !Number.isFinite(leavesMs)) return null;
+  const safeAppearance = { ...appearance } as unknown as CafeGuest["appearance"];
+  sanitizeAppearanceInPlace(safeAppearance); // AI/手改色碼安全化,與租客外觀同一道關卡
+  const tile = isPlainObject(seatTile) && typeof seatTile.c === "number" && typeof seatTile.r === "number"
+    ? { c: Math.trunc(seatTile.c), r: Math.trunc(seatTile.r) }
+    : null;
+  return {
+    id,
+    name,
+    appearance: safeAppearance,
+    intent: CAFE_INTENTS.includes(intent as CafeGuestIntent) ? (intent as CafeGuestIntent) : "coffee",
+    arrivedMs,
+    leavesMs,
+    seatTile: tile,
+  };
+}
+
+/**
+ * 把存檔裡的 cafe 欄位正規化成合法的 CafeState(比照 sanitizeGrowthTags 在 load 時的角色)。
+ *
+ * `guests` 入存檔,但載入當下立刻用 `removeDepartedCafeGuests(guests, gameMs)` 過濾:
+ * `leavesMs` 是遊戲時間,離線稍久的客人本來就該走光,過濾後「離線短 → 客人還在」與
+ * 「離線久 → 店裡空」自然統一,不需要兩套行為。
+ */
+export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
+  const base = defaultCafe();
+  if (!isPlainObject(raw)) return base;
+  const research = isPlainObject(raw.research) && typeof raw.research.id === "string"
+    ? {
+        id: raw.research.id,
+        startedDay: finiteOr(raw.research.startedDay, 0),
+        days: finiteOr(raw.research.days, 0),
+        invested: finiteOr(raw.research.invested, 0),
+      } satisfies CafeResearch
+    : null;
+  const history = (Array.isArray(raw.history) ? raw.history : [])
+    .filter(isPlainObject)
+    .map((entry) => ({
+      day: finiteOr(entry.day, 0),
+      guests: finiteOr(entry.guests, 0),
+      revenue: finiteOr(entry.revenue, 0),
+      cost: finiteOr(entry.cost, 0),
+      net: finiteOr(entry.net, 0),
+    }) satisfies CafeDayRecord);
+  const guests = (Array.isArray(raw.guests) ? raw.guests : [])
+    .map(sanitizeCafeGuest)
+    .filter((guest): guest is CafeGuest => guest !== null);
+  const unique = guests.filter((guest, i) => guests.findIndex((other) => other.id === guest.id) === i);
+  return {
+    open: raw.open === true,
+    standingOrders: numberRecord(raw.standingOrders),
+    stock: numberRecord(raw.stock),
+    research,
+    completed: stringList(raw.completed),
+    upgrades: stringList(raw.upgrades),
+    guests: removeDepartedCafeGuests(unique, gameMs).slice(0, CAFE_GUEST_CAP),
+    popularity: finiteOr(raw.popularity, 0),
+    history: history.slice(-CAFE_HISTORY_CAP),
+  };
+}
+
 export const state = reactive({
   realAnchorMs: Date.now(),
   gameAnchorMs: GAME_START.getTime(),
@@ -256,6 +363,8 @@ export const state = reactive({
   alumni: [] as AlumniEntry[],
   /** 招租應徵者池:房間 id → 當日批次(每遊戲日換一批,開關面板不重抽) */
   applicantPools: {} as Record<string, { day: number; applicants: Applicant[] }>,
+  /** 一樓寵物咖啡廳(設計文件 §8;單一 top-level key、選填欄位、不升 SAVE_VERSION) */
+  cafe: defaultCafe() as CafeState,
   runtimes: {
     tenant_chen_engineer: makeRuntime(tenants[0], "301", 35, []),
     tenant_lin_asmr: makeRuntime(tenants[1], "302", 92, []),

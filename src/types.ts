@@ -161,6 +161,56 @@ export interface CafeGuest {
   seatTile: import("./floor/pathfind").Tile | null;
 }
 
+/** 進行中的咖啡廳研發(CAFE-16 才會實際寫入;本期只保留欄位)。 */
+export interface CafeResearch {
+  id: string;
+  /** 開始研發的遊戲日序號(gameDayIndex) */
+  startedDay: number;
+  /** 需要幾個遊戲日完成 */
+  days: number;
+  /** 已投入的金額(一次性,不可退) */
+  invested: number;
+}
+
+/** 咖啡廳日結紀錄(CAFE-13 才會實際寫入;本期只保留欄位)。 */
+export interface CafeDayRecord {
+  /** gameDayIndex 的日序號 */
+  day: number;
+  guests: number;
+  revenue: number;
+  cost: number;
+  net: number;
+}
+
+/**
+ * 一樓寵物咖啡廳的單一 top-level 存檔 key(設計文件 §8)。
+ *
+ * 形狀一次定義完整,後續分期只填內容不改 schema:
+ * CAFE-12 用 standingOrders/stock、CAFE-13 用 popularity/history、
+ * CAFE-14 用 open/upgrades、CAFE-16 用 research/completed。
+ * 本期(CAFE-11)只有 `guests` 會被實際讀寫。
+ */
+export interface CafeState {
+  /** 玩家花錢開張才 true;未開張時所有咖啡廳 pass 直接 return(零漂移的天然閘門) */
+  open: boolean;
+  /** 常備訂單:原料 id → 每日補到的常備量(CAFE-12) */
+  standingOrders: Record<string, number>;
+  /** 現有庫存:原料 id → 數量(CAFE-12) */
+  stock: Record<string, number>;
+  /** 進行中的研發(CAFE-16);null = 沒有在研發 */
+  research: CafeResearch | null;
+  /** 已完成的研發 id(CAFE-16) */
+  completed: string[];
+  /** 已購買的咖啡廳設備 id;刻意不進 placements,免得咖啡機被搬到三樓(CAFE-14) */
+  upgrades: string[];
+  /** 目前在店裡的顧客,cap CAFE_GUEST_CAP;不進 state.runtimes */
+  guests: CafeGuest[];
+  /** 人氣(CAFE-13 客流公式用) */
+  popularity: number;
+  /** 日結紀錄,最新在後,cap CAFE_HISTORY_CAP(CAFE-13) */
+  history: CafeDayRecord[];
+}
+
 export interface Tenant {
   id: string;
   name: string;

@@ -329,7 +329,11 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
  * 3. **決定性**:離線單幀渲染(`render-floor.ts` / `roomcam-test`)時這張表是空的,
  *    規則 3 落空 → 一律回退規則 4 的正面,和舊行為完全一致,不會因為 Map 的殘留而漂移。
  *
- * 鍵是 tenantId,大小上限 = 樓層租客數(個位數),不需要主動清理。
+ * 鍵是 tenantId,而 tenantId 是帶時間戳的唯一值(如 `tenant_r303_1785546924760_0`),
+ * **退租時不會被移除**,所以這張表在長時間遊玩下是**單調成長**的:上限不是「當下租客數」,
+ * 而是「本次 session 曾出現過的所有租客數」。每筆只有一個短字串鍵 + 一個列舉值,
+ * 幾百筆也在數十 KB 等級,而且 session 一結束就整份消失,因此**刻意不做主動清理**——
+ * 要清的話最自然的掛點是 `createAgents()`,但那要動 `agents.ts`。
  */
 const lastFacingDir = new Map<string, CharView>();
 

@@ -25,7 +25,7 @@ interface HairOverlay {
 }
 
 /** 角色 sprite 的固定寬度;疊層鏡射一律以這個寬度為軸,不用逐列長度(避免短列位移) */
-const SPRITE_W = 11;
+export const SPRITE_W = 11;
 
 function pat(ctx: Ctx, rows: string[], x: number, y: number, color: string, mirror = false) {
   ctx.fillStyle = color;
@@ -225,12 +225,17 @@ const HAIR_OVERLAYS_SIDE: Record<HairStyle, HairOverlay> = {
       dy: 1,
       rows: [
         "..X........",
-        "XXX........",
+        "XXX........", // 高處束起、往後翹出輪廓外
         "XX.........",
         "X..........",
         "X..........",
         "X..........",
-        ".X.........", // 往後翹再垂下:側面最好認的一種
+        ".X.........",
+        ".X.........",
+        ".X.........",
+        "..X........",
+        "..X........",
+        "..X........", // 細辮子一路垂過肩後:和鮑伯(齊頸即止)、長髮(整片簾子)分開
       ],
     },
     accent: { dy: 1, rows: ["..XX.......", "..X........"] },
@@ -312,6 +317,26 @@ const ACCESSORY_BY_VIEW: Record<OverlayView, Record<AccessoryKind, Overlay[]>> =
   back: ACCESSORY_OVERLAYS_BACK,
   side: ACCESSORY_OVERLAYS_SIDE,
 };
+
+/**
+ * 所有疊層列的寬度清單(給 `scripts/appearance-test.ts` 用)。
+ *
+ * ⚠️ 存在的理由:`pat()` 的鏡射是 `SPRITE_W - 1 - c`,**以固定 11 為軸**而不是逐列長度。
+ * 只要有人寫了一列不是 11 寬的疊層,朝左側面就會靜默位移 1px——而
+ * 「`side_l` 疊層 === `side_r` 的鏡射」那條測試**抓不到**,因為它兩邊用同一個公式,
+ * 誤差會對消。所以必須另外直接斷言「每一列都剛好 SPRITE_W 寬」。
+ */
+export function overlayRowWidths(): { id: string; width: number }[] {
+  const out: { id: string; width: number }[] = [];
+  for (const [view, table] of Object.entries(HAIR_BY_VIEW))
+    for (const [style, ov] of Object.entries(table))
+      for (const [part, seg] of [["base", ov.base], ["accent", ov.accent]] as const)
+        seg?.rows.forEach((row, i) => out.push({ id: `hair/${view}/${style}/${part}[${i}]`, width: row.length }));
+  for (const [view, table] of Object.entries(ACCESSORY_BY_VIEW))
+    for (const [kind, segs] of Object.entries(table))
+      segs.forEach((seg, s) => seg.rows.forEach((row, i) => out.push({ id: `acc/${view}/${kind}/${s}[${i}]`, width: row.length })));
+  return out;
+}
 
 /** 視角 → (疊層表, 是否水平鏡射)。只有朝左的側面需要鏡射。 */
 export function overlayViewOf(view: CharView): { key: OverlayView; mirror: boolean } {

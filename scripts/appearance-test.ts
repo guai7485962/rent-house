@@ -15,7 +15,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { drawAppearanceOverlay, randomAppearance, ALL_HAIR_STYLES, ALL_ACCESSORIES } = await import("../src/pixel/parts");
+const { drawAppearanceOverlay, randomAppearance, ALL_HAIR_STYLES, ALL_ACCESSORIES, SPRITE_W, overlayRowWidths } = await import("../src/pixel/parts");
 const {
   BASE_PAL,
   CHAR_STAND,
@@ -32,6 +32,8 @@ const {
   CHAR_WALK_SIDE_R_B,
   CHAR_SPRITES,
   mirrorSprite,
+  drawSprite,
+  shade,
 } = await import("../src/pixel/sprites");
 const { agentView, clearFacingMemory } = await import("../src/floor/floorScene");
 const { setCustomAppearance, getCustomAppearance, getTheme } = await import("../src/pixel/scene");
@@ -93,6 +95,11 @@ check("四視角所有髮型×配件像素都在 sprite 11 寬內", allInBounds)
 check("非預設組合都有實際像素(背面眼鏡類除外)", missingPixels.length === 0, missingPixels.join(","));
 check("背面眼鏡類不畫、其餘配件有畫", wrongBackAccessory.length === 0, wrongBackAccessory.join(","));
 check("背面/側面疊層最多垂到軀幹下緣(row13)", backHairInBounds);
+
+// `pat()` 的鏡射軸寫死 SPRITE_W,不是逐列長度 → 有任何一列不是 11 寬,朝左側面就會靜默位移。
+// 下面那條「side_l === side_r 的鏡射」抓不到這種錯(兩邊同公式會對消),必須直接驗寬度。
+const badWidths = overlayRowWidths().filter((r) => r.width !== SPRITE_W);
+check(`所有疊層列都剛好 ${SPRITE_W} 寬(鏡射軸假設)`, badWidths.length === 0, badWidths.map((r) => `${r.id}=${r.width}`).join(","));
 
 // 側面左右必須互為鏡射(單一手繪來源;鏡射軸 = sprite 11 寬)
 let mirrorOk = true;
@@ -220,6 +227,52 @@ check(
   "六種配件都有可辨識的不同輪廓",
   new Set(ALL_ACCESSORIES.map((accessory) => signature("short", accessory))).size === ALL_ACCESSORIES.length,
 );
+/**
+ * 髮型辨識度下限:量「站姿基底 + 髮型疊層」畫完後,兩種髮型之間**換色的像素數**。
+ *
+ * 光斷言「輪廓互異」不夠——側面的馬尾與鮑伯曾經只差 **4px** 也照樣通過。
+ * 實測各視角最小值:front 9(long/bob)、back 10(short/bob)、
+ * side_r / side_l 9(ponytail/bob),故門檻取略低的 **8**,留一格微調空間,
+ * 但任何把辨識度砍到「幾乎看不出差別」的改動都會立刻紅燈。
+ */
+const HAIR_DISTINCT_MIN = 8;
+const CHAR_PAL = (() => {
+  const t = { hair: "#4a3a2a", skin: "#e8b088", shirt: "#5aa06a", pants: "#3d4257" };
+  return { ...BASE_PAL, h: t.hair, H: shade(t.hair, 26), F: t.skin, f: shade(t.skin, -16), t: t.shirt, T: shade(t.shirt, 20), j: shade(t.shirt, -22), d: t.pants, D: shade(t.pants, -22) };
+})();
+/** 把「站姿 + 髮型」畫進 (x,y)→色 的格點,涵蓋 sprite 與疊層的完整外擴範圍 */
+const colorGrid = (view: CharView, hairStyle: Appearance["hairStyle"]) => {
+  const cells = new Map<string, string>();
+  const g = {
+    fillStyle: "",
+    fillRect(x: number, y: number, w: number, h: number) {
+      for (let j = y; j < y + h; j++)
+        for (let i = x; i < x + w; i++)
+          if (i >= 0 && i < SPRITE_W && j >= -2 && j < 19) cells.set(`${i},${j}`, this.fillStyle);
+    },
+  } as unknown as Ctx;
+  drawSprite(g, CHAR_SPRITES[view].stand, 0, 0, CHAR_PAL);
+  drawAppearanceOverlay(g, { hairStyle, hairColor: CHAR_PAL.h, shirt: CHAR_PAL.t, pants: CHAR_PAL.d, skin: CHAR_PAL.F, accessory: "none" }, 0, 0, view);
+  return cells;
+};
+const worstHairPair = (view: CharView) => {
+  const maps = ALL_HAIR_STYLES.map((h) => colorGrid(view, h));
+  let min = Infinity, who = "";
+  for (let i = 0; i < maps.length; i++)
+    for (let j = i + 1; j < maps.length; j++) {
+      let d = 0;
+      for (const k of new Set([...maps[i].keys(), ...maps[j].keys()])) if (maps[i].get(k) !== maps[j].get(k)) d++;
+      if (d < min) { min = d; who = `${ALL_HAIR_STYLES[i]}/${ALL_HAIR_STYLES[j]}`; }
+    }
+  return { min, who };
+};
+const hairWorst = ALL_VIEWS.map((v) => ({ v, ...worstHairPair(v) }));
+check(
+  `四視角髮型兩兩最少換色 ${HAIR_DISTINCT_MIN}px 以上`,
+  hairWorst.every((r) => r.min >= HAIR_DISTINCT_MIN),
+  hairWorst.map((r) => `${r.v}=${r.min}(${r.who})`).join(" "),
+);
+
 check(
   "側面六種配件仍互異;背面扣掉刻意不畫的眼鏡類後互異",
   new Set(ALL_ACCESSORIES.map((a) => signature("short", a, "side_r"))).size === ALL_ACCESSORIES.length

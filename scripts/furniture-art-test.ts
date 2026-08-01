@@ -58,6 +58,18 @@ const cases = [
   { id: "dog_bed", width: 32, height: 16 },
   { id: "chew_toy", width: 16, height: 16 },
   { id: "pee_pad", width: 16, height: 16 },
+  { id: "cafe_counter", width: 32, height: 16 },
+  { id: "espresso_machine", width: 16, height: 16 },
+  { id: "cafe_display_stocked", width: 16, height: 32 },
+  { id: "cafe_menu_board", width: 32, height: 32 },
+  { id: "cafe_table", width: 16, height: 32 },
+  { id: "cafe_chair_front", width: 16, height: 16 },
+  { id: "cafe_chair_side", width: 16, height: 16 },
+  { id: "cafe_cat_tower", width: 32, height: 32 },
+  { id: "cafe_pet_cushion", width: 32, height: 16 },
+  { id: "cafe_stock_shelf", width: 32, height: 16 },
+  { id: "cafe_crate", width: 16, height: 16 },
+  { id: "cafe_fridge", width: 16, height: 32 },
 ] as const;
 
 check("三件狗狗家具的價格、尺寸與房內擺放設定正確",
@@ -184,6 +196,18 @@ drawDef(peePad as any, getDef("pee_pad"), 0, 0);
 check("寵物尿墊有藍邊與吸水內層",
   hasFill(peePad.fills, "#a9c6d2", 2, 5, 12, 8)
   && hasFill(peePad.fills, "#eef3ea", 3, 6, 10, 6));
+
+const cafeCounter = new RecorderCtx();
+drawDef(cafeCounter as any, getDef("cafe_counter"), 0, 0);
+check("咖啡廳吧台 fallback 具有粉色檯面與獨立收銀區",
+  hasFill(cafeCounter.fills, "#e3a1ac", 2, 5, 28, 2)
+  && hasFill(cafeCounter.fills, "#4b4658", 21, 2, 7, 4));
+
+const cafeFridge = new RecorderCtx();
+drawDef(cafeFridge as any, getDef("cafe_fridge"), 0, 0);
+check("咖啡廳冷藏櫃 fallback 具有上下雙冷藏窗",
+  hasFill(cafeFridge.fills, "#7896a4", 4, 5, 8, 10)
+  && hasFill(cafeFridge.fills, "#7896a4", 4, 18, 8, 9));
 
 console.log(`\n${passed}/${passed + failed} passed`);
 if (failed > 0) process.exit(1);

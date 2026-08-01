@@ -2,10 +2,16 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import "./style.css";
 import { notify } from "./sim/gameState";
-import { preloadLimezuFurnitureAtlas, preloadLimezuFloorAtlas, preloadLimezuWallAtlas } from "./art/limezu";
+import {
+  preloadLimezuCafeAtlas,
+  preloadLimezuFurnitureAtlas,
+  preloadLimezuFloorAtlas,
+  preloadLimezuWallAtlas,
+} from "./art/limezu";
 
-// 美術檔不阻塞 Vue 啟動；尚未載好或載入失敗時家具/地板/牆渲染器會自動走既有程序繪圖。
+// 美術檔不阻塞 Vue 啟動；尚未載好或載入失敗時家具/咖啡廳/地板/牆渲染器會自動走程序繪圖。
 void preloadLimezuFurnitureAtlas();
+void preloadLimezuCafeAtlas();
 void preloadLimezuFloorAtlas();
 void preloadLimezuWallAtlas();
 

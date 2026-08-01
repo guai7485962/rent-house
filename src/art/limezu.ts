@@ -93,28 +93,23 @@ export const LIMEZU_CAFE_IDS = [
 
 export type LimezuCafeId = (typeof LIMEZU_CAFE_IDS)[number];
 
-interface CafeFrame {
-  sx: number;
-  sy: number;
-  sw: number;
-  sh: number;
-}
+type CafeFrame = AtlasFrame;
 
-/** 咖啡廳元件來源框；CAFE-06 接線時再依家具 footprint 決定目的地偏移。 */
+/** 咖啡廳元件來源框與相對 footprint 偏移；維持 1:1 像素，不縮放素材。 */
 export const LIMEZU_CAFE_FRAMES: Readonly<Record<LimezuCafeId, CafeFrame>> = {
-  cafe_menu_board: { sx: 0, sy: 0, sw: 28, sh: 28 },
-  cafe_sign: { sx: 28, sy: 0, sw: 28, sh: 25 },
-  cafe_display_empty: { sx: 56, sy: 0, sw: 15, sh: 25 },
-  cafe_display_stocked: { sx: 72, sy: 0, sw: 16, sh: 25 },
-  cafe_display_corner: { sx: 88, sy: 0, sw: 16, sh: 25 },
-  cafe_register: { sx: 104, sy: 0, sw: 12, sh: 16 },
-  espresso_machine: { sx: 120, sy: 0, sw: 14, sh: 19 },
-  cafe_table: { sx: 0, sy: 32, sw: 12, sh: 31 },
-  cafe_chair_front: { sx: 12, sy: 32, sw: 11, sh: 20 },
-  cafe_chair_side: { sx: 24, sy: 32, sw: 11, sh: 20 },
-  cafe_counter: { sx: 36, sy: 32, sw: 27, sh: 20 },
-  cafe_drink_station: { sx: 64, sy: 32, sw: 27, sh: 27 },
-  cafe_cone_station: { sx: 92, sy: 32, sw: 27, sh: 32 },
+  cafe_menu_board: { sx: 0, sy: 0, sw: 28, sh: 28, dx: 2, dy: 2 },
+  cafe_sign: { sx: 28, sy: 0, sw: 28, sh: 25, dx: 2, dy: 7 },
+  cafe_display_empty: { sx: 56, sy: 0, sw: 15, sh: 25, dx: 0, dy: 7 },
+  cafe_display_stocked: { sx: 72, sy: 0, sw: 16, sh: 25, dx: 0, dy: 7 },
+  cafe_display_corner: { sx: 88, sy: 0, sw: 16, sh: 25, dx: 0, dy: 7 },
+  cafe_register: { sx: 104, sy: 0, sw: 12, sh: 16, dx: 2, dy: 0 },
+  espresso_machine: { sx: 120, sy: 0, sw: 14, sh: 19, dx: 1, dy: -3 },
+  cafe_table: { sx: 0, sy: 32, sw: 12, sh: 31, dx: 2, dy: 1 },
+  cafe_chair_front: { sx: 12, sy: 32, sw: 11, sh: 20, dx: 3, dy: -4 },
+  cafe_chair_side: { sx: 24, sy: 32, sw: 11, sh: 20, dx: 3, dy: -4 },
+  cafe_counter: { sx: 36, sy: 32, sw: 27, sh: 20, dx: 2, dy: -4 },
+  cafe_drink_station: { sx: 64, sy: 32, sw: 27, sh: 27, dx: 2, dy: 5 },
+  cafe_cone_station: { sx: 92, sy: 32, sw: 27, sh: 32, dx: 3, dy: 0 },
 };
 
 /** 地板 atlas 中有專屬三變體列的房間(與 manifest floors 的 row 順序同步)。 */
@@ -215,6 +210,9 @@ type LoadableImage = CanvasImageSource & {
 let atlas: AtlasImage | null = null;
 let preloadPromise: Promise<boolean> | null = null;
 let warned = false;
+let cafeAtlas: AtlasImage | null = null;
+let cafePreloadPromise: Promise<boolean> | null = null;
+let cafeWarned = false;
 let floorAtlas: AtlasImage | null = null;
 let floorPreloadPromise: Promise<boolean> | null = null;
 let floorWarned = false;
@@ -225,6 +223,12 @@ let wallWarned = false;
 function warnOnce(message: string, cause?: unknown) {
   if (warned) return;
   warned = true;
+  console.warn(`[limezu] ${message}`, cause ?? "");
+}
+
+function warnCafeOnce(message: string, cause?: unknown) {
+  if (cafeWarned) return;
+  cafeWarned = true;
   console.warn(`[limezu] ${message}`, cause ?? "");
 }
 
@@ -275,6 +279,43 @@ export function preloadLimezuFurnitureAtlas(url = LIMEZU_ATLAS_URL): Promise<boo
   });
 
   return preloadPromise;
+}
+
+/** 咖啡廳 atlas 非阻塞預載；失敗時每件 CAFE-06 家具各自走 recipe fallback。 */
+export function preloadLimezuCafeAtlas(url = LIMEZU_CAFE_ATLAS_URL): Promise<boolean> {
+  if (cafeAtlas) return Promise.resolve(true);
+  if (cafePreloadPromise) return cafePreloadPromise;
+  if (typeof Image === "undefined") return Promise.resolve(false);
+
+  cafePreloadPromise = new Promise<boolean>((resolve) => {
+    let image: LoadableImage;
+    try {
+      image = new Image() as LoadableImage;
+      image.decoding = "async";
+    } catch (error) {
+      warnCafeOnce("無法建立咖啡廳 atlas 圖像,改用 recipe 繪圖。", error);
+      resolve(false);
+      return;
+    }
+
+    image.onload = () => {
+      cafeAtlas = image;
+      resolve(true);
+    };
+    image.onerror = () => {
+      warnCafeOnce("咖啡廳 atlas 載入失敗,改用 recipe 繪圖。");
+      resolve(false);
+    };
+
+    try {
+      image.src = url;
+    } catch (error) {
+      warnCafeOnce("設定咖啡廳 atlas 路徑失敗,改用 recipe 繪圖。", error);
+      resolve(false);
+    }
+  });
+
+  return cafePreloadPromise;
 }
 
 /** 地板 atlas 非阻塞預載;失敗時保留 floorScene 已畫好的程序地板。 */
@@ -355,6 +396,10 @@ function isLimezuFurnitureId(id: string): id is LimezuFurnitureId {
   return Object.prototype.hasOwnProperty.call(LIMEZU_FURNITURE_FRAMES, id);
 }
 
+function isLimezuCafeId(id: string): id is LimezuCafeId {
+  return Object.prototype.hasOwnProperty.call(LIMEZU_CAFE_FRAMES, id);
+}
+
 function isLimezuFloorRoomId(id: string): id is LimezuFloorRoomId {
   return Object.prototype.hasOwnProperty.call(LIMEZU_FLOOR_FRAMES, id);
 }
@@ -368,12 +413,15 @@ export function tryDrawLimezuFurniture(
   w: number,
   h: number,
 ): boolean {
-  if (!atlas || !isLimezuFurnitureId(furnitureId)) return false;
-  const frame = LIMEZU_FURNITURE_FRAMES[furnitureId];
+  const furnitureFrame = isLimezuFurnitureId(furnitureId) ? LIMEZU_FURNITURE_FRAMES[furnitureId] : null;
+  const cafeFrame = isLimezuCafeId(furnitureId) ? LIMEZU_CAFE_FRAMES[furnitureId] : null;
+  const image = furnitureFrame ? atlas : cafeFrame ? cafeAtlas : null;
+  const frame = furnitureFrame ?? cafeFrame;
+  if (!image || !frame) return false;
   try {
     // 不縮放:避免像素素材模糊;高家具可從 footprint 往上延伸。
     ctx.drawImage(
-      atlas,
+      image,
       frame.sx,
       frame.sy,
       frame.sw,
@@ -385,7 +433,8 @@ export function tryDrawLimezuFurniture(
     );
     return true;
   } catch (error) {
-    warnOnce("家具 atlas 繪製失敗,改用程序繪圖。", error);
+    if (cafeFrame) warnCafeOnce("咖啡廳 atlas 繪製失敗,改用 recipe 繪圖。", error);
+    else warnOnce("家具 atlas 繪製失敗,改用程序繪圖。", error);
     return false;
   }
 }
@@ -435,6 +484,13 @@ export function resetLimezuFurnitureAtlasForTests() {
   atlas = null;
   preloadPromise = null;
   warned = false;
+}
+
+/** @internal 僅供確定性測試隔離咖啡廳 atlas 載入狀態。 */
+export function resetLimezuCafeAtlasForTests() {
+  cafeAtlas = null;
+  cafePreloadPromise = null;
+  cafeWarned = false;
 }
 
 /** @internal 僅供確定性測試隔離地板 atlas 載入狀態。 */

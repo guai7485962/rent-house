@@ -174,5 +174,37 @@ check(
     getFurnDef(cheap).price < getFurnDef(pricy).price && attrSum(cheap) <= attrSum(pricy)),
 );
 
+// --- 6. CAFE-06 家具:只 append、有明確 tier、atlas 失敗時仍有 recipe fallback ---
+const CAFE_FURNITURE_IDS = [
+  "cafe_counter",
+  "espresso_machine",
+  "cafe_display_stocked",
+  "cafe_menu_board",
+  "cafe_table",
+  "cafe_chair_front",
+  "cafe_chair_side",
+  "cafe_cat_tower",
+  "cafe_pet_cushion",
+  "cafe_stock_shelf",
+  "cafe_crate",
+  "cafe_fridge",
+] as const;
+const cafeFurniture = CAFE_FURNITURE_IDS.map((id) => getFurnDef(id));
+check(
+  "CAFE-06 的 12 件咖啡廳家具全部存在且 id 不重複",
+  cafeFurniture.every((def, index) => def.id === CAFE_FURNITURE_IDS[index])
+    && new Set(CATALOG.map((def) => def.id)).size === CATALOG.length,
+);
+check(
+  "CAFE-06 每件家具都明確標 tier、可購買且有非空 recipe fallback",
+  cafeFurniture.every((def) => def.tier !== undefined && VALID_TIERS.has(def.tier)
+    && def.price > 0 && "recipe" in def.sprite && def.sprite.recipe.length > 0),
+);
+check(
+  "咖啡廳家具沿用 communal 擺放但不提前解鎖租客下樓狀態",
+  cafeFurniture.every((def) => def.placement === "communal"
+    && def.unlocksStates.length === 0 && !def.social),
+);
+
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

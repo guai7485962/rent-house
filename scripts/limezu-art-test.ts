@@ -10,9 +10,11 @@ import {
   LIMEZU_FLOOR_FRAMES,
   LIMEZU_WALL_PIECE_IDS,
   LIMEZU_WALL_FRAMES,
+  preloadLimezuCafeAtlas,
   preloadLimezuFurnitureAtlas,
   preloadLimezuFloorAtlas,
   preloadLimezuWallAtlas,
+  resetLimezuCafeAtlasForTests,
   resetLimezuFurnitureAtlasForTests,
   resetLimezuFloorAtlasForTests,
   resetLimezuWallAtlasForTests,
@@ -249,9 +251,11 @@ class FakeCtx {
 const originalImage = (globalThis as any).Image;
 
 resetLimezuFurnitureAtlasForTests();
+resetLimezuCafeAtlasForTests();
 resetLimezuFloorAtlasForTests();
 delete (globalThis as any).Image;
 check("Node 無 Image 時家具預載安全回傳 false", await preloadLimezuFurnitureAtlas() === false);
+check("Node 無 Image 時咖啡廳預載安全回傳 false", await preloadLimezuCafeAtlas() === false);
 check("Node 無 Image 時地板預載安全回傳 false", await preloadLimezuFloorAtlas() === false);
 
 let imageInstances = 0;
@@ -275,6 +279,16 @@ const [loadedA, loadedB] = await Promise.all([
 ]);
 check("家具並行預載共用同一 promise 與 Image", loadedA && loadedB && imageInstances === 1);
 
+const cafeImageInstancesBefore = imageInstances;
+const [cafeLoadedA, cafeLoadedB] = await Promise.all([
+  preloadLimezuCafeAtlas("/fake-cafe.png"),
+  preloadLimezuCafeAtlas("/ignored-cafe.png"),
+]);
+check(
+  "咖啡廳並行預載共用同一 promise 與 Image",
+  cafeLoadedA && cafeLoadedB && imageInstances === cafeImageInstancesBefore + 1,
+);
+
 const atlasCtx = new FakeCtx();
 const drawn = tryDrawLimezuFurniture(atlasCtx as any, "single_bed", 7, 9, 32, 32);
 const bedFrame = LIMEZU_FURNITURE_FRAMES.single_bed;
@@ -285,6 +299,18 @@ check(
   args[1] === bedFrame.sx && args[2] === bedFrame.sy && args[3] === bedFrame.sw && args[4] === bedFrame.sh
     && args[5] === 7 + bedFrame.dx && args[6] === 9 + bedFrame.dy
     && args[7] === bedFrame.sw && args[8] === bedFrame.sh,
+);
+const cafeAtlasCtx = new FakeCtx();
+const cafeDrawn = tryDrawLimezuFurniture(cafeAtlasCtx as any, "cafe_counter", 11, 13, 32, 16);
+const cafeCounterFrame = LIMEZU_CAFE_FRAMES.cafe_counter;
+const cafeArgs = cafeAtlasCtx.drawCalls[0] ?? [];
+check("已載入 cafe atlas 可由既有家具 renderer 繪製 CAFE-06 條目", cafeDrawn && cafeAtlasCtx.drawCalls.length === 1);
+check(
+  "cafe atlas 維持來源框、目的偏移與 1:1 像素",
+  cafeArgs[1] === cafeCounterFrame.sx && cafeArgs[2] === cafeCounterFrame.sy
+    && cafeArgs[3] === cafeCounterFrame.sw && cafeArgs[4] === cafeCounterFrame.sh
+    && cafeArgs[5] === 11 + cafeCounterFrame.dx && cafeArgs[6] === 13 + cafeCounterFrame.dy
+    && cafeArgs[7] === cafeCounterFrame.sw && cafeArgs[8] === cafeCounterFrame.sh,
 );
 check(
   "跳過件 id(double_bed)不會誤畫 atlas",
@@ -363,7 +389,15 @@ drawDef(throwingCtx as any, getDef("gaming_desk"), 0, 0);
 check("家具 drawImage 失敗時仍回退程序繪圖且只警告一次", throwingCtx.fillCount > 0 && warnings === 1);
 console.warn = originalWarn;
 
+warnings = 0;
+console.warn = () => { warnings++; };
+const throwingCafeCtx = new ThrowingDrawCtx();
+drawDef(throwingCafeCtx as any, getDef("cafe_counter"), 0, 0);
+check("咖啡廳 drawImage 失敗時回退 recipe 且只警告一次", throwingCafeCtx.fillCount > 0 && warnings === 1);
+console.warn = originalWarn;
+
 resetLimezuFurnitureAtlasForTests();
+resetLimezuCafeAtlasForTests();
 const fallbackCtx = new FakeCtx();
 drawDef(fallbackCtx as any, getDef("single_bed"), 0, 0);
 check("atlas 未載入時完整回退既有程序繪圖", fallbackCtx.drawCalls.length === 0 && fallbackCtx.fillCount > 0);
@@ -373,6 +407,9 @@ check("atlas 未載入時 tv_console 仍走程序繪圖(furniture-art-test 前�
 const sofaFallbackCtx = new FakeCtx();
 drawDef(sofaFallbackCtx as any, getDef("shared_sofa"), 0, 0);
 check("atlas 未載入時第二批家具(shared_sofa)完整回退程序繪圖", sofaFallbackCtx.drawCalls.length === 0 && sofaFallbackCtx.fillCount > 0);
+const cafeFallbackCtx = new FakeCtx();
+drawDef(cafeFallbackCtx as any, getDef("cafe_counter"), 0, 0);
+check("cafe atlas 未載入時完整回退 CAFE-06 recipe", cafeFallbackCtx.drawCalls.length === 0 && cafeFallbackCtx.fillCount > 0);
 
 // ---------------------------------------------------------------------------
 // 地板覆蓋
@@ -479,6 +516,14 @@ const failedB = await preloadLimezuFurnitureAtlas("/missing-again.png");
 console.warn = originalWarn;
 check("家具載入失敗永遠 resolve false 且只警告一次", !failedA && !failedB && warnings === 1);
 
+resetLimezuCafeAtlasForTests();
+warnings = 0;
+console.warn = () => { warnings++; };
+const failedCafeA = await preloadLimezuCafeAtlas("/missing-cafe.png");
+const failedCafeB = await preloadLimezuCafeAtlas("/missing-cafe-again.png");
+console.warn = originalWarn;
+check("咖啡廳載入失敗永遠 resolve false 且只警告一次", !failedCafeA && !failedCafeB && warnings === 1);
+
 resetLimezuFloorAtlasForTests();
 warnings = 0;
 console.warn = () => { warnings++; };
@@ -545,6 +590,7 @@ check(
 
 // runtime:未載入 → 完整回退程序牆(composeFloor 不畫任何圖片)
 resetLimezuFurnitureAtlasForTests();
+resetLimezuCafeAtlasForTests();
 resetLimezuFloorAtlasForTests();
 resetLimezuWallAtlasForTests();
 delete (globalThis as any).Image;

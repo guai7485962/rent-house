@@ -11,12 +11,23 @@
  *   [ ---- 中央交誼廳 ---- ]
  *   [ 303 ][走廊][ 304 ]
  *   [ 廁所浴室 ][走廊][ 洗衣晾衣間 ]   ← 共用設施
- *              [ 大門 ]
+ *              [ 大門 ]                    ← 3F
+ *              [ 樓梯 ]
+ *   [ -------- 一樓寵物咖啡廳 -------- ]
+ *              [ 店門 ]                    ← 1F
  */
 
 export const TILE = 16;
 export const GRID_W = 16;
-export const GRID_H = 33;
+export const GRID_H = 52;
+
+export type CafeRegion =
+  | "stairs"
+  | "cafe_floor"
+  | "cafe_counter"
+  | "cafe_pet"
+  | "cafe_back"
+  | "cafe_entrance";
 
 export type Region =
   | "outside"
@@ -29,7 +40,8 @@ export type Region =
   | "laundry"
   | "lounge"
   | "door"
-  | "entrance";
+  | "entrance"
+  | CafeRegion;
 
 interface Rect {
   c0: number;
@@ -60,6 +72,16 @@ const LOUNGE_RECTS: Rect[] = [
   { c0: 7, r0: 1, c1: 8, r1: 31 }, // 縱向走廊(貫穿上下到大門)
   LOUNGE_HALL_RECT,
 ];
+
+/** 一樓寵物咖啡廳；物件順序同時是重疊區域的覆蓋優先序。 */
+export const CAFE_RECTS = {
+  stairs: { c0: 7, r0: 32, c1: 8, r1: 35 },
+  cafe_floor: { c0: 1, r0: 36, c1: 14, r1: 47 },
+  cafe_counter: { c0: 2, r0: 38, c1: 6, r1: 40 },
+  cafe_pet: { c0: 9, r0: 41, c1: 14, r1: 46 },
+  cafe_back: { c0: 1, r0: 48, c1: 14, r1: 50 },
+  cafe_entrance: { c0: 7, r0: 51, c1: 8, r1: 51 },
+} satisfies Record<CafeRegion, Rect>;
 
 /** 房內隔間牆(乾濕分離等)—— 在區域填完後覆蓋為牆 */
 const PARTITIONS: Rect[] = [
@@ -102,6 +124,9 @@ export function buildGrid(): Region[][] {
       }
       for (const box of LOUNGE_RECTS) {
         if (inRect(c, r, box)) cell = "lounge";
+      }
+      for (const [id, box] of Object.entries(CAFE_RECTS)) {
+        if (inRect(c, r, box)) cell = id as Region;
       }
       for (const box of PARTITIONS) {
         if (inRect(c, r, box)) cell = "wall";

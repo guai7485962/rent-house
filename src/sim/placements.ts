@@ -137,7 +137,11 @@ function occupiedSet(exclude?: { c: number; r: number }): Set<string> {
   return occ;
 }
 
-const FLOOR_REGIONS = new Set(["r301", "r302", "r303", "r304", "lounge", "bathroom", "laundry"]);
+// 樓梯與兩個出入口刻意排除，避免自由擺放堵住跨樓層唯一動線。
+const FLOOR_REGIONS = new Set([
+  "r301", "r302", "r303", "r304", "lounge", "bathroom", "laundry",
+  "cafe_floor", "cafe_counter", "cafe_pet", "cafe_back",
+]);
 
 /**
  * 自由擺放判定:footprint 是否能放在 (c,r)(全部落在同一個房間地板、不壓牆、不重疊)。

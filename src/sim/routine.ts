@@ -163,7 +163,10 @@ export function resolveTarget(role: Role, roomId: string | null, state?: TenantV
   if (role === "out") return null;
   const kinds = STATE_KINDS[state ?? "idle"] ?? ROLE_KINDS[role];
 
-  const COMMUNAL = new Set(["lounge", "bathroom", "laundry"]);
+  // 咖啡廳室內可作為活動目的地，但不代表住宅舒適度的共用設施。
+  const COMMUNAL = new Set([
+    "lounge", "bathroom", "laundry", "cafe_floor", "cafe_counter", "cafe_pet", "cafe_back",
+  ]);
   const match = (p: Placement) => {
     const def = getDef(p.defId);
     if (!("kind" in def.sprite) || !kinds.includes(def.sprite.kind)) return false;

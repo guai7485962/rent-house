@@ -147,6 +147,20 @@ export interface Appearance {
   accessory: AccessoryKind;
 }
 
+/** 咖啡廳顧客只帶畫面與意圖所需的輕量資料，不是 TenantRuntime。 */
+export type CafeGuestIntent = "coffee" | "adopt" | "rent";
+
+export interface CafeGuest {
+  id: string;
+  name: string;
+  appearance: Appearance;
+  intent: CafeGuestIntent;
+  arrivedMs: number;
+  /** 抵達後 1～3 個遊戲小時離開。 */
+  leavesMs: number;
+  seatTile: import("./floor/pathfind").Tile | null;
+}
+
 export interface Tenant {
   id: string;
   name: string;

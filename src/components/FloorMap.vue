@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { composeFloor, drawFootprintPreview, FLOOR_W, FLOOR_H, type FloorMark } from "../floor/floorScene";
+import { composeFloor, drawFootprintPreview, type FloorMark } from "../floor/floorScene";
 import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
 import { layoutFloorTags } from "../floor/tagLayout";
 import { groupSceneView, type GroupScene } from "../floor/groupScene";
+import { renderFloorViewport, viewportRect } from "../floor/viewport";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
@@ -23,6 +24,19 @@ const emit = defineEmits<{
   place: [tile: { c: number; r: number }];
   inspect: [item: { c: number; r: number; defId: string; rotation: FurnitureRotation }];
 }>();
+
+const FLOOR_VIEWS = {
+  "3f": { id: "3f", floor: "3F", label: "租屋樓", rect: viewportRect(0, 0, 16 * TILE, 33 * TILE) },
+  "1f": { id: "1f", floor: "1F", label: "咖啡廳", rect: viewportRect(0, 34 * TILE, 16 * TILE, 18 * TILE) },
+} as const;
+type FloorViewId = keyof typeof FLOOR_VIEWS;
+
+const floorViews = Object.values(FLOOR_VIEWS);
+const floorView = ref<FloorViewId>("3f");
+const activeFloorView = computed(() => FLOOR_VIEWS[floorView.value]);
+const canvasWidth = computed(() => activeFloorView.value.rect.width);
+const canvasHeight = computed(() => activeFloorView.value.rect.height);
+const isTenantFloor = computed(() => floorView.value === "3f");
 
 const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);
 
@@ -81,9 +95,15 @@ function loop(t: number) {
         const rect = roomRect(roomId);
         if (rect) marks.push({ c: Math.floor((rect.c0 + rect.c1) / 2), r: rect.r0 + 1 });
       }
-      composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
-      const pv = props.preview;
-      if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
+      const view = activeFloorView.value.rect;
+      // 1F 在 CAFE-03 擴充地圖前位於現有畫布外；先清可見 canvas，切換時才能正確顯示空白。
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, el.width, el.height);
+      renderFloorViewport(ctx, view, 1, () => {
+        composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents);
+        const pv = props.preview;
+        if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
+      });
     }
     const rawTags = [
         ...agents
@@ -105,11 +125,15 @@ function loop(t: number) {
           color: p.kind === "dog" ? "#c9823d" : "#e0913f",
         })),
     ];
-    agentTags.value = layoutFloorTags(rawTags, FLOOR_W, FLOOR_H).map((tag) => ({
+    const view = activeFloorView.value.rect;
+    const visibleTags = rawTags
+      .filter((tag) => tag.x >= view.x && tag.x <= view.x + view.width && tag.y >= view.y && tag.y <= view.y + view.height)
+      .map((tag) => ({ ...tag, x: tag.x - view.x, y: tag.y - view.y }));
+    agentTags.value = layoutFloorTags(visibleTags, view.width, view.height).map((tag) => ({
       id: tag.id,
       name: tag.name,
-      left: `${(tag.drawX / FLOOR_W) * 100}%`,
-      top: `${(tag.drawY / FLOOR_H) * 100}%`,
+      left: `${(tag.drawX / view.width) * 100}%`,
+      top: `${(tag.drawY / view.height) * 100}%`,
       color: tag.color,
     }));
   } finally {
@@ -126,7 +150,13 @@ onUnmounted(() => cancelAnimationFrame(raf));
 
 /** 房間標籤(百分比定位於 canvas 上);名稱依動態佔用狀態 */
 const labels = computed(() =>
-  ROOM_INFO.map((r) => {
+  ROOM_INFO.filter((r) => {
+    const view = activeFloorView.value.rect;
+    const x0 = r.rect.c0 * TILE;
+    const y0 = r.rect.r0 * TILE;
+    return x0 >= view.x && x0 < view.x + view.width && y0 >= view.y && y0 < view.y + view.height;
+  }).map((r) => {
+    const view = activeFloorView.value.rect;
     const tid = state.occupancy[r.id];
     const occupied = r.type === "facility" || !!tid;
     const name = r.type === "facility" ? r.tenantName : tid ? state.runtimes[tid]?.tenant.name ?? r.tenantName : "招租中";
@@ -135,9 +165,9 @@ const labels = computed(() =>
       name,
       occupied,
       style: {
-        left: `${((r.rect.c0 * TILE) / FLOOR_W) * 100}%`,
-        top: `${((r.rect.r0 * TILE) / FLOOR_H) * 100}%`,
-        width: `${(((r.rect.c1 - r.rect.c0 + 1) * TILE) / FLOOR_W) * 100}%`,
+        left: `${((r.rect.c0 * TILE - view.x) / view.width) * 100}%`,
+        top: `${((r.rect.r0 * TILE - view.y) / view.height) * 100}%`,
+        width: `${(((r.rect.c1 - r.rect.c0 + 1) * TILE) / view.width) * 100}%`,
       },
       pending: props.pendingRooms.includes(r.id),
       unread: props.unread[r.id] ?? 0,
@@ -149,8 +179,9 @@ function onClick(e: MouseEvent) {
   const el = canvas.value;
   if (!el) return;
   const box = el.getBoundingClientRect();
-  const cx = ((e.clientX - box.left) / box.width) * FLOOR_W;
-  const cy = ((e.clientY - box.top) / box.height) * FLOOR_H;
+  const view = activeFloorView.value.rect;
+  const cx = view.x + ((e.clientX - box.left) / box.width) * view.width;
+  const cy = view.y + ((e.clientY - box.top) / box.height) * view.height;
   const tc = Math.floor(cx / TILE);
   const tr = Math.floor(cy / TILE);
   if (placing.value) {
@@ -172,49 +203,105 @@ function onClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="floor-wrap">
-    <canvas ref="canvas" :width="FLOOR_W" :height="FLOOR_H" @click="onClick"></canvas>
-    <!-- 房間標籤覆蓋層 -->
-    <button
-      v-for="l in labels"
-      :key="l.info.id"
-      class="room-label"
-      :class="{ vacant: !l.occupied }"
-      :style="{ ...l.style, pointerEvents: placing ? 'none' : 'auto' }"
-      @click="emit('enter', l.info)"
-    >
-      <span class="no">{{ l.info.label }}</span>
-      <span class="name">{{ l.name }}</span>
-      <span v-if="l.pending" class="pin">!</span>
-      <span v-else-if="l.unread > 0" class="unread">{{ l.unread }}</span>
-    </button>
-    <div class="lounge-tag">交誼廳</div>
-    <div class="entrance-tag">🚪 大門</div>
-    <div
-      v-if="eventScene"
-      class="event-scene"
-      :class="[eventScene.venue, eventScene.layout, { cinematic: eventScene.venue === 'rooftop' || eventScene.layout === 'farewell' }]"
-    >
-      <div class="event-scene-title">{{ eventScene.venue === "rooftop" ? "🌇 頂樓" : "🎬 現場" }} · {{ eventScene.title }}</div>
-      <div v-if="eventScene.venue === 'rooftop' || eventScene.layout === 'farewell'" class="event-actors">
-        <div v-for="actor in eventScene.actors" :key="actor.tenantId" class="event-actor">
-          <span class="pixel-person" :style="actorStyle(actor)">
-            <i class="hair"></i><i class="head"></i><i class="body"></i><i class="legs"></i>
-          </span>
-          <span>{{ actor.name }}</span>
-        </div>
-      </div>
-      <div v-if="eventScene.venue === 'rooftop'" class="roof-rail"></div>
-      <div v-if="eventScene.layout === 'farewell'" class="party-decor">🎈　✨　🎉　✨　🎈</div>
+  <div class="floor-shell">
+    <div class="floor-switcher" role="tablist" aria-label="樓層切換">
+      <button
+        v-for="view in floorViews"
+        :key="view.id"
+        type="button"
+        role="tab"
+        :class="{ on: floorView === view.id }"
+        :aria-selected="floorView === view.id"
+        :aria-label="`${view.floor} ${view.label}`"
+        @click="floorView = view.id"
+      >
+        <strong>{{ view.floor }}</strong><span>{{ view.label }}</span>
+      </button>
     </div>
-    <!-- 跟著人走的名字標籤 -->
-    <div v-for="tag in agentTags" :key="tag.id" class="agent-tag" :style="{ left: tag.left, top: tag.top, borderColor: tag.color }">
-      {{ tag.name }}
+    <div class="floor-wrap">
+      <canvas
+        ref="canvas"
+        :width="canvasWidth"
+        :height="canvasHeight"
+        :aria-label="`${activeFloorView.floor} ${activeFloorView.label}地圖`"
+        @click="onClick"
+      ></canvas>
+      <!-- 房間標籤覆蓋層 -->
+      <button
+        v-for="l in labels"
+        :key="l.info.id"
+        class="room-label"
+        :class="{ vacant: !l.occupied }"
+        :style="{ ...l.style, pointerEvents: placing ? 'none' : 'auto' }"
+        @click="emit('enter', l.info)"
+      >
+        <span class="no">{{ l.info.label }}</span>
+        <span class="name">{{ l.name }}</span>
+        <span v-if="l.pending" class="pin">!</span>
+        <span v-else-if="l.unread > 0" class="unread">{{ l.unread }}</span>
+      </button>
+      <div v-if="isTenantFloor" class="lounge-tag">交誼廳</div>
+      <div v-if="isTenantFloor" class="entrance-tag">🚪 大門</div>
+      <div
+        v-if="eventScene && isTenantFloor"
+        class="event-scene"
+        :class="[eventScene.venue, eventScene.layout, { cinematic: eventScene.venue === 'rooftop' || eventScene.layout === 'farewell' }]"
+      >
+        <div class="event-scene-title">{{ eventScene.venue === "rooftop" ? "🌇 頂樓" : "🎬 現場" }} · {{ eventScene.title }}</div>
+        <div v-if="eventScene.venue === 'rooftop' || eventScene.layout === 'farewell'" class="event-actors">
+          <div v-for="actor in eventScene.actors" :key="actor.tenantId" class="event-actor">
+            <span class="pixel-person" :style="actorStyle(actor)">
+              <i class="hair"></i><i class="head"></i><i class="body"></i><i class="legs"></i>
+            </span>
+            <span>{{ actor.name }}</span>
+          </div>
+        </div>
+        <div v-if="eventScene.venue === 'rooftop'" class="roof-rail"></div>
+        <div v-if="eventScene.layout === 'farewell'" class="party-decor">🎈　✨　🎉　✨　🎈</div>
+      </div>
+      <!-- 跟著人走的名字標籤 -->
+      <div v-for="tag in agentTags" :key="tag.id" class="agent-tag" :style="{ left: tag.left, top: tag.top, borderColor: tag.color }">
+        {{ tag.name }}
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.floor-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.floor-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  line-height: 1.2;
+  background: rgba(36, 31, 51, 0.78);
+  border-bottom: 1px solid var(--line);
+}
+.floor-switcher button {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  color: var(--text-dim);
+  background: rgba(13, 12, 18, 0.55);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.floor-switcher button.on {
+  color: #fff4df;
+  background: rgba(255, 180, 94, 0.15);
+  border-color: rgba(255, 180, 94, 0.65);
+}
+.floor-switcher strong { color: var(--accent); font-size: 12px; }
+.floor-switcher span { font-size: 11px; }
 .floor-wrap {
   position: relative;
   line-height: 0;

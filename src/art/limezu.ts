@@ -130,6 +130,9 @@ export const LIMEZU_WALL_PIECE_IDS = [
   "body_right",
   "body_both",
   "baseboard",
+  "stair_tread_a",
+  "stair_tread_b",
+  "floor_divider",
 ] as const;
 
 export type LimezuWallPieceId = (typeof LIMEZU_WALL_PIECE_IDS)[number];
@@ -141,7 +144,7 @@ interface WallFrame {
   sh: number;
 }
 
-/** 固定 64x48 walls.png 版面(與 scripts/limezu-manifest.json walls 同步)。 */
+/** 固定 64x64 walls.png 版面(與 scripts/limezu-manifest.json walls 同步)。 */
 export const LIMEZU_WALL_FRAMES: Readonly<Record<LimezuWallPieceId, WallFrame>> = {
   cap_mid: { sx: 0, sy: 0, sw: 16, sh: 16 },
   cap_left: { sx: 16, sy: 0, sw: 16, sh: 16 },
@@ -152,6 +155,9 @@ export const LIMEZU_WALL_FRAMES: Readonly<Record<LimezuWallPieceId, WallFrame>> 
   body_right: { sx: 32, sy: 16, sw: 16, sh: 16 },
   body_both: { sx: 48, sy: 16, sw: 16, sh: 16 },
   baseboard: { sx: 0, sy: 32, sw: 16, sh: 6 },
+  stair_tread_a: { sx: 0, sy: 48, sw: 16, sh: 16 },
+  stair_tread_b: { sx: 16, sy: 48, sw: 16, sh: 16 },
+  floor_divider: { sx: 32, sy: 48, sw: 16, sh: 16 },
 };
 
 type AtlasImage = CanvasImageSource;

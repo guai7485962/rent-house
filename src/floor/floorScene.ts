@@ -24,7 +24,7 @@ import { isVacuumDef, type VacuumAgent } from "./vacuumAgents";
 import { activeFx, type Fx } from "./fx";
 import { getTheme, getCustomAppearance } from "../pixel/scene";
 import { drawAppearanceOverlay } from "../pixel/parts";
-import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT } from "./map";
+import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT, CAFE_RECTS } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
 import { getPlacements, placementInteract, placementFootprint, placements } from "../sim/placements";
@@ -32,7 +32,7 @@ import type { FurnitureRotation } from "../furniture/rotation";
 import { tryDrawLimezuFloor, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 
 export const FLOOR_W = GRID_W * TILE; // 256
-export const FLOOR_H = GRID_H * TILE; // 384
+export const FLOOR_H = GRID_H * TILE; // 832
 
 const GRID = buildGrid();
 
@@ -91,6 +91,8 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
   drawLimezuFloorOverlay(ctx);
   drawWalls(ctx);
   drawEntrance(ctx);
+  drawFloorDivider(ctx);
+  drawStairs(ctx);
 
   // 家具:讀 PLACEMENTS(id+座標)→ 查目錄 → drawDef。
   // 由上而下(r 由小到大)繪製,讓前方物件蓋住後方。
@@ -985,6 +987,59 @@ function drawLimezuFloorOverlay(ctx: Ctx) {
       }
     }
   }
+}
+
+/**
+ * 三樓與一樓之間的樓板橫切面。先鋪程序 fallback，再逐格換成 Visible Upstairs
+ * 的暖灰橫紋；row 33 固定由樓梯 region 推導，避免另造一份地圖常數。
+ */
+export function drawFloorDivider(ctx: Ctx) {
+  const row = CAFE_RECTS.stairs.r0 + 1;
+  const y = row * TILE;
+  for (let c = 0; c < GRID_W; c++) {
+    const x = c * TILE;
+    if (!tryDrawLimezuWallPiece(ctx, "floor_divider", x, y)) {
+      rect(ctx, x, y, TILE, TILE, "#6f625d");
+      rect(ctx, x, y, TILE, 3, "#93847b");
+      rect(ctx, x, y + 6, TILE, 2, "#51484a");
+      rect(ctx, x, y + TILE - 2, TILE, 2, "#29242d");
+    }
+  }
+}
+
+/**
+ * 2x4 格的跨樓層樓梯。踏面取自 Visible Upstairs 的兩個 16px 變體交錯鋪設；
+ * atlas 不可用時畫同尺寸程序踏面，兩側扶手則一律由清晰的 1px/2px 像素線補齊。
+ */
+export function drawStairs(ctx: Ctx) {
+  const stair = CAFE_RECTS.stairs;
+  const x = stair.c0 * TILE;
+  const y = stair.r0 * TILE;
+  const w = (stair.c1 - stair.c0 + 1) * TILE;
+  const h = (stair.r1 - stair.r0 + 1) * TILE;
+
+  rect(ctx, x, y, w, h, "#211d25");
+  for (let r = stair.r0; r <= stair.r1; r++) {
+    for (let c = stair.c0; c <= stair.c1; c++) {
+      const piece = (r - stair.r0) % 2 === 0 ? "stair_tread_a" : "stair_tread_b";
+      const px = c * TILE;
+      const py = r * TILE;
+      if (!tryDrawLimezuWallPiece(ctx, piece, px, py)) {
+        rect(ctx, px, py, TILE, TILE, r % 2 === 0 ? "#725f57" : "#806b61");
+        rect(ctx, px, py + 2, TILE, 3, "#b49a82");
+        rect(ctx, px, py + 5, TILE, 2, "#433b43");
+        rect(ctx, px, py + 12, TILE, 2, "#a18976");
+      }
+    }
+  }
+
+  // 扶手、立柱與頂端橫桿：讓樓梯輪廓在 1x 像素與夜間 tint 下仍然清楚。
+  rect(ctx, x, y, 2, h, "#332b34");
+  rect(ctx, x + 2, y, 2, h, "#b69a7d");
+  rect(ctx, x + w - 4, y, 2, h, "#b69a7d");
+  rect(ctx, x + w - 2, y, 2, h, "#332b34");
+  rect(ctx, x + 2, y, w - 4, 2, "#d0b596");
+  rect(ctx, x + 2, y + h - 2, w - 4, 2, "#4a3d3d");
 }
 
 /** 大門(樓層出入口):明顯的雙開木門 */

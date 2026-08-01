@@ -425,7 +425,7 @@ console.warn = originalWarn;
 check("地板載入失敗永遠 resolve false 且只警告一次", !failedFloorA && !failedFloorB && warnings === 1);
 
 // ---------------------------------------------------------------------------
-// 牆面 atlas(第三批:整棟牆面)
+// 建築 atlas(第三批牆面 + CAFE-04 樓梯／樓板分隔帶)
 // ---------------------------------------------------------------------------
 
 const wallsPng = pngSize("../public/assets/limezu/walls.png");
@@ -433,14 +433,15 @@ const WALL_PIECES = [
   "cap_mid", "cap_left", "cap_right", "cap_both",
   "body_mid", "body_left", "body_right", "body_both",
   "baseboard",
+  "stair_tread_a", "stair_tread_b", "floor_divider",
 ] as const;
 check(
-  "牆件清單 = 頂蓋/牆身各 4 向 + 踢腳條共 9 件",
+  "建築件清單 = 9 個既有牆件 + 3 個 CAFE-04 樓梯／樓板件",
   JSON.stringify(LIMEZU_WALL_PIECE_IDS) === JSON.stringify(WALL_PIECES),
 );
 check(
-  "walls.png 尺寸 = manifest 宣告的 64x48",
-  wallsPng.width === 64 && wallsPng.height === 48
+  "walls.png 尺寸 = manifest 宣告的 64x64",
+  wallsPng.width === 64 && wallsPng.height === 64
     && manifest.wall_atlas.width === wallsPng.width
     && manifest.wall_atlas.height === wallsPng.height,
 );
@@ -456,7 +457,7 @@ check(
   }),
 );
 check(
-  "頂蓋/牆身為 16x16、踢腳條為 16x6",
+  "頂蓋／牆身／樓梯／樓板件為 16x16、踢腳條為 16x6",
   WALL_PIECES.every((id) => (id === "baseboard"
     ? LIMEZU_WALL_FRAMES[id].sw === 16 && LIMEZU_WALL_FRAMES[id].sh === 6
     : LIMEZU_WALL_FRAMES[id].sw === 16 && LIMEZU_WALL_FRAMES[id].sh === 16)),
@@ -467,9 +468,12 @@ const wallOverlaps = wallFrames.some((a, index) => wallFrames.slice(index + 1).s
 ));
 check("牆件 frame 互不重疊", !wallOverlaps);
 check(
-  "牆件來源僅限 Room_Builder 牆面表與踢腳板表",
+  "既有牆件來源不變，CAFE-04 三件只取 Visible Upstairs",
   WALL_PIECES.every((id) => {
     const m = manifest.walls[id];
+    if (id === "stair_tread_a" || id === "stair_tread_b" || id === "floor_divider") {
+      return m.source === "Theme_Sorter/17_Visibile_Upstairs_System_16x16.png";
+    }
     return id === "baseboard"
       ? m.source === "Room_Builder_subfiles/Room_Builder_Baseboards_16x16.png"
       : m.source === "Room_Builder_subfiles/Room_Builder_Walls_16x16.png";
@@ -516,7 +520,27 @@ check(
     && baseArgs[5] === 16 && baseArgs[6] === 16 * 8 + 10
     && baseArgs[7] === 16 && baseArgs[8] === 6,
 );
-check("未知牆件 id 不繪製", !tryDrawLimezuWallPiece(onePieceCtx as any, "cap_south", 0, 0) && onePieceCtx.drawCalls.length === 2);
+const stairFrame = LIMEZU_WALL_FRAMES.stair_tread_a;
+const stairDrawn = tryDrawLimezuWallPiece(onePieceCtx as any, "stair_tread_a", 7 * TILE, 32 * TILE);
+const stairArgs = onePieceCtx.drawCalls[2] ?? [];
+check(
+  "樓梯踏面以 16x16 逐格 1:1 繪製",
+  stairDrawn && stairArgs[1] === stairFrame.sx && stairArgs[2] === stairFrame.sy
+    && stairArgs[3] === 16 && stairArgs[4] === 16
+    && stairArgs[5] === 7 * TILE && stairArgs[6] === 32 * TILE
+    && stairArgs[7] === 16 && stairArgs[8] === 16,
+);
+const dividerFrame = LIMEZU_WALL_FRAMES.floor_divider;
+const dividerDrawn = tryDrawLimezuWallPiece(onePieceCtx as any, "floor_divider", 0, 33 * TILE);
+const dividerArgs = onePieceCtx.drawCalls[3] ?? [];
+check(
+  "樓板分隔帶以 16x16 逐格 1:1 繪製",
+  dividerDrawn && dividerArgs[1] === dividerFrame.sx && dividerArgs[2] === dividerFrame.sy
+    && dividerArgs[3] === 16 && dividerArgs[4] === 16
+    && dividerArgs[5] === 0 && dividerArgs[6] === 33 * TILE
+    && dividerArgs[7] === 16 && dividerArgs[8] === 16,
+);
+check("未知建築件 id 不繪製", !tryDrawLimezuWallPiece(onePieceCtx as any, "cap_south", 0, 0) && onePieceCtx.drawCalls.length === 4);
 
 // composeFloor:只載牆 atlas 時,drawImage 全部來自牆件且逐格對應鄰格選件規則
 interface ExpectedWallCall { sx: number; sy: number; x: number; y: number; sh: number }
@@ -538,14 +562,23 @@ for (let r = 0; r < GRID.length; r++) {
     }
   }
 }
+for (let c = 0; c < GRID[0].length; c++) {
+  expectedWalls.push({ sx: dividerFrame.sx, sy: dividerFrame.sy, x: c * TILE, y: 33 * TILE, sh: 16 });
+}
+for (let r = 32; r <= 35; r++) {
+  const f = r % 2 === 0 ? LIMEZU_WALL_FRAMES.stair_tread_a : LIMEZU_WALL_FRAMES.stair_tread_b;
+  for (let c = 7; c <= 8; c++) {
+    expectedWalls.push({ sx: f.sx, sy: f.sy, x: c * TILE, y: r * TILE, sh: 16 });
+  }
+}
 const wallComposeCtx = new FakeCtx();
 composeFloor(wallComposeCtx as any, 0);
 check(
-  "composeFloor 牆面 drawImage 次數 = 牆格 + 南向面格",
+  "composeFloor 建築 drawImage 次數 = 牆件 + 16 格分隔帶 + 8 格樓梯",
   wallComposeCtx.drawCalls.length === expectedWalls.length,
 );
 check(
-  "每個牆格依北/西/東鄰格選 cap/body 與收邊變體、南向面鋪踢腳條",
+  "牆件、row 33 分隔帶與 2x4 樓梯依 dispatch 順序取正確 frame／目的格",
   wallComposeCtx.drawCalls.length === expectedWalls.length && wallComposeCtx.drawCalls.every((call, i) =>
     call[1] === expectedWalls[i].sx && call[2] === expectedWalls[i].sy
     && call[3] === 16 && call[4] === expectedWalls[i].sh

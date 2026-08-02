@@ -22,8 +22,10 @@ import {
   type CafeInvestmentResult,
 } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
+import { isVacant, ROOM_APPEARANCE } from "../sim/gameState";
 import { acceptCafeGuestAdoption } from "../sim/pets";
 import { save } from "../sim/persistence";
+import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
 
@@ -34,11 +36,16 @@ const initialOrders = Object.keys(state.cafe.standingOrders).length
   : suggestedStandingOrders();
 const orderDraft = reactive<Record<string, number>>({ ...initialOrders });
 const selectedPet = reactive<Record<string, string>>({});
+const selectedRoom = reactive<Record<string, string>>({});
 
 const latest = computed(() => state.cafe.history.at(-1) ?? null);
 const capability = computed(() => cafeCapability(state.cafe.upgrades));
 const adoptGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "adopt"));
+const rentGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "rent"));
 const eligiblePets = computed(() => permanentHousePetEntries().map(([id, pet]) => ({ id, pet })));
+const vacantRooms = computed(() => Object.keys(ROOM_APPEARANCE)
+  .filter((roomId) => isVacant(roomId))
+  .map((roomId) => ({ id: roomId, label: `${roomId.replace(/^r/, "")} 房` })));
 const predictedDemand = computed(() => dailyDemand(latest.value?.guests ?? 0));
 const predictedSupply = computed(() => consumeStock(state.cafe.stock, predictedDemand.value));
 const predictedShortages = computed(() => predictedSupply.value.shortages.map((id) =>
@@ -178,6 +185,30 @@ function onAcceptAdoption(guest: CafeGuest) {
 function onDeclineAdoption(guest: CafeGuest) {
   removeHandledGuest(guest.id);
   emit("done", `已婉拒 ${guest.name} 的認養詢問，寵物仍留在樓裡`);
+}
+
+/** 空的 v-model 會讓 <select> 顯示空白列，所以顯示值一律回退到第一間空房，跟接受時的回退一致。 */
+function onSelectRoom(guestId: string, event: Event) {
+  selectedRoom[guestId] = (event.target as HTMLSelectElement).value;
+}
+
+function onAcceptRentInquiry(guest: CafeGuest) {
+  const available = vacantRooms.value;
+  const roomId = available.some((room) => room.id === selectedRoom[guest.id])
+    ? selectedRoom[guest.id]
+    : available[0]?.id;
+  if (!roomId) {
+    emit("done", "目前沒有空房可以帶咖啡廳顧客看");
+    return;
+  }
+  const result = acceptCafeGuestApplicant(guest, roomId);
+  if (result.ok) removeHandledGuest(guest.id);
+  emit("done", result.text);
+}
+
+function onDeclineRentInquiry(guest: CafeGuest) {
+  removeHandledGuest(guest.id);
+  emit("done", `已婉拒 ${guest.name} 的租屋詢問，空房繼續照原本的招租流程走`);
 }
 
 const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).toLocaleString()}`;
@@ -352,6 +383,30 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               </div>
             </article>
           </section>
+
+          <section class="card rent-card">
+            <div class="section-head">
+              <div><span class="kicker">RENT</span><h3>租屋詢問</h3></div>
+              <span class="count rent-count">{{ rentGuests.length }}</span>
+            </div>
+            <p v-if="!rentGuests.length" class="empty">目前沒有顧客詢問租屋。</p>
+            <article v-for="guest in rentGuests" :key="guest.id" class="rent-inquiry">
+              <div class="guest-line"><span>🔑</span><b>{{ guest.name }}</b><small>在打聽樓上有沒有空房</small></div>
+              <select
+                v-if="vacantRooms.length"
+                :value="selectedRoom[guest.id] || vacantRooms[0].id"
+                :aria-label="`${guest.name}的帶看房間`"
+                @change="onSelectRoom(guest.id, $event)"
+              >
+                <option v-for="room in vacantRooms" :key="room.id" :value="room.id">🚪 帶看 {{ room.label }}</option>
+              </select>
+              <p v-else class="alert warn">目前沒有空房可以帶看。</p>
+              <div class="adoption-actions">
+                <button class="decline" @click="onDeclineRentInquiry(guest)">婉拒</button>
+                <button class="accept rent-accept" :disabled="!vacantRooms.length" @click="onAcceptRentInquiry(guest)">安排看房</button>
+              </div>
+            </article>
+          </section>
         </template>
       </div>
     </section>
@@ -450,11 +505,15 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .guest-line { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
 .guest-line b { font-size: 12.5px; }
 .guest-line small { min-width: 0; color: var(--text-dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.adoption select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: #17151f; font-size: 12px; }
+.adoption select, .rent-inquiry select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: #17151f; font-size: 12px; }
 .adoption-actions { display: grid; grid-template-columns: 1fr 1.35fr; gap: 7px; margin-top: 8px; }
 .decline, .accept { padding: 8px; font-size: 11.5px; }
 .decline { color: var(--text-dim); background: transparent; border: 1px solid var(--line); }
 .accept { color: #21131a; background: #e99ab4; }
+.rent-inquiry { padding: 10px; border-radius: 10px; border: 1px solid rgba(143,123,255,0.35); background: rgba(143,123,255,0.06); }
+.rent-inquiry + .rent-inquiry { margin-top: 8px; }
+.rent-count { background: rgba(143,123,255,0.18); color: #cdbcff; }
+.accept.rent-accept { color: #17132c; background: #b5a8f4; }
 
 @media (max-width: 390px) {
   .body { padding-left: 11px; padding-right: 11px; }

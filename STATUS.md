@@ -24,18 +24,19 @@
 - **已上線**:一樓寵物咖啡廳 **CAFE-01～18B + CAFE-22 全部已部署至 production**
   (含研發線:CAFE-16 研發倒數、CAFE-17 菜單與客單價上限 $38、CAFE-18 研發面板、
   CAFE-18B 背景結算),以及積怨自然口角、房間隔音折抵噪音口角、每日衝突額度收斂
-- **CAFE-19 租屋意圖 → 招租**:模擬層已完成並進 repo(`acceptCafeGuestApplicant()`,`recruit.ts:385`,
-  26 條測試),但 ⚠️ **UI 未接線,因此被 Rollup tree-shake,production bundle 裡沒有這段程式碼**
-  ——線上行為與部署前完全相同。**接線(顧客氣泡 → 選房 → 呼叫入口 → 成功後移除顧客)才會真的上線**
+- **CAFE-19 租屋意圖 → 招租**:✅ **模擬層 + UI 接線都完成**。入口 `acceptCafeGuestApplicant()`
+  (`recruit.ts:385`,26 條測試)由 `CafePanel.vue` 的「租屋詢問」卡呼叫:列出 `intent === "rent"`
+  顧客 → 下拉選空房 → 接受後入應徵者池並移除顧客;沒空房時警示且按鈕 disabled。
+  tree-shaking 問題已解除:build 後 `grep -F "這位顧客目前沒有租屋意願" dist/assets/*.js` 命中,
+  並已部署至 production 驗證。
 
 ## 下一步
 
 **CAFE-20 `at_cafe` visualState**(⚠️ 必須設 `CAFE_FIRST_DAY` 閘門,否則 balance 快照會漂移)
 或 **CAFE-21 `groupScene` cafe venue**(文件註明優先讓 Codex 認養)。
-規格與驗收條件見 `docs/一樓寵物咖啡廳-工作分解.md` 對應條目;
-CAFE-19 的 UI 接線(顧客氣泡 → 選房 → 呼叫入口)可另開一條小工作項。
+規格與驗收條件見 `docs/一樓寵物咖啡廳-工作分解.md` 對應條目。
 
-咖啡廳只剩這兩項未開始:CAFE-20、CAFE-21(其餘 CAFE-01～19、CAFE-22 皆已完成)。
+咖啡廳只剩這兩項未開始:CAFE-20、CAFE-21(其餘 CAFE-01～19、CAFE-22 皆已完成,CAFE-19 含 UI)。
 
 ## 待使用者決策(不要自行動工)
 

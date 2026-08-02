@@ -33,6 +33,7 @@ import { addMoney, collectRent } from "./economy";
 import { weatherForDay } from "./weather";
 import { weekdayOf } from "./week";
 import {
+  advanceCafeResearch,
   applySpoilage,
   cafeCapability,
   cafeCrowd,
@@ -610,6 +611,13 @@ export function cafeDailyPass() {
   if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
 
   const day = gameDayIndex();
+  // CAFE-18B:先結清到期研發，讓面板關閉／離線補進度也不會卡住；
+  // 必須早於客單價讀取，完成當天的日結才會直接吃到新品里程碑。
+  const research = advanceCafeResearch(cafe, day);
+  if (research.changed) {
+    Object.assign(cafe, research.cafe);
+    notify(`🎉 「${research.completed?.name ?? "咖啡廳研發"}」完成，新品已加入菜單`);
+  }
   const cap = cafeCapability(cafe.upgrades);
   const crowd = cafeCrowd({
     weather: weatherForDay(day),

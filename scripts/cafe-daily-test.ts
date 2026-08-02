@@ -22,11 +22,11 @@ const mem: Record<string, string> = {};
 };
 
 const { state, defaultCafe, GAME_START, CAFE_HISTORY_CAP } = await import("../src/sim/gameState");
-const { cafeDailyPass } = await import("../src/sim/tick");
+const { cafeDailyPass, hourlyTick } = await import("../src/sim/tick");
 const {
   cafeCapability, cafeCrowd, cafeDailyLine, cafeTicketPrice, suggestedStandingOrders,
   CAFE_BASE_CAPACITY, CAFE_BASE_TICKET, CAFE_CROWD_PER_SIGN_LEVEL, CAFE_FIXED_COST,
-  CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
+  CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_RESEARCH_IDS, CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
   nextCafePopularity,
 } = await import("../src/sim/cafe");
 const { weatherForDay } = await import("../src/sim/weather");
@@ -180,7 +180,7 @@ try {
   // =========================================================================
   // 五、客單價與人氣
   // =========================================================================
-  check("客單價 = 基礎價(研發加成留給 CAFE-16,現在恆為 0)", cafeTicketPrice([]) === CAFE_BASE_TICKET);
+  check("沒有完成研發時客單價維持基礎價", cafeTicketPrice([]) === CAFE_BASE_TICKET);
   check("未知研發 id 不會改變客單價", cafeTicketPrice(["research_not_yet_designed"]) === CAFE_BASE_TICKET);
   check("順利的一天人氣上升", nextCafePopularity(10, { shortages: 0, underfunded: false }) > 10);
   check("缺貨的一天人氣下降", nextCafePopularity(10, { shortages: 1, underfunded: false }) < 10);
@@ -405,7 +405,90 @@ try {
   })());
 
   // =========================================================================
-  // 十一、接線錨點:掛在 collectRent() 正後方,既有 pass 順序未動
+  // 十一、CAFE-18B:面板關閉時也在日結營收前完成研發
+  // =========================================================================
+  setDay(10);
+  state.money = 200000;
+  state.ledger.splice(0, state.ledger.length);
+  const noticesBeforeResearch = state.noticeLog.length;
+  setCafe({
+    open: true,
+    standingOrders: suggestedStandingOrders(),
+    stock: openStock(),
+    completed: [CAFE_RESEARCH_IDS.basicBrewing, CAFE_RESEARCH_IDS.pourOver],
+    research: {
+      id: CAFE_RESEARCH_IDS.latteArt,
+      startedDay: 7,
+      days: 3,
+      invested: 4000,
+    },
+  });
+  check("背景研發測試前置:只有一項第二層時客單仍為 $36", cafeTicketPrice(state.cafe.completed) === 36);
+  const dueResearchRandom = countRandom(() => cafeDailyPass());
+  const researchDayRecord = state.cafe.history[state.cafe.history.length - 1];
+  check("到期研發在沒有 CafePanel 時也會清空 active 並去重加入 completed",
+    state.cafe.research === null
+      && state.cafe.completed.filter((id) => id === CAFE_RESEARCH_IDS.latteArt).length === 1);
+  check("研發完成當天的日結立即使用新 $37 客單價",
+    researchDayRecord.revenue === researchDayRecord.guests * 37,
+    `guests=${researchDayRecord.guests} revenue=${researchDayRecord.revenue}`);
+  check("背景完成只新增一則可持久化通知",
+    state.noticeLog.length === noticesBeforeResearch + 1
+      && state.noticeLog.at(-1)?.text === "🎉 「拿鐵拉花」完成，新品已加入菜單");
+  check("背景研發結算維持零 Math.random", dueResearchRandom === 0, `calls=${dueResearchRandom}`);
+  const noticesAfterResearch = state.noticeLog.length;
+  cafeDailyPass();
+  check("同日重跑日結不會重複完成或重複通知", state.noticeLog.length === noticesAfterResearch
+    && state.cafe.completed.filter((id) => id === CAFE_RESEARCH_IDS.latteArt).length === 1);
+
+  setDay(12);
+  const noticesBeforePending = state.noticeLog.length;
+  setCafe({
+    open: true,
+    standingOrders: suggestedStandingOrders(),
+    stock: openStock(),
+    research: {
+      id: CAFE_RESEARCH_IDS.baking,
+      startedDay: 11,
+      days: 3,
+      invested: 2500,
+    },
+  });
+  cafeDailyPass();
+  check("尚未到期的背景研發維持 active 且不通知",
+    state.cafe.research?.id === CAFE_RESEARCH_IDS.baking && state.noticeLog.length === noticesBeforePending);
+
+  setDay(20);
+  state.gameMs += 60 * 60 * 1000; // GAME_START 22:00 → 當地 23:00；下一個 hourlyTick 跨午夜
+  state.money = 200000;
+  state.ledger.splice(0, state.ledger.length);
+  setCafe({
+    open: true,
+    standingOrders: suggestedStandingOrders(),
+    stock: openStock(),
+    completed: [CAFE_RESEARCH_IDS.basicBrewing, CAFE_RESEARCH_IDS.pourOver],
+    research: {
+      id: CAFE_RESEARCH_IDS.latteArt,
+      startedDay: 17,
+      days: 3,
+      invested: 4000,
+    },
+  });
+  const completionText = "🎉 「拿鐵拉花」完成，新品已加入菜單";
+  const completionNoticesBefore = state.noticeLog.filter((entry) => entry.text === completionText).length;
+  hourlyTick(false);
+  const midnightRecord = state.cafe.history.at(-1);
+  check("真正從 23:00 hourlyTick 跨午夜時會在面板未載入狀態完成研發",
+    new Date(state.gameMs).getHours() === 0 && state.cafe.research === null
+      && state.cafe.completed.filter((id) => id === CAFE_RESEARCH_IDS.latteArt).length === 1);
+  check("hourlyTick 背景完成也只留一則完成通知",
+    state.noticeLog.filter((entry) => entry.text === completionText).length === completionNoticesBefore + 1);
+  check("hourlyTick 跨午夜的同筆 history 已使用 $37 客單價",
+    !!midnightRecord && midnightRecord.revenue === midnightRecord.guests * 37,
+    midnightRecord ? `guests=${midnightRecord.guests} revenue=${midnightRecord.revenue}` : "no record");
+
+  // =========================================================================
+  // 十二、接線錨點:掛在 collectRent() 正後方,既有 pass 順序未動
   // =========================================================================
   const tickSrc = readFileSync(join(here, "..", "src", "sim", "tick.ts"), "utf8");
   const tickLines = tickSrc.split("\n");
@@ -419,6 +502,12 @@ try {
     (tickSrc.match(/^\s*cafeDailyPass\(\);/gm) ?? []).length === 1);
   check("日結 pass 第一行就是未開張閘門",
     /export function cafeDailyPass\(\)\s*\{\s*\n\s*const cafe = state\.cafe;\s*\n\s*if \(!cafe\.open\) return;/.test(tickSrc));
+  const dailyPassLine = tickLines.findIndex((l) => /^export function cafeDailyPass\(\)/.test(l));
+  const researchAdvanceLine = tickLines.findIndex((l, index) => index > dailyPassLine && /advanceCafeResearch\(cafe, day\)/.test(l));
+  const revenueLine = tickLines.findIndex((l, index) => index > dailyPassLine && /const revenue = served \* cafeTicketPrice\(cafe\.completed\)/.test(l));
+  check("🔴 背景研發結算位於當日客單價／營收之前",
+    dailyPassLine >= 0 && researchAdvanceLine > dailyPassLine && revenueLine > researchAdvanceLine,
+    `daily=${dailyPassLine} research=${researchAdvanceLine} revenue=${revenueLine}`);
 
   // TxnCategory 是 additive 的
   const gameStateSrc = readFileSync(join(here, "..", "src", "sim", "gameState.ts"), "utf8");

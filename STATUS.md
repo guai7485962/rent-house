@@ -19,8 +19,8 @@
 - **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
 - **最新驗證(全綠)**:`npm test` **86/86**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
-- **存檔版本**:`SAVE_VERSION = 7`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[7]` 往上加)
-  ——v7 是為了**補發咖啡廳開張贈品給「本功能上線前就已開張」的舊存檔**(那些檔的一樓會永遠是空的)
+- **存檔版本**:`SAVE_VERSION = 8`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[8]` 往上加)
+  ——v7／v8 都是為了**補發咖啡廳開張贈品**給舊存檔(v7 帶了會誤擋的守衛,v8 是補救那一批)
 
 ## 🎉 一樓寵物咖啡廳 CAFE-01～22 全數完成並部署
 

@@ -208,23 +208,56 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
   const { starterPlacementsAgainst } = await import("../src/sim/placements");
   const cafeCount = (list: any[]) => list.filter((p) => cafeRegions.has(p.room)).length;
 
-  check("SAVE_VERSION 已升到 7(補發需要一次升級)", SAVE_VERSION === 7);
+  check("SAVE_VERSION 已升到 8", SAVE_VERSION === 8);
+
+  // 🔴 v7 已經上線過,且當時的 MIGRATIONS[6] 帶著會誤擋的守衛。
+  // 受影響的存檔已被標成 v7、升級表不會回頭 ⇒ 必須有 v7 → v8 才追得到他們。
+  const strandedAtV7 = migrateSave({
+    v: 7,
+    cafe: { open: true },
+    placements: [{ defId: "cafe_cat_tower", room: "cafe_pet", c: 11, r: 44, rotation: 0 }],
+  });
+  check("已被舊守衛擋掉、卡在 v7 的存檔 → v8 補齊贈品",
+    strandedAtV7 != null && strandedAtV7.v === 8 && cafeCount(strandedAtV7.placements) > 1,
+    `一樓共 ${strandedAtV7 ? cafeCount(strandedAtV7.placements) : "null"} 件`);
+
+  // 已經拿過贈品的 v7 存檔再升到 v8 不可以多送(重跑安全性)
+  const alreadyGifted = migrateSave({ v: 6, cafe: { open: true }, placements: [] });
+  const reMigrated = migrateSave({ ...(alreadyGifted as any), v: 7 });
+  check("已拿過贈品的存檔升到 v8 不會重複補發",
+    reMigrated != null && cafeCount(reMigrated.placements) === cafeCount(alreadyGifted!.placements),
+    `${reMigrated ? cafeCount(reMigrated.placements) : "null"} vs ${cafeCount(alreadyGifted!.placements)}`);
 
   // 已開張、一樓全空的舊檔 → 補發
   const opened = migrateSave({ v: 6, cafe: { open: true }, placements: [] });
   check("舊檔已開張且一樓全空 → 補發整組贈品",
-    opened != null && opened.v === 7 && cafeCount(opened.placements) === CAFE_STARTER_PLACEMENTS.length,
+    opened != null && opened.v === SAVE_VERSION && cafeCount(opened.placements) === CAFE_STARTER_PLACEMENTS.length,
     `補了 ${opened ? cafeCount(opened.placements) : "null"} 件`);
 
   // 沒開張的舊檔 → 不補(開張時才送,免得未開張就先有店面)
   const closed = migrateSave({ v: 6, cafe: { open: false }, placements: [] });
-  check("舊檔未開張 → 不補發", closed != null && closed.v === 7 && cafeCount(closed.placements) === 0);
+  check("舊檔未開張 → 不補發", closed != null && closed.v === SAVE_VERSION && cafeCount(closed.placements) === 0);
 
-  // 玩家自己已經佈置過一樓 → 尊重現況,不補發(避免覆蓋/重複塞)
-  const own = [{ defId: "cafe_table", room: "cafe_floor", c: 2, r: 43, rotation: 0 }];
-  const decorated = migrateSave({ v: 6, cafe: { open: true }, placements: own });
-  check("舊檔已自行佈置一樓 → 不補發,尊重玩家現況",
-    decorated != null && cafeCount(decorated.placements) === 1);
+  // 🔴 2026-08-03 使用者回報:「我的咖啡廳已經放置一個貓跳台了,這樣是不是就不會補家具?」
+  // 第一版確實有「一樓已有家具就整組跳過」的守衛 —— 放一件貓跳台就拿不到任何補發。
+  // 「有一件家具」跟「已經佈置好了」是兩回事;防覆蓋由逐格重疊檢查負責,不該用這種粗守衛。
+  const tower = [{ defId: "cafe_cat_tower", room: "cafe_pet", c: 11, r: 44, rotation: 0 }];
+  const withTower = migrateSave({ v: 6, cafe: { open: true }, placements: tower });
+  check("一樓已有一件玩家家具(貓跳台)→ 仍然補發贈品",
+    withTower != null && cafeCount(withTower.placements) > 1,
+    `一樓共 ${withTower ? cafeCount(withTower.placements) : "null"} 件`);
+  check("補發不會動到玩家原有的貓跳台",
+    withTower != null && withTower.placements.some(
+      (p: any) => p.defId === "cafe_cat_tower" && p.c === 11 && p.r === 44));
+
+  // 佔住某個贈品座標 → 該件跳過,其餘照補(逐格重疊檢查生效)
+  const blocking = [{ defId: "cafe_table", room: "cafe_floor", c: 2, r: 43, rotation: 0 }];
+  const blocked = migrateSave({ v: 6, cafe: { open: true }, placements: blocking });
+  check("玩家佔住贈品座標 → 只跳過該件,不覆蓋也不整組放棄",
+    blocked != null
+      && cafeCount(blocked.placements) > 1
+      && cafeCount(blocked.placements) <= CAFE_STARTER_PLACEMENTS.length,
+    `一樓共 ${blocked ? cafeCount(blocked.placements) : "null"} 件`);
 
   // 只跑一次:已經是 v7 的檔再走一次升級不會再補
   const again = migrateSave({ ...(opened as any) });

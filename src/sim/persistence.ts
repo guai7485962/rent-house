@@ -8,7 +8,7 @@
 import { reactive } from "vue";
 import type { Tenant } from "../types";
 import { hasDef } from "../furniture/catalog";
-import { placements, starterPlacementsAgainst, CAFE_PLACEMENT_REGIONS } from "./placements";
+import { placements, starterPlacementsAgainst } from "./placements";
 import { normalizeRotation } from "../furniture/rotation";
 import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from "./social";
@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -59,21 +59,38 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
    *
    * `placeCafeStarterSet()` 只在按下開張的那一刻跑,所以**在該功能上線前就已經開張的
    * 存檔永遠拿不到贈品,一樓會永遠是空的**(2026-08-03 使用者實玩回報)。
-   * 這裡對「已開張但一樓沒有任何咖啡廳家具」的舊檔補一次。
+   * 只要已開張就補一次。
+   *
+   * **刻意不加「一樓已經有家具就跳過」的守衛**:第一版寫了那條,結果只要玩家自己放過
+   * **一件**東西(實例:一個貓跳台)就會把整組贈品擋掉,拿不到任何補發——
+   * 而「已經有一件家具」跟「已經佈置好了」根本是兩回事。
+   * 防覆蓋本來就由 `starterPlacementsAgainst()` 逐格檢查重疊負責,那條守衛既太粗又多餘。
    *
    * 只跑一次:升級表逐版前進,升完 `v = 7` 就不會再回到本函式 ⇒ 玩家事後搬走或
-   * 賣掉贈品不會被重新塞回來。`starterPlacementsAgainst()` 逐件檢查重疊,
-   * 絕不覆蓋玩家自己擺的東西(有既有家具時只補放得下的那幾件)。
+   * 賣掉贈品不會被重新塞回來。
    */
-  6: (s) => {
-    if (!s?.cafe?.open) return { ...s, v: 7 };
-    const existing = Array.isArray(s.placements) ? s.placements : [];
-    // 玩家自己已經佈置過一樓 → 尊重現況,不補發
-    const hasCafeFurniture = existing.some((p: any) => CAFE_PLACEMENT_REGIONS.includes(p?.room));
-    if (hasCafeFurniture) return { ...s, v: 7 };
-    return { ...s, placements: [...existing, ...starterPlacementsAgainst(existing)], v: 7 };
-  },
+  6: (s) => ({ ...backfillCafeStarter(s), v: 7 }),
+  /**
+   * v7 → v8:**再補一次**咖啡廳開張贈品。
+   *
+   * 為什麼需要第二次:v7 上線時的 `MIGRATIONS[6]` 帶了一條「一樓已有家具就整組跳過」的
+   * 守衛,只要玩家自己放過一件東西(實例:一個貓跳台)就拿不到任何補發。
+   * 那批已經上線,受影響的存檔**已經被標成 v7**,升級表不會回頭 ⇒ 光修 `MIGRATIONS[6]`
+   * 對他們永遠不生效,必須再升一版才追得到。
+   *
+   * 重跑是安全的:`starterPlacementsAgainst()` 逐格檢查重疊,已經拿到贈品的存檔
+   * 座標全被佔住 ⇒ 一件也不會多加。這個特性讓本函式對三種存檔都收斂到正確結果:
+   * 補過的不變、被守衛擋掉的補齊、開新局的本來就在開張時拿過。
+   */
+  7: (s) => ({ ...backfillCafeStarter(s), v: 8 }),
 };
+
+/** 已開張就把贈品補到 `placements`;重疊由 `starterPlacementsAgainst()` 擋,重跑安全。 */
+function backfillCafeStarter(s: any): any {
+  if (!s?.cafe?.open) return s;
+  const existing = Array.isArray(s.placements) ? s.placements : [];
+  return { ...s, placements: [...existing, ...starterPlacementsAgainst(existing)] };
+}
 
 /** 把任意版本的存檔升級到 SAVE_VERSION;不認得/升不上去回傳 null(視同壞檔) */
 export function migrateSave(raw: unknown): any | null {

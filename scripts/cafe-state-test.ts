@@ -67,7 +67,9 @@ try {
   // 但 v7 是為了**另一件事**才升的 —— 補發咖啡廳開張贈品給「本功能上線前就已開張」
   // 的舊存檔(那些檔的一樓會永遠是空的)。資料補發本來就必須走升級表。
   // 所以這裡改成釘「升版必須伴隨對應的 migration」,而不是把版本號釘死。
-  check("SAVE_VERSION 為 7", SAVE_VERSION === 7, `實際 ${SAVE_VERSION}`);
+  // 刻意**不**斷言 `SAVE_VERSION === <某個數字>`:那種寫法在 2026-08-03 一天內壞了兩次
+  // (v6→v7 補發贈品、v7→v8 修補發守衛),每次都只是把數字往上改一格,擋不到任何真正的錯誤。
+  // 有價值的是下面這條行為斷言:升版必須伴隨可用的 migration,不能只改數字。
   check("每一個舊版本都升得到 SAVE_VERSION(升版不可只改數字、要有 migration)",
     Array.from({ length: SAVE_VERSION - 2 }, (_, i) => i + 2)
       .every((v) => migrateSave({ v, cafe: { open: false }, placements: [] })?.v === SAVE_VERSION));

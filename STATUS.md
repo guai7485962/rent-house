@@ -17,21 +17,24 @@
 ## 現在狀態(2026-08-02)
 
 - **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **82/82**、app + worker typecheck 通過、
-  `npm run build` 成功、balance 快照**零漂移**(未用 `--update`)
+- **最新驗證(全綠)**:`npm test` **83/83**(新增 `cafe-rent-intent-test.ts` 26 條)、
+  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`)
 - **存檔版本**:`SAVE_VERSION = 6`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[6]` 往上加)
+  ——CAFE-19 只在 `Applicant` 加兩個選填欄位,不需要升版
 - **已上線**:一樓寵物咖啡廳 **CAFE-01～18B + CAFE-22 全部已部署至 production**
   (含研發線:CAFE-16 研發倒數、CAFE-17 菜單與客單價上限 $38、CAFE-18 研發面板、
   CAFE-18B 背景結算),以及積怨自然口角、房間隔音折抵噪音口角、每日衝突額度收斂
+- **CAFE-19 租屋意圖 → 招租**:模擬層已完成並部署(`acceptCafeGuestApplicant()`,`recruit.ts:385`),
+  ⚠️ **UI 尚未接線**——目前玩家在畫面上還叫不到這條入口,線上行為與部署前相同
 
 ## 下一步
 
-**CAFE-19 租屋意圖 → 招租**:讓咖啡廳顧客產生「想租這棟樓」的意圖,接進既有招租流程。
-規格與驗收條件見 `docs/一樓寵物咖啡廳-工作分解.md` 的 CAFE-19 條目。
+**CAFE-20 `at_cafe` visualState**(⚠️ 必須設 `CAFE_FIRST_DAY` 閘門,否則 balance 快照會漂移)
+或 **CAFE-21 `groupScene` cafe venue**(文件註明優先讓 Codex 認養)。
+規格與驗收條件見 `docs/一樓寵物咖啡廳-工作分解.md` 對應條目;
+CAFE-19 的 UI 接線(顧客氣泡 → 選房 → 呼叫入口)可另開一條小工作項。
 
-其餘未開始的咖啡廳工作項:
-- **CAFE-20** `at_cafe` visualState — ⚠️ **必須設 `CAFE_FIRST_DAY` 閘門,否則 balance 快照會漂移**
-- **CAFE-21** `groupScene` cafe venue — 文件註明**優先讓 Codex 認養**
+咖啡廳只剩這兩項未開始:CAFE-20、CAFE-21(其餘 CAFE-01～19、CAFE-22 皆已完成)。
 
 ## 待使用者決策(不要自行動工)
 

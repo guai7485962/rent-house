@@ -2,12 +2,15 @@
  * 招租系統:依房間屬性產生「應徵租客」,並算出契合度。
  * 房東裝潢空房 → 屬性上升 → 吸引偏好相符的租客 → 選一位入住(store.moveIn)。
  */
-import type { Appearance, CoreTag, Gender, PetKind, RoomAttribute } from "../types";
+import type { Appearance, CafeGuest, CoreTag, Gender, PetKind, RoomAttribute } from "../types";
 import { roomAttributes } from "./placements";
 import { upgradeRentBonus } from "./upgrades";
 import { reputationStarBonus, reputationRentBonus } from "./reputation";
 import { randomAppearance } from "../pixel/parts";
 import { randomPetPreset } from "./pets";
+import { cafeGuestGender, cafeGuestHash } from "./cafeGuests";
+import { state, gameDayIndex, isVacant, ROOM_APPEARANCE } from "./gameState";
+import { save } from "./persistence";
 
 interface Archetype {
   key: string; // 對應 ARCHETYPE_ROUTINES 的作息
@@ -227,6 +230,10 @@ export interface Applicant {
   isAdult?: boolean;
   /** 自帶寵物(約兩成應徵者有;舊存檔缺 kind 時視為貓) */
   pet?: { name: string; color: number; kind?: PetKind };
+  /** CAFE-19:來源咖啡廳顧客 id(同一位顧客只轉一次;一般應徵者沒有這欄) */
+  fromCafeGuestId?: string;
+  /** CAFE-19:初次好感 = 偏好權重已乘上的倍率(1 或缺值代表沒有加成) */
+  cafeFavorMultiplier?: number;
 }
 
 /** 應徵者實際開的月租:基礎租金 ×(房間升級行情 + 房東口碑)加成,取整到百位。
@@ -302,4 +309,113 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       // 總寵物率維持約兩成,只把其中一部分分流成狗,避免無意提高事件密度。
       ...(Math.random() < 0.22 ? { pet: randomPetPreset() } : {}),
     }));
+}
+
+/**
+ * CAFE-19 初次好感的幅度:偏好權重 ×1.25。
+ *
+ * 為什麼寫在 preferences 而不是 stars:rescoreApplicants() 每次開面板都會用
+ * matchStars(a.preferences, attrs) **覆寫** a.stars,加成若寫在 stars 上,玩家一改
+ * 裝潢就被抹掉。寫進偏好權重,加成才會在每次重算後自然重現(而且不必動 matchStars)。
+ *
+ * 為什麼是 +25%:matchStars 的 raw = Σ(房間屬性 × 偏好權重),+25% 大約等於推進
+ * 一個星等區間(例如 raw 44 → 55,3★ → 4★),看過咖啡廳的人比路人多半級到一級好感,
+ * 但仍要靠實際裝潢才拿得到 —— 毫無裝潢的空房 raw 仍是 0,不會憑空變高星。
+ */
+const CAFE_FAVOR_PREF_MULTIPLIER = 1.25;
+/** 加成後單項偏好權重的硬上限:原型現有最大權重 8 × 1.25 = 10,不讓好感無限疊高。
+ *  星等本身另有 matchStars 的 1~5 夾值把關,絕不會溢出既有合法範圍。 */
+const CAFE_FAVOR_PREF_CAP = 10;
+/** 一間房應徵者池的總量上限(常規批次 3 位 + 咖啡廳帶看,避免面板被灌爆) */
+const CAFE_APPLICANT_POOL_CAP = 6;
+
+/** 初次好感:放大偏好權重(不改動原型本體,回傳新物件) */
+function cafeFavorPreferences(prefs: Partial<Record<RoomAttribute, number>>): Partial<Record<RoomAttribute, number>> {
+  const boosted: Partial<Record<RoomAttribute, number>> = {};
+  for (const [k, v] of Object.entries(prefs)) {
+    boosted[k as RoomAttribute] = Math.min(CAFE_FAVOR_PREF_CAP, Math.round((v ?? 0) * CAFE_FAVOR_PREF_MULTIPLIER));
+  }
+  return boosted;
+}
+
+/** randomIdentity 的決定性版本:同一位顧客永遠得到同一組取向(不呼叫 Math.random) */
+function cafeGuestAttraction(guestId: string, gender: Gender): Gender[] {
+  if (gender === "nonbinary") return ["male", "female", "nonbinary"];
+  const opp: Gender = gender === "male" ? "female" : "male";
+  const roll = cafeGuestHash(`${guestId}|orientation`) % 100;
+  if (roll < 60) return [opp]; // 異性
+  if (roll < 85) return ["male", "female"]; // 雙性
+  return [gender]; // 同性
+}
+
+/** 把一位租屋意圖顧客組成應徵者:原型、性別、取向全部由顧客 id/姓名決定,同輸入同輸出。 */
+function buildCafeApplicant(guest: Pick<CafeGuest, "id" | "name" | "appearance">, roomId: string): Applicant {
+  const archetype = ARCHETYPES[cafeGuestHash(`${guest.id}|archetype`) % ARCHETYPES.length];
+  const preferences = cafeFavorPreferences(archetype.preferences);
+  const gender = cafeGuestGender(guest.name);
+  return {
+    id: `tenant_cafe_${cafeGuestHash(`${guest.id}|${roomId}`).toString(36)}`,
+    name: guest.name,
+    archetypeKey: archetype.key,
+    occupation: archetype.occupation,
+    bio: archetype.bio,
+    coreTags: archetype.coreTags.map((tag) => ({ ...tag })),
+    preferences,
+    monthlyRent: offeredRent(archetype.monthlyRent, roomId),
+    baseRent: archetype.monthlyRent, // 好感只加星等,不改開價:避免動到既有經濟平衡
+    stars: matchStars(preferences, roomAttributes(roomId)),
+    gender,
+    attractedTo: cafeGuestAttraction(guest.id, gender),
+    appearance: { ...guest.appearance }, // 沿用咖啡廳看到的那張臉,不重抽
+    isAdult: true,
+    fromCafeGuestId: guest.id,
+    cafeFavorMultiplier: CAFE_FAVOR_PREF_MULTIPLIER,
+  };
+}
+
+/**
+ * CAFE-19:玩家接受 intent === "rent" 顧客的看房,把他放進該空房的應徵者池。
+ *
+ * 沿用既有招租流程,不另開一套:池就是 state.applicantPools[roomId],星等與開價照
+ * matchStars()/offeredRent() 算,之後由 getApplicants()→rescoreApplicants() 隨裝潢重算,
+ * 入住走既有 moveIn()。顧客本身不進 state.runtimes,也不在這裡從咖啡廳移除(留給 UI)。
+ *
+ * 這條入口只在玩家實際觸發時才寫 state,種子局與 balance 快照完全不受影響。
+ */
+export function acceptCafeGuestApplicant(
+  guest: Pick<CafeGuest, "id" | "name" | "intent" | "appearance">,
+  roomId: string,
+): { ok: boolean; text: string } {
+  if (guest.intent !== "rent") return { ok: false, text: "這位顧客目前沒有租屋意願" };
+  if (!guest.id.trim() || !guest.name.trim() || !guest.appearance) return { ok: false, text: "顧客資料不完整" };
+  if (!(roomId in ROOM_APPEARANCE)) return { ok: false, text: "這個房號不是可出租的套房" };
+  if (!isVacant(roomId)) return { ok: false, text: "這間房目前有人住,沒辦法帶看" };
+  if (Object.values(state.runtimes).some((rt) => rt.tenant.name === guest.name)) {
+    return { ok: false, text: `樓裡已經住著一位「${guest.name}」` };
+  }
+  for (const pool of Object.values(state.applicantPools)) {
+    if (pool.applicants.some((a) => a.fromCafeGuestId === guest.id)) {
+      return { ok: false, text: "這位顧客的看房已經處理完成" };
+    }
+    if (pool.applicants.some((a) => a.name === guest.name)) {
+      return { ok: false, text: `已經有一位「${guest.name}」在等房東回覆` };
+    }
+  }
+
+  const day = gameDayIndex();
+  const existing = state.applicantPools[roomId];
+  const sameDayPool = existing && existing.day === day && existing.applicants.length > 0 ? existing.applicants : null;
+  if (sameDayPool && sameDayPool.length >= CAFE_APPLICANT_POOL_CAP) {
+    return { ok: false, text: "這間房的應徵者已經排滿,先處理現有名單" };
+  }
+  // 當日還沒有批次時先補常規批次(與 getApplicants 同一套規則),再把顧客加進去,
+  // 免得玩家看到「只有一位應徵者」。常規批次照舊是隨機的;顧客本人仍完全決定性。
+  const applicants = sameDayPool ?? generateApplicants(roomId, Object.values(state.runtimes).map((rt) => rt.tenant.name));
+  const applicant = buildCafeApplicant(guest, roomId);
+  state.applicantPools[roomId] = { day, applicants: [...applicants, applicant] };
+  save();
+  return {
+    ok: true,
+    text: `☕ ${guest.name} 看過咖啡廳後想租 ${roomId.replace(/^r/, "")} 房,已列入應徵者(契合 ${applicant.stars}★)`,
+  };
 }

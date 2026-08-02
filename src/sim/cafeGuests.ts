@@ -4,7 +4,7 @@
  * 顧客不進 state.runtimes，也不碰關係、收租或日誌。所有選擇由 caller 提供的
  * seed 決定，刻意不呼叫 Math.random，避免改變既有模擬的 RNG 序列。
  */
-import type { Appearance, CafeGuest, CafeGuestIntent } from "../types";
+import type { Appearance, CafeGuest, CafeGuestIntent, Gender } from "../types";
 import { cafeGuestNames } from "../content/cafeGuestNames";
 import {
   ALL_ACCESSORIES,
@@ -63,6 +63,29 @@ function appearanceFor(key: string): Appearance {
     skin: pick(SKIN_TONES, `${key}|skin`),
     accessory: withAccessory ? pick(accessoryPool, `${key}|accessory`) : "none",
   };
+}
+
+/**
+ * 顧客姓名綁定的性別(CAFE-19 起需要)。
+ *
+ * 租屋意圖顧客會被轉成應徵者、進而可能入住,姓名與性別若分開亂抽就會重演
+ * recruit.ts NAME_IDENTITIES 註解記錄的「男性姓名被存成女性、關係顯示成閨密」問題。
+ * 只能 append,改動既有對應會讓舊存檔裡的同名應徵者換性別。
+ */
+const CAFE_GUEST_GENDERS: Record<string, Gender> = {
+  方雨晴: "female", 石育誠: "male", 朱庭安: "female", 江佩珊: "female",
+  何宇辰: "male", 呂心瑜: "female", 宋子維: "male", 杜婉庭: "female",
+  沈嘉禾: "male", 卓映彤: "female", 邱語晨: "female", 柯昱翔: "male",
+  施佳穎: "female", 紀柏宇: "male", 胡芷寧: "female", 范庭瑄: "female",
+  唐以樂: "female", 夏允恩: "female", 孫奕帆: "male", 徐若安: "female",
+  高詠晴: "female", 梁子謙: "male", 莊可欣: "female", 陸承澤: "male",
+  傅宜蓁: "female", 彭凱文: "male", 游舒涵: "female", 程皓然: "male",
+  葉采薇: "female", 廖沛辰: "male", 趙家妤: "female", 劉祐廷: "male",
+};
+
+/** 顧客姓名 → 固定性別;表外姓名(舊存檔或未來新增)以姓名雜湊決定,同名永遠同性別。 */
+export function cafeGuestGender(name: string): Gender {
+  return CAFE_GUEST_GENDERS[name] ?? (indexFor(`${name}|gender`, 2) === 0 ? "male" : "female");
 }
 
 function intentFor(key: string): CafeGuestIntent {

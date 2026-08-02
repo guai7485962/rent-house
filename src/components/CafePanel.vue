@@ -1,21 +1,30 @@
 <script setup lang="ts">
-import { computed, reactive } from "vue";
+import { computed, reactive, watch } from "vue";
 import { CAFE_INGREDIENTS } from "../content/cafeIngredients";
 import {
   buyCafeUpgrade,
+  advanceCafeResearch,
+  availableCafeResearch,
+  avgTicket,
   cafeCapability,
+  cafeResearchDaysLeft,
+  CAFE_RESEARCH,
   CAFE_OPENING_COST,
   CAFE_UPGRADES,
   consumeStock,
   dailyDemand,
+  getCafeResearch,
+  getCafeUpgrade,
+  menuItems,
   openCafe,
+  startCafeResearch,
   suggestedStandingOrders,
   type CafeInvestmentResult,
 } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
 import { acceptCafeGuestAdoption } from "../sim/pets";
 import { save } from "../sim/persistence";
-import { addMoney, permanentHousePetEntries, state } from "../store";
+import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
 
 const emit = defineEmits<{ close: []; done: [text: string] }>();
@@ -34,6 +43,21 @@ const predictedDemand = computed(() => dailyDemand(latest.value?.guests ?? 0));
 const predictedSupply = computed(() => consumeStock(state.cafe.stock, predictedDemand.value));
 const predictedShortages = computed(() => predictedSupply.value.shortages.map((id) =>
   CAFE_INGREDIENTS.find((item) => item.id === id)?.name ?? id));
+const currentDay = computed(() => gameDayIndex());
+const activeResearch = computed(() => state.cafe.research ? getCafeResearch(state.cafe.research.id) : undefined);
+const researchDaysLeft = computed(() => cafeResearchDaysLeft(state.cafe, currentDay.value));
+const researchProgress = computed(() => {
+  if (!state.cafe.research || researchDaysLeft.value === null) return 0;
+  const duration = Math.max(1, state.cafe.research.days);
+  return Math.min(100, Math.max(0, Math.round((1 - researchDaysLeft.value / duration) * 100)));
+});
+const completedResearch = computed(() => new Set(state.cafe.completed));
+const completedResearchCount = computed(() => CAFE_RESEARCH.filter((item) => completedResearch.value.has(item.id)).length);
+const availableResearchIds = computed(() => new Set(availableCafeResearch(state.cafe).map((item) => item.id)));
+const remainingResearch = computed(() => CAFE_RESEARCH.filter((item) =>
+  !completedResearch.value.has(item.id) && item.id !== state.cafe.research?.id));
+const cafeMenu = computed(() => menuItems(state.cafe.completed));
+const cafeAverageTicket = computed(() => avgTicket(state.cafe.completed));
 const hotItem = computed(() => {
   if (!latest.value?.guests) return "尚無資料";
   const winner = CAFE_INGREDIENTS.reduce((best, item) =>
@@ -41,6 +65,20 @@ const hotItem = computed(() => {
   CAFE_INGREDIENTS[0]);
   return winner.usedIn[0] ?? winner.name;
 });
+
+const trackLabel = { coffee: "咖啡", bakery: "烘焙", pet: "寵物餐" } as const;
+const audienceLabel: Record<string, string> = {
+  daily: "日常客",
+  single_origin: "單品愛好者",
+  photo: "拍照客",
+  cold_drink: "冰飲客",
+  sweet: "甜食客",
+  afternoon_tea: "下午茶客",
+  family: "親子／打卡客",
+  pet_family: "寵物家庭",
+  pet_companion: "毛孩同行客",
+  celebration: "慶生客",
+};
 
 function commitInvestment(result: CafeInvestmentResult, successText: string) {
   if (!result.ok) {
@@ -60,6 +98,44 @@ function onOpen() {
 function onBuy(id: string, name: string) {
   commitInvestment(buyCafeUpgrade(state.cafe, state.money, id), `✅ 「${name}」投資完成!`);
 }
+
+function onStartResearch(id: string) {
+  const result = startCafeResearch(state.cafe, state.money, id, currentDay.value);
+  if (!result.ok) {
+    emit("done", `無法開始研發：${result.reason}`);
+    return;
+  }
+  Object.assign(state.cafe, result.cafe);
+  addMoney(-result.cost, result.label ?? "咖啡廳研發", result.category ?? "cafe");
+  save();
+  emit("done", `🧪 「${result.research?.name ?? id}」開始研發，${result.research?.days ?? 0} 天後完成`);
+}
+
+function researchRequirement(item: (typeof CAFE_RESEARCH)[number]) {
+  const missingResearch = item.requiresResearch
+    .filter((id) => !completedResearch.value.has(id))
+    .map((id) => getCafeResearch(id)?.name ?? id);
+  const missingUpgrades = item.requiresUpgrades
+    .filter((id) => !state.cafe.upgrades.includes(id))
+    .map((id) => getCafeUpgrade(id)?.name ?? id);
+  return [...missingResearch, ...missingUpgrades].join("＋");
+}
+
+function researchButtonText(item: (typeof CAFE_RESEARCH)[number]) {
+  if (state.cafe.research) return "已有研發進行中";
+  const missing = researchRequirement(item);
+  if (missing) return `需先完成 ${missing}`;
+  if (state.money < item.cost) return "資金不足";
+  return `投入 $${item.cost.toLocaleString()} · ${item.days} 天`;
+}
+
+watch(currentDay, (day) => {
+  const result = advanceCafeResearch(state.cafe, day);
+  if (!result.changed) return;
+  Object.assign(state.cafe, result.cafe);
+  save();
+  emit("done", `🎉 「${result.completed?.name ?? "咖啡廳研發"}」完成，新品已加入菜單`);
+}, { immediate: true });
 
 function safeUnits(value: unknown) {
   const n = Number(value);
@@ -155,6 +231,63 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <p v-if="predictedShortages.length" class="alert bad">⚠️ 依最近客流預估會缺：{{ predictedShortages.join("、") }}</p>
             <p v-else-if="latest" class="alert good">✓ 目前庫存足以應付最近一次的客流。</p>
             <p v-else class="empty">完成第一次日結後，這裡會顯示熱銷品與缺貨預估。</p>
+          </section>
+
+          <section class="card research-card" aria-label="咖啡廳研發">
+            <div class="section-head">
+              <div><span class="kicker">RESEARCH</span><h3>新品研發</h3></div>
+              <span class="research-count">{{ completedResearchCount }} / {{ CAFE_RESEARCH.length }}</span>
+            </div>
+            <p class="section-note">同時只能進行一項；倒數以遊戲日計算，完成後新品會直接加入菜單。</p>
+
+            <article v-if="state.cafe.research" class="active-research">
+              <div class="active-research-head">
+                <div>
+                  <span>研發進行中</span>
+                  <b>{{ activeResearch?.name ?? state.cafe.research.id }}</b>
+                </div>
+                <strong>{{ researchDaysLeft ?? 0 }} 天</strong>
+              </div>
+              <p>{{ activeResearch?.effect ?? "這項研發資料等待後續版本修復。" }}</p>
+              <div class="progress" role="progressbar" :aria-valuenow="researchProgress" aria-valuemin="0" aria-valuemax="100">
+                <i :style="{ width: `${researchProgress}%` }"></i>
+              </div>
+              <small>已投入 ${{ state.cafe.research.invested.toLocaleString() }} · 進度 {{ researchProgress }}%</small>
+            </article>
+
+            <p v-if="!remainingResearch.length && !state.cafe.research" class="research-complete">🏆 前兩層研發已全部完成</p>
+            <div v-else-if="!state.cafe.research" class="research-list">
+              <article v-for="item in remainingResearch" :key="item.id" class="research-item" :class="{ locked: !availableResearchIds.has(item.id) }">
+                <div class="research-item-head">
+                  <b>{{ item.name }}</b>
+                  <span>{{ trackLabel[item.track] }} · 第 {{ item.level }} 層</span>
+                </div>
+                <p>{{ item.effect }}</p>
+                <small>完成後：{{ item.menuItem }} ${{ item.menuPrice }} · {{ audienceLabel[item.audience] }}</small>
+                <button
+                  class="secondary research-action"
+                  :disabled="!availableResearchIds.has(item.id) || state.money < item.cost"
+                  @click="onStartResearch(item.id)"
+                >
+                  {{ researchButtonText(item) }}
+                </button>
+              </article>
+            </div>
+            <p v-else class="research-paused">其餘研發已暫停選擇；目前項目完成後會重新開放。</p>
+          </section>
+
+          <section class="card menu-card" aria-label="咖啡廳菜單">
+            <div class="section-head">
+              <div><span class="kicker">MENU</span><h3>目前菜單</h3></div>
+              <span class="ticket">平均客單 ${{ cafeAverageTicket }}</span>
+            </div>
+            <div class="menu-list">
+              <div v-for="item in cafeMenu" :key="item.id" class="menu-item">
+                <span><b>{{ item.name }}</b><small>{{ audienceLabel[item.audience] }}</small></span>
+                <strong>${{ item.price }}</strong>
+              </div>
+            </div>
+            <p class="menu-note">完成 2／5 項第二層研發時，平均客單會提升到 $37／$38。</p>
           </section>
 
           <section class="card">
@@ -255,8 +388,10 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .overview strong.loss { color: #ff9aa8; }
 .section-head { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
 .section-head h3 { margin: 1px 0 0; font-size: 14.5px; }
-.capacity, .balance, .count { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.capacity, .balance, .count, .research-count, .ticket { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .count { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: rgba(220,100,130,0.18); color: #f4b0c4; font-weight: 700; }
+.research-count { color: #b9f6ce; font-weight: 700; }
+.ticket { color: #ffd39a; font-weight: 700; }
 .section-note, .empty { margin: 0 0 8px; color: var(--text-dim); font-size: 11px; line-height: 1.55; }
 .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .status-grid div { min-width: 0; padding: 8px 9px; border-radius: 9px; background: rgba(255,255,255,0.025); }
@@ -281,6 +416,35 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .owned-label { color: var(--good); }
 .upgrade p { margin: 5px 0 8px; color: var(--text-dim); font-size: 10.5px; line-height: 1.45; }
 .secondary { width: 100%; padding: 7px; color: #ffd6a3; background: rgba(255,180,94,0.1); border: 1px solid rgba(255,180,94,0.55); font-size: 11.5px; }
+.active-research { padding: 11px; border: 1px solid rgba(113,207,145,0.38); border-radius: 11px; background: linear-gradient(135deg, rgba(71,149,100,0.11), rgba(255,180,94,0.06)); }
+.active-research-head { display: flex; align-items: center; gap: 10px; }
+.active-research-head div { min-width: 0; }
+.active-research-head span { display: block; color: #a9e8bd; font-size: 9.5px; font-weight: 700; }
+.active-research-head b { display: block; margin-top: 2px; font-size: 13.5px; }
+.active-research-head strong { margin-left: auto; color: #ffd39a; font-size: 18px; white-space: nowrap; }
+.active-research p { margin: 8px 0; color: var(--text-dim); font-size: 10.5px; line-height: 1.5; }
+.active-research small { display: block; margin-top: 6px; color: var(--text-dim); font-size: 9.5px; }
+.progress { height: 6px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.08); }
+.progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #76d39a, #ffc477); transition: width 0.25s ease; }
+.research-list { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
+.research-item { padding: 10px; border: 1px solid rgba(255,180,94,0.24); border-radius: 10px; background: rgba(255,180,94,0.035); }
+.research-item.locked { border-color: var(--line); background: rgba(255,255,255,0.015); }
+.research-item-head { display: flex; align-items: baseline; gap: 7px; }
+.research-item-head b { font-size: 12.5px; }
+.research-item-head span { margin-left: auto; color: #d9a778; font-size: 9.5px; white-space: nowrap; }
+.research-item p { margin: 5px 0; color: var(--text-dim); font-size: 10.5px; line-height: 1.45; }
+.research-item > small { color: #c7bdaf; font-size: 9.5px; }
+.research-action { margin-top: 8px; }
+.research-complete { margin: 3px 0 0; padding: 11px; border-radius: 9px; color: #b9f6ce; background: rgba(83,196,126,0.08); text-align: center; font-size: 11.5px; }
+.research-paused { margin: 8px 0 0; color: var(--text-dim); font-size: 10px; text-align: center; }
+.menu-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.menu-item { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
+.menu-item > span { min-width: 0; }
+.menu-item b, .menu-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item b { font-size: 10.8px; }
+.menu-item small { margin-top: 2px; color: var(--text-dim); font-size: 8.8px; }
+.menu-item strong { margin-left: auto; color: #ffd39a; font-size: 11px; }
+.menu-note { margin: 8px 0 0; color: var(--text-dim); font-size: 9.5px; line-height: 1.45; }
 .adoption { padding: 10px; border-radius: 10px; border: 1px solid rgba(220,100,130,0.35); background: rgba(220,100,130,0.06); }
 .adoption + .adoption { margin-top: 8px; }
 .guest-line { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }

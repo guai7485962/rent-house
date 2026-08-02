@@ -1,11 +1,13 @@
 /**
  * 寵物行為體(渲染層):讀 sim 層 state.pets 的 hangout,
- * 在該區域內隨機遊蕩——走幾步、停下來、偶爾睡一覺。
+ * 在該區域內隨機遊蕩——走幾步、停下來、偶爾睡一覺。咖啡廳開張後，
+ * 永久樓寵物白天會依穩定時段判定走到 cafe_pet，不改 sim 層 hangout。
  * 與 agents.ts 同款移動邏輯(尋路 + 逐格插值),但更慢、更隨性。
  */
 import { TILE, GRID_W, GRID_H, buildGrid, type Region } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
+import { cafeGuestHash } from "../sim/cafeGuests";
 import type { Pet, PetKind } from "../types";
 
 export interface PetAgent {
@@ -32,6 +34,34 @@ export interface PetAgent {
 
 const GRID = buildGrid();
 const SPEED = 26; // px / 秒(比人慢,踱步感)
+export const CAFE_PET_VISIT_START_HOUR = 10;
+export const CAFE_PET_VISIT_END_HOUR = 16;
+export const CAFE_PET_VISIT_PERCENT = 35;
+
+/**
+ * CAFE-22：只改渲染目的地，不改 Pet.hangout 或任何 sim 狀態。
+ * 同一寵物、同一遊戲小時永遠得到相同結果，避免多呼叫 Math.random 擾動既有演出。
+ */
+export function petAgentRegion(
+  petId: string,
+  pet: Pet,
+  gameMs = state.gameMs,
+  cafeOpen = state.cafe.open,
+): string {
+  const permanentHousePet = pet.ownerId === "landlord"
+    && (pet.housePlacement ?? "permanent") === "permanent";
+  const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > gameMs;
+  const time = new Date(gameMs);
+  const hour = time.getHours();
+  if (!cafeOpen || !permanentHousePet || pairActive
+    || hour < CAFE_PET_VISIT_START_HOUR || hour >= CAFE_PET_VISIT_END_HOUR) {
+    return pet.hangout;
+  }
+  const hourKey = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}-${hour}`;
+  return cafeGuestHash(`${petId}|${hourKey}|cafe_pet`) % 100 < CAFE_PET_VISIT_PERCENT
+    ? "cafe_pet"
+    : pet.hangout;
+}
 
 /** 區域內隨機一個可走格 */
 function tileInRegion(region: string, blocked: boolean[][]): Tile | null {
@@ -45,7 +75,7 @@ function tileInRegion(region: string, blocked: boolean[][]): Tile | null {
 export function createPetAgents(): PetAgent[] {
   const blocked = currentBlocked();
   return Object.entries(state.pets).filter(([, pet]) => pet.housePlacement !== "partner_foster").map(([petId, pet]) => {
-    const t = tileInRegion(pet.hangout, blocked) ?? { c: 7, r: 10 };
+    const t = tileInRegion(petAgentRegion(petId, pet), blocked) ?? { c: 7, r: 10 };
     return {
       petId,
       name: pet.name,
@@ -116,11 +146,12 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
     if (!a.moving) {
       if (now < a.restUntil) continue;
       const blocked = currentBlocked();
+      const region = petAgentRegion(a.petId, pet);
       let tgt: Tile | null = null;
       if (partner) {
         const follower = !a.pairLeader;
         if (pet.pairAction === "avoid") {
-          if (follower) tgt = tileAwayFrom(partner, pet.hangout, blocked);
+          if (follower) tgt = tileAwayFrom(partner, region, blocked);
           if (!follower) {
             a.facing = a.px <= partner.px ? -1 : 1;
             a.sleeping = false;
@@ -128,7 +159,7 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
             continue;
           }
         } else if (follower) {
-          tgt = tileBeside(partner, pet.hangout, blocked);
+          tgt = tileBeside(partner, region, blocked);
         }
         if (!follower && pet.pairAction !== "avoid" && !isMovingPairAction(pet.pairAction)) {
           a.sleeping = pet.pairAction === "nap";
@@ -146,7 +177,7 @@ export function tickPetAgents(agents: PetAgent[], dt: number) {
         }
       }
       // 一般遊蕩；追逐／追球時領頭寵物繼續跑,另一隻追向牠身邊。
-      tgt ??= tileInRegion(pet.hangout, blocked);
+      tgt ??= tileInRegion(region, blocked);
       const path = tgt && !(tgt.c === a.c && tgt.r === a.r) ? findPath({ c: a.c, r: a.r }, tgt, blocked) : null;
       if (path && path.length > 1) {
         a.path = path.slice(1);

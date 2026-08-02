@@ -43,8 +43,17 @@
  *   庫存會**收斂到 15 就停住,永遠不會被損耗歸零**。
  */
 import { CAFE_INGREDIENTS, type CafeIngredient } from "../content/cafeIngredients";
+import {
+  CAFE_OPENING_COST,
+  CAFE_UPGRADES,
+  CAFE_UPGRADE_IDS,
+  type CafeUpgrade,
+} from "../content/cafeUpgrades";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
+import type { CafeState } from "../types";
 import type { WeatherId } from "./weather";
+
+export { CAFE_OPENING_COST, CAFE_UPGRADES, CAFE_UPGRADE_IDS } from "../content/cafeUpgrades";
 
 // ---------------------------------------------------------------------------
 // 旋鈕
@@ -404,25 +413,9 @@ export function applySpoilage(
 // ---------------------------------------------------------------------------
 
 /**
- * 設計文件 §5.4 的五個投資項 id。
- *
- * **本項只做「讀」**:把 id 對應到客流/產能/損耗上的效果。
- * 「賣」那一面(價格、`openCafe()`、`buyUpgrade()` 同構的一次性扣款、UI)是 **CAFE-14**。
- * 因此今天 `state.cafe.upgrades` 恆為空陣列,下面每一項都算不出效果——
- * 這是刻意的:公式先長好形狀,CAFE-14 只要把 id 塞進陣列就會活過來。
+ * CAFE-14 的五個投資 id 與價格由 `content/cafeUpgrades.ts` 提供；本段把已購買 id
+ * 轉成日結能力。購買命令在下方回傳純交易結果，不直接碰全域 state 或金流。
  */
-export const CAFE_UPGRADE_IDS = {
-  /** 店面招牌:招牌等級 +1 ⇒ 基礎客流翻倍(§5.4「基礎客流 ↑」) */
-  signboard: "cafe_signboard",
-  /** 第二台咖啡機:產能上限 +CAFE_CAPACITY_PER_MACHINE(§5.4「尖峰時段不再流失客人」) */
-  secondMachine: "cafe_second_machine",
-  /** 戶外座位:晴天客流 +CAFE_OUTDOOR_SUNNY_BONUS,雨天無效(§5.4 原文) */
-  outdoorSeats: "cafe_outdoor_seats",
-  /** 大型冷藏:免損耗額度加倍、損耗率減半(§5.4「生鮮損耗 ↓」) */
-  coldStorage: "cafe_cold_storage",
-  /** 貓跳台與軟墊:效果在認養詢問頻率上,與日結無關(留給 CAFE-14 / CAFE-09 線) */
-  petTower: "cafe_pet_tower",
-} as const;
 
 /** 沒有任何投資時的產能上限。招牌等級 1 的基礎客流(22)略低於它 ⇒ 只有尖峰日會撞到天花板。 */
 export const CAFE_BASE_CAPACITY = 26;
@@ -458,7 +451,71 @@ export function cafeCapability(upgrades: readonly string[] = []): CafeCapability
 }
 
 // ---------------------------------------------------------------------------
-// 5. 客流(設計文件 §5.5)
+// 5. 開張與一次性投資(CAFE-14)
+// ---------------------------------------------------------------------------
+
+const cafeUpgradeById = new Map<string, CafeUpgrade>(CAFE_UPGRADES.map((item) => [item.id, item]));
+
+export function getCafeUpgrade(id: string): CafeUpgrade | undefined {
+  return cafeUpgradeById.get(id);
+}
+
+/**
+ * 純交易結果：CAFE-15 收到成功結果後，才以既有金流入口扣 `cost`、寫入 `cafe` 並存檔。
+ * 失敗時 `cafe` 保持原參考、`moneyAfter` 保持原值，caller 不可能誤扣第二次。
+ */
+export interface CafeInvestmentResult {
+  ok: boolean;
+  reason?: string;
+  cafe: CafeState;
+  cost: number;
+  moneyAfter: number;
+  label?: string;
+  /** 成功交易固定使用既有的咖啡廳分類，CAFE-15 可直接交給金流入口。 */
+  category?: "cafe";
+}
+
+function rejectCafeInvestment(cafe: CafeState, money: number, reason: string): CafeInvestmentResult {
+  return { ok: false, reason, cafe, cost: 0, moneyAfter: money };
+}
+
+function canAffordCafeInvestment(money: number, cost: number): boolean {
+  return typeof money === "number" && Number.isFinite(money) && money >= cost;
+}
+
+/** 一次性開張；不自動開店、不改傳入物件，也不動尚未由玩家設定的常備訂單。 */
+export function openCafe(cafe: CafeState, money: number): CafeInvestmentResult {
+  if (cafe.open) return rejectCafeInvestment(cafe, money, "咖啡廳已經開張");
+  if (!canAffordCafeInvestment(money, CAFE_OPENING_COST)) return rejectCafeInvestment(cafe, money, "金錢不足");
+  return {
+    ok: true,
+    cafe: { ...cafe, open: true },
+    cost: CAFE_OPENING_COST,
+    moneyAfter: money - CAFE_OPENING_COST,
+    label: "咖啡廳開張",
+    category: "cafe",
+  };
+}
+
+/** 一次性、永久、不可退的投資；檢查順序與既有 `buyUpgrade()` 同構。 */
+export function buyCafeUpgrade(cafe: CafeState, money: number, upgradeId: string): CafeInvestmentResult {
+  const def = getCafeUpgrade(upgradeId);
+  if (!def) return rejectCafeInvestment(cafe, money, "沒有這種咖啡廳投資");
+  if (cafe.upgrades.includes(def.id)) return rejectCafeInvestment(cafe, money, "咖啡廳已經做過這項投資");
+  if (!cafe.open) return rejectCafeInvestment(cafe, money, "咖啡廳尚未開張");
+  if (!canAffordCafeInvestment(money, def.price)) return rejectCafeInvestment(cafe, money, "金錢不足");
+  return {
+    ok: true,
+    cafe: { ...cafe, upgrades: [...cafe.upgrades, def.id] },
+    cost: def.price,
+    moneyAfter: money - def.price,
+    label: `咖啡廳投資:${def.name}`,
+    category: "cafe",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 6. 客流(設計文件 §5.5)
 // ---------------------------------------------------------------------------
 
 /**
@@ -560,7 +617,7 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
 }
 
 // ---------------------------------------------------------------------------
-// 6. 客單價(設計文件 §5.5)
+// 7. 客單價(設計文件 §5.5)
 // ---------------------------------------------------------------------------
 
 /**
@@ -593,7 +650,7 @@ export function cafeTicketPrice(completed: readonly string[] = []): number {
 }
 
 // ---------------------------------------------------------------------------
-// 7. 人氣
+// 8. 人氣
 // ---------------------------------------------------------------------------
 
 /**
@@ -615,7 +672,7 @@ export function nextCafePopularity(
 }
 
 // ---------------------------------------------------------------------------
-// 8. 日結敘事(設計文件 §5.2:缺貨與補不滿是敘事,不是懲罰)
+// 9. 日結敘事(設計文件 §5.2:缺貨與補不滿是敘事,不是懲罰)
 // ---------------------------------------------------------------------------
 
 /**

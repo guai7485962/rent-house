@@ -65,6 +65,11 @@ const EFFECT: Partial<Record<TenantVisualState, StatDeltas>> = {
   talking_on_phone: { mood: 0 },
   away: { stress: 2, energy: -3 },
   idle: { energy: 1 },
+  // CAFE-20 補漏:下樓坐一樓咖啡廳。換個環境+咖啡因,比看電視(mood 2)舒服、
+  // 比擼貓(mood 6 / stress -4)節制;energy 對標 eating 的 +1(坐著休息+咖啡因,
+  // 下樓的消耗抵掉一部分,故不像 reading/watching_tv 給到 +2)。
+  // 兩道閘門(cafe.open + CAFE_FIRST_DAY=14)讓本條在 10 日快照窗內不可能觸發 ⇒ 零漂移。
+  at_cafe: { mood: 3, stress: -3, energy: 1, wellbeing: 0.3 },
 };
 
 /**

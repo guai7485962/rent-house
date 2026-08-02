@@ -17,7 +17,7 @@
 ## 現在狀態(2026-08-02)
 
 - **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **84/84**(新增 `cafe-at-cafe-test.ts` 22 條)、
+- **最新驗證(全綠)**:`npm test` **85/85**(新增 `cafe-venue-effect-test.ts` 31 條)、
   app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`)、
   UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 6`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[6]` 往上加)
@@ -36,14 +36,21 @@
   (未動 `tick.ts`),**兩道閘門 AND**:`state.cafe.open` + `CAFE_FIRST_DAY = 14`;
   挑日子／挑時段全走 `stableTenantHash`,零 `Math.random`。
   ⚠️ renderer 不在允許清單內 ⇒ 沒有專屬坐姿演出,詳見工作分解表 CAFE-20 的「未竟事項」。
+- **CAFE-21 cafe venue + `at_cafe` 數值效果**:✅ 完成並部署。`GroupSceneVenue` 加 `"cafe"`
+  (走 `lounge` 那條路線,真實座標、`hidden: false`);`EFFECT` 補
+  `at_cafe: { mood: 3, stress: -3, energy: 1, wellbeing: 0.3 }`,既有數值一格未動。
+
+## 🎉 一樓寵物咖啡廳 CAFE-01～22 全數完成並部署
 
 ## 下一步
 
-**CAFE-21 `groupScene` cafe venue**(🟢 小;`groupScene.ts:17` 的 `GroupSceneVenue` 加 `"cafe"`,
-讓租客/顧客/寵物在咖啡廳同框)。**文件註明優先讓 Codex 認養**,規格見
-`docs/一樓寵物咖啡廳-工作分解.md`。
+咖啡廳工作項已全部結案。接下來可選(依 `docs/待辦.md` 的優先序):
 
-咖啡廳只剩 CAFE-21 未開始(其餘 CAFE-01～20、CAFE-22 皆已完成)。
+- **咖啡廳 renderer 收尾**(🟢 小):`pixel/scene.ts` 的 `drawTenant()` 加 `at_cafe` 坐姿+咖啡杯、
+  `tick.ts` 的 `SEATED_STATES` 加 `at_cafe`;房間細看目前表現同 `away` 只換標籤
+- **認養卡下拉的空白列 bug**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`,
+  一旦有可認養寵物就會顯示空白列(租屋卡已修,做法見 `796643f`)
+- 其餘見 `docs/待辦.md`;🔴 項目一律先問使用者
 
 ## 待使用者決策(不要自行動工)
 

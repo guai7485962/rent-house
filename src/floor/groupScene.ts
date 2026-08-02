@@ -7,14 +7,24 @@
  */
 import type { Tile } from "./pathfind";
 import { currentBlocked } from "./pathfind";
-import { LOUNGE_HALL_RECT } from "./map";
+import { LOUNGE_HALL_RECT, CAFE_RECTS, buildGrid } from "./map";
 import { clearPairSessionsFor, type PairPose } from "./pairSession";
 import { spawnFx, type FxKind } from "./fx";
 import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "../sim/clock";
 import { state } from "../sim/gameState";
 import { getTheme } from "../pixel/scene";
 
-export type GroupSceneVenue = "lounge" | "rooftop";
+/**
+ * 場地。
+ *
+ * - `lounge`／`cafe`:主平面上的**真實區域**,演員拿得到座標、不隱藏本體 sprite。
+ * - `rooftop`:不在主平面上的「隱藏小舞台」,演員 `tile === null` 且在樓層圖被隱藏。
+ *
+ * CAFE-21 的 `cafe` 走 `lounge` 那條路線:一樓咖啡廳自 CAFE-03 起就是同一張 grid 上的
+ * 實際 Region(`cafe_floor` 等),顧客(`guestAgents`)與寵物(`petAgents`)本來就走在
+ * 那些格子上,所以租客也必須有真實座標才能真的「同框」。
+ */
+export type GroupSceneVenue = "lounge" | "rooftop" | "cafe";
 export type GroupSceneLayout = "cluster" | "table" | "watch" | "storm" | "farewell";
 
 export interface GroupSceneActor {
@@ -83,6 +93,49 @@ function loungeTiles(count: number, layout: GroupSceneLayout): Tile[] {
   return open.slice(0, count);
 }
 
+/** 咖啡廳錨點:點餐在吧台前、看熱鬧在寵物區旁、其餘落在主座位區中央。 */
+function cafeAnchorFor(layout: GroupSceneLayout): Tile {
+  if (layout === "table") return { c: 4, r: 41 }; // 吧台(cafe_counter)下方點餐區
+  if (layout === "watch") return { c: 11, r: 44 }; // 寵物遊戲區(cafe_pet)旁
+  return { c: 8, r: 43 }; // 主座位區中央
+}
+
+/**
+ * 咖啡廳走位:同 `loungeTiles` 的決定性排序,但**只收 grid 上真的是 `cafe_floor` 的空格**。
+ * `cafe_floor` 的矩形被 `cafe_counter` / `cafe_pet` 覆蓋掉一部分,若只看 blocked 會把
+ * 吧台內側與寵物區也當成座位;查 grid 才與 `guestAgents` / `cafeSeatTarget` 同語意。
+ */
+function cafeTiles(count: number, layout: GroupSceneLayout): Tile[] {
+  const grid = buildGrid();
+  const blocked = currentBlocked();
+  const anchor = cafeAnchorFor(layout);
+  const open: Tile[] = [];
+  const box = CAFE_RECTS.cafe_floor;
+  for (let r = box.r0; r <= box.r1; r++) {
+    for (let c = box.c0; c <= box.c1; c++) {
+      if (grid[r]?.[c] === "cafe_floor" && blocked[r]?.[c] === false) open.push({ c, r });
+    }
+  }
+  open.sort((a, b) => {
+    const da = Math.abs(a.c - anchor.c) + Math.abs(a.r - anchor.r);
+    const db = Math.abs(b.c - anchor.c) + Math.abs(b.r - anchor.r);
+    return da - db || a.r - b.r || a.c - b.c;
+  });
+  return open.slice(0, count);
+}
+
+/** 有真實座標的場地(rooftop 是隱藏小舞台,不佔主平面格子)。 */
+function isPlacedVenue(venue: GroupSceneVenue): boolean {
+  return venue === "lounge" || venue === "cafe";
+}
+
+/** 場地 → 走位;`lounge` 完全沿用原本的 `loungeTiles`,行為位元級不變。 */
+function venueTiles(venue: GroupSceneVenue, count: number, layout: GroupSceneLayout): Tile[] {
+  if (venue === "lounge") return loungeTiles(count, layout);
+  if (venue === "cafe") return cafeTiles(count, layout);
+  return [];
+}
+
 function poseFor(layout: GroupSceneLayout): PairPose {
   if (layout === "farewell") return "stand_face";
   return "pair";
@@ -96,8 +149,8 @@ export function startGroupScene(input: StartGroupScene): boolean {
 
   const ids = [...new Set(input.participantIds)].filter((id) => !!state.runtimes[id]);
   if (ids.length === 0) return false;
-  const tiles = input.venue === "lounge" ? loungeTiles(ids.length, input.layout) : [];
-  if (input.venue === "lounge" && tiles.length < ids.length) return false;
+  const tiles = venueTiles(input.venue, ids.length, input.layout);
+  if (isPlacedVenue(input.venue) && tiles.length < ids.length) return false;
 
   clearPairSessionsFor(ids);
   const pose = poseFor(input.layout);
@@ -111,7 +164,7 @@ export function startGroupScene(input: StartGroupScene): boolean {
       shirt: theme.shirt,
       pants: theme.pants,
       skin: theme.skin,
-      tile: input.venue === "lounge" ? tiles[index] : null,
+      tile: isPlacedVenue(input.venue) ? tiles[index] : null,
       pose,
     };
   });
@@ -139,7 +192,10 @@ export function groupSceneView(gameNow = state.gameMs): GroupScene | null {
   return active;
 }
 
-/** agents 的最高層走位覆寫；天台與歡送小舞台會隱藏主平面的重複 sprite。 */
+/**
+ * agents 的最高層走位覆寫；天台與歡送小舞台會隱藏主平面的重複 sprite。
+ * `lounge` 與 `cafe` 都在主平面上 ⇒ `hidden: false`（歡送 layout 除外，判斷式未變）。
+ */
 export function groupSceneFor(
   tenantId: string,
   gameNow: number,

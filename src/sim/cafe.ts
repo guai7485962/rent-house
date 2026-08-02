@@ -52,7 +52,9 @@ import {
 import {
   CAFE_RESEARCH,
   CAFE_RESEARCH_IDS,
+  type CafeMenuAudience,
   type CafeResearchDefinition,
+  type CafeResearchTrack,
 } from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
 import type { CafeState } from "../types";
@@ -762,19 +764,75 @@ export const CAFE_BASE_TICKET = 36;
  */
 export const CAFE_FIXED_COST = 370;
 
-/**
- * 客單價 = 基礎價 × (1 + Σ 研發加成)。
- *
- * 🔴 **研發加成表是 CAFE-16 的範圍**,本項不猜任何研發 id 的數值,一律回 0
- * (`state.cafe.completed` 今天也恆為空)。公式先長好形狀,CAFE-16 只要換掉
- * `cafeResearchTicketBonus()` 的實作即可,呼叫端一行都不用改。
- */
-export function cafeResearchTicketBonus(_completed: readonly string[] = []): number {
-  return 0;
+export interface CafeMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  track: CafeResearchTrack;
+  level: 0 | 1 | 2;
+  audience: CafeMenuAudience;
+  source: "base" | "research";
+  researchId?: string;
+  specialEvent: boolean;
 }
 
+/**
+ * 開張即有的三條基本菜單。三項平均剛好是 $36，與 CAFE-13 已定標的基礎客單價一致；
+ * 三條 track 也對齊既有原料的 brew／bake／pet，避免「尚未研發就完全不消耗某類原料」。
+ */
+export const CAFE_BASE_MENU_ITEMS = [
+  { id: "cafe_menu_house_coffee", name: "招牌美式咖啡", price: 34, track: "coffee", level: 0, audience: "daily", source: "base", specialEvent: false },
+  { id: "cafe_menu_daily_bake", name: "每日烘焙小點", price: 36, track: "bakery", level: 0, audience: "sweet", source: "base", specialEvent: false },
+  { id: "cafe_menu_pet_snack", name: "基礎寵物小點", price: 38, track: "pet", level: 0, audience: "pet_family", source: "base", specialEvent: false },
+] as const satisfies readonly CafeMenuItem[];
+
+/**
+ * 完整研發後的硬上限。$38 在 56 日成熟期實測仍約為日租金的 46.9%，
+ * 保留在設計要求的 30～50% 內；即使後續誤加高價品項也不能突破。
+ */
+export const CAFE_MAX_AVG_TICKET = 38;
+
+/**
+ * 依完成研發產生菜單。未知／重複 id 會被忽略，輸出永遠按 content 宣告序，
+ * 不受存檔陣列插入順序影響。CAFE-19/20 可讀 track 做客群結構，不需再解析中文品名。
+ */
+export function menuItems(completed: readonly string[] = []): CafeMenuItem[] {
+  const done = new Set(Array.isArray(completed) ? completed : []);
+  const researched = CAFE_RESEARCH
+    .filter((research) => done.has(research.id))
+    .map((research): CafeMenuItem => ({
+      id: `cafe_menu_${research.id}`,
+      name: research.menuItem,
+      price: research.menuPrice,
+      track: research.track,
+      level: research.level,
+      audience: research.audience,
+      source: "research",
+      researchId: research.id,
+      specialEvent: "specialEvent" in research && research.specialEvent === true,
+    }));
+  return [...CAFE_BASE_MENU_ITEMS, ...researched];
+}
+
+/**
+ * 平均客單價採「第二層菜單多樣性里程碑」：完成 2 項升到 $37，完成 5 項升到 $38。
+ * 根節點建立客群但不直接加價；不再把每項研發當成可無限疊加的百分比。
+ * 這讓任何完成順序都只升不降，且 $38 硬上限守住成熟期收益邊界。
+ */
+export function avgTicket(completed: readonly string[] = []): number {
+  const levelTwoCount = menuItems(completed).filter((item) => item.source === "research" && item.level === 2).length;
+  const diversityBonus = levelTwoCount >= 5 ? 2 : levelTwoCount >= 2 ? 1 : 0;
+  return Math.min(CAFE_MAX_AVG_TICKET, CAFE_BASE_TICKET + diversityBonus);
+}
+
+/** 舊 API 保留給測試／呼叫端；回傳值改由菜單平均價反推，不接受未知 id 灌水。 */
+export function cafeResearchTicketBonus(completed: readonly string[] = []): number {
+  return avgTicket(completed) / CAFE_BASE_TICKET - 1;
+}
+
+/** 日結既有呼叫端不需修改；CAFE-17 只替換這個純讀取結果。 */
 export function cafeTicketPrice(completed: readonly string[] = []): number {
-  return Math.max(0, Math.round(CAFE_BASE_TICKET * (1 + cafeResearchTicketBonus(completed))));
+  return avgTicket(completed);
 }
 
 // ---------------------------------------------------------------------------

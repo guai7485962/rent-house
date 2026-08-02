@@ -122,8 +122,8 @@ try {
     && keptUnknown.reason === "找不到進行中的研發資料");
 
   // 5. CAFE-17 邊界與純函式護欄。
-  check("CAFE-16 不偷跑客單價：全部研發完成仍為基礎客單價", cafeResearchTicketBonus(ids) === 0
-    && cafeTicketPrice(ids) === CAFE_BASE_TICKET);
+  check("沒有完成研發時不會得到未賺取的客單價加成", cafeResearchTicketBonus([]) === 0
+    && cafeTicketPrice([]) === CAFE_BASE_TICKET);
   const callsBefore = randomCalls;
   availableCafeResearch(coldReady);
   startCafeResearch(coldReady, 9_999, CAFE_RESEARCH_IDS.coldBrew, 20);

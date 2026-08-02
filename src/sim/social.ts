@@ -34,6 +34,8 @@ export interface EncounterResult {
   cohabit?: boolean;
   /** 互動基調(演出層選特效用):聊天/戀愛氛圍/起衝突 */
   tone: "friendly" | "romantic" | "conflict";
+  /** 只有自然社交擲骰造成的口角為 true；分手等劇情衝突不占每日自然衝突額度。 */
+  naturalConflict: boolean;
 }
 
 /** 全部關係(pairKey → Relationship),reactive 供 UI 讀 */
@@ -198,6 +200,8 @@ export function pruneRomanceIntegrity(
 
 export interface CompatibilityDetail {
   score: number;
+  /** 是否包含 noisy/gamer 對 sound-sensitive 類型的噪音需求衝突。 */
+  hasNoiseConflict: boolean;
   /** 玩家看得懂的主要生活摩擦；順序固定，規則不靠 RNG。 */
   conflicts: string[];
   strengths: string[];
@@ -227,7 +231,8 @@ export function compatibilityDetail(a: Pick<Tenant, "coreTags">, b: Pick<Tenant,
   const noisyB = hasB("noisy") || hasB("gamer");
   const quietA = hasA("sound_sensitive") || hasA("perfectionist") || hasA("wfh");
   const quietB = hasB("sound_sensitive") || hasB("perfectionist") || hasB("wfh");
-  if ((noisyA && quietB) || (noisyB && quietA)) { c -= 3; conflicts.push("噪音需求衝突：一人活動聲大、一人需要安靜"); }
+  const hasNoiseConflict = (noisyA && quietB) || (noisyB && quietA);
+  if (hasNoiseConflict) { c -= 3; conflicts.push("噪音需求衝突：一人活動聲大、一人需要安靜"); }
   if (noisyA && noisyB) c += 1;
   if (hasA("gamer") && hasB("gamer")) { c += 2; strengths.push("都是遊戲同好"); }
 
@@ -240,7 +245,7 @@ export function compatibilityDetail(a: Pick<Tenant, "coreTags">, b: Pick<Tenant,
     conflicts.push("界線感不合：一人愛關心追問、一人需要私人空間");
   }
 
-  return { score: clamp(c, -5, 5), conflicts, strengths };
+  return { score: clamp(c, -5, 5), hasNoiseConflict, conflicts, strengths };
 }
 
 /** 相容分數的舊入口；戀愛與既有測試繼續使用同一套規則。 */
@@ -306,13 +311,23 @@ export interface EncounterOptions {
   gameMs?: number;
   /** 全樓每日節流由 tick 注入；false 時本次只會是一般相處。 */
   allowConflict?: boolean;
+  /** 0~1；只折抵噪音相性造成的自然口角壓力，由 tick 從房間隔音決定性注入。 */
+  noiseMitigation?: number;
 }
 
 export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}): EncounterResult {
   const rel = ensureRel(a.id, b.id);
   const detail = compatibilityDetail(a, b);
   const comp = detail.score;
-  const res: EncounterResult = { a: a.id, b: b.id, textA: "", textB: "", importance: "minor", tone: rel.romantic ? "romantic" : "friendly" };
+  const res: EncounterResult = {
+    a: a.id,
+    b: b.id,
+    textA: "",
+    textB: "",
+    importance: "minor",
+    tone: rel.romantic ? "romantic" : "friendly",
+    naturalConflict: false,
+  };
 
   const tension = Number.isFinite(rel.tension) ? rel.tension : 0;
   rel.tension = tension;
@@ -320,10 +335,15 @@ export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}):
   const cooldownReady = options.gameMs === undefined
     || rel.lastConflictGameMs <= 0
     || options.gameMs - rel.lastConflictGameMs >= CONFLICT_COOLDOWN_HOURS * GAME_HOUR_MS;
-  // 相合／中性配對維持舊版 3%，避免既有平衡局被重寫；負相性才吃相性與積怨加成。
-  const conflictChance = comp >= 0
-    ? 0.03
-    : clamp(0.04 + -comp * 0.08 + tension * 0.0035, 0.03, 0.65);
+  // 拆成可歸因的壓力，但在 tension=0、無隔音時與舊公式逐值相同：
+  // comp>=0 為 3%；comp<0 為 0.04 + (-comp)*0.08。隔音只折抵其中最多 0.24 的噪音項。
+  const compatibilityPressure = comp < 0 ? 0.01 + -comp * 0.08 : 0;
+  // 負相性沿用既有「積怨逐點加壓」；相合／中性配對則保留 0~60 緩衝，
+  // 接近冷戰風險後才加壓，避免一次事件把原本合拍的配對推進連鎖爭吵。
+  const tensionPressure = (comp < 0 ? tension : Math.max(0, tension - 60)) * 0.0035;
+  const noiseMitigation = clamp(options.noiseMitigation ?? 0, 0, 1);
+  const noiseReduction = Math.min(compatibilityPressure, detail.hasNoiseConflict ? 0.24 : 0) * noiseMitigation;
+  const conflictChance = clamp(0.03 + compatibilityPressure + tensionPressure - noiseReduction, 0.03, 0.65);
   // 無論冷卻／全樓節流是否擋住，都維持舊版每次 encounter 固定先吃一次衝突 roll。
   const conflictRoll = Math.random();
   if (options.allowConflict !== false && cooldownReady && conflictRoll < conflictChance) {
@@ -337,6 +357,7 @@ export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}):
     res.textB = `和 ${a.name} ${reason}`;
     res.importance = "notable";
     res.tone = "conflict";
+    res.naturalConflict = true;
     res.effectA = { stress: 4 };
     res.effectB = { stress: 4 };
   } else {
@@ -375,6 +396,8 @@ export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}):
     res.milestone = "broke_up";
     res.importance = "major";
     res.tone = "conflict";
+    // 最終結果已轉成分手劇情；不再以同一次相遇重複占用自然口角額度或升級冷戰。
+    res.naturalConflict = false;
     res.textA = `💔 和 ${b.name} 分手了`;
     res.textB = `💔 和 ${a.name} 分手了`;
     res.effectA = { mood: -18, satisfaction: -12, stress: 12 };

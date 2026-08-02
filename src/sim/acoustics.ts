@@ -2,6 +2,7 @@
 import { roomAttributes } from "./placements";
 import { roomOfTenant, type TenantRuntime } from "./gameState";
 import { EVENT_SOUNDPROOFING_ID, grantRoomUpgrade, roomUpgradeIds } from "./upgrades";
+import type { Tenant } from "../types";
 
 export interface RoomAcoustics {
   roomId: string | null;
@@ -18,6 +19,12 @@ const NOISE_TAG_WEIGHT: Record<string, number> = {
   late_return: 3,
 };
 
+const NATURAL_CONFLICT_NOISY_TAGS = new Set(["noisy", "gamer"]);
+const NATURAL_CONFLICT_QUIET_TAGS = new Set(["sound_sensitive", "perfectionist", "wfh"]);
+
+const hasAnyTag = (tenant: Pick<Tenant, "coreTags">, ids: Set<string>) =>
+  (tenant.coreTags ?? []).some((tag) => ids.has(tag.id));
+
 export function roomAcousticsForTenant(tenantId: string): RoomAcoustics {
   const roomId = roomOfTenant(tenantId);
   if (!roomId) return { roomId: null, noise: 0, soundproof: 0, treated: false };
@@ -29,6 +36,30 @@ export function roomAcousticsForTenant(tenantId: string): RoomAcoustics {
     soundproof: Math.max(0, attrs.soundproof ?? 0),
     treated: ids.includes("soundproof_reno") || ids.includes(EVENT_SOUNDPROOFING_ID),
   };
+}
+
+/**
+ * 自然口角的噪音折抵比例。只看造成噪音的一方房間；局部工程 4 點折半，完整改建 8 點全抵。
+ * 若兩人同時是噪音來源與安靜需求者，平均兩個來源房間，避免一間有隔音就掩蓋另一間。
+ */
+export function noiseConflictMitigation(
+  a: Pick<Tenant, "id" | "coreTags">,
+  b: Pick<Tenant, "id" | "coreTags">,
+): number {
+  const noisyA = hasAnyTag(a, NATURAL_CONFLICT_NOISY_TAGS);
+  const noisyB = hasAnyTag(b, NATURAL_CONFLICT_NOISY_TAGS);
+  const quietA = hasAnyTag(a, NATURAL_CONFLICT_QUIET_TAGS);
+  const quietB = hasAnyTag(b, NATURAL_CONFLICT_QUIET_TAGS);
+  const sourceIds: string[] = [];
+  if (noisyA && quietB) sourceIds.push(a.id);
+  if (noisyB && quietA) sourceIds.push(b.id);
+  if (sourceIds.length === 0) return 0;
+  const total = sourceIds.reduce((sum, tenantId) => {
+    const room = roomAcousticsForTenant(tenantId);
+    if (!room.roomId) return sum;
+    return sum + Math.min(1, Math.max(0, room.soundproof / 8));
+  }, 0);
+  return total / sourceIds.length;
 }
 
 /**

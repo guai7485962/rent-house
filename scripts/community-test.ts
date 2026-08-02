@@ -281,6 +281,34 @@ check("自然社交:全樓一天最多兩場衝突", state.interactionCooldowns.
   `count=${state.interactionCooldowns.social_conflicts_day_count}, tensePairs=${tensePairs}`);
 const keyCount = Object.keys(state.interactionCooldowns).filter((k) => k.startsWith("social_conflicts_day")).length;
 check("自然社交:節流只使用固定兩個存檔 key，不會每日堆積", keyCount === 2, `keys=${keyCount}`);
+
+// 分手與群體口角是劇情衝突，不占自然口角／打架的每日額度。
+Object.values(state.runtimes).forEach((rt) => { rt.inLounge = false; rt.pendingEvent = null; });
+const breakupA = capRts[0];
+const breakupB = capRts[1];
+breakupA.inLounge = true;
+breakupB.inLounge = true;
+breakupA.tenant.coreTags = [];
+breakupB.tenant.coreTags = [];
+delete state.feuds[pairKey(breakupA.tenant.id, breakupB.tenant.id)];
+relationships[pairKey(breakupA.tenant.id, breakupB.tenant.id)] = {
+  value: 10, tension: 0, lastConflictGameMs: 0, romantic: true, cohabitOffered: false,
+};
+state.interactionCooldowns.social_conflicts_day_count = 0;
+Math.random = () => 0;
+socialPass();
+Math.random = savedRandom;
+check("自然社交:額度未滿時分手仍不占自然口角額度或升級冷戰",
+  state.interactionCooldowns.social_conflicts_day_count === 0
+    && !getRel(breakupA.tenant.id, breakupB.tenant.id)?.romantic
+    && !state.feuds[pairKey(breakupA.tenant.id, breakupB.tenant.id)],
+  `count=${state.interactionCooldowns.social_conflicts_day_count}`);
+state.interactionCooldowns.social_conflicts_day_count = 2;
+relationships[pairKey(breakupA.tenant.id, breakupB.tenant.id)] = {
+  value: 20, tension: 0, lastConflictGameMs: 0, romantic: false, cohabitOffered: false,
+};
+ev("laundry").fire([breakupA, breakupB], () => 0);
+check("社群事件:腳本口角刻意不占自然衝突額度", state.interactionCooldowns.social_conflicts_day_count === 2);
 clearGroup();
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

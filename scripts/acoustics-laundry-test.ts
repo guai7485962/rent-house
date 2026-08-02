@@ -13,7 +13,7 @@ const mem: Record<string, string> = {};
 };
 
 const { state, GAME_START, roomOfTenant } = await import("../src/sim/gameState");
-const { noiseComplaintEligible, roomAcousticsForTenant, grantEventSoundproofing } = await import("../src/sim/acoustics");
+const { noiseComplaintEligible, noiseConflictMitigation, roomAcousticsForTenant, grantEventSoundproofing } = await import("../src/sim/acoustics");
 const { EVENT_SOUNDPROOFING_ID, upgradeState } = await import("../src/sim/upgrades");
 const { buildNarrateCtx } = await import("../src/sim/narration");
 const { COMMUNITY_EVENTS, laundryStageTiles, resolveGroupEvent } = await import("../src/sim/community");
@@ -32,11 +32,38 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 const [A, B] = Object.values(state.runtimes);
 const roomId = roomOfTenant(A.tenant.id)!;
+const roomIdB = roomOfTenant(B.tenant.id)!;
 const originalTags = A.tenant.coreTags;
+const originalTagsB = B.tenant.coreTags;
 const originalUpgrades = [...(upgradeState.byRoom[roomId] ?? [])];
+const originalUpgradesB = [...(upgradeState.byRoom[roomIdB] ?? [])];
 const noisyTag = { id: "gamer", label: "[玩家]", behaviorHint: "會打電動", acquiredAt: "", source: "ai_event" as const, intensity: 1 };
+const quietTag = { id: "sound_sensitive", label: "[怕吵]", behaviorHint: "需要安靜", acquiredAt: "", source: "ai_event" as const, intensity: 1 };
+A.tenant.coreTags = [noisyTag];
+B.tenant.coreTags = [quietTag];
+delete upgradeState.byRoom[roomId];
+delete upgradeState.byRoom[roomIdB];
+
+check("自然口角:噪音來源房無隔音時折抵為 0", noiseConflictMitigation(A.tenant, B.tenant) === 0);
+upgradeState.byRoom[roomIdB] = [EVENT_SOUNDPROOFING_ID];
+check("自然口角:只改安靜方房間不折抵來源噪音", noiseConflictMitigation(A.tenant, B.tenant) === 0);
+delete upgradeState.byRoom[roomIdB];
+upgradeState.byRoom[roomId] = [EVENT_SOUNDPROOFING_ID];
+check("自然口角:$3,000 工程的 4 點隔音折抵一半", noiseConflictMitigation(A.tenant, B.tenant) === 0.5);
+upgradeState.byRoom[roomId] = ["soundproof_reno"];
+check("自然口角:完整改建的 8 點隔音全額折抵", noiseConflictMitigation(A.tenant, B.tenant) === 1);
+A.tenant.coreTags = [noisyTag, quietTag];
+B.tenant.coreTags = [noisyTag, quietTag];
+upgradeState.byRoom[roomId] = [EVENT_SOUNDPROOFING_ID];
+upgradeState.byRoom[roomIdB] = ["soundproof_reno"];
+check("自然口角:雙向噪音來源平均兩間房的折抵", noiseConflictMitigation(A.tenant, B.tenant) === 0.75);
+const noRoomNoisy = { id: "no_room_noisy", coreTags: [noisyTag] };
+check("自然口角:沒有房間的噪音來源按 0 折抵", noiseConflictMitigation(noRoomNoisy, B.tenant) === 0);
+A.tenant.coreTags = [];
+check("自然口角:沒有噪音相性衝突時不套隔音折抵", noiseConflictMitigation(A.tenant, B.tenant) === 0);
 A.tenant.coreTags = [noisyTag];
 delete upgradeState.byRoom[roomId];
+B.tenant.coreTags = originalTagsB;
 
 check("無隔音的玩家可成為噪音公審對象", noiseComplaintEligible(A));
 upgradeState.byRoom[roomId] = ["soundproof_reno"];
@@ -102,6 +129,8 @@ check("排定日的單人作息會走到洗衣間洗衣", A.tenant.visualState =
 A.tenant.coreTags = originalTags;
 if (originalUpgrades.length) upgradeState.byRoom[roomId] = originalUpgrades;
 else delete upgradeState.byRoom[roomId];
+if (originalUpgradesB.length) upgradeState.byRoom[roomIdB] = originalUpgradesB;
+else delete upgradeState.byRoom[roomIdB];
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

@@ -25,17 +25,65 @@ const quiet = tenant("fr_quiet", "早起工作者", ["sound_sensitive", "wfh", "
 const detail = compatibilityDetail(noisy, quiet);
 check("相性細節給出負分", detail.score <= -3, `score=${detail.score}`);
 check("相性原因具體包含噪音與作息", detail.conflicts.some((r) => r.includes("噪音")) && detail.conflicts.some((r) => r.includes("作息")), detail.conflicts.join(" / "));
+check("相性細節以結構欄位標記噪音衝突", detail.hasNoiseConflict);
+
+const originalRandom = Math.random;
+const setRel = (a: Tenant, b: Tenant, tension: number) => {
+  relationships[pairKey(a.id, b.id)] = {
+    value: 10, tension, lastConflictGameMs: 0, romantic: false, cohabitOffered: false,
+  };
+};
+
+// tension=0、無隔音時保留舊版精確門檻與 RNG 骨架。
+const neutralA = tenant("threshold_neutral_a", "中性甲", [], "male");
+const neutralB = tenant("threshold_neutral_b", "中性乙", [], "female");
+setRel(neutralA, neutralB, 0);
+Math.random = () => 0.03;
+check("中性零積怨在舊 3% 邊界不衝突", !encounter(neutralA, neutralB).naturalConflict);
+setRel(neutralA, neutralB, 0);
+Math.random = () => 0.029999;
+check("中性零積怨維持舊 3% 門檻", encounter(neutralA, neutralB).naturalConflict);
+
+const incompatibleA = tenant("threshold_bad_a", "夜貓甲", ["night_owl"], "male");
+const incompatibleB = tenant("threshold_bad_b", "早鳥乙", ["early_bird"], "female");
+setRel(incompatibleA, incompatibleB, 0); // comp=-2，舊門檻恰為 20%
+Math.random = () => 0.20;
+check("負相性零積怨在舊 20% 邊界不衝突", !encounter(incompatibleA, incompatibleB).naturalConflict);
+setRel(incompatibleA, incompatibleB, 0);
+Math.random = () => 0.199999;
+check("負相性零積怨維持舊 20% 門檻", encounter(incompatibleA, incompatibleB).naturalConflict);
+setRel(incompatibleA, incompatibleB, 60); // 舊公式：.20 + 60*.0035 = .41
+Math.random = () => 0.410001;
+check("負相性積怨 60 在舊 41% 門檻上方不衝突", !encounter(incompatibleA, incompatibleB).naturalConflict);
+setRel(incompatibleA, incompatibleB, 60);
+Math.random = () => 0.409999;
+check("負相性持續沿用既有逐點積怨加壓", encounter(incompatibleA, incompatibleB).naturalConflict);
+
+const compatibleA = tenant("threshold_good_a", "運動甲", ["fitness"], "male");
+const compatibleB = tenant("threshold_good_b", "運動乙", ["fitness"], "female");
+setRel(compatibleA, compatibleB, 60);
+Math.random = () => 0.03;
+check("正相性積怨 60 仍在緩衝帶並維持舊 3%", !encounter(compatibleA, compatibleB).naturalConflict);
+setRel(compatibleA, compatibleB, 65); // base .03 + (65-60)*.0035 = .0475
+Math.random = () => 0.04;
+check("正相性積怨接近冷戰風險後提高自然口角機率", encounter(compatibleA, compatibleB).naturalConflict);
+
+setRel(neutralA, neutralB, 0);
+let randomCalls = 0;
+Math.random = () => { randomCalls += 1; return 0.5; };
+encounter(neutralA, neutralB, { allowConflict: false });
+check("節流時仍維持既有衝突 roll＋一般互動 RNG 骨架", randomCalls === 3, `calls=${randomCalls}`);
+Math.random = originalRandom;
 
 // 舊 v6 關係資料沒有 tension/cooldown；載入後必須補零且能繼續運算。
 loadRelationships([{ key: pairKey(noisy.id, quiet.id), value: 12, romantic: false, cohabitOffered: false }]);
 check("舊關係資料載入後 tension/cooldown 預設 0", getRel(noisy.id, quiet.id)?.tension === 0 && getRel(noisy.id, quiet.id)?.lastConflictGameMs === 0);
 
-const originalRandom = Math.random;
 Math.random = () => 0;
 const hour = 60 * 60 * 1000;
 const first = encounter(noisy, quiet, { gameMs: 24 * hour, allowConflict: true });
 const afterFirst = getRel(noisy.id, quiet.id)!;
-check("不合房客口角會累積 tension 並寫具體原因", first.tone === "conflict" && afterFirst.tension >= 10 && /噪音|作息/.test(first.textA));
+check("不合房客口角會累積 tension 並寫具體原因", first.naturalConflict && afterFirst.tension >= 10 && /噪音|作息/.test(first.textA));
 const second = encounter(noisy, quiet, { gameMs: 25 * hour, allowConflict: true });
 check("同一對口角後 12 小時冷卻", second.tone !== "conflict");
 const third = encounter(noisy, quiet, { gameMs: 37 * hour, allowConflict: true });

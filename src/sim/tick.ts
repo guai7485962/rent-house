@@ -71,6 +71,7 @@ import { roomComfort, comfortBaselineDelta, cleanlinessBaseline, communalQuality
 import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
 import { nextRotation } from "../furniture/rotation";
+import { noiseConflictMitigation } from "./acoustics";
 
 /** 共用浴室設備的本小時佔用者；不同設備可同時使用，同一設備必須排隊。 */
 let bathroomClaimMs = -1;
@@ -864,8 +865,12 @@ export function socialPass(skip: Set<string> = new Set()) {
         state.interactionCooldowns[conflictCountKey] = conflictsToday;
         continue;
       }
-      const res = encounter(A.tenant, B.tenant, { gameMs: state.gameMs, allowConflict: conflictsToday < 2 });
-      if (res.tone === "conflict") {
+      const res = encounter(A.tenant, B.tenant, {
+        gameMs: state.gameMs,
+        allowConflict: conflictsToday < 2,
+        noiseMitigation: noiseConflictMitigation(A.tenant, B.tenant),
+      });
+      if (res.naturalConflict) {
         conflictsToday += 1;
         state.interactionCooldowns[conflictCountKey] = conflictsToday;
       }
@@ -885,7 +890,8 @@ export function socialPass(skip: Set<string> = new Set()) {
         // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉
         startPairSession(A.tenant.id, B.tenant.id, at, "stand_face", state.gameMs);
       }
-      if (res.tone === "conflict") maybeFeudAfterConflict(A, B); // 大吵可能升級成冷戰
+      // 每日上限只管自然口角／打架；分手、群體事件等劇情衝突不占額度，也不由此升級冷戰。
+      if (res.naturalConflict) maybeFeudAfterConflict(A, B);
       if (res.milestone === "became_couple") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
         unlock("first_love");

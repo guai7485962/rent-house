@@ -49,11 +49,17 @@ import {
   CAFE_UPGRADE_IDS,
   type CafeUpgrade,
 } from "../content/cafeUpgrades";
+import {
+  CAFE_RESEARCH,
+  CAFE_RESEARCH_IDS,
+  type CafeResearchDefinition,
+} from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
 import type { CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
 export { CAFE_OPENING_COST, CAFE_UPGRADES, CAFE_UPGRADE_IDS } from "../content/cafeUpgrades";
+export { CAFE_RESEARCH, CAFE_RESEARCH_IDS } from "../content/cafeResearch";
 
 // ---------------------------------------------------------------------------
 // 旋鈕
@@ -515,7 +521,129 @@ export function buyCafeUpgrade(cafe: CafeState, money: number, upgradeId: string
 }
 
 // ---------------------------------------------------------------------------
-// 6. 客流(設計文件 §5.5)
+// 6. 研發資料與日數倒數(CAFE-16)
+// ---------------------------------------------------------------------------
+
+const cafeResearchById = new Map<string, CafeResearchDefinition>(CAFE_RESEARCH.map((item) => [item.id, item]));
+
+/** 依穩定 id 取得研發資料；未知或已移除的 id 回 undefined。 */
+export function getCafeResearch(id: string): CafeResearchDefinition | undefined {
+  return cafeResearchById.get(id);
+}
+
+/**
+ * 前置條件只讀 `completed` 與 `upgrades`，不把「正在研究」誤算成已完成。
+ * CAFE-18 可直接用這個函式解釋按鈕為何尚未解鎖。
+ */
+export function cafeResearchRequirementsMet(
+  cafe: Pick<CafeState, "completed" | "upgrades">,
+  research: CafeResearchDefinition,
+): boolean {
+  const completed = new Set(Array.isArray(cafe.completed) ? cafe.completed : []);
+  const upgrades = new Set(Array.isArray(cafe.upgrades) ? cafe.upgrades : []);
+  return research.requiresResearch.every((id) => completed.has(id))
+    && research.requiresUpgrades.every((id) => upgrades.has(id));
+}
+
+/** 已開張、前置已滿足，且尚未完成／進行中的可開始項目。順序固定為 content 宣告序。 */
+export function availableCafeResearch(cafe: CafeState): CafeResearchDefinition[] {
+  if (!cafe.open || cafe.research) return [];
+  const completed = new Set(Array.isArray(cafe.completed) ? cafe.completed : []);
+  return CAFE_RESEARCH.filter((item) => !completed.has(item.id)
+    && cafeResearchRequirementsMet(cafe, item));
+}
+
+export interface CafeResearchStartResult extends CafeInvestmentResult {
+  research?: CafeResearchDefinition;
+}
+
+function rejectCafeResearch(cafe: CafeState, money: number, reason: string): CafeResearchStartResult {
+  return { ok: false, reason, cafe, cost: 0, moneyAfter: money };
+}
+
+/**
+ * 支付一次性研發費並開始倒數。純交易：不扣全域金錢、不存檔、不修改輸入。
+ * 成功結果由 CAFE-18 經既有 `addMoney(..., "cafe")` 寫入；失敗永遠零扣款。
+ */
+export function startCafeResearch(
+  cafe: CafeState,
+  money: number,
+  researchId: string,
+  currentDay: number,
+): CafeResearchStartResult {
+  const def = getCafeResearch(researchId);
+  if (!def) return rejectCafeResearch(cafe, money, "沒有這項咖啡廳研發");
+  if (!cafe.open) return rejectCafeResearch(cafe, money, "咖啡廳尚未開張");
+  if (cafe.research) return rejectCafeResearch(cafe, money, "同時只能研發一項");
+  if (cafe.completed.includes(def.id)) return rejectCafeResearch(cafe, money, "這項研發已經完成");
+  if (!cafeResearchRequirementsMet(cafe, def)) return rejectCafeResearch(cafe, money, "研發前置條件尚未完成");
+  if (!Number.isFinite(currentDay)) return rejectCafeResearch(cafe, money, "遊戲日期無效");
+  if (!canAffordCafeInvestment(money, def.cost)) return rejectCafeResearch(cafe, money, "金錢不足");
+
+  return {
+    ok: true,
+    cafe: {
+      ...cafe,
+      research: {
+        id: def.id,
+        startedDay: Math.floor(currentDay),
+        days: def.days,
+        invested: def.cost,
+      },
+    },
+    cost: def.cost,
+    moneyAfter: money - def.cost,
+    label: `咖啡廳研發:${def.name}`,
+    category: "cafe",
+    research: def,
+  };
+}
+
+/**
+ * 剩餘日數採既有日序號倒數語意：開始當日顯示 N 天，`startedDay + days` 當日歸零。
+ * 進行中資料保留開始時的 days 快照，日後調整 content 不會改寫玩家已支付的時程。
+ */
+export function cafeResearchDaysLeft(cafe: Pick<CafeState, "research">, currentDay: number): number | null {
+  const active = cafe.research;
+  if (!active) return null;
+  const startedDay = Number.isFinite(active.startedDay) ? Math.floor(active.startedDay) : 0;
+  const days = Number.isFinite(active.days) ? Math.max(1, Math.floor(active.days)) : 1;
+  const today = Number.isFinite(currentDay) ? Math.floor(currentDay) : startedDay;
+  return Math.max(0, startedDay + days - today);
+}
+
+export interface CafeResearchProgressResult {
+  cafe: CafeState;
+  completed: CafeResearchDefinition | null;
+  daysLeft: number | null;
+  changed: boolean;
+  reason?: string;
+}
+
+/**
+ * 依目前遊戲日結清到期研發。未到期回原 state 參考；到期只 append 一次並清空 active。
+ * 未知 id 保留原資料、不擅自吞掉玩家投入，交由後續版本或 UI 顯示修復提示。
+ */
+export function advanceCafeResearch(cafe: CafeState, currentDay: number): CafeResearchProgressResult {
+  const daysLeft = cafeResearchDaysLeft(cafe, currentDay);
+  if (daysLeft === null) return { cafe, completed: null, daysLeft: null, changed: false };
+  const def = getCafeResearch(cafe.research!.id);
+  if (!def) {
+    return { cafe, completed: null, daysLeft, changed: false, reason: "找不到進行中的研發資料" };
+  }
+  if (daysLeft > 0) return { cafe, completed: null, daysLeft, changed: false };
+
+  const completed = cafe.completed.includes(def.id) ? [...cafe.completed] : [...cafe.completed, def.id];
+  return {
+    cafe: { ...cafe, research: null, completed },
+    completed: def,
+    daysLeft: 0,
+    changed: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 7. 客流(設計文件 §5.5)
 // ---------------------------------------------------------------------------
 
 /**
@@ -617,7 +745,7 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
 }
 
 // ---------------------------------------------------------------------------
-// 7. 客單價(設計文件 §5.5)
+// 8. 客單價(設計文件 §5.5)
 // ---------------------------------------------------------------------------
 
 /**
@@ -650,7 +778,7 @@ export function cafeTicketPrice(completed: readonly string[] = []): number {
 }
 
 // ---------------------------------------------------------------------------
-// 8. 人氣
+// 9. 人氣
 // ---------------------------------------------------------------------------
 
 /**
@@ -672,7 +800,7 @@ export function nextCafePopularity(
 }
 
 // ---------------------------------------------------------------------------
-// 9. 日結敘事(設計文件 §5.2:缺貨與補不滿是敘事,不是懲罰)
+// 10. 日結敘事(設計文件 §5.2:缺貨與補不滿是敘事,不是懲罰)
 // ---------------------------------------------------------------------------
 
 /**

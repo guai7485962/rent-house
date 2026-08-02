@@ -56,6 +56,7 @@ const STATE_LABEL: Record<TenantVisualState, string> = {
   reading: "看書中",
   painting: "作畫中",
   using_appliance: "使用家電",
+  at_cafe: "在一樓咖啡廳", // CAFE-20:租客不在房裡,房間細看只顯示標籤
 };
 
 const label = computed(() => STATE_LABEL[props.visualState] ?? "生活中");

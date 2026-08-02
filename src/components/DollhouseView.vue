@@ -49,6 +49,8 @@ const STATE_MAP: Record<TenantVisualState, { spot: SpotKey; emoji: string; label
   reading: { spot: "sofa", emoji: "📖", label: "看書中" },
   painting: { spot: "desk", emoji: "🎨", label: "作畫中" },
   using_appliance: { spot: "kitchen", emoji: "🧺", label: "使用家電" },
+  // CAFE-20:人下樓了,所以定位點取門口(與 away 同一格),只是標籤講得更清楚
+  at_cafe: { spot: "door", emoji: "☕", label: "在一樓咖啡廳" },
 };
 
 /** 房間小物件 → 定位點 / 圖示 */

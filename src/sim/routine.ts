@@ -14,12 +14,23 @@
  */
 import { TENANT_VISUAL_STATES, type TenantVisualState } from "../types";
 import routinesJson from "../../data/routines.json";
-import { GRID_W, GRID_H, type Placement } from "../floor/map";
+import { GRID_W, GRID_H, CAFE_RECTS, buildGrid, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
 import { getPlacements, placementFootprint, placementInteract } from "./placements";
 import { currentBlocked, type Tile } from "../floor/pathfind";
+// CAFE-20:兩道閘門要讀 `state.cafe.open` 與遊戲日序號。
+// 迴圈 import(routine → gameState → persistence → routine)與 pets.ts 同形,
+// 兩邊都只在**函式內**用到對方的值,模組求值期不互相依賴 ⇒ 安全。
+// 別名成 `game`:`resolveTarget()` 的第三個參數就叫 `state`(visualState),不要撞名。
+import { state as game, gameDayIndex } from "./gameState";
 
-export type Role = "bed" | "desk" | "kitchen" | "bathroom" | "laundry" | "sofa" | "tv" | "out";
+/**
+ * 語意家具角色。
+ * `out` = 不在樓裡(外出);`cafe` = 下樓坐一樓咖啡廳(CAFE-20,不查 ROLE_KINDS,
+ * 走 `cafeSeatTarget()` 直接錨定一樓大廳)。兩者都不是「房間裡的家具需求」,
+ * 故都不列入 `ROLE_KINDS`,也都不該出現在 `data/routines.json` 的每日表。
+ */
+export type Role = "bed" | "desk" | "kitchen" | "bathroom" | "laundry" | "sofa" | "tv" | "out" | "cafe";
 
 export interface Slot {
   role: Role;
@@ -27,7 +38,7 @@ export interface Slot {
 }
 
 /** 角色 → 對應的家具外觀 kind(反查 placement 用) */
-const ROLE_KINDS: Record<Exclude<Role, "out">, string[]> = {
+const ROLE_KINDS: Record<Exclude<Role, "out" | "cafe">, string[]> = {
   bed: ["bed"],
   desk: ["desk", "mic_desk"],
   kitchen: ["stove", "counter", "dining_table"],
@@ -57,6 +68,9 @@ interface RoutineSpan {
   state: string;
 }
 
+// ⚠️ 刻意**不含** `cafe`:咖啡廳時段是由 `cafeSitHourForDay()` 決定性插入的,
+//    一旦資料表寫得出 role: "cafe" / state: "at_cafe",第 1 天起就會天天觸發,
+//    兩道閘門形同虛設、balance 快照必漂移(見 CAFE_FIRST_DAY 的說明)。
 const VALID_ROLES = new Set<string>(["bed", "desk", "kitchen", "bathroom", "laundry", "sofa", "tv", "out"]);
 const VALID_STATES = new Set<string>(TENANT_VISUAL_STATES);
 
@@ -65,7 +79,9 @@ function expandSpans(spans: RoutineSpan[], label: string): Slot[] {
   const out: (Slot | null)[] = Array(24).fill(null);
   for (const s of spans) {
     const m = /^(\d{1,2})(?:-(\d{1,2}))?$/.exec(String(s.hours).trim());
-    if (!m || !VALID_ROLES.has(s.role) || !VALID_STATES.has(s.state)) {
+    // `at_cafe` 在白名單裡(它是合法的 visualState),但**不准出現在每日表**——
+    // 那會繞過 CAFE-20 的兩道閘門。這一刀讓資料檔寫錯時 fail-soft 而不是靜默漂移。
+    if (!m || !VALID_ROLES.has(s.role) || !VALID_STATES.has(s.state) || s.state === "at_cafe") {
       console.warn(`[routine] ${label} 的作息資料不合法,略過:${JSON.stringify(s)}`);
       continue;
     }
@@ -114,11 +130,18 @@ export function routineNeedsMet(tenantId: string, roomId: string | null): number
   return served / roles.length;
 }
 
-/** 該租客該小時的作息 slot */
+/**
+ * 該租客該小時的作息 slot。
+ *
+ * CAFE-20 的插入點就在這裡:`tick.decideState()` 只透過本函式讀作息,
+ * 咖啡廳時段成立時直接回傳 `CAFE_SIT_SLOT`,不需要動 `tick.ts` 一行。
+ */
 export function routineSlot(tenantId: string, hour: number): Slot {
+  const h = ((hour % 24) + 24) % 24;
+  if (cafeSitActive(tenantId, h)) return CAFE_SIT_SLOT;
   const table = ROUTINES[tenantId];
   if (!table) return D("bed", "idle");
-  return table[((hour % 24) + 24) % 24];
+  return table[h];
 }
 
 const LAUNDRY_CANDIDATE_HOURS = [20, 21, 22, 23, 18, 19, 17, 16, 15, 14, 13, 12, 11, 10];
@@ -155,12 +178,129 @@ export function laundryHourForDay(tenantId: string, day: number): number | null 
   return pool.length ? pool[hash % pool.length] : null;
 }
 
+// ---------------------------------------------------------------------------
+// CAFE-20:租客下樓坐一樓寵物咖啡廳
+// ---------------------------------------------------------------------------
+
+/**
+ * 設計約束與 `sim/outing.ts` 檔頭同源(那是本專案同類系統的規範),逐條對應:
+ *
+ * - **零 RNG**:挑日子、挑時段全部走 `stableTenantHash()`(同 laundryHourForDay)。
+ *   多一次 `Math.random()` 就位移整個模擬序列、讓 balance 快照全盤漂移。
+ * - **固定迭代次序**:本系統**完全不迭代 `state.runtimes`** —— 每位租客各自查自己的
+ *   雜湊,誰在不在、鍵的插入順序如何都不影響結果。`outing.ts` 需要排序是因為它要配對,
+ *   這裡沒有配對,所以次序問題從根上不存在(`cafe-at-cafe-test.ts` 有回歸釘子)。
+ * - **排除 `pendingEvent`**:被事件凍結的租客 visualState 停在舊值,不該被拉下樓。
+ *   `hourlyTick` 本來就會 `continue` 掉他們,這裡再擋一次,讓直接呼叫 `applyHour()`
+ *   的路徑(測試、初始定位)也一致。
+ * - **冷卻以「遊戲日序號」計**:`(day + hash) % CAFE_SIT_GAP_DAYS`,天然冪等 ——
+ *   `syncToNow()` 補進度一次會跑最多 48 個 hourlyTick,用 gameMs 差值會刷出一整排。
+ *   同時也不需要新增存檔欄位(不動 persistence)。
+ * - **相位偏移**:上式的 `+ hash` 就是相位 —— 不同租客的下樓日錯開,
+ *   不會在 `CAFE_FIRST_DAY` 當天全樓一起下樓。
+ *
+ * ## 為什麼兩道閘門都留
+ *
+ * 1. `state.cafe.open` 是**語意上必要**的:咖啡廳沒開張,租客不可能坐在裡面。
+ *    它同時也是 CAFE-22(`tick.cafeDailyPass()`)採用的零漂移論證 —— 開張要玩家花錢,
+ *    無頭的 balance 快照局永遠不會開張。
+ * 2. `CAFE_FIRST_DAY` 是 CAFE-20 規格明令的閘門,擋的是**另一件事**:
+ *    快照窗只有 10 個遊戲日,第 14 天起才可能觸發 ⇒ 就算哪天有人讓快照局開張咖啡廳
+ *    (例如日後給 balance-test 加場景、或存檔升級路徑預設 open),日數閘門仍然頂得住。
+ *    本項是全案漂移風險最高的一項(唯一新增 visualState、會改 `rt.log` 的 visualState 欄位
+ *    與每小時 statDeltas),值得雙保險。單獨任一道都足以零漂移,兩道是 AND。
+ */
+export const CAFE_FIRST_DAY = 14;
+
+/** 每位租客約每幾個遊戲日下樓坐一次(相位由 stableTenantHash 錯開) */
+export const CAFE_SIT_GAP_DAYS = 5;
+
+/**
+ * 候選時段(依偏好排序)。上下界對齊 `tick.ts` 的 `CAFE_OPEN_HOUR`(10)/
+ * `CAFE_CLOSE_HOUR`(20)——刻意**複製常數而不 import**:`tick.ts` 已經 import 本檔,
+ * 反向 import 會讓兩個模組互相在求值期等待。真正的營業時段判斷仍在 tick.ts,
+ * 這裡只是「不要挑到打烊時段」的保守子集。
+ */
+const CAFE_SIT_HOURS = [14, 15, 16, 13, 17, 11, 12, 18, 19, 10];
+
+/** 這些原作息不該被咖啡廳蓋掉:人不在樓裡、在睡、或正在浴室 */
+const CAFE_SIT_SKIP_STATES = new Set<TenantVisualState>([
+  "away", "sleeping_on_bed", "sleeping_on_couch",
+  "showering", "using_toilet", "washing_at_sink", "taking_bath", "waiting_for_bathroom",
+]);
+
+/** 咖啡廳時段的 slot(唯一產生 `at_cafe` 的地方) */
+export const CAFE_SIT_SLOT: Slot = { role: "cafe", state: "at_cafe" };
+
+/**
+ * 這位租客這個遊戲日幾點會下樓坐咖啡廳(不下樓回 null)。
+ * 純函式:只吃 tenantId/day,**不看閘門**——閘門在 `cafeSitActive()`,
+ * 這樣測試可以分別驗「挑人邏輯」與「閘門」。
+ */
+export function cafeSitHourForDay(tenantId: string, day: number): number | null {
+  const table = ROUTINES[tenantId];
+  if (!table || day < 0) return null;
+  const hash = stableTenantHash(tenantId);
+  if ((day + hash) % CAFE_SIT_GAP_DAYS !== 0) return null;
+  // 洗衣時段優先(既有行為):同一小時撞上時讓開,否則 decideState 的洗衣覆寫會把
+  // at_cafe 擠成 effectState,而 `EFFECT` 表沒有 at_cafe ⇒ 那一小時的數值效果會被抹掉。
+  const laundry = laundryHourForDay(tenantId, day);
+  const candidates = CAFE_SIT_HOURS.filter((hour) => {
+    if (hour === laundry) return false;
+    const st = table[hour]?.state;
+    return !!st && !CAFE_SIT_SKIP_STATES.has(st);
+  });
+  return candidates.length ? candidates[hash % candidates.length] : null;
+}
+
+/** 兩道閘門 + pendingEvent + 時段命中,全部成立才回 true */
+function cafeSitActive(tenantId: string, hour: number): boolean {
+  if (!game.cafe?.open) return false;                   // 閘門一:咖啡廳沒開張
+  const day = gameDayIndex();
+  if (day < CAFE_FIRST_DAY) return false;               // 閘門二:新局前 14 個遊戲日
+  if (game.runtimes[tenantId]?.pendingEvent) return false;
+  return cafeSitHourForDay(tenantId, day) === hour;
+}
+
+/** 一樓可當座位的家具(CAFE-06 的 sprite 是 recipe 而非 kind,查不到 ROLE_KINDS,只能列 id) */
+const CAFE_SEAT_DEF_IDS = ["cafe_chair_front", "cafe_chair_side", "cafe_table"];
+const CAFE_ROOMS = new Set(["cafe_floor", "cafe_counter", "cafe_pet", "cafe_back"]);
+
+/**
+ * 咖啡廳座位錨點。
+ *
+ * 玩家若真的在一樓擺了椅子/圓桌,就坐那裡(`getPlacements()` 是穩定陣列 ⇒ 決定性);
+ * 沒擺任何座位時退回大廳裡 row-major 第一格可走地板,並附一個**虛擬 placement**
+ * 當回傳型別的佔位 —— `resolveTarget` 的簽名要求 `placement` 非 null,而
+ * `tick.applyHour` 只用到 `.room`(判斷是不是 lounge)與 `.defId`(睡眠家具乘數,
+ * `at_cafe` 不是睡眠狀態 ⇒ 乘數恆為 1)。虛擬 placement 不進 `placements` 清單,
+ * 不擋路、不算舒適度、不進存檔。
+ */
+function cafeSeatTarget(): { tile: Tile; placement: Placement } | null {
+  const seat = getPlacements().find((p) => CAFE_ROOMS.has(p.room) && CAFE_SEAT_DEF_IDS.includes(p.defId));
+  if (seat) {
+    const tile = standingTile(seat);
+    if (tile) return { tile, placement: seat };
+  }
+  const grid = buildGrid();
+  const blocked = currentBlocked();
+  const box = CAFE_RECTS.cafe_floor;
+  for (let r = box.r0; r <= box.r1; r++) {
+    for (let c = box.c0; c <= box.c1; c++) {
+      if (grid[r]?.[c] !== "cafe_floor" || blocked[r]?.[c] !== false) continue;
+      return { tile: { c, r }, placement: { defId: "cafe_chair_front", room: "cafe_floor", c, r } };
+    }
+  }
+  return null;
+}
+
 /**
  * 角色 → 實際家具的互動站立格(優先自己房間,其次共用區)。
  * roomId 由呼叫端(store)依動態佔用表提供;out 或找不到時回傳 null。
  */
 export function resolveTarget(role: Role, roomId: string | null, state?: TenantVisualState): { tile: Tile; placement: Placement } | null {
   if (role === "out") return null;
+  if (role === "cafe") return cafeSeatTarget(); // CAFE-20:錨在一樓,不查自房家具
   const kinds = STATE_KINDS[state ?? "idle"] ?? ROLE_KINDS[role];
 
   // 咖啡廳室內可作為活動目的地，但不代表住宅舒適度的共用設施。

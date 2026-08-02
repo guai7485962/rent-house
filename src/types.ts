@@ -44,6 +44,11 @@ export const TENANT_VISUAL_STATES = [
   "reading",            // 看書(書架)
   "painting",           // 畫畫(畫架)
   "using_appliance",    // 使用家電(咖啡機/洗衣機)
+  // ─ 一樓寵物咖啡廳(CAFE-20) ─
+  // ⚠️ 本案唯一新增的 visualState。不寫進 data/routines.json 的每日作息表——
+  //    寫進去就會從第 1 天天天觸發、閘門形同虛設。改由 sim/routine.ts 的
+  //    `cafeSitHourForDay()` 決定性插入(同 bathroomActivityForDay/laundryHourForDay 的先例)。
+  "at_cafe",            // 下樓坐一樓咖啡廳
 ] as const;
 
 export type TenantVisualState = (typeof TENANT_VISUAL_STATES)[number];

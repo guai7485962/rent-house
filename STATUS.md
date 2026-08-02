@@ -17,8 +17,9 @@
 ## 現在狀態(2026-08-02)
 
 - **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **83/83**(新增 `cafe-rent-intent-test.ts` 26 條)、
-  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`)
+- **最新驗證(全綠)**:`npm test` **84/84**(新增 `cafe-at-cafe-test.ts` 22 條)、
+  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`)、
+  UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 6`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[6]` 往上加)
   ——CAFE-19 只在 `Applicant` 加兩個選填欄位,不需要升版
 - **已上線**:一樓寵物咖啡廳 **CAFE-01～18B + CAFE-22 全部已部署至 production**
@@ -30,13 +31,19 @@
   tree-shaking 問題已解除:build 後 `grep -F "這位顧客目前沒有租屋意願" dist/assets/*.js` 命中,
   並已部署至 production 驗證。
 
+- **CAFE-20 `at_cafe` visualState**:✅ 完成並部署。租客會在咖啡廳開張後、
+  第 14 個遊戲日起,約每 5 個遊戲日下樓坐一次。插入點是 `routine.ts:routineSlot()`
+  (未動 `tick.ts`),**兩道閘門 AND**:`state.cafe.open` + `CAFE_FIRST_DAY = 14`;
+  挑日子／挑時段全走 `stableTenantHash`,零 `Math.random`。
+  ⚠️ renderer 不在允許清單內 ⇒ 沒有專屬坐姿演出,詳見工作分解表 CAFE-20 的「未竟事項」。
+
 ## 下一步
 
-**CAFE-20 `at_cafe` visualState**(⚠️ 必須設 `CAFE_FIRST_DAY` 閘門,否則 balance 快照會漂移)
-或 **CAFE-21 `groupScene` cafe venue**(文件註明優先讓 Codex 認養)。
-規格與驗收條件見 `docs/一樓寵物咖啡廳-工作分解.md` 對應條目。
+**CAFE-21 `groupScene` cafe venue**(🟢 小;`groupScene.ts:17` 的 `GroupSceneVenue` 加 `"cafe"`,
+讓租客/顧客/寵物在咖啡廳同框)。**文件註明優先讓 Codex 認養**,規格見
+`docs/一樓寵物咖啡廳-工作分解.md`。
 
-咖啡廳只剩這兩項未開始:CAFE-20、CAFE-21(其餘 CAFE-01～19、CAFE-22 皆已完成,CAFE-19 含 UI)。
+咖啡廳只剩 CAFE-21 未開始(其餘 CAFE-01～20、CAFE-22 皆已完成)。
 
 ## 待使用者決策(不要自行動工)
 

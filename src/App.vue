@@ -17,6 +17,7 @@ import RentPanel from "./components/RentPanel.vue";
 import UpgradePanel from "./components/UpgradePanel.vue";
 import FeedPanel from "./components/FeedPanel.vue";
 import PetPanel from "./components/PetPanel.vue";
+import CafePanel from "./components/CafePanel.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -88,6 +89,7 @@ const showLegacy = ref(false);
 const showRent = ref(false);
 const showLivingDetails = ref(false);
 const showPets = ref(false);
+const showCafe = ref(false);
 /** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
 const upgradeRoom = ref<string | null>(null);
 /** 只有「承租人」能談房租(同居者不付租) */
@@ -658,6 +660,7 @@ function onChainResolve(choiceId: string) {
       <button class="pet-btn" :class="{ warn: petReviewNeeded }" @click="showPets = true">
         🐾 寵物<span v-if="petReviewNeeded">!</span>
       </button>
+      <button class="cafe-btn" @click="showCafe = true">☕ 咖啡廳</button>
       <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(6)">
         {{ state.ffRemaining > 0 ? "⏳ 快轉中…" : "⏩ 6 小時" }}
       </button>
@@ -984,6 +987,7 @@ function onChainResolve(choiceId: string) {
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
   <PetPanel v-if="showPets" @close="showPets = false" @done="toast($event, 3600)" />
+  <CafePanel v-if="showCafe" @close="showCafe = false" @done="toast($event, 3600)" />
   <CohabitModal
     v-if="state.pendingCohabit"
     :a-name="state.pendingCohabit.aName"
@@ -1238,6 +1242,8 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .pet-btn { flex: 0.75; background: var(--panel-2); border: 1px solid #d69963; color: #f0bd82; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .pet-btn.warn { border-color: #ff8f70; color: #ffb39c; animation: pet-pulse 1.4s ease-in-out infinite; }
 .pet-btn span { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 50%; background: #d85f54; color: white; font-size: 10px; }
+.cafe-btn { flex: 0.8; background: var(--panel-2); border: 1px solid #9b765a; color: #e9ba91; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
+.cafe-btn:hover { background: #33291f; }
 @keyframes pet-pulse { 50% { box-shadow: 0 0 0 3px rgba(255, 143, 112, 0.15); } }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .rpet { font-size: 11.5px; color: #e0b078; align-self: center; }

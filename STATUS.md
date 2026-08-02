@@ -24,8 +24,9 @@
 - **已上線**:一樓寵物咖啡廳 **CAFE-01～18B + CAFE-22 全部已部署至 production**
   (含研發線:CAFE-16 研發倒數、CAFE-17 菜單與客單價上限 $38、CAFE-18 研發面板、
   CAFE-18B 背景結算),以及積怨自然口角、房間隔音折抵噪音口角、每日衝突額度收斂
-- **CAFE-19 租屋意圖 → 招租**:模擬層已完成並部署(`acceptCafeGuestApplicant()`,`recruit.ts:385`),
-  ⚠️ **UI 尚未接線**——目前玩家在畫面上還叫不到這條入口,線上行為與部署前相同
+- **CAFE-19 租屋意圖 → 招租**:模擬層已完成並進 repo(`acceptCafeGuestApplicant()`,`recruit.ts:385`,
+  26 條測試),但 ⚠️ **UI 未接線,因此被 Rollup tree-shake,production bundle 裡沒有這段程式碼**
+  ——線上行為與部署前完全相同。**接線(顧客氣泡 → 選房 → 呼叫入口 → 成功後移除顧客)才會真的上線**
 
 ## 下一步
 

@@ -14,33 +14,23 @@
 
 ---
 
-## 現在狀態(2026-08-02)
+## 現在狀態(2026-08-03)
 
 - **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **85/85**(新增 `cafe-venue-effect-test.ts` 31 條)、
-  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`)、
-  UI Lab 18 張 0 error 0 warning
+- **最新驗證(全綠)**:`npm test` **86/86**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 6`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[6]` 往上加)
-  ——CAFE-19 只在 `Applicant` 加兩個選填欄位,不需要升版
-- **已上線**:一樓寵物咖啡廳 **CAFE-01～18B + CAFE-22 全部已部署至 production**
-  (含研發線:CAFE-16 研發倒數、CAFE-17 菜單與客單價上限 $38、CAFE-18 研發面板、
-  CAFE-18B 背景結算),以及積怨自然口角、房間隔音折抵噪音口角、每日衝突額度收斂
-- **CAFE-19 租屋意圖 → 招租**:✅ **模擬層 + UI 接線都完成**。入口 `acceptCafeGuestApplicant()`
-  (`recruit.ts:385`,26 條測試)由 `CafePanel.vue` 的「租屋詢問」卡呼叫:列出 `intent === "rent"`
-  顧客 → 下拉選空房 → 接受後入應徵者池並移除顧客;沒空房時警示且按鈕 disabled。
-  tree-shaking 問題已解除:build 後 `grep -F "這位顧客目前沒有租屋意願" dist/assets/*.js` 命中,
-  並已部署至 production 驗證。
-
-- **CAFE-20 `at_cafe` visualState**:✅ 完成並部署。租客會在咖啡廳開張後、
-  第 14 個遊戲日起,約每 5 個遊戲日下樓坐一次。插入點是 `routine.ts:routineSlot()`
-  (未動 `tick.ts`),**兩道閘門 AND**:`state.cafe.open` + `CAFE_FIRST_DAY = 14`;
-  挑日子／挑時段全走 `stableTenantHash`,零 `Math.random`。
-  ⚠️ renderer 不在允許清單內 ⇒ 沒有專屬坐姿演出,詳見工作分解表 CAFE-20 的「未竟事項」。
-- **CAFE-21 cafe venue + `at_cafe` 數值效果**:✅ 完成並部署。`GroupSceneVenue` 加 `"cafe"`
-  (走 `lounge` 那條路線,真實座標、`hidden: false`);`EFFECT` 補
-  `at_cafe: { mood: 3, stress: -3, energy: 1, wellbeing: 0.3 }`,既有數值一格未動。
 
 ## 🎉 一樓寵物咖啡廳 CAFE-01～22 全數完成並部署
+
+玩家現在可以:花 **$22,000** 開張(免費附贈吧台 ×1 + 桌 ×3 + 椅 ×6)→ 設常備訂單自動補貨 →
+每日結算客流營收 → 買五項永久投資 → 研發 10 項新品 → 接受顧客認養寵物 / 租屋詢問;
+樓寵物與租客都會下樓。逐項規格與「未竟事項」見 `docs/一樓寵物咖啡廳-工作分解.md`。
+
+**2026-08-03 實玩回報四修**(細節見 `工作日誌.md` 同日條目):
+`.toast` 的 `z-index` 50 → **200**(面板 overlay 是 100～140,**先前任何面板開著時 toast 都看不到**,
+是全 app 的 bug)、開張免費送整套家具、新增**氛圍加成**(一樓家具 `cozy + style` → 客流乘數,
+上限 +20%)、開張費 **$12,000 → $22,000**(堵掉「開張後拆光賣掉穩賺 $7,700」的套利)。
 
 ## 下一步
 

@@ -1251,7 +1251,7 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .advance:hover { transform: translateY(-1px); }
 .advance:disabled { opacity: 0.55; transform: none; cursor: wait; }
 
-.toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(13,12,18,0.92); border: 1px solid var(--line); color: var(--text); padding: 8px 16px; border-radius: 999px; font-size: 12.5px; z-index: 50; max-width: 90%; text-align: center; }
+.toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(13,12,18,0.92); border: 1px solid var(--line); color: var(--text); padding: 8px 16px; border-radius: 999px; font-size: 12.5px; z-index: 200; max-width: 90%; text-align: center; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

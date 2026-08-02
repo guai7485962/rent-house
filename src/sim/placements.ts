@@ -157,6 +157,85 @@ export function canPlaceFree(c: number, r: number, w: number, h: number, exclude
   return region;
 }
 
+// ---------------------------------------------------------------------------
+// 一樓寵物咖啡廳:開張贈品與氛圍點數
+// ---------------------------------------------------------------------------
+
+/** 一樓咖啡廳的四個可擺放區域(`floor/map.ts` 的 `CAFE_RECTS` 去掉樓梯與店門)。 */
+export const CAFE_PLACEMENT_REGIONS = ["cafe_floor", "cafe_counter", "cafe_pet", "cafe_back"] as const;
+const CAFE_PLACEMENT_REGION_SET: ReadonlySet<string> = new Set(CAFE_PLACEMENT_REGIONS);
+
+/**
+ * 開張時免費送的基本配置(吧台 + 三組桌椅)。
+ *
+ * ### 為什麼寫死座標而不是用 `findFreeSlot()` 自動找位
+ *
+ * 自動找位是 row-major 掃描,會把十件家具全部擠在主廳左上角,看起來像倉庫不像店面。
+ * 這份座標是照設計文件 §3 的分區手排的,且滿足三個硬條件:
+ *
+ * 1. **不碰中央走道 c7 / c8** —— 那是樓梯↔店門的唯一動線(`guestAgents.ts:66` 也刻意跳過)。
+ * 2. **不佔 `CAFE_GUEST_PREFERRED_SEATS` 的六格**(`floor/guestAgents.ts:19`),
+ *    顧客才會照原本的偏好序坐在桌邊,而不是被擠去 fallback 掃描的角落。
+ * 3. 每件椅子的 interact 站立格都留空,`routine.standingTile()` 第一輪就命中。
+ *
+ * 座標的合法性不靠人工保證:`placeCafeStarterSet()` 一律過 `canPlaceFree()`,
+ * `scripts/cafe-furniture-test.ts` 也逐件重驗。
+ */
+export const CAFE_STARTER_PLACEMENTS: readonly { defId: string; c: number; r: number }[] = [
+  { defId: "cafe_counter", c: 3, r: 38 },      // 點餐吧台(cafe_counter 區)
+  { defId: "cafe_table", c: 2, r: 43 },        // 左側第一桌
+  { defId: "cafe_chair_front", c: 1, r: 43 },
+  { defId: "cafe_chair_side", c: 3, r: 43 },
+  { defId: "cafe_table", c: 2, r: 45 },        // 左側第二桌
+  { defId: "cafe_chair_front", c: 1, r: 45 },
+  { defId: "cafe_chair_side", c: 3, r: 45 },
+  { defId: "cafe_table", c: 11, r: 36 },       // 靠樓梯側的窗邊桌
+  { defId: "cafe_chair_front", c: 10, r: 36 },
+  { defId: "cafe_chair_side", c: 12, r: 36 },
+];
+
+/**
+ * 擺上開張贈品。**免費**(不碰金流)、**只在開張成功那一刻呼叫一次**
+ * (`CafePanel.onOpen` → `openCafe()` 成功;`openCafe()` 本身會擋重複開張)。
+ *
+ * 冪等性靠的是呼叫點而不是這裡的判斷:本函式沒有「已經送過了」的旗標,
+ * 因為存檔往返不會重跑它,玩家事後搬走/賣掉家具也不會重跑它。
+ * 每件都先過 `canPlaceFree()`,擋到就整件跳過 —— 絕不覆蓋玩家既有的擺放。
+ *
+ * @returns 實際擺上的件數清單(給 UI 講「已免費擺上 N 件」)。
+ */
+export function placeCafeStarterSet(): Placement[] {
+  const placed: Placement[] = [];
+  for (const seed of CAFE_STARTER_PLACEMENTS) {
+    const def = getDef(seed.defId);
+    const fp = rotatedFootprint(def, 0);
+    const room = canPlaceFree(seed.c, seed.r, fp.w, fp.h);
+    if (!room) continue;
+    const p: Placement = { defId: seed.defId, room, c: seed.c, r: seed.r, rotation: 0 };
+    addPlacement(p);
+    placed.push(p);
+  }
+  return placed;
+}
+
+/**
+ * 一樓四個咖啡廳區域裡,玩家實際擺著的家具的 `cozy + style` 總和。
+ *
+ * 這是「氛圍加成」的唯一輸入(`sim/cafe.ts` 的 `cafeAmbianceMultiplier()`)。
+ * 只讀 `placements`,不讀 `upgrades`(五項永久投資走的是 `cafeCapability()` 那條路,
+ * 兩者刻意不互相灌水);負值屬性夾成 0,免得未來有家具用負 cozy 做「髒亂」時
+ * 把氛圍拉成負數。
+ */
+export function cafeAmbiancePoints(): number {
+  let points = 0;
+  for (const p of placements.list) {
+    if (!CAFE_PLACEMENT_REGION_SET.has(p.room)) continue;
+    const attrs = getDef(p.defId).attributes;
+    points += Math.max(0, attrs.cozy ?? 0) + Math.max(0, attrs.style ?? 0);
+  }
+  return points;
+}
+
 function fits(c: number, r: number, w: number, h: number, roomId: string, grid: string[][], occ: Set<string>) {
   for (let dr = 0; dr < h; dr++)
     for (let dc = 0; dc < w; dc++) {

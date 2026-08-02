@@ -66,7 +66,7 @@ import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
-import { placementFootprint, placementRotation } from "./placements";
+import { cafeAmbiancePoints, placementFootprint, placementRotation } from "./placements";
 import { roomComfort, comfortBaselineDelta, cleanlinessBaseline, communalQuality, communalBaselineDelta } from "./comfort";
 import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
@@ -627,6 +627,10 @@ export function cafeDailyPass() {
     capacity: cap.capacity,
     popularity: cafe.popularity,
     outdoorSeats: cap.outdoorSeats,
+    // 氛圍加成:一樓四個 cafe 區域內玩家實際擺著的家具(cozy + style)。
+    // 讀 placements 是 state,所以留在這裡而不是 cafe.ts;未開張時本 pass 早已 return,
+    // 這行連跑都不會跑 ⇒ balance 快照零漂移。
+    ambiancePoints: cafeAmbiancePoints(),
   });
 
   // 1) 客流 → 需求 → 消耗

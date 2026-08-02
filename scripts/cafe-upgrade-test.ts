@@ -37,7 +37,14 @@ try {
   check("五項名稱／效果完整且價格為正整數",
     CAFE_UPGRADES.every((item) => item.name.trim().length > 0 && item.effect.trim().length > 0 && Number.isInteger(item.price) && item.price > 0));
   check("五項價格與設計文件一致", JSON.stringify(CAFE_UPGRADES.map((item) => item.price)) === JSON.stringify([30000, 18000, 25000, 15000, 12000]));
-  check("開張費讓種子局仍買得起吧台與咖啡機", CAFE_OPENING_COST + 16000 + 18000 <= 52000);
+  // 2026-08-03 改寫:吧台($16,000)現在由開張免費附贈,玩家不必自己買,原斷言的前提已不成立。
+  // 新校準改釘兩件事 ——
+  // (1) 付完開張費後仍買得起第二台咖啡機($18,000),開張不會變成無法營業的陷阱;
+  check("開張費讓種子局付完仍買得起第二台咖啡機", CAFE_OPENING_COST + 18000 <= 52000);
+  // (2) 🔴 反套利硬性下界:全套贈品零售 $39,400、賣出退款率 50% ⇒ 拆賣可回收 $19,700。
+  //     開張費必須高於這個數,否則「開張 → 立刻拆光賣掉」會變成不經營也穩賺的無腦動作。
+  //     這條若紅了,代表有人調降開張費或加碼贈品,請一併重算,不要直接改數字。
+  check("開張費高於全套贈品的拆賣回收價(反套利)", CAFE_OPENING_COST > (16000 + 4200 * 3 + 1800 * 6) * 0.5);
   check("未知投資查詢回 undefined", getCafeUpgrade("not_an_upgrade") === undefined);
 
   const closed = defaultCafe();

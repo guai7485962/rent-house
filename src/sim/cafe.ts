@@ -687,6 +687,44 @@ export const CAFE_OUTDOOR_SUNNY_BONUS = 0.15;
 
 /** 人氣 0 → 100 對基礎客流的最大加成。 */
 export const CAFE_POPULARITY_SWING = 0.25;
+
+/**
+ * 氛圍加成的最大幅度(+20%)。比照 `CAFE_POPULARITY_SWING` 的作法設硬上限,
+ * 玩家不可能靠無限堆家具把客流拉爆。
+ */
+export const CAFE_AMBIANCE_SWING = 0.2;
+
+/**
+ * 吃滿 `CAFE_AMBIANCE_SWING` 所需的氛圍點數(一樓咖啡廳區域內家具的 `cozy + style` 總和)。
+ *
+ * 60 是回推的:開張贈品(吧台 + 三組桌椅)共 28 點 ⇒ 開張第一天就有 ×1.093,
+ * 玩家立刻看得到「擺家具有用」;要吃滿還得再自己買約兩倍的量(大型貓跳台 8 點、
+ * 手寫菜單板 4 點、甜點展示櫃 3 點…),所以家具目錄從開張到成熟期都有事做。
+ */
+export const CAFE_AMBIANCE_FULL_POINTS = 60;
+
+/**
+ * 氛圍乘數:`1 + min(1, 點數 / 上限點數) × CAFE_AMBIANCE_SWING`,夾在 1.0 ~ 1.2。
+ *
+ * ### 為什麼氛圍是「乘進客流」的第四個獨立係數,而不是併進 popularity 或 capacity
+ *
+ * - **不併進 `popularity`**:人氣的語意是「服務品質的動態結果」——由缺貨/補不滿驅動
+ *   (`nextCafePopularity()`),會漲會跌。把靜態的家具加成混進去,會讓同一個數字同時
+ *   代表「我今天有沒有把客人服務好」與「我買了幾張椅子」,兩種語意打架,玩家也讀不懂
+ *   面板上的人氣為何突然跳一階。
+ * - **不併進 `capacity`**:產能是硬上限,只在 `base > capacity` 時才有感。早期客流
+ *   (招牌 1 級 ≈ 22 人 < 26)根本撞不到天花板,玩家擺再多家具都零回饋。
+ * - 乘數則從開張第一天就有可見效果,而且與 `weatherMultiplier` / `weekdayMultiplier` /
+ *   `popularityMultiplier` 結構完全對齊,推理與測試都不必特例。
+ *
+ * **空無一物時回 1.0**:沒家具不扣分,只是拿不到獎勵 —— 咖啡廳沒家具仍能營運,
+ * 這是 CAFE-13 起就成立的既有行為,本函式不改它。
+ */
+export function cafeAmbianceMultiplier(points: number): number {
+  const safePoints = Math.max(0, finiteOr(points, 0));
+  const ratio = Math.min(1, safePoints / CAFE_AMBIANCE_FULL_POINTS);
+  return 1 + ratio * CAFE_AMBIANCE_SWING;
+}
 export const CAFE_POPULARITY_MAX = 100;
 /** 順利做完一天 +2(從 0 爬到滿要 50 天,「成熟期」名副其實)。 */
 export const CAFE_POPULARITY_GAIN = 2;
@@ -704,6 +742,12 @@ export interface CafeCrowdInput {
   /** 0~100。 */
   popularity: number;
   outdoorSeats?: boolean;
+  /**
+   * 一樓咖啡廳區域內家具的 `cozy + style` 總和,由 caller 從
+   * `sim/placements.ts` 的 `cafeAmbiancePoints()` 取得(擺放狀態是 state,不進本檔)。
+   * 省略 = 0 = 乘數 1.0,所有既有呼叫端行為完全不變。
+   */
+  ambiancePoints?: number;
 }
 
 export interface CafeCrowdResult {
@@ -714,6 +758,8 @@ export interface CafeCrowdResult {
   weatherMultiplier: number;
   weekdayMultiplier: number;
   popularityMultiplier: number;
+  /** 家具氛圍乘數,1.0 ~ `1 + CAFE_AMBIANCE_SWING`。 */
+  ambianceMultiplier: number;
   /** true = 今天被產能上限擋掉了客人(CAFE-15 可以據此提示「該加設備了」)。 */
   cappedByCapacity: boolean;
 }
@@ -723,7 +769,7 @@ export interface CafeCrowdResult {
  * 那條公式已經在正式版跑很久、經過平衡驗證。
  *
  * ```
- * 基礎客流 = 招牌等級 × 每級客流 × 天氣係數 × 星期係數 × (1 + 人氣加成)
+ * 基礎客流 = 招牌等級 × 每級客流 × 天氣係數 × 星期係數 × (1 + 人氣加成) × 氛圍乘數 × 戶外座位係數
  * 實際客流 = min(基礎客流, 產能上限)
  * ```
  *
@@ -737,13 +783,15 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
   const popularity = Math.min(CAFE_POPULARITY_MAX, Math.max(0, finiteOr(input.popularity, 0)));
   const popularityMultiplier = 1 + (popularity / CAFE_POPULARITY_MAX) * CAFE_POPULARITY_SWING;
   const outdoor = input.outdoorSeats === true && input.weather === "sunny" ? 1 + CAFE_OUTDOOR_SUNNY_BONUS : 1;
+  const ambianceMultiplier = cafeAmbianceMultiplier(input.ambiancePoints ?? 0);
 
   const signLevel = Math.max(0, finiteOr(input.signLevel, 1));
-  const raw = signLevel * CAFE_CROWD_PER_SIGN_LEVEL * weatherMultiplier * weekdayMultiplier * popularityMultiplier * outdoor;
+  const raw = signLevel * CAFE_CROWD_PER_SIGN_LEVEL * weatherMultiplier * weekdayMultiplier
+    * popularityMultiplier * ambianceMultiplier * outdoor;
   const base = Math.max(0, Math.round(quantize(raw)));
   const capacity = Math.max(0, Math.floor(finiteOr(input.capacity, CAFE_BASE_CAPACITY)));
   const guests = Math.min(base, capacity);
-  return { base, guests, weatherMultiplier, weekdayMultiplier, popularityMultiplier, cappedByCapacity: base > capacity };
+  return { base, guests, weatherMultiplier, weekdayMultiplier, popularityMultiplier, ambianceMultiplier, cappedByCapacity: base > capacity };
 }
 
 // ---------------------------------------------------------------------------

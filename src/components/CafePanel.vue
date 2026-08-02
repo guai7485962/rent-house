@@ -6,7 +6,10 @@ import {
   advanceCafeResearch,
   availableCafeResearch,
   avgTicket,
+  cafeAmbianceMultiplier,
   cafeCapability,
+  CAFE_AMBIANCE_FULL_POINTS,
+  CAFE_AMBIANCE_SWING,
   cafeResearchDaysLeft,
   CAFE_RESEARCH,
   CAFE_OPENING_COST,
@@ -25,6 +28,7 @@ import { removeCafeGuest } from "../sim/cafeGuests";
 import { isVacant, ROOM_APPEARANCE } from "../sim/gameState";
 import { acceptCafeGuestAdoption } from "../sim/pets";
 import { save } from "../sim/persistence";
+import { CAFE_PLACEMENT_REGIONS, cafeAmbiancePoints, getPlacements, placeCafeStarterSet } from "../sim/placements";
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
@@ -51,6 +55,11 @@ const predictedSupply = computed(() => consumeStock(state.cafe.stock, predictedD
 const predictedShortages = computed(() => predictedSupply.value.shortages.map((id) =>
   CAFE_INGREDIENTS.find((item) => item.id === id)?.name ?? id));
 const currentDay = computed(() => gameDayIndex());
+// 氛圍加成的讀取面:placements 是 reactive,搬動/賣出家具後這兩個數字會立刻跟著動。
+const ambiancePoints = computed(() => cafeAmbiancePoints());
+const ambianceMultiplier = computed(() => cafeAmbianceMultiplier(ambiancePoints.value));
+const cafeFurnitureCount = computed(() =>
+  getPlacements().filter((p) => (CAFE_PLACEMENT_REGIONS as readonly string[]).includes(p.room)).length);
 const activeResearch = computed(() => state.cafe.research ? getCafeResearch(state.cafe.research.id) : undefined);
 const researchDaysLeft = computed(() => cafeResearchDaysLeft(state.cafe, currentDay.value));
 const researchProgress = computed(() => {
@@ -87,19 +96,34 @@ const audienceLabel: Record<string, string> = {
   celebration: "慶生客",
 };
 
-function commitInvestment(result: CafeInvestmentResult, successText: string) {
+/**
+ * `afterCommit` 在扣款之後、`save()` 之前跑,回傳要接在成功訊息後面的補述。
+ * 開張贈品要走這條路(擺放會動 `placements`,必須一起進存檔)。
+ */
+function commitInvestment(result: CafeInvestmentResult, successText: string, afterCommit?: () => string) {
   if (!result.ok) {
     emit("done", `操作失敗:${result.reason}`);
     return;
   }
   Object.assign(state.cafe, result.cafe);
   addMoney(-result.cost, result.label ?? "咖啡廳支出", result.category ?? "cafe");
+  const extra = afterCommit?.() ?? "";
   save();
-  emit("done", successText);
+  emit("done", successText + extra);
 }
 
+/**
+ * 開張。開張費 $12,000 的文案本來就含「第一批備品」,所以基本家具是**免費贈送**
+ * (`placeCafeStarterSet()` 完全不碰金流)。
+ *
+ * 只擺一次:`openCafe()` 已開張時直接 reject ⇒ `afterCommit` 不會跑第二次。
+ * 存檔往返只還原 `placements` 陣列、不重跑本函式;玩家事後搬走或賣掉也不會被塞回來。
+ */
 function onOpen() {
-  commitInvestment(openCafe(state.cafe, state.money), "☕ 一樓寵物咖啡廳正式開張!");
+  commitInvestment(openCafe(state.cafe, state.money), "☕ 一樓寵物咖啡廳正式開張!", () => {
+    const placed = placeCafeStarterSet();
+    return placed.length > 0 ? `已免費擺上 ${placed.length} 件基本家具,可自由搬動或賣出` : "";
+  });
 }
 
 function onBuy(id: string, name: string) {
@@ -229,7 +253,9 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
         <section v-if="!state.cafe.open" class="opening-card">
           <span class="opening-icon">☕</span>
           <h3>把一樓正式打開吧</h3>
-          <p>完成執照、設備檢查與第一批備品。開張後才會產生客流、補貨與日結紀錄。</p>
+          <p>完成執照、設備檢查與第一批備品，<b>並免費附贈整套店面家具</b>(吧台 ×1、小圓桌 ×3、
+            椅子 ×6)。開張後才會產生客流、補貨與日結紀錄;家具的舒適與風格還會轉成<b>氛圍加成</b>,
+            讓客流變多。</p>
           <div class="opening-money">
             <span>開張費</span><strong>${{ CAFE_OPENING_COST.toLocaleString() }}</strong>
           </div>
@@ -257,7 +283,12 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <div class="status-grid">
               <div><span>熱銷品</span><b>{{ hotItem }}</b></div>
               <div><span>最近營收</span><b>{{ latest ? money(latest.revenue) : "尚無資料" }}</b></div>
+              <div><span>一樓家具</span><b>{{ cafeFurnitureCount }} 件</b></div>
+              <div><span>氛圍加成</span><b>客流 ×{{ ambianceMultiplier.toFixed(2) }}</b></div>
             </div>
+            <p class="alert" :class="ambiancePoints > 0 ? 'good' : 'warn'">
+              🪑 氛圍 {{ ambiancePoints }} / {{ CAFE_AMBIANCE_FULL_POINTS }} 點（一樓家具的舒適＋風格總和，滿點客流 +{{ Math.round(CAFE_AMBIANCE_SWING * 100) }}%）。
+            </p>
             <p v-if="latest && latest.guests >= capability.capacity" class="alert warn">⚙️ 最近一次已滿載，可考慮增加設備。</p>
             <p v-if="predictedShortages.length" class="alert bad">⚠️ 依最近客流預估會缺：{{ predictedShortages.join("、") }}</p>
             <p v-else-if="latest" class="alert good">✓ 目前庫存足以應付最近一次的客流。</p>

@@ -8,7 +8,7 @@
 import { reactive } from "vue";
 import type { Tenant } from "../types";
 import { hasDef } from "../furniture/catalog";
-import { placements } from "./placements";
+import { placements, starterPlacementsAgainst, CAFE_PLACEMENT_REGIONS } from "./placements";
 import { normalizeRotation } from "../furniture/rotation";
 import { upgradeState } from "./upgrades";
 import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from "./social";
@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -54,6 +54,25 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
   },
   // v5 → v6:社群事件可排到正確時段；舊檔沒有待演場景，從空佇列開始。
   5: (s) => ({ ...s, scheduledCommunityEvents: s.scheduledCommunityEvents ?? [], v: 6 }),
+  /**
+   * v6 → v7:補發咖啡廳開張贈品。
+   *
+   * `placeCafeStarterSet()` 只在按下開張的那一刻跑,所以**在該功能上線前就已經開張的
+   * 存檔永遠拿不到贈品,一樓會永遠是空的**(2026-08-03 使用者實玩回報)。
+   * 這裡對「已開張但一樓沒有任何咖啡廳家具」的舊檔補一次。
+   *
+   * 只跑一次:升級表逐版前進,升完 `v = 7` 就不會再回到本函式 ⇒ 玩家事後搬走或
+   * 賣掉贈品不會被重新塞回來。`starterPlacementsAgainst()` 逐件檢查重疊,
+   * 絕不覆蓋玩家自己擺的東西(有既有家具時只補放得下的那幾件)。
+   */
+  6: (s) => {
+    if (!s?.cafe?.open) return { ...s, v: 7 };
+    const existing = Array.isArray(s.placements) ? s.placements : [];
+    // 玩家自己已經佈置過一樓 → 尊重現況,不補發
+    const hasCafeFurniture = existing.some((p: any) => CAFE_PLACEMENT_REGIONS.includes(p?.room));
+    if (hasCafeFurniture) return { ...s, v: 7 };
+    return { ...s, placements: [...existing, ...starterPlacementsAgainst(existing)], v: 7 };
+  },
 };
 
 /** 把任意版本的存檔升級到 SAVE_VERSION;不認得/升不上去回傳 null(視同壞檔) */

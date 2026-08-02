@@ -205,15 +205,38 @@ export const CAFE_STARTER_PLACEMENTS: readonly { defId: string; c: number; r: nu
  * @returns 實際擺上的件數清單(給 UI 講「已免費擺上 N 件」)。
  */
 export function placeCafeStarterSet(): Placement[] {
+  const placed = starterPlacementsAgainst(placements.list);
+  for (const p of placed) addPlacement(p);
+  return placed;
+}
+
+/**
+ * 算出「在 `existing` 這批擺放之下,贈品組還有哪幾件放得進去」——**不碰模組狀態**。
+ *
+ * 存在的理由:`placeCafeStarterSet()` 只在按下開張的那一刻跑一次,
+ * 所以**在本功能上線前就已經開張的舊存檔永遠拿不到贈品,咖啡廳會永遠是空的**
+ * (2026-08-03 使用者實玩回報)。補救要在 `persistence.ts` 的 v6 → v7 升級裡做,
+ * 而升級是在 `placements.list` 還原**之前**對序列化存檔動手,那時模組狀態還是舊的
+ * ⇒ 不能直接用讀模組的 `canPlaceFree()`,必須吃外部清單。
+ */
+export function starterPlacementsAgainst(existing: readonly Placement[]): Placement[] {
+  const grid = buildGrid();
+  const occ = new Set<string>();
+  for (const p of existing) {
+    const fp = placementFootprint(p);
+    for (let dr = 0; dr < fp.h; dr++)
+      for (let dc = 0; dc < fp.w; dc++) occ.add(`${p.c + dc},${p.r + dr}`);
+  }
   const placed: Placement[] = [];
   for (const seed of CAFE_STARTER_PLACEMENTS) {
-    const def = getDef(seed.defId);
-    const fp = rotatedFootprint(def, 0);
-    const room = canPlaceFree(seed.c, seed.r, fp.w, fp.h);
-    if (!room) continue;
-    const p: Placement = { defId: seed.defId, room, c: seed.c, r: seed.r, rotation: 0 };
-    addPlacement(p);
-    placed.push(p);
+    const fp = rotatedFootprint(getDef(seed.defId), 0);
+    const region = grid[seed.r]?.[seed.c];
+    if (!region || !FLOOR_REGIONS.has(region)) continue;
+    if (!fits(seed.c, seed.r, fp.w, fp.h, region, grid, occ)) continue;
+    placed.push({ defId: seed.defId, room: region, c: seed.c, r: seed.r, rotation: 0 });
+    // 同一批內後面的件數也要看得到前面剛放的,否則會互相重疊
+    for (let dr = 0; dr < fp.h; dr++)
+      for (let dc = 0; dc < fp.w; dc++) occ.add(`${seed.c + dc},${seed.r + dr}`);
   }
   return placed;
 }

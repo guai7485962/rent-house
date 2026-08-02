@@ -9,7 +9,7 @@ const mem: Record<string, string> = {};
 };
 
 const { state, defaultCafe, sanitizeCafeState, CAFE_HISTORY_CAP, GAME_START } = await import("../src/sim/gameState");
-const { SAVE_KEY, SAVE_VERSION, save, load } = await import("../src/sim/persistence");
+const { SAVE_KEY, SAVE_VERSION, migrateSave, save, load } = await import("../src/sim/persistence");
 const { cafeGuestPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR, CAFE_GUEST_LINGER_MS } = await import("../src/sim/tick");
 const { CAFE_GUEST_CAP, generateCafeGuest } = await import("../src/sim/cafeGuests");
 const { MS_PER_GAME_HOUR } = await import("../src/sim/clock");
@@ -62,7 +62,15 @@ try {
   check("預設未開張、無顧客、無研發", state.cafe.open === false && state.cafe.guests.length === 0 && state.cafe.research === null);
   check("預設常備訂單／庫存／完成／設備／日結皆為空", Object.keys(fresh.standingOrders).length === 0 && Object.keys(fresh.stock).length === 0 && fresh.completed.length === 0 && fresh.upgrades.length === 0 && fresh.history.length === 0 && fresh.popularity === 0);
   check("defaultCafe() 每次回傳獨立物件(不共用參考)", defaultCafe().guests !== defaultCafe().guests);
-  check("SAVE_VERSION 仍為 6(additive 欄位不升版)", SAVE_VERSION === 6, `實際 ${SAVE_VERSION}`);
+  // 2026-08-03 改寫:原斷言是 `SAVE_VERSION === 6`,用來釘 CAFE-11 的
+  // 「`state.cafe` 是 additive 欄位,不該為了加它而升版」。那個意圖仍然成立,
+  // 但 v7 是為了**另一件事**才升的 —— 補發咖啡廳開張贈品給「本功能上線前就已開張」
+  // 的舊存檔(那些檔的一樓會永遠是空的)。資料補發本來就必須走升級表。
+  // 所以這裡改成釘「升版必須伴隨對應的 migration」,而不是把版本號釘死。
+  check("SAVE_VERSION 為 7", SAVE_VERSION === 7, `實際 ${SAVE_VERSION}`);
+  check("每一個舊版本都升得到 SAVE_VERSION(升版不可只改數字、要有 migration)",
+    Array.from({ length: SAVE_VERSION - 2 }, (_, i) => i + 2)
+      .every((v) => migrateSave({ v, cafe: { open: false }, placements: [] })?.v === SAVE_VERSION));
 
   // --- 2. 未開張 = 天然閘門:pass 完全不動任何狀態 ---
   const closedBase = hourMs(0, 0);
@@ -150,7 +158,10 @@ try {
   save();
   const raw = JSON.parse(mem[SAVE_KEY]);
   check("存檔含 cafe 這個 top-level key", raw.cafe !== undefined && typeof raw.cafe === "object");
-  check("存檔版本仍寫入 6", raw.v === 6, `v=${raw.v}`);
+  // 2026-08-03:同上,版本已因「補發咖啡廳開張贈品」的 migration 升到 7。
+  // 這條的真正意圖是「存檔一定寫入當前版本」,所以改成跟著 SAVE_VERSION 走,
+  // 不要再寫死數字(寫死的話每次升版都要來改一次,而且改的人未必懂原意)。
+  check("存檔寫入當前 SAVE_VERSION", raw.v === SAVE_VERSION, `v=${raw.v}`);
   check("guests 有寫進存檔", Array.isArray(raw.cafe.guests) && raw.cafe.guests.length === 1);
 
   setCafe({});

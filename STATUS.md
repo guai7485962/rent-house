@@ -16,10 +16,11 @@
 
 ## 現在狀態(2026-08-03)
 
-- **家具商店場地分頁已完成,變更待提交**(`catalog.ts` / `FurnitureShop.vue` / `FloorMap.vue`
-  / `App.vue` / 新測試 `scripts/shop-venue-test.ts`);其餘與 `origin/main` 同步
-- **最新驗證(全綠)**:`npm test` **87/87**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
+- **咖啡廳 renderer 收尾已完成,變更待提交**(`catalog.ts` / `sim/tick.ts` / `floor/floorScene.ts`
+  / `pixel/scene.ts` / 新測試 `scripts/cafe-seat-pose-test.ts`);其餘與 `origin/main` 同步
+- **最新驗證(全綠)**:`npm test` **88/88**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning、
+  另有 `artifacts/ui-lab/rent/cafe-renderer/` 的容器 Playwright 實拍(坐姿 + 咖啡杯)
 - **存檔版本**:`SAVE_VERSION = 8`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[8]` 往上加)
   ——v7／v8 都是為了**補發咖啡廳開張贈品**給舊存檔(v7 帶了會誤擋的守衛,v8 是補救那一批)
 
@@ -40,10 +41,13 @@
 
 ## 下一步
 
-咖啡廳工作項已全部結案。接下來可選(依 `docs/待辦.md` 的優先序):
+咖啡廳工作項已全部結案(含 CAFE-20 的 renderer 未竟事項)。接下來可選:
 
-- **咖啡廳 renderer 收尾**(🟢 小):`pixel/scene.ts` 的 `drawTenant()` 加 `at_cafe` 坐姿+咖啡杯、
-  `tick.ts` 的 `SEATED_STATES` 加 `at_cafe`;房間細看目前表現同 `away` 只換標籤
+- 🔴 **`PixelDollhouse` 在受限視窗高度下被壓成 2px**(本批截圖時發現,**與本批無關**,
+  已用未改動的 baseline build 驗過是既有問題):`main` 是 `display:flex; flex-direction:column`
+  且高度確定,`.pixel-room` 的 canvas 是 `height:auto` 的取代元素 ⇒ min-content 算 0
+  → 被 flex-shrink 壓成只剩 2px 邊框,手機上等於**看不到房間細看的像素畫面**。
+  修法:`.pixel-room { flex-shrink: 0 }` 或給 `min-height`。要動 `App.vue`,本批無 lease
 - **認養卡下拉的空白列 bug**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`,
   一旦有可認養寵物就會顯示空白列(租屋卡已修,做法見 `796643f`)
 - 其餘見 `docs/待辦.md`;🔴 項目一律先問使用者

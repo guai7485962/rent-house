@@ -339,19 +339,32 @@ function updateSatisfaction(rt: TenantRuntime, roomId: string | null) {
   rt.satisfaction = clamp(rt.satisfaction + (target - rt.satisfaction) * 0.2, 0, 100);
 }
 
-const SEATED_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "streaming", "working_at_desk", "playing_with_cat"]);
+const SEATED_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_tv", "gaming", "streaming", "working_at_desk", "playing_with_cat", "at_cafe"]);
 
-/** 將日常活動轉成可見家具姿勢；床/沙發會跨上家具，桌前則補畫一張工作椅。 */
-function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement, fallbackTile: Tile) {
+/**
+ * 將日常活動轉成可見家具姿勢；床/沙發會跨上家具，桌前則補畫一張工作椅。
+ *
+ * 座位的判定有**兩條來源**,順序不可對調:
+ * 1. `sprite: { kind }` 的家具照原本的 kind 白名單走(sofa/beanbag/chair 跨上去、
+ *    desk/mic_desk/tv 補椅子)——既有行為一位元不變。
+ * 2. `sprite: { recipe }` 的家具沒有 kind,改看目錄的 `def.seat`(`"on"` / `"at"`)。
+ *    CAFE-06 的咖啡廳桌椅就是靠這條才坐得下去;沒標 `seat` 的 recipe 家具仍在
+ *    第一行直接 return,和改動前完全一樣。
+ *
+ * 🔴 這是所有家具姿勢的共用路徑,`scripts/cafe-seat-pose-test.ts` 用
+ * 「全目錄 × 全 visualState」的矩陣比對舊邏輯,任何波及既有姿勢的改動都會被抓到。
+ */
+export function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement, fallbackTile: Tile) {
   const def = getDef(p.defId);
-  if (!("kind" in def.sprite)) return;
-  const kind = def.sprite.kind;
+  // recipe 家具沒有 kind,只有目錄明講可坐的才繼續(未標 seat ⇒ 維持原本的 early return)
+  const kind = "kind" in def.sprite ? def.sprite.kind : null;
+  if (kind === null && !def.seat) return;
   let pose: "sit" | "lie" | null = null;
   let surface: "furniture" | "chair" | null = null;
   if (st === "sleeping_on_bed" && kind === "bed") {
     pose = "lie";
     surface = "furniture";
-  } else if (st === "sleeping_on_couch" && ["sofa", "beanbag", "chair"].includes(kind)) {
+  } else if (st === "sleeping_on_couch" && kind !== null && ["sofa", "beanbag", "chair"].includes(kind)) {
     pose = "lie";
     surface = "furniture";
   } else if (st === "taking_bath" && kind === "bathtub") {
@@ -361,12 +374,16 @@ function setFurniturePose(rt: TenantRuntime, st: TenantVisualState, p: Placement
     pose = "sit";
     surface = "furniture";
   } else if (SEATED_STATES.has(st)) {
-    if (["sofa", "beanbag", "chair"].includes(kind)) {
+    if (kind !== null && ["sofa", "beanbag", "chair"].includes(kind)) {
       pose = "sit";
       surface = "furniture";
-    } else if (["desk", "mic_desk", "tv"].includes(kind)) {
+    } else if (kind !== null && ["desk", "mic_desk", "tv"].includes(kind)) {
       pose = "sit";
       surface = "chair";
+    } else if (def.seat) {
+      // 資料驅動的座位(咖啡廳桌椅):on = 跨上家具、at = 坐在家具前補畫椅子
+      pose = "sit";
+      surface = def.seat === "on" ? "furniture" : "chair";
     }
   }
   if (!pose || !surface) return;

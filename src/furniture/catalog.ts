@@ -109,6 +109,24 @@ export interface FurnitureDef {
   tier?: FurnTier;
   /** 場地(選配)。只影響商店分頁分類,未標 = `rent`(3F 租屋樓層)。見 `FurnVenue`。 */
   venue?: FurnVenue;
+  /**
+   * 可坐(選配)。**只影響 `sim/tick.ts` 的 `setFurniturePose()` 演出**,
+   * 不碰價格 / 屬性 / 舒適度 / 尋路 / 存檔。
+   *
+   * 存在的理由:坐姿原本只認 `sprite: { kind }` 的家具(`setFurniturePose` 第一行就
+   * `if (!("kind" in def.sprite)) return`),所以 CAFE-06 用 `recipe` 畫的咖啡廳桌椅
+   * 永遠坐不下去,租客下樓只能站著。與其在模擬層寫死 `cafe_*` 的 id,不如讓資料自己
+   * 宣告「這件可以坐」,日後任何 recipe 家具想要坐姿都只要加這一欄。
+   *
+   * - `"on"` = **坐到家具本體上**(沙發/椅子那種)→ `activitySurface = "furniture"`,
+   *   角色會跨上家具格。
+   * - `"at"` = **坐在家具前面**(書桌/電視那種)→ `activitySurface = "chair"`,
+   *   角色留在互動格,renderer 幫他補畫一張椅子。
+   *
+   * ⚠️ 未標的家具(既有 100+ 件)完全走原路徑,行為一位元都不變;
+   * `scripts/cafe-seat-pose-test.ts` 用「全目錄 × 全 visualState」的矩陣釘住這件事。
+   */
+  seat?: "on" | "at";
   price: number;
   /** 佔用格數(walkable=false) */
   footprint: { w: number; h: number };
@@ -976,6 +994,7 @@ export const CATALOG: FurnitureDef[] = [
     id: "cafe_table",
     tier: "standard",
     venue: "cafe",
+    seat: "at", // 坐在桌前(不是坐上桌面),renderer 補一張椅子
     name: "咖啡廳小圓桌",
     category: "seating",
     placement: "communal",
@@ -999,6 +1018,7 @@ export const CATALOG: FurnitureDef[] = [
     id: "cafe_chair_front",
     tier: "budget",
     venue: "cafe",
+    seat: "on", // 直接坐上椅子格
     name: "咖啡廳正面椅",
     category: "seating",
     placement: "communal",
@@ -1022,6 +1042,7 @@ export const CATALOG: FurnitureDef[] = [
     id: "cafe_chair_side",
     tier: "budget",
     venue: "cafe",
+    seat: "on", // 直接坐上椅子格
     name: "咖啡廳側面椅",
     category: "seating",
     placement: "communal",

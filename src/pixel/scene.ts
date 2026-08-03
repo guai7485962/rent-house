@@ -167,7 +167,8 @@ export function composeScene(ctx: Ctx, s: SceneState) {
   drawWindow(ctx, 70, 8, has("curtains_closed"));
   drawPoster(ctx, 16, 12, theme.poster);
   drawClock(ctx, 138, 14);
-  drawDoor(ctx, 166, 6, s.visualState === "away");
+  // 門微亮 = 人從這裡離開了。`at_cafe` 同樣不在房裡,一起亮(away 的行為不變)。
+  drawDoor(ctx, 166, 6, s.visualState === "away" || s.visualState === "at_cafe");
   drawBaseboard(ctx, theme);
 
   // ---- 家具(由後往前繪製,確保前物件蓋住後物件)----
@@ -496,6 +497,21 @@ function drawDirt(ctx: Ctx, cleanliness: number) {
 // 租客
 // ---------------------------------------------------------------------------
 
+/**
+ * 咖啡杯(房間細看尺寸,12×13):白瓷杯身 + 咖啡液面 + 把手 + 杯墊。
+ * 純程序像素,不新增外部圖檔。`at_cafe` 用它取代 `away` 的驚嘆號。
+ */
+function drawMug(ctx: Ctx, x: number, y: number) {
+  groundShadow(ctx, x + 5, y + 12, 12);
+  rect(ctx, x, y, 10, 11, "#2f2a38"); // 描邊
+  rect(ctx, x + 1, y + 1, 8, 9, "#f6efe6"); // 白瓷杯身
+  rect(ctx, x + 1, y + 1, 8, 2, "#6b4433"); // 咖啡液面
+  rect(ctx, x + 1, y + 3, 8, 1, "#8a5a42"); // 液面反光
+  rect(ctx, x + 10, y + 3, 2, 4, "#2f2a38"); // 把手
+  rect(ctx, x + 11, y + 4, 1, 2, "#f6efe6");
+  rect(ctx, x - 1, y + 11, 12, 2, "#cdbfae"); // 杯墊
+}
+
 function drawTenant(ctx: Ctx, pal: Palette, appearance: Appearance | null, st: TenantVisualState, frame: number) {
   const bob = frame % 2;
 
@@ -555,6 +571,15 @@ function drawTenant(ctx: Ctx, pal: Palette, appearance: Appearance | null, st: T
       break;
     case "away":
       drawSprite(ctx, ICON_EXCLAIM, 174, 22, BASE_PAL);
+      break;
+    case "at_cafe":
+      // 人下樓去一樓咖啡廳了(和 away 一樣不在房裡),但**不能畫成同一件事**:
+      // away 是「出門上班/辦事」,這裡要讀得出「他在樓下喝咖啡」。
+      // 不放 away 的驚嘆號,改放一只冒著熱氣的大咖啡杯(門本身也會亮,見 composeScene)。
+      // 位置選門邊的空地板:y 再高就會疊到書桌(drawDesk 畫在 128,48)。
+      drawMug(ctx, 166, 116);
+      drawSteam(ctx, 169, 108, frame);
+      drawSteam(ctx, 173, 110, frame + 1);
       break;
     case "showering":
       drawSteam(ctx, 96, 30, frame);

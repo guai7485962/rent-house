@@ -28,7 +28,7 @@ import { drawAppearanceOverlay } from "../pixel/parts";
 import { TILE, GRID_W, GRID_H, buildGrid, TENANT_SPOTS, ROOM_RECTS, FACILITY_RECTS, LOUNGE_HALL_RECT, CAFE_RECTS } from "./map";
 import { getDef } from "../furniture/catalog";
 import { drawDef } from "../furniture/render";
-import { getPlacements, placementInteract, placementFootprint, placements } from "../sim/placements";
+import { getPlacements, placementInteract, placementFootprint, placements, furnitureAt } from "../sim/placements";
 import type { FurnitureRotation } from "../furniture/rotation";
 import { tryDrawLimezuFloor, tryDrawLimezuThinkingEmote, tryDrawLimezuWallPiece, type LimezuFloorRoomId } from "../art/limezu";
 import type { Appearance } from "../types";
@@ -391,6 +391,14 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
     ctx.fillStyle = "#7fb4ff";
     ctx.fillRect(a.px + 2, a.py - 2 + bob, 1, 2);
     ctx.fillRect(a.px + 13, a.py - 3 + ((frame + 1) % 2), 1, 2);
+  } else if (a.vs === "at_cafe" && !a.moving) {
+    // 杯口的熱氣。高度跟著 drawAgent 的 drawCoffeeCup() 走(坐姿 +8 / 站姿 +4),
+    // 但**橫向刻意偏到角色輪廓右外側**(px+13 起):杯子疊在腹前,熱氣若正上方升起會
+    // 直接畫在臉上。走路途中不畫(那時杯子也沒畫)。
+    const cupY = a.pose === "sit" ? a.py + 8 : a.py + 4;
+    ctx.fillStyle = "#e6dcc8";
+    ctx.fillRect(a.px + 13, cupY - 2 - bob, 1, 1);
+    ctx.fillRect(a.px + 14, cupY - 5 - ((frame + 1) % 3), 1, 1);
   }
 }
 
@@ -467,12 +475,19 @@ function drawAgent(ctx: Ctx, a: Agent) {
     return;
   }
   if (!a.moving && a.pose === "sit" && a.seatBack) drawActivityChair(ctx, a);
+  // 咖啡廳裡沒有任何座位時,走位會退到大廳空地板格(`routine.cafeSeatTarget()` 的虛擬
+  // placement),腳下沒有家具 ⇒ 直接畫坐姿會像坐在地上。補一張咖啡廳椅當地板座位。
+  // 條件刻意收到 `at_cafe`:其它 visualState 的坐姿一律走原路徑,一位元不變。
+  else if (!a.moving && a.pose === "sit" && a.vs === "at_cafe" && !furnitureAt(a.c, a.r)) {
+    drawCafeChair(ctx, a.px, a.py);
+  }
   groundShadow(ctx, a.px + TILE / 2, a.py + TILE - 1, 11);
   if (!a.moving && a.pose === "sit") {
     // 坐姿 14 行(站姿 19):底邊貼齊同一地面線 → 頭自然比站著矮一截
     drawSprite(ctx, CHAR_SIT, a.px + 3, a.py + 1, pal);
     const apSit = getCustomAppearance(a.tenantId);
     if (apSit) drawAppearanceOverlay(ctx, apSit, a.px + 3, a.py + 1);
+    if (a.vs === "at_cafe") drawCoffeeCup(ctx, a.px + 8, a.py + 8);
     return;
   }
   // 四方向:先推導視角,再查該視角的站/走 A/走 B
@@ -493,6 +508,23 @@ function drawAgent(ctx: Ctx, a: Agent) {
   // stand_face 且 facing !== 0 現在直接畫**真正的側面 sprite**,側臉本身就自帶
   // 單眼與凸出的鼻樑,再補一顆點會落在錯的位置。facing === 0(垂直相鄰)舊版本來就不畫。
   if (!a.moving && a.pose === "cook_pair") drawCookingCue(ctx, a, pal);
+  // 站著喝(咖啡廳一張座位都沒有、或還沒 snap 上椅子的那一幀)也要看得出手裡有杯子
+  if (!a.moving && a.vs === "at_cafe") drawCoffeeCup(ctx, a.px + 8, a.py + 4 + yoff);
+}
+
+/**
+ * 咖啡杯:白瓷杯 + 深色咖啡液面 + 把手 + 杯墊,畫在角色身上(胸腹高度)。
+ *
+ * 刻意疊在角色 sprite **之上**而不是旁邊:tile 只有 16px 寬,放在體側會出格、
+ * 和隔壁格的家具打架;疊在腹前讀起來就是「雙手捧著杯子」。
+ * 純程序像素,不新增任何外部圖檔(沿用 `rect()`,同 `drawCookingCue` 的做法)。
+ */
+function drawCoffeeCup(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x, y, 5, 5, "#2f2a38"); // 描邊:深色衣服上也切得出輪廓
+  rect(ctx, x + 1, y + 1, 3, 3, "#f6efe6"); // 白瓷杯身
+  rect(ctx, x + 1, y + 1, 3, 1, "#6b4433"); // 咖啡液面
+  rect(ctx, x + 4, y + 2, 1, 1, "#f6efe6"); // 把手
+  rect(ctx, x, y + 5, 5, 1, "#cdbfae"); // 杯墊
 }
 
 /** 並肩料理:抬起靠流理台的一隻手，搭配鍋鏟像素，和一般站姿區分。 */
@@ -506,7 +538,7 @@ function drawCookingCue(ctx: Ctx, a: Agent, pal: Palette) {
 }
 
 /** 活動椅造型:依身下家具種類分電競椅/辦公椅/矮凳,反查不到時回退原本的木椅。 */
-type ChairStyle = "gaming" | "office" | "stool" | "plain";
+type ChairStyle = "gaming" | "office" | "stool" | "plain" | "cafe";
 
 /** 家具 sprite kind → 椅子造型。只有這三種 kind 會讓 tick.ts 給出 activitySurface="chair"。 */
 const CHAIR_STYLE_BY_KIND: Record<string, ChairStyle> = {
@@ -563,6 +595,10 @@ function computeChairStyle(c: number, r: number): ChairStyle {
       best = style;
     }
   }
+  // 一樓咖啡廳的家具全是 recipe sprite(沒有 kind),上面的反查**必定**落空。
+  // 與其在咖啡廳畫三樓的棕色木椅,不如畫一張同色系的咖啡廳椅。
+  // 只在反查落空時才生效 ⇒ 三樓四個既有座位的造型一位元不變。
+  if (best === "plain" && String(GRID[r]?.[c] ?? "").startsWith("cafe")) return "cafe";
   return best;
 }
 
@@ -616,9 +652,29 @@ function drawActivityChair(ctx: Ctx, a: Agent) {
     case "stool":
       drawLoungeStool(ctx, x, y);
       break;
+    case "cafe":
+      drawCafeChair(ctx, x, y);
+      break;
     default:
       drawPlainChair(ctx, x, y);
   }
+}
+
+/**
+ * 咖啡廳椅:深藍灰框 + 白軟墊,對齊**玩家真的看得到的那張椅子**。
+ *
+ * ⚠️ 配色刻意抄 LimeZu atlas 的 `cafe_chair_front`(`art/limezu.ts:109`)而不是 catalog
+ * 的玫瑰粉 recipe —— atlas 有載入時(app 的常態)椅子就是這個深藍灰 + 白墊的樣子,
+ * 用 recipe 的粉色畫會和旁邊真的椅子明顯不同色。
+ */
+function drawCafeChair(ctx: Ctx, x: number, y: number) {
+  rect(ctx, x + 2, y + 2, 12, 10, "#3c4059"); // 椅背外框
+  rect(ctx, x + 4, y + 4, 8, 6, "#e7e5f2"); // 白軟墊
+  rect(ctx, x + 4, y + 9, 8, 1, "#b9bcd0"); // 墊下壓線
+  rect(ctx, x + 2, y + 12, 12, 3, "#8e93ad"); // 坐面
+  rect(ctx, x + 2, y + 12, 12, 1, "#c9ccdd");
+  rect(ctx, x + 3, y + 15, 2, 1, "#2f3348"); // 椅腳
+  rect(ctx, x + 11, y + 15, 2, 1, "#2f3348");
 }
 
 /** 電競椅:高椅背過頭頂 + 外露包覆側翼 + 撞色紅 + 五爪底座。 */

@@ -16,8 +16,9 @@
 
 ## 現在狀態(2026-08-03)
 
-- **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **86/86**、app + worker typecheck 通過、`npm run build` 成功、
+- **家具商店場地分頁已完成,變更待提交**(`catalog.ts` / `FurnitureShop.vue` / `FloorMap.vue`
+  / `App.vue` / 新測試 `scripts/shop-venue-test.ts`);其餘與 `origin/main` 同步
+- **最新驗證(全綠)**:`npm test` **87/87**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 8`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[8]` 往上加)
   ——v7／v8 都是為了**補發咖啡廳開張贈品**給舊存檔(v7 帶了會誤擋的守衛,v8 是補救那一批)
@@ -32,6 +33,10 @@
 `.toast` 的 `z-index` 50 → **200**(面板 overlay 是 100～140,**先前任何面板開著時 toast 都看不到**,
 是全 app 的 bug)、開張免費送整套家具、新增**氛圍加成**(一樓家具 `cozy + style` → 客流乘數,
 上限 +20%)、開張費 **$12,000 → $22,000**(堵掉「開張後拆光賣掉穩賺 $7,700」的套利)。
+
+**2026-08-03 家具商店分場地**:`FurnitureDef.venue`(選填,未標 = 租屋)把 12 件咖啡廳家具
+從 8 個類別裡拆出來,商店改成「🏠 租屋樓層 49 / ☕ 咖啡廳 12」兩個分頁,在 1F 開商店預設
+咖啡廳頁。**分類判準是顯式欄位不是 `cafe_` 前綴**(`espresso_machine` 就是反例)。
 
 ## 下一步
 

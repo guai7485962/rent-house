@@ -81,6 +81,8 @@ const roomFrom = ref<"floor" | "feed">("floor");
 const feedSinceMs = ref(0);
 const showSummary = ref(false);
 const showShop = ref(false);
+/** 玩家目前在看哪個樓層頁面(由 FloorMap 回報):家具商店用它預選場地分頁 */
+const floorView = ref<"3f" | "1f">("3f");
 const showRels = ref(false);
 const showFinance = ref(false);
 const showNotices = ref(false);
@@ -652,6 +654,7 @@ function onChainResolve(choiceId: string) {
         @enter="onEnterRoom"
         @place="onPlace"
         @inspect="inspectItem = $event"
+        @floor-change="floorView = $event"
       />
     </div>
 
@@ -983,7 +986,8 @@ function onChainResolve(choiceId: string) {
   <LegacyPanel v-if="showLegacy" @close="showLegacy = false" />
   <RentPanel v-if="showRent" :tenant-id="state.activeId" @close="showRent = false" @done="toast($event, 3600)" @evicted="onTenantEvicted" />
   <UpgradePanel v-if="upgradeRoom" :room-id="upgradeRoom" @close="upgradeRoom = null" @done="toast($event, 3200)" />
-  <FurnitureShop v-if="showShop" @close="showShop = false" />
+  <!-- 在 1F 開商店 → 預設咖啡廳分頁(玩家正要佈置的就是眼前這層) -->
+  <FurnitureShop v-if="showShop" :initial-venue="floorView === '1f' ? 'cafe' : 'rent'" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
   <FinancePanel v-if="showFinance" @close="showFinance = false" />
   <PetPanel v-if="showPets" @close="showPets = false" @done="toast($event, 3600)" />

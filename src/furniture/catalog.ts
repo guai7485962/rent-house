@@ -24,6 +24,20 @@ export type FurnCategory =
 export type Placement = "room" | "communal" | "wall";
 
 /**
+ * 場地:這件家具是給 **3F 租屋樓層**(`rent`,預設)還是 **1F 寵物咖啡廳**(`cafe`)用的。
+ *
+ * 純粹是**商店分頁的分類**,不參與任何模擬:不擋擺放(玩家想把咖啡廳貓跳台搬去三樓
+ * 隨他),不影響價格/屬性/舒適度。`FurnitureDef.venue` 是**選填**,未標一律視為 `rent`
+ * ⇒ 既有 100+ 件租屋家具一個字都不用改。
+ *
+ * ⚠️ **不要用 `id.startsWith("cafe_")` 判斷。** 前綴只是命名慣例不是契約——現成的反例就是
+ * `espresso_machine`(商用濃縮咖啡機,CAFE-06 的咖啡廳家具卻沒有 `cafe_` 前綴,和三樓
+ * 廚房的 `coffee_machine` 是兩件不同家具)。用顯式欄位,漏標會被 `shop-venue-test.ts`
+ * 的「所有 `cafe_*` 都標了 venue」那條抓到。
+ */
+export type FurnVenue = "rent" | "cafe";
+
+/**
  * 品質層級(選配):budget=平價入門(便宜、低屬性,給手頭緊的早期玩家)、
  * standard=標準、premium=精品(貴、高屬性)。
  *
@@ -93,6 +107,8 @@ export interface FurnitureDef {
   placement: Placement;
   /** 品質層級(選配)。同型家具用它區分平價/標準/精品版,並依 TIER_POINTS 貢獻舒適度;未標 = standard。 */
   tier?: FurnTier;
+  /** 場地(選配)。只影響商店分頁分類,未標 = `rent`(3F 租屋樓層)。見 `FurnVenue`。 */
+  venue?: FurnVenue;
   price: number;
   /** 佔用格數(walkable=false) */
   footprint: { w: number; h: number };
@@ -865,6 +881,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_counter",
     tier: "premium",
+    venue: "cafe",
     name: "咖啡廳點餐吧台",
     category: "kitchen",
     placement: "communal",
@@ -887,6 +904,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "espresso_machine",
     tier: "premium",
+    venue: "cafe",
     name: "商用濃縮咖啡機",
     category: "kitchen",
     placement: "communal",
@@ -909,6 +927,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_display_stocked",
     tier: "standard",
+    venue: "cafe",
     name: "甜點展示櫃",
     category: "storage",
     placement: "communal",
@@ -932,6 +951,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_menu_board",
     tier: "standard",
+    venue: "cafe",
     name: "手寫菜單板",
     category: "ambiance",
     placement: "communal",
@@ -955,6 +975,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_table",
     tier: "standard",
+    venue: "cafe",
     name: "咖啡廳小圓桌",
     category: "seating",
     placement: "communal",
@@ -977,6 +998,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_chair_front",
     tier: "budget",
+    venue: "cafe",
     name: "咖啡廳正面椅",
     category: "seating",
     placement: "communal",
@@ -999,6 +1021,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_chair_side",
     tier: "budget",
+    venue: "cafe",
     name: "咖啡廳側面椅",
     category: "seating",
     placement: "communal",
@@ -1021,6 +1044,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_cat_tower",
     tier: "premium",
+    venue: "cafe",
     name: "咖啡廳大型貓跳台",
     category: "ambiance",
     placement: "communal",
@@ -1045,6 +1069,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_pet_cushion",
     tier: "standard",
+    venue: "cafe",
     name: "寵物區軟墊",
     category: "ambiance",
     placement: "communal",
@@ -1067,6 +1092,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_stock_shelf",
     tier: "standard",
+    venue: "cafe",
     name: "後場備品貨架",
     category: "storage",
     placement: "communal",
@@ -1091,6 +1117,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_crate",
     tier: "budget",
+    venue: "cafe",
     name: "進貨木箱",
     category: "storage",
     placement: "communal",
@@ -1113,6 +1140,7 @@ export const CATALOG: FurnitureDef[] = [
   {
     id: "cafe_fridge",
     tier: "premium",
+    venue: "cafe",
     name: "咖啡廳大型冷藏櫃",
     category: "kitchen",
     placement: "communal",
@@ -1134,6 +1162,22 @@ export const CATALOG: FurnitureDef[] = [
     },
   },
 ];
+
+/**
+ * 家具屬於哪個商店分頁:未標 `venue` 一律是 3F 租屋樓層。
+ * 商店與測試共用同一個判準,不要各自 `?? "rent"`。
+ */
+export function venueOf(d: FurnitureDef): FurnVenue {
+  return d.venue ?? "rent";
+}
+
+/**
+ * 商店是否上架這件家具:牆面家具不佔地板格(商店只賣放得下去的),
+ * `price <= 0` 是非賣品(畢業生紀念物)。詳細理由見 `FurnitureShop.vue` 的 `groups` 註解。
+ */
+export function isShopListed(d: FurnitureDef): boolean {
+  return d.placement !== "wall" && d.price > 0;
+}
 
 const BY_ID = new Map(CATALOG.map((d) => [d.id, d]));
 

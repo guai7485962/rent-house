@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { CATALOG, type FurnCategory } from "../furniture/catalog";
+import { CATALOG, isShopListed, venueOf, type FurnCategory, type FurnVenue } from "../furniture/catalog";
 import { tierChipText, tierOf } from "../furniture/tier";
 import { INTERACTIONS } from "../sim/interactions";
 import { state, startPlacing } from "../store";
@@ -19,6 +19,8 @@ function unlocks(defId: string): string[] {
 }
 
 const emit = defineEmits<{ close: [] }>();
+/** 開店時預選哪個分頁(App 依玩家當下所在樓層傳入;未傳 = 租屋樓層) */
+const props = defineProps<{ initialVenue?: FurnVenue }>();
 
 const CAT_LABEL: Record<FurnCategory, string> = {
   sleep: "睡眠", work: "工作", av: "影音", seating: "座椅",
@@ -28,7 +30,8 @@ const ATTR_LABEL: Record<string, string> = {
   tech: "科技", cozy: "療癒", noise: "噪音", soundproof: "隔音", storage: "收納", style: "品味",
 };
 /**
- * 只賣可放地板的家具(牆面家具略過),依類別分組。
+ * 上架清單:只賣可放地板的家具(牆面家具略過)。判準本體是 `catalog.ts` 的 `isShopListed()`
+ * (測試共用同一支,不各自複製規則),下面這段是它存在的理由。
  *
  * **非賣品(`price <= 0`)不上架**:商店是「花錢換東西」的地方,沒有標價的東西本來就
  * 不該出現在貨架上。目前唯一符合的是 5 件畢業生紀念物(`memorial_*`,price 0)——
@@ -46,11 +49,31 @@ const ATTR_LABEL: Record<string, string> = {
  * ⚠️ 只擋**購買入口**:紀念物本身的 tier fallback(standard、+0.5)與已擺放的紀念物
  * 完全不受影響——畢業生留下的紀念物給舒適度加分是對玩家的正當回饋,是設計意圖不是漏洞。
  */
+const listed = computed(() => CATALOG.filter(isShopListed));
+
+/**
+ * 場地分頁(2026-08-03 使用者實玩要求「把租房的家具和咖啡廳的家具做個分類」):
+ * 12 件咖啡廳家具原本散在 8 個 FurnCategory 裡,佈置一樓得在臥室家具中間翻找。
+ * 分頁只是**視圖過濾**,上架規則(isShopListed)與購買流程完全沒動。
+ * 判準是 `FurnitureDef.venue` 這個顯式欄位,不是 `id` 前綴——`espresso_machine`
+ * 就是沒有 `cafe_` 前綴的咖啡廳家具,前綴判斷會把它漏進租屋分頁。
+ */
+const VENUE_TABS: { id: FurnVenue; label: string }[] = [
+  { id: "rent", label: "🏠 租屋樓層" },
+  { id: "cafe", label: "☕ 咖啡廳" },
+];
+const venue = ref<FurnVenue>(props.initialVenue ?? "rent");
+const venueCount = computed(() => {
+  const n: Record<FurnVenue, number> = { rent: 0, cafe: 0 };
+  for (const d of listed.value) n[venueOf(d)]++;
+  return n;
+});
+
+/** 只顯示當前分頁的家具,仍依類別分組。空類別不會產生標題(map 只由實際品項建出來)。 */
 const groups = computed(() => {
   const byCat = new Map<FurnCategory, typeof CATALOG>();
-  for (const d of CATALOG) {
-    if (d.placement === "wall") continue;
-    if (d.price <= 0) continue; // 非賣品(畢業生紀念物)
+  for (const d of listed.value) {
+    if (venueOf(d) !== venue.value) continue;
     if (!byCat.has(d.category)) byCat.set(d.category, []);
     byCat.get(d.category)!.push(d);
   }
@@ -81,11 +104,21 @@ function attrs(d: (typeof CATALOG)[number]) {
         <button class="x" @click="emit('close')">✕</button>
       </header>
 
+      <div class="venue-tabs" role="tablist">
+        <button
+          v-for="t in VENUE_TABS" :key="t.id" class="venue-tab" :class="{ on: venue === t.id }"
+          role="tab" :aria-selected="venue === t.id" @click="venue = t.id"
+        >
+          {{ t.label }}<span class="cnt">{{ venueCount[t.id] }}</span>
+        </button>
+      </div>
+
       <div class="room-pick">選好家具後,回到地圖點一格擺放。</div>
 
       <div v-if="note" class="note">{{ note }}</div>
 
-      <div class="list">
+      <!-- :key 讓切換分頁時重建清單 ⇒ 捲動位置歸零,不會停在上一頁捲到一半的位置 -->
+      <div :key="venue" class="list">
         <template v-for="g in groups" :key="g.cat">
           <div class="cat">{{ g.label }}</div>
           <div v-for="d in g.items" :key="d.id" class="item">
@@ -135,6 +168,19 @@ function attrs(d: (typeof CATALOG)[number]) {
 .money { margin-left: auto; font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .x { background: none; color: var(--text-dim); font-size: 16px; }
 
+/* 場地分頁:兩顆等寬按鈕,直式手機也塞得下;高度 38px 以上確保可點擊區夠大 */
+.venue-tabs { display: flex; gap: 6px; padding: 10px 16px 0; }
+.venue-tab {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 9px 6px; border-radius: 10px; white-space: nowrap;
+  background: var(--panel); border: 1px solid var(--line); color: var(--text-dim);
+  font-size: 13px; font-weight: 600;
+}
+.venue-tab.on { background: rgba(255, 168, 76, 0.14); border-color: var(--accent); color: var(--accent); }
+.venue-tab .cnt {
+  font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: inherit;
+}
 .room-pick { padding: 10px 16px 4px; font-size: 12.5px; color: var(--text-dim); }
 .room-pick select {
   background: var(--panel); color: var(--text); border: 1px solid var(--line);

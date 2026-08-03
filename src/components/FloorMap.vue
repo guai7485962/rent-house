@@ -26,6 +26,8 @@ const emit = defineEmits<{
   enter: [room: RoomInfo];
   place: [tile: { c: number; r: number }];
   inspect: [item: { c: number; r: number; defId: string; rotation: FurnitureRotation }];
+  /** 玩家換樓層頁面(App 用它決定家具商店預選哪個場地分頁) */
+  floorChange: [floor: FloorViewId];
 }>();
 
 const FLOOR_VIEWS = {
@@ -46,6 +48,7 @@ const floorPageNavigation = computed(() => isTenantFloor.value
 /** 玩家看到的是兩個獨立樓層頁面；底層仍只切換共用 grid 的固定 viewport。 */
 function switchFloorPage() {
   floorView.value = floorPageNavigation.value.target;
+  emit("floorChange", floorView.value);
 }
 
 const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);

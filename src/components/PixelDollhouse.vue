@@ -155,6 +155,15 @@ onUnmounted(() => cancelAnimationFrame(raf));
   border: 1px solid var(--line);
   background: #241f33;
   line-height: 0;
+  /**
+   * 🔴 `flex-shrink: 0` 不可拿掉。父層 `main.room-main` 是
+   * `flex:1; min-height:0; flex-direction:column` 的捲動容器,本元素是它的 flex item。
+   * 少了這行就會被壓成 **2px**(只剩上下各 1px 的 border)——因為 `line-height: 0`
+   * 加上「canvas 是 `height:auto` 的取代元素」讓本元素的 min-content 高度算成 0,
+   * 自動最小尺寸擋不住收縮。手機上等於完全看不到房間細看的像素畫面。
+   * 下面 canvas 的「絕不塌成一條線」只在非 flex 脈絡成立,單靠它擋不住。
+   */
+  flex-shrink: 0;
 }
 
 canvas {

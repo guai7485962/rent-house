@@ -22,9 +22,9 @@ const mem: Record<string, string> = {};
 };
 
 const { state, defaultCafe, GAME_START, CAFE_HISTORY_CAP } = await import("../src/sim/gameState");
-const { cafeDailyPass, hourlyTick } = await import("../src/sim/tick");
+const { cafeDailyPass, cafeHourlyPass, hourlyTick, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const {
-  cafeCapability, cafeCrowd, cafeDailyLine, cafeTicketPrice, suggestedStandingOrders,
+  cafeCapability, cafeCrowd, cafeDailyLine, cafeTicketPrice, menuItems, suggestedStandingOrders,
   CAFE_BASE_CAPACITY, CAFE_BASE_TICKET, CAFE_CROWD_PER_SIGN_LEVEL, CAFE_FIXED_COST,
   CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_RESEARCH_IDS, CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
   nextCafePopularity,
@@ -55,6 +55,8 @@ const setDay = (day: number) => { state.gameMs = GAME_START.getTime() + day * DA
 const setCafe = (patch: Partial<typeof state.cafe>) => Object.assign(state.cafe, defaultCafe(), patch);
 const hosts = () => Object.values(state.runtimes).sort((a, b) => a.tenant.id.localeCompare(b.tenant.id));
 const hostLog = () => hosts()[0].log;
+/** 🔴 `rt.log` 有 LOG_CAP=60 的上限;不先清空,`slice(before)` 會被截斷成空陣列(假通過)。 */
+const clearHostLogs = () => { for (const rt of hosts()) rt.log.splice(0, rt.log.length); };
 const allLogLengths = () => hosts().map((rt) => rt.log.length).join("|");
 const worldSnapshot = () => JSON.stringify({
   money: state.money,
@@ -63,12 +65,25 @@ const worldSnapshot = () => JSON.stringify({
   logs: allLogLengths(),
   notices: state.noticeLog.length,
 });
-/** 跑 n 個遊戲日的日結(每天一次,day 從 from 起算) */
-function runDays(from: number, n: number) {
-  for (let day = from; day < from + n; day++) {
-    setDay(day);
-    cafeDailyPass();
+/**
+ * 跑完整的一個營業日:11 個營業小時的逐位結帳 + 換日日結。
+ *
+ * 🔴 P1 之後營收是 `cafeHourlyPass()` 逐位顧客收的,只呼叫 `cafeDailyPass()`
+ * 量到的會是「只有支出、沒有收入」的半條路徑。
+ */
+const HOUR_MS = 3600 * 1000;
+function runBusinessDay(day: number) {
+  for (let hour = CAFE_OPEN_HOUR; hour <= CAFE_CLOSE_HOUR; hour++) {
+    state.gameMs = GAME_START.getTime() + day * DAY_MS + hour * HOUR_MS;
+    cafeHourlyPass(hour);
   }
+  setDay(day);
+  cafeDailyPass();
+}
+
+/** 跑 n 個完整營業日(day 從 from 起算) */
+function runDays(from: number, n: number) {
+  for (let day = from; day < from + n; day++) runBusinessDay(day);
 }
 
 try {
@@ -88,8 +103,9 @@ try {
   });
   const closedBefore = worldSnapshot();
   const closedRandom = countRandom(() => runDays(0, 30));
-  check("未開張:連跑 30 個遊戲日,money / ledger / state.cafe / 全樓日誌逐欄不變",
+  check("未開張:連跑 30 個遊戲日(含 330 個營業小時的逐位結帳),money / ledger / state.cafe / 全樓日誌逐欄不變",
     worldSnapshot() === closedBefore);
+  check("未開張:銷售紀錄一筆都不會生出來(逐位結帳的閘門)", state.cafe.sales.length === 0);
   check("未開張:money 一元未動", state.money === 52000, String(state.money));
   check("未開張:ledger 一筆未增", state.ledger.length === 0, String(state.ledger.length));
   check("未開張:history 一筆未增", state.cafe.history.length === 1);
@@ -100,7 +116,8 @@ try {
   // =========================================================================
   // 二、🔴 零 RNG(開張後也一樣)
   // =========================================================================
-  const openStock = () => ({ coffee_bean: 20, milk: 15, flour: 10, butter: 8, cat_can: 8, pet_fresh: 6 });
+  // 開場庫存 = 建議常備量(P1 重訂後配方是整數單位/份,舊的寫死值連半天都撐不到)
+  const openStock = () => suggestedStandingOrders();
   setDay(0);
   state.money = 200000;
   state.ledger.splice(0, state.ledger.length);
@@ -120,8 +137,7 @@ try {
     state.ledger.splice(0, state.ledger.length);
     setCafe({ open: true, standingOrders: suggestedStandingOrders(), stock: openStock(), popularity: 30 });
     const logBefore = hostLog().length;
-    setDay(day);
-    cafeDailyPass();
+    runBusinessDay(day);
     return JSON.stringify({
       money: state.money,
       ledger: state.ledger.map((t) => ({ label: t.label, amount: t.amount, category: t.category })),
@@ -169,9 +185,8 @@ try {
   const guestsOnDay = (day: number) => {
     state.money = 200000;
     state.ledger.splice(0, state.ledger.length);
-    setCafe({ open: true, standingOrders: suggestedStandingOrders(), stock: openStock() });
-    setDay(day);
-    cafeDailyPass();
+    setCafe({ open: true, standingOrders: suggestedStandingOrders(), stock: openStock(), popularity: 50 });
+    runBusinessDay(day);
     return state.cafe.history[state.cafe.history.length - 1].guests;
   };
   check("端到端:同為週三,晴天的實際客流高於雨天",
@@ -200,8 +215,7 @@ try {
   let everNaN = false;
   let stockEverNegative = false;
   for (let day = 0; day < 20; day++) {
-    setDay(day);
-    cafeDailyPass();
+    runBusinessDay(day);
     if (state.money < 0) everNegative = true;
     if (!Number.isFinite(state.money)) everNaN = true;
     if (Object.values(state.cafe.stock).some((n) => n < 0)) stockEverNegative = true;
@@ -219,7 +233,7 @@ try {
   state.ledger.splice(0, state.ledger.length);
   setCafe({ open: true, standingOrders: suggestedStandingOrders(), stock: openStock() });
   const beforeMoney = state.money;
-  cafeDailyPass();
+  runBusinessDay(5);
   const rec = state.cafe.history[state.cafe.history.length - 1];
   check("錢很少時:扣款總額 <= 期初現金 + 當日營收", rec.cost <= beforeMoney + rec.revenue, JSON.stringify(rec));
   check("錢很少時:money 仍非負", state.money >= 0, String(state.money));
@@ -253,9 +267,8 @@ try {
     let guests = 0;
     let revenue = 0;
     for (let day = 0; day < days; day++) {
-      setDay(day);
       const before = state.money;
-      cafeDailyPass();
+      runBusinessDay(day);
       net += state.money - before;
       const r = state.cafe.history[state.cafe.history.length - 1];
       guests += r.guests;
@@ -295,75 +308,77 @@ try {
   })());
   check("未知投資 id 不產生任何效果",
     JSON.stringify(cafeCapability(["not_an_upgrade"])) === JSON.stringify(cafeCapability([])));
-  check("預設常備量搭配成熟期客流不會缺貨也不會損耗(照設計文件玩就順)", (() => {
+  check("預設常備量搭配成熟期客流不會缺貨也不會損耗(照建議值玩就順)", (() => {
     state.money = 5_000_000;
     setCafe({
       open: true, standingOrders: suggestedStandingOrders(), stock: openStock(), popularity: CAFE_POPULARITY_MAX,
       upgrades: [CAFE_UPGRADE_IDS.signboard, CAFE_UPGRADE_IDS.secondMachine],
     });
-    let clean = true;
-    const logBefore = hostLog().length;
+    clearHostLogs();
     runDays(0, 56);
-    if (hostLog().length !== logBefore) clean = false; // 一則日誌都不該推
-    return clean;
-  })());
+    // 七日一則的「賣出」日誌是正常營運的證據,允許;缺貨/補不滿/損耗一則都不該有。
+    const complaints = hostLog().map((e) => e.text)
+      .filter((line) => /沒了|見底|乾乾淨淨|售完|消耗得快|過期|壞了|只叫了|只補得起|最省的量|先少進/.test(line));
+    return complaints.length === 0;
+  })(), hostLog().map((e) => e.text).slice(0, 3).join(" | "));
 
   // =========================================================================
-  // 九、🔴 三個旗標各自推出對應日誌
+  // 九、🔴 各旗標各自推出對應日誌
+  //
+  // P1 之後缺貨的第一則日誌由 `cafeHourlyPass()` **當下**推出(「有人想點⋯沒了」),
+  // 日結只在「整天都在說抱歉」時才補一則收尾摘要。補不滿/損耗仍然由日結負責。
+  // 取的天數一律避開 7 的倍數,以免混進七日一則的「賣出」日誌。
   // =========================================================================
+  /** 一句話是不是日結的 shortage 收尾摘要(四個句型的共同關鍵字)。 */
+  const isShortageSummary = (line: string) => /見底|乾乾淨淨|售完|消耗得快/.test(line);
   const runAndCollectLogs = (patch: Partial<typeof state.cafe>, day: number, money = 200000) => {
     state.money = money;
     state.ledger.splice(0, state.ledger.length);
     setCafe({ open: true, ...patch });
-    const before = hostLog().length;
-    setDay(day);
-    cafeDailyPass();
-    return hostLog().slice(before).map((e) => e.text);
+    clearHostLogs();
+    runBusinessDay(day);
+    return hostLog().map((e) => e.text);
   };
 
-  // 缺貨:庫存有一點但不夠今天的需求
+  // 缺貨:咖啡豆只夠做兩杯,其餘品項充足 → 想點咖啡的客人整天撲空
   const shortageLogs = runAndCollectLogs(
-    { standingOrders: suggestedStandingOrders(), stock: { coffee_bean: 2, milk: 15, flour: 10, butter: 8, cat_can: 8, pet_fresh: 6 } },
-    21,
+    { standingOrders: suggestedStandingOrders(), stock: { ...suggestedStandingOrders(), coffee_bean: 8 } },
+    22,
   );
-  check("缺貨 → 推一則日誌", shortageLogs.length === 1, JSON.stringify(shortageLogs));
-  check("缺貨日誌就是 cafeDailyLine 的 shortage 句",
-    shortageLogs[0] === cafeDailyLine({ kind: "shortage", day: 21, subject: "咖啡豆" }), shortageLogs[0]);
-  check("缺貨日誌帶咖啡廳前綴", shortageLogs[0]?.startsWith(CAFE_LOG_PREFIX) === true);
+  check("缺貨 → 當下就推一則「有人想點⋯沒了」的即時日誌",
+    shortageLogs.some((line) => /沒了|見底,|用完了|用光/.test(line)), JSON.stringify(shortageLogs));
+  check("整天都在說抱歉 → 日結再補一則收尾摘要", shortageLogs.length === 2 && isShortageSummary(shortageLogs[1]),
+    JSON.stringify(shortageLogs));
+  check("缺貨日誌都帶咖啡廳前綴", shortageLogs.every((line) => line.startsWith(CAFE_LOG_PREFIX)));
 
   // 補不滿:庫存夠今天賣(不缺貨),但常備量設得遠超過買得起的錢
   const hugeOrders = Object.fromEntries(Object.keys(suggestedStandingOrders()).map((id) => [id, 5000]));
-  const underLogs = runAndCollectLogs(
-    { standingOrders: hugeOrders, stock: { coffee_bean: 60, milk: 60, flour: 60, butter: 60, cat_can: 60, pet_fresh: 60 } },
-    22,
-    3000,
-  );
+  const plentiful = Object.fromEntries(Object.keys(suggestedStandingOrders()).map((id) => [id, 300]));
+  const underLogs = runAndCollectLogs({ standingOrders: hugeOrders, stock: plentiful }, 23, 3000);
   check("補不滿 → 推一則日誌", underLogs.length === 1, JSON.stringify(underLogs));
   check("補不滿日誌是 underfunded 句(含「成」的措辭)", /成/.test(underLogs[0] ?? ""), underLogs[0]);
   check("補不滿日誌帶咖啡廳前綴", underLogs[0]?.startsWith(CAFE_LOG_PREFIX) === true);
 
   // 損耗:生鮮囤到遠高於免損耗額度,且不缺貨、不補貨
-  const spoilLogs = runAndCollectLogs(
-    { standingOrders: {}, stock: { coffee_bean: 60, milk: 100, flour: 60, butter: 60, cat_can: 60, pet_fresh: 60 } },
-    23,
-  );
+  const spoilLogs = runAndCollectLogs({ standingOrders: {}, stock: plentiful }, 24);
   check("損耗 → 推一則日誌", spoilLogs.length === 1, JSON.stringify(spoilLogs));
   check("損耗日誌是 spoilage 句(提到過期/壞)", /過期|壞/.test(spoilLogs[0] ?? ""), spoilLogs[0]);
   check("損耗日誌帶咖啡廳前綴", spoilLogs[0]?.startsWith(CAFE_LOG_PREFIX) === true);
 
   // 平順的一天一則都不推
-  const quietLogs = runAndCollectLogs({ standingOrders: suggestedStandingOrders(), stock: openStock() }, 24);
+  const quietLogs = runAndCollectLogs({ standingOrders: suggestedStandingOrders(), stock: openStock() }, 25);
   check("平順的一天不推日誌(稀疏哲學:日結每天都跑,天天推會淹掉動態頁)", quietLogs.length === 0, JSON.stringify(quietLogs));
 
-  // 三個旗標同時成立時仍然只推一則,且優先講缺貨
+  // 三個旗標同時成立:即時撲空 + 日結摘要,日結端仍然只推一則,且優先講缺貨
   const allThreeLogs = runAndCollectLogs(
-    { standingOrders: hugeOrders, stock: { coffee_bean: 1, milk: 100, flour: 1, butter: 60, cat_can: 1, pet_fresh: 60 } },
-    25,
+    { standingOrders: hugeOrders, stock: { coffee_bean: 1, milk: 300, flour: 1, butter: 300, cat_can: 1, pet_fresh: 300 } },
+    26,
     500,
   );
-  check("三個旗標同時成立時仍然一天只推一則", allThreeLogs.length === 1, JSON.stringify(allThreeLogs));
-  check("三個旗標同時成立時優先講缺貨(玩家最該知道的先講)",
-    allThreeLogs[0] === cafeDailyLine({ kind: "shortage", day: 25, subject: "咖啡豆" }), allThreeLogs[0]);
+  check("三個旗標同時成立時,日結端仍然一天只推一則(即時撲空 1 + 日結 1)",
+    allThreeLogs.length === 2, JSON.stringify(allThreeLogs));
+  check("三個旗標同時成立時日結優先講缺貨(玩家最該知道的先講)",
+    isShortageSummary(allThreeLogs[1] ?? ""), allThreeLogs[1]);
 
   // 文案本身
   check("cafeDailyLine 決定性:同輸入永遠同一句",
@@ -429,9 +444,14 @@ try {
   check("到期研發在沒有 CafePanel 時也會清空 active 並去重加入 completed",
     state.cafe.research === null
       && state.cafe.completed.filter((id) => id === CAFE_RESEARCH_IDS.latteArt).length === 1);
-  check("研發完成當天的日結立即使用新 $37 客單價",
-    researchDayRecord.revenue === researchDayRecord.guests * 37,
-    `guests=${researchDayRecord.guests} revenue=${researchDayRecord.revenue}`);
+  // P1 之後日結不再算營收,所以「立刻吃到新客單價」的驗收點改成:
+  // 研發在**下一個營業小時之前**就已經清進 completed,新品當天就上得了菜單。
+  check("研發完成當天新品立刻進菜單(下一個營業小時就點得到)",
+    menuItems(state.cafe.completed).some((item) => item.researchId === CAFE_RESEARCH_IDS.latteArt),
+    state.cafe.completed.join(","));
+  check("研發完成當天的日結仍寫得出 history(營收由逐位結帳供給)",
+    Number.isFinite(researchDayRecord.revenue) && researchDayRecord.net === researchDayRecord.revenue - researchDayRecord.cost,
+    JSON.stringify(researchDayRecord));
   check("背景完成只新增一則可持久化通知",
     state.noticeLog.length === noticesBeforeResearch + 1
       && state.noticeLog.at(-1)?.text === "🎉 「拿鐵拉花」完成，新品已加入菜單");
@@ -483,9 +503,9 @@ try {
       && state.cafe.completed.filter((id) => id === CAFE_RESEARCH_IDS.latteArt).length === 1);
   check("hourlyTick 背景完成也只留一則完成通知",
     state.noticeLog.filter((entry) => entry.text === completionText).length === completionNoticesBefore + 1);
-  check("hourlyTick 跨午夜的同筆 history 已使用 $37 客單價",
-    !!midnightRecord && midnightRecord.revenue === midnightRecord.guests * 37,
-    midnightRecord ? `guests=${midnightRecord.guests} revenue=${midnightRecord.revenue}` : "no record");
+  check("hourlyTick 跨午夜也寫得出一筆自洽的 history",
+    !!midnightRecord && midnightRecord.net === midnightRecord.revenue - midnightRecord.cost,
+    midnightRecord ? JSON.stringify(midnightRecord) : "no record");
 
   // =========================================================================
   // 十二、接線錨點:掛在 collectRent() 正後方,既有 pass 順序未動
@@ -504,10 +524,20 @@ try {
     /export function cafeDailyPass\(\)\s*\{\s*\n\s*const cafe = state\.cafe;\s*\n\s*if \(!cafe\.open\) return;/.test(tickSrc));
   const dailyPassLine = tickLines.findIndex((l) => /^export function cafeDailyPass\(\)/.test(l));
   const researchAdvanceLine = tickLines.findIndex((l, index) => index > dailyPassLine && /advanceCafeResearch\(cafe, day\)/.test(l));
-  const revenueLine = tickLines.findIndex((l, index) => index > dailyPassLine && /const revenue = served \* cafeTicketPrice\(cafe\.completed\)/.test(l));
-  check("🔴 背景研發結算位於當日客單價／營收之前",
-    dailyPassLine >= 0 && researchAdvanceLine > dailyPassLine && revenueLine > researchAdvanceLine,
-    `daily=${dailyPassLine} research=${researchAdvanceLine} revenue=${revenueLine}`);
+  const settleLine = tickLines.findIndex((l, index) => index > dailyPassLine && /settleCafeSales\(\)/.test(l));
+  check("🔴 背景研發結算位於當日成績結算／進貨之前",
+    dailyPassLine >= 0 && researchAdvanceLine > dailyPassLine && settleLine > researchAdvanceLine,
+    `daily=${dailyPassLine} research=${researchAdvanceLine} settle=${settleLine}`);
+  // 🔴 P1 的主張:營收不再由日結算,而是逐位顧客當場收的。
+  check("🔴 cafeDailyPass 不再自己算營收(營收 = Σ 顧客實際點到的商品售價)",
+    !/const revenue = served \* cafeTicketPrice/.test(tickSrc));
+  check("🔴 cafeHourlyPass() 掛在 cafeGuestPass() 的正後方",
+    (() => {
+      const guestLine = tickLines.findIndex((l) => /^\s*cafeGuestPass\(hour\);/.test(l));
+      return guestLine >= 0 && /^\s*cafeHourlyPass\(hour\);/.test(tickLines[guestLine + 1] ?? "");
+    })(), (tickLines[tickLines.findIndex((l) => /^\s*cafeGuestPass\(hour\);/.test(l)) + 1] ?? "").trim());
+  check("🔴 逐位結帳 pass 第一行也是未開張閘門",
+    /export function cafeHourlyPass\(hour: number\)\s*\{\s*\n\s*const cafe = state\.cafe;\s*\n\s*if \(!cafe\.open\) return;/.test(tickSrc));
 
   // TxnCategory 是 additive 的
   const gameStateSrc = readFileSync(join(here, "..", "src", "sim", "gameState.ts"), "utf8");

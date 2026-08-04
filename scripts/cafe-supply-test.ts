@@ -43,24 +43,27 @@ try {
   check("單價都是正整數", CAFE_INGREDIENTS.every((item) => Number.isInteger(item.unitPrice) && item.unitPrice > 0));
   check("建議常備量都是正整數", CAFE_INGREDIENTS.every((item) => Number.isInteger(item.defaultStandingOrder) && item.defaultStandingOrder > 0));
   check("生鮮與乾貨各至少一種", CAFE_INGREDIENTS.some((item) => item.perishable) && CAFE_INGREDIENTS.some((item) => !item.perishable));
-  check("設計文件 §5.2 的四項單價原封保留",
-    getCafeIngredient("coffee_bean")?.unitPrice === 15
-    && getCafeIngredient("milk")?.unitPrice === 12
-    && getCafeIngredient("flour")?.unitPrice === 8
-    && getCafeIngredient("cat_can")?.unitPrice === 25);
-  check("設計文件 §5.2 的四項常備量原封保留",
-    getCafeIngredient("coffee_bean")?.defaultStandingOrder === 20
-    && getCafeIngredient("milk")?.defaultStandingOrder === 15
-    && getCafeIngredient("flour")?.defaultStandingOrder === 10
-    && getCafeIngredient("cat_can")?.defaultStandingOrder === 8);
+  // 🔴 重設計 P1 重訂了全部六個 unitPrice(舊值是「每客攤提價」,不是「一份商品的料錢」)。
+  // 這裡不再釘死具體數字——單價本來就是會跟著配方一起調的平衡旋鈕,釘數字只會逼人
+  // 每次調平衡就順手改測試。要釘的是**不變式**:配方成本必須撐得起 45～60% 的毛利帶,
+  // 那條由 `cafe-per-guest-test.ts` 逐品項把關。這裡只釘價格結構本身的合理性。
+  check("原料 id 一個都沒變(舊存檔的 standingOrders / stock 才轉得過來)",
+    ids.join() === "coffee_bean,milk,flour,butter,cat_can,pet_fresh", ids.join());
+  check("生鮮的建議常備量都在零損耗水位內(偷懶路線必須維持可行)",
+    CAFE_INGREDIENTS.filter((item) => item.perishable)
+      .every((item) => Math.floor((item.defaultStandingOrder - SPOILAGE_FREE_UNITS) * SPOILAGE_RATE) === 0),
+    CAFE_INGREDIENTS.filter((i) => i.perishable).map((i) => `${i.id}:${i.defaultStandingOrder}`).join(" "));
   check("未知原料 id 查不到定義", getCafeIngredient("not_an_ingredient") === undefined);
 
   // -------------------------------------------------------------------------
   // 二、今日需求
   // -------------------------------------------------------------------------
   const demand30 = dailyDemand(30);
-  check("30 位客人的消耗重現設計文件 §5.2 範例表",
-    demand30.coffee_bean === 12 && demand30.milk === 9 && demand30.flour === 4 && demand30.cat_can === 3,
+  // P1 之後真正的扣料是逐位顧客照配方扣的;`dailyDemand()` 退居「面板預估」用途,
+  // 所以這裡改釘「估算值與配方的量級對得上」而不是舊的範例表數字。
+  check("30 位客人的預估消耗與配方量級相符(咖啡豆最大宗、生鮮最少)",
+    demand30.coffee_bean > demand30.flour && demand30.flour > demand30.butter
+    && demand30.coffee_bean === Math.ceil(30 * getCafeIngredient("coffee_bean")!.perGuest),
     JSON.stringify(demand30));
   check("需求全是非負整數(浮點噪音已修掉)",
     Object.values(demand30).every((n) => Number.isInteger(n) && n >= 0));
@@ -76,7 +79,8 @@ try {
   check("建議常備量涵蓋全部原料", Object.keys(orders).length === CAFE_INGREDIENTS.length);
 
   const FULL_COST = CAFE_INGREDIENTS.reduce((sum, item) => sum + item.defaultStandingOrder * item.unitPrice, 0);
-  check("建議常備量的整櫃進貨成本為 1024", FULL_COST === 1024, `= ${FULL_COST}`);
+  // 整櫃成本是回歸基準值,不是設計目標:改了單價/常備量就該一起改這裡並確認差異合理。
+  check("建議常備量的整櫃進貨成本為 1444", FULL_COST === 1444, `= ${FULL_COST}`);
 
   const rich = restockPlan(orders, {}, 100_000);
   check("錢夠時補滿到常備量", CAFE_INGREDIENTS.every((item) => rich.stock[item.id] === item.defaultStandingOrder));
@@ -85,7 +89,7 @@ try {
   check("補貨明細順序照 CAFE_INGREDIENTS 宣告序", rich.lines.map((l) => l.id).join() === ids.join());
   check("moneyAfter = money − totalCost", rich.moneyAfter === 100_000 - FULL_COST);
 
-  const topUp = restockPlan(orders, { coffee_bean: 20, milk: 15, flour: 10, butter: 8, cat_can: 8, pet_fresh: 6 }, 100_000);
+  const topUp = restockPlan(orders, { ...orders }, 100_000);
   check("庫存已滿時不進貨", topUp.totalCost === 0 && topUp.lines.length === 0 && topUp.underfunded === false);
 
   // -------------------------------------------------------------------------
@@ -97,8 +101,10 @@ try {
   const oneShort = restockPlan(orders, {}, FULL_COST - 1);
   check("錢差一元時補不滿但不超支", oneShort.underfunded === true && oneShort.totalCost <= FULL_COST - 1 && oneShort.moneyAfter >= 0);
 
-  const poor = restockPlan(orders, {}, 500);
-  check("錢不夠時總花費不超過持有金錢", poor.totalCost <= 500, `${poor.totalCost}`);
+  // 預算取「跑得完保底輪、但補不滿」的區間(保底輪合計 $722、整櫃 $1444)
+  const POOR_BUDGET = 800;
+  const poor = restockPlan(orders, {}, POOR_BUDGET);
+  check("錢不夠時總花費不超過持有金錢", poor.totalCost <= POOR_BUDGET, `${poor.totalCost}`);
   check("錢不夠時 moneyAfter 不為負", poor.moneyAfter >= 0, `${poor.moneyAfter}`);
   check("錢不夠時不產生負庫存", Object.values(poor.stock).every((n) => n >= 0));
   check("錢不夠時買到的量不超過需求", poor.lines.every((line) => line.bought >= 0 && line.bought <= line.want));
@@ -107,10 +113,10 @@ try {
   check("兩段式配額讓錢不夠時每種原料都補到一些", poor.lines.every((line) => line.bought > 0),
     JSON.stringify(poor.lines.map((l) => `${l.id}:${l.bought}/${l.want}`)));
   check("保底比例是常備量的一半", RESTOCK_RESERVE_RATIO === 0.5);
-  // 預算 600 足夠跑完整輪保底(518)但不足以補滿(1024):驗證保底輪優先於補滿輪
-  const mid = restockPlan(orders, {}, 600);
+  // 預算 900 足夠跑完整輪保底(722)但不足以補滿(1444):驗證保底輪優先於補滿輪
+  const mid = restockPlan(orders, {}, 900);
   check("預算夠跑完保底輪時,每種原料都先補到常備量的一半",
-    mid.underfunded === true && mid.totalCost <= 600 && mid.lines.every((line) => {
+    mid.underfunded === true && mid.totalCost <= 900 && mid.lines.every((line) => {
       const item = getCafeIngredient(line.id)!;
       return line.bought >= Math.min(line.want, Math.ceil(item.defaultStandingOrder * RESTOCK_RESERVE_RATIO));
     }),
@@ -147,7 +153,7 @@ try {
     restockPlan({ milk: -5 }, {}, 5000).totalCost === 0
     && restockPlan({ milk: Number.NaN }, {}, 5000).totalCost === 0
     && restockPlan({ milk: 4.7 }, {}, 5000).stock.milk === 4
-    && restockPlan(orders, { milk: -3 }, 5000).stock.milk === 15);
+    && restockPlan(orders, { milk: -3 }, 5000).stock.milk === orders.milk);
 
   const srcOrders = { milk: 10 };
   const srcStock = { milk: 2 };
@@ -163,7 +169,7 @@ try {
     served.shortages.length === 0 && served.crowdMultiplier === 1 && served.fulfillment === 1);
   check("消耗量正確從庫存扣除",
     CAFE_INGREDIENTS.every((item) => served.stock[item.id] === stocked[item.id] - demand30[item.id]));
-  check("消耗不修改輸入庫存", stocked.coffee_bean === 20);
+  check("消耗不修改輸入庫存", stocked.coffee_bean === orders.coffee_bean, `${stocked.coffee_bean}`);
 
   const empty = consumeStock({}, demand30);
   check("空庫存時全部缺貨且不產生負庫存",
@@ -223,8 +229,10 @@ try {
   let converge: Record<string, number> = { milk: 30, butter: 100, pet_fresh: 5, coffee_bean: 40 };
   for (let i = 0; i < 200; i++) converge = applySpoilage(converge).stock;
   const settled = applySpoilage(converge);
+  // 收斂上界 = freeUnits + 1/rate − 1(預設 12 + 10 − 1 = 21):公式推出來的,不是寫死的數字。
+  const CONVERGE_CEIL = SPOILAGE_FREE_UNITS + Math.round(1 / SPOILAGE_RATE) - 1;
   check("反覆套用會收斂並停住,不會把櫃子清空(誤呼叫的保險絲)",
-    settled.totalSpoiled === 0 && converge.milk === 15 && converge.butter === 15 && converge.pet_fresh === 5,
+    settled.totalSpoiled === 0 && converge.milk === CONVERGE_CEIL && converge.butter === CONVERGE_CEIL && converge.pet_fresh === 5,
     JSON.stringify(converge));
   check("收斂後再套用一次完全不變", JSON.stringify(settled.stock) === JSON.stringify(converge));
   check("乾貨在 200 次套用後數量完全不變", converge.coffee_bean === 40);

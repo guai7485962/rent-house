@@ -14,15 +14,19 @@
 
 ---
 
-## 現在狀態(2026-08-03)
+## 現在狀態(2026-08-04)
 
-- **咖啡廳 renderer 收尾已完成,變更待提交**(`catalog.ts` / `sim/tick.ts` / `floor/floorScene.ts`
-  / `pixel/scene.ts` / 新測試 `scripts/cafe-seat-pose-test.ts`);其餘與 `origin/main` 同步
-- **最新驗證(全綠)**:`npm test` **88/88**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning、
-  另有 `artifacts/ui-lab/rent/cafe-renderer/` 的容器 Playwright 實拍(坐姿 + 咖啡杯)
-- **存檔版本**:`SAVE_VERSION = 8`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[8]` 往上加)
-  ——v7／v8 都是為了**補發咖啡廳開張贈品**給舊存檔(v7 帶了會誤擋的守衛,v8 是補救那一批)
+- **咖啡廳經營玩法重設計 P1(逐位顧客結帳)已完成,變更待提交**。營收不再是換日時
+  `客流 × 平均客單價` 一條公式,改成**每個營業小時逐位顧客照配方點餐、扣料、結帳**
+  (`tick.ts` 的 `cafeHourlyPass`);缺料就 $0 + 聲譽 −2 + 當場推日誌。
+  改動檔:`sim/cafe.ts`、`content/cafeIngredients.ts`、`sim/tick.ts`、`types.ts`、
+  `sim/gameState.ts`、`sim/persistence.ts` + 新測試 `scripts/cafe-per-guest-test.ts`
+  + 實測腳本 `scripts/cafe-opening-sim.ts`;**未動任何 `.vue` 與 `src/floor/*`**(那是 P2/P3)
+- **最新驗證(全綠)**:`npm test` **89/89**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)
+- **存檔版本**:`SAVE_VERSION = 9`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[9]` 往上加)
+  ——v9 新增 `cafe.sales`(逐日逐品項銷售紀錄,cap 14 天,給 P3 的銷售排行用);
+  舊檔的 `standingOrders` / `stock` 原封保留(原料 id 一個都沒變)
 
 ## 🎉 一樓寵物咖啡廳 CAFE-01～22 全數完成並部署
 
@@ -41,8 +45,12 @@
 
 ## 下一步
 
-咖啡廳工作項已全部結案(含 CAFE-20 的 renderer 未竟事項)。接下來可選:
-
+- **咖啡廳重設計 P2**(見 `docs/咖啡廳經營玩法-重設計.md` §六):開店/關店節奏 +
+  顧客動線(店門 → 吧台 → 真的椅子)+ 點餐演出。⚠️ P2 與 P4b 共用 `guestAgents` 動線地基,
+  P2 要把骨架一次做完。P1 已經把「錢」接好,P2 是把「畫面」接上去
+- **使用者要拍板**:P1 實測顯示「缺貨」與「備貨過量」的痛感都比設計值弱
+  (缺貨在 P1 是「賺不到」而非「倒賠」;備貨過量仍淨賺 +$59)。
+  原因與可能的加碼方式已寫在重設計文件 §4.7 的實測表下方,**未擅自調參數**
 - 🔴 **`PixelDollhouse` 在受限視窗高度下被壓成 2px**(本批截圖時發現,**與本批無關**,
   已用未改動的 baseline build 驗過是既有問題):`main` 是 `display:flex; flex-direction:column`
   且高度確定,`.pixel-room` 的 canvas 是 `height:auto` 的取代元素 ⇒ min-content 算 0
@@ -82,7 +90,7 @@
 | 怎麼跑測試 / 部署 / 驗證 | `工作日誌.md` 第一節「如何執行 / 驗證」 |
 | 最近幾天發生什麼事 | `工作日誌.md` 第二節(2026-08-01 起的逐日紀錄) |
 | 更早以前發生什麼事 | `docs/工作日誌-封存.md`(2026-07-12～07-31)— **用 grep 查日期,不要通讀** |
-| 咖啡廳怎麼設計的 | `docs/一樓寵物咖啡廳-設計.md` |
+| 咖啡廳怎麼設計的 | `docs/一樓寵物咖啡廳-設計.md`(第一版)/ `docs/咖啡廳經營玩法-重設計.md`(**現行**,P1 已完成) |
 | 某個 CAFE-xx 工作項要做什麼 | `docs/一樓寵物咖啡廳-工作分解.md` — 22 個工作項的規格與驗收 |
 | 原始設計檢討與各節完成度 | `docs/設計檢討與優化.md` |
 | AI 觀察回饋機制怎麼設計的 | `docs/AI觀察回饋設計.md` |

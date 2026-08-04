@@ -3,7 +3,7 @@
  * 作息+偏離 → 定位/日誌/數值、張力事件、交誼廳社交、換日(收租+AI 日記),
  * 以及補進度(syncToNow)與快轉(同步版給測試、分批版給 UI)。
  */
-import type { StatDeltas, TenantVisualState, RoomPropState } from "../types";
+import type { CafeSalesDay, StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot, resolveTarget, type Role } from "./routine";
 import { rollEvent } from "./events";
@@ -27,6 +27,7 @@ import {
   canStartCohabit,
   LOG_CAP,
   CAFE_HISTORY_CAP,
+  CAFE_SALES_CAP,
   type TenantRuntime,
 } from "./gameState";
 import { addMoney, collectRent } from "./economy";
@@ -38,12 +39,16 @@ import {
   cafeCapability,
   cafeCrowd,
   cafeDailyLine,
-  cafeTicketPrice,
+  cafeHourlyGuestCount,
+  cafeOrderLine,
+  cafeServicePopularity,
+  checkoutCafeOrder,
+  chooseCafeMenuItem,
+  clampCafePopularity,
   CAFE_FIXED_COST,
-  consumeStock,
-  dailyDemand,
+  CAFE_POPULARITY_SOFT_LOSS,
   getCafeIngredient,
-  nextCafePopularity,
+  menuItems,
   restockPlan,
 } from "./cafe";
 import { maintenancePass } from "./maintenance";
@@ -590,39 +595,181 @@ function pushCafeLog(text: string) {
   else notify(text);
 }
 
+/** 咖啡廳營收的帳本標籤;`addCafeRevenue()` 用它辨識可合併的同日紀錄。 */
+const CAFE_REVENUE_LABEL = "咖啡廳營收";
+
 /**
- * 咖啡廳日結(CAFE-13,設計文件 §5.1 §5.2 §5.5)。
+ * 咖啡廳營收進帳(重設計 P1)。
+ *
+ * 逐位結帳讓同一個遊戲日最多有 11 次進帳,而 `LEDGER_CAP` 只有 60 筆——
+ * 照實逐筆記帳,收支頁會只剩下兩三天的歷史,等於用一個看不見的實作細節
+ * 砸掉一個玩家天天在看的畫面。
+ *
+ * 所以錢**照樣每個營業小時真的入帳**(`state.money` 每小時會跳,P2 的浮字才有東西可演),
+ * 但帳本上把同一個遊戲日的咖啡廳營收**合併成一筆**。合併只動「就是上一筆、
+ * 同標籤、同分類、同一個日曆日」的紀錄,金額總和與 `state.money` 的變動完全一致
+ * (`cafe-per-guest-test.ts` 有對帳斷言)。
+ */
+function addCafeRevenue(amount: number) {
+  if (!(amount > 0)) return;
+  const previous = state.ledger[state.ledger.length - 1];
+  const mergeable = previous
+    && previous.label === CAFE_REVENUE_LABEL
+    && previous.category === "cafe"
+    && new Date(previous.gameMs).toDateString() === new Date(state.gameMs).toDateString();
+  addMoney(amount, CAFE_REVENUE_LABEL, "cafe");
+  if (!mergeable) return;
+  const added = state.ledger[state.ledger.length - 1];
+  if (!added || added === previous) return; // addMoney 沒有真的記帳(理論上不會發生)
+  previous.amount += added.amount;
+  previous.gameMs = added.gameMs;
+  state.ledger.pop();
+}
+
+/** 取得(必要時建立)今天的銷售紀錄。最新在後,cap `CAFE_SALES_CAP`。 */
+function todaysCafeSales(day: number): CafeSalesDay {
+  const cafe = state.cafe;
+  if (!Array.isArray(cafe.sales)) cafe.sales = [];
+  const last = cafe.sales[cafe.sales.length - 1];
+  if (last && last.day === day) return last;
+  cafe.sales.push({ day, sold: {}, missed: {}, revenue: 0, ingredientCost: 0, served: 0, refused: 0, settled: false });
+  if (cafe.sales.length > CAFE_SALES_CAP) cafe.sales.splice(0, cafe.sales.length - CAFE_SALES_CAP);
+  return cafe.sales[cafe.sales.length - 1];
+}
+
+/**
+ * 賣出日誌的節流:每 7 個遊戲日才推一則「有人點了⋯」。
+ *
+ * `pushCafeLog()` 是掛在某位租客的 `rt.log`(cap 60,而且是 AI 敘事的素材來源)。
+ * 天天推一則賣出紀錄會在兩個月內把那位租客自己的人生全部擠出日誌。
+ * 七日一則的節奏與既有的貓咪觀察筆記/週報一致,而且用 `day % 7` 判定 ⇒
+ * 決定性、離線補進度也不會多推或少推。
+ */
+const CAFE_SALE_LOG_EVERY_DAYS = 7;
+
+/**
+ * 一整天撲空到這個人次以上,日結才再補一則「今天賣完了」的收尾摘要。
+ * 一兩位客人沒買到已經由當下那則即時日誌講過了,不需要再講第二次。
+ */
+const CAFE_SHORTAGE_SUMMARY_MIN = 4;
+
+/**
+ * 🔴 咖啡廳逐位結帳(重設計 P1,設計文件 §3 §4.2 §4.3 §4.8)。
+ *
+ * 掛在 `hourlyTick()` 的 `cafeGuestPass()` 正後方,營業時段每小時跑一次:
+ *
+ * ```
+ * 當日客流 → 攤到 11 個營業小時 → 這小時的每位顧客各選一項商品
+ *                                 ├─ 料齊 → 扣料、收錢、聲譽 +0.15
+ *                                 └─ 缺料 → $0、聲譽 −2.0、轉頭就走
+ * 當日營收 = Σ 每位顧客實際點到的商品售價
+ * ```
+ *
+ * ## 零漂移
+ *
+ * 第一行就是 `if (!cafe.open) return;`。開張要玩家花錢,無頭的 balance 快照局
+ * 永遠不會開張 ⇒ `money` / `ledger` / `logs` / `cafe` 一個欄位都碰不到。
+ *
+ * ## 零 RNG
+ *
+ * 客流走 `cafeCrowd()`(天氣 splitmix32 + 日曆星期)、攤分走 `cafeHourlyGuestCount()`
+ * (純算術)、選品走 `chooseCafeMenuItem()` 的 FNV-1a、選句走 `cafeOrderLine()`。
+ * 全程沒有一次 `Math.random()`。
+ *
+ * ## 🔴 離線一致性
+ *
+ * 本 pass 讀到的每一項輸入都是「當下這個小時的狀態」:`gameDayIndex()`、
+ * `hour`、`cafe.popularity`、`cafe.stock`。**沒有任何跨小時的暫存或批次補算**,
+ * 所以「線上逐時跑 11 次」與「離線回來一次補 11 次」逐欄位相同——
+ * `syncToNow()` 本來就是逐小時呼叫 `hourlyTick()`,兩條路徑跑的是同一段程式碼。
+ * `cafe-per-guest-test.ts` 有一條直接對打的斷言。
+ */
+export function cafeHourlyPass(hour: number) {
+  const cafe = state.cafe;
+  if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
+  if (hour < CAFE_OPEN_HOUR || hour > CAFE_CLOSE_HOUR) return; // 打烊時間不做生意
+
+  const day = gameDayIndex();
+  const weather = weatherForDay(day);
+  const cap = cafeCapability(cafe.upgrades);
+  const crowd = cafeCrowd({
+    weather,
+    weekday: weekdayOf(state.gameMs),
+    signLevel: cap.signLevel,
+    capacity: cap.capacity,
+    popularity: cafe.popularity,
+    outdoorSeats: cap.outdoorSeats,
+    // 氛圍加成:一樓四個 cafe 區域內玩家實際擺著的家具(cozy + style)。
+    // 讀 placements 是 state,所以留在這裡而不是 cafe.ts。
+    ambiancePoints: cafeAmbiancePoints(),
+  });
+  const count = cafeHourlyGuestCount(crowd.guests, hour - CAFE_OPEN_HOUR);
+  if (count <= 0) return;
+
+  const menu = menuItems(cafe.completed);
+  const record = todaysCafeSales(day);
+  const servedBefore = record.served;
+  const refusedBefore = record.refused;
+  let revenue = 0;
+  let served = 0;
+  let refused = 0;
+  let saleLine = "";
+  let refusedLine = "";
+
+  for (let index = 0; index < count; index++) {
+    const item = chooseCafeMenuItem({ menu, day, hour, index, weather });
+    if (!item) break; // 菜單掛了(不該發生);不收錢也不罰聲譽
+    const till = checkoutCafeOrder(cafe.stock, item);
+    if (till.ok) {
+      cafe.stock = till.stock;
+      revenue += till.revenue;
+      record.ingredientCost += till.cost;
+      record.sold[item.id] = (record.sold[item.id] ?? 0) + 1;
+      served += 1;
+      if (!saleLine && servedBefore === 0 && served === 1 && day % CAFE_SALE_LOG_EVERY_DAYS === 0) {
+        saleLine = cafeOrderLine({ kind: "sale", day, hour, itemName: item.name, price: item.price });
+      }
+    } else {
+      record.missed[item.id] = (record.missed[item.id] ?? 0) + 1;
+      refused += 1;
+      if (!refusedLine && refusedBefore === 0 && refused === 1) {
+        refusedLine = cafeOrderLine({
+          kind: "refused", day, hour, itemName: item.name,
+          missingName: getCafeIngredient(till.missing[0])?.name ?? "備料",
+        });
+      }
+    }
+  }
+
+  record.revenue += revenue;
+  record.served += served;
+  record.refused += refused;
+  if (revenue > 0) addCafeRevenue(revenue);
+  if (served > 0 || refused > 0) cafe.popularity = cafeServicePopularity(cafe.popularity, served, refused);
+  // 敘事一樣走稀疏路線:一天最多一則賣出(且七日一次)、一則撲空。
+  if (saleLine) pushCafeLog(saleLine);
+  if (refusedLine) pushCafeLog(refusedLine);
+}
+
+/**
+ * 咖啡廳日結(CAFE-13 起,重設計 P1 縮編職責)。
  *
  * 掛在換日區塊 `collectRent()` 的**正後方**,讓咖啡廳損益與租金/管理費落在同一個帳日。
  * 既有 pass 的順序一行未動。
  *
- * ## 零漂移
+ * ## 🔴 P1 之後這個 pass **不再計算營收**
  *
- * 第一行就是 `if (!state.cafe.open) return;`。開張要玩家花錢(CAFE-14),無頭的
- * balance 快照局永遠不會開張 ⇒ `money`、`ledgerCount`、`logs` 全部碰不到。
- * 這比日數閘門乾淨,連 `CAFE_FIRST_DAY` 都不需要。
+ * 營收是 `cafeHourlyPass()` 逐位顧客當場收的。本 pass 只剩四件跨日的事:
  *
- * ## 零 RNG
+ * 1. 到期研發結清(要早於下一個營業日的菜單)
+ * 2. **進貨扣款**(先付錢、後賺錢——這是「經營」與「領被動收入」的分野)
+ * 3. **固定開銷**與**生鮮損耗**
+ * 4. 收走剛結束那個營業日的成績寫進 `history`,並補上「補不滿」的軟性聲譽扣分
  *
- * 天氣走 `weatherForDay()`(splitmix32)、星期走 `weekdayOf()`(讀日曆)、
- * 選句走 `cafeDailyLine()` 內的 FNV-1a。整個 pass 沒有一次 `Math.random()`。
+ * ## 零漂移 / 零 RNG
  *
- * ## 為什麼 `crowdMultiplier` 乘的是「當日」客流
- *
- * CAFE-12 把這個決定留給本項。選當日,兩個理由:
- *
- * 1. **`CafeState` 的形狀被凍結**(不得改 schema)。隔日折扣需要一個跨日欄位來存
- *    「昨天缺了幾種」,而咖啡廳只有一個 top-level key、欄位已經定死——
- *    隔日方案根本沒有地方存,只能靠 `history` 反推,那是更脆的耦合。
- * 2. **同一帳日內因果閉合**。玩家翻 `history` 看到「客人少、營收低、缺貨」在同一列,
- *    三個數字互相解釋;隔日折扣會讓第 N 天的低客流要回頭翻第 N−1 天才看得懂。
- *    體感上就是「今天下午三點賣完了,後面的客人看看菜單就走」——這也正是日誌文案的樣子。
- *
- * ## 營收為什麼同時乘 `crowdMultiplier` 與 `fulfillment`
- *
- * 只乘 `crowdMultiplier` 會開一個洞:常備量全設 0 → 沒有進貨成本,卻仍能拿到
- * 七成營收(`CROWD_MULTIPLIER_FLOOR = 0.7`)⇒ 不進貨變成最優解。再乘 `fulfillment`
- * (實際用掉/需要的原料比)之後,空櫃子 = 零營收,而這不是懲罰、是算術:沒有料就沒有東西賣。
+ * 第一行仍是 `if (!cafe.open) return;`。選句走 `cafeDailyLine()` 內的 FNV-1a,
+ * 天氣/星期不再需要(客流已經在小時 pass 算完),整個 pass 沒有一次 `Math.random()`。
  */
 export function cafeDailyPass() {
   const cafe = state.cafe;
@@ -630,64 +777,71 @@ export function cafeDailyPass() {
 
   const day = gameDayIndex();
   // CAFE-18B:先結清到期研發，讓面板關閉／離線補進度也不會卡住；
-  // 必須早於客單價讀取，完成當天的日結才會直接吃到新品里程碑。
+  // 必須早於下一個營業日的第一位顧客,新品才會當天就上菜單。
   const research = advanceCafeResearch(cafe, day);
   if (research.changed) {
     Object.assign(cafe, research.cafe);
     notify(`🎉 「${research.completed?.name ?? "咖啡廳研發"}」完成，新品已加入菜單`);
   }
   const cap = cafeCapability(cafe.upgrades);
-  const crowd = cafeCrowd({
-    weather: weatherForDay(day),
-    weekday: weekdayOf(state.gameMs),
-    signLevel: cap.signLevel,
-    capacity: cap.capacity,
-    popularity: cafe.popularity,
-    outdoorSeats: cap.outdoorSeats,
-    // 氛圍加成:一樓四個 cafe 區域內玩家實際擺著的家具(cozy + style)。
-    // 讀 placements 是 state,所以留在這裡而不是 cafe.ts;未開張時本 pass 早已 return,
-    // 這行連跑都不會跑 ⇒ balance 快照零漂移。
-    ambiancePoints: cafeAmbiancePoints(),
-  });
 
-  // 1) 客流 → 需求 → 消耗
-  const use = consumeStock(cafe.stock, dailyDemand(crowd.guests));
-  const served = Math.max(0, Math.round(crowd.guests * use.crowdMultiplier * use.fulfillment));
+  // 1) 收走剛結束的那個營業日的成績(逐位結帳已經把錢收進來了,這裡只是對帳)
+  const trading = settleCafeSales();
 
-  // 2) 營收先進帳(補貨才有錢可用;restockPlan 保證不超支)
+  // 2) 補貨 → 扣款 → 固定成本(addMoney 下限 0,錢不夠也不會變負)
   const moneyBefore = state.money;
-  const revenue = served * cafeTicketPrice(cafe.completed);
-  if (revenue > 0) addMoney(revenue, "咖啡廳營收", "cafe");
-
-  // 3) 補貨 → 扣款 → 固定成本(addMoney 下限 0,錢不夠也不會變負)
-  const plan = restockPlan(cafe.standingOrders, use.stock, state.money);
+  const plan = restockPlan(cafe.standingOrders, cafe.stock, state.money);
   if (plan.totalCost > 0) addMoney(-plan.totalCost, "咖啡廳進貨", "cafe");
   addMoney(-CAFE_FIXED_COST, "咖啡廳固定開銷", "cafe");
 
-  // 4) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)
+  // 3) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)
   const rot = applySpoilage(plan.stock, cap.spoilage);
   cafe.stock = rot.stock;
-  cafe.popularity = nextCafePopularity(cafe.popularity, { shortages: use.shortages.length, underfunded: plan.underfunded });
+
+  // 4) 聲譽收尾。即時的 +0.15 / −2.0 已經在 cafeHourlyPass 給過(設計文件 §4.8),
+  //    這裡只補「錢不夠、進貨補不滿」這條純粹屬於跨日的軟性扣分。
+  if (plan.underfunded) cafe.popularity = clampCafePopularity(cafe.popularity - CAFE_POPULARITY_SOFT_LOSS);
 
   // 5) 日結紀錄。cost 取「實際扣掉的錢」而非帳面應付,才會與 money/ledger 三方對得起來
   //    (帳上不夠時 addMoney 會夾在 0,這遊戲不讓玩家欠債)。
-  const cost = revenue - (state.money - moneyBefore);
-  cafe.history.push({ day, guests: served, revenue, cost, net: revenue - cost });
+  const cost = moneyBefore - state.money;
+  cafe.history.push({ day, guests: trading.served, revenue: trading.revenue, cost, net: trading.revenue - cost });
   if (cafe.history.length > CAFE_HISTORY_CAP) cafe.history.splice(0, cafe.history.length - CAFE_HISTORY_CAP);
 
-  // 6) 敘事:三個旗標各有一組句子,**一天最多推一則**(稀疏哲學同 floorChain 的「每次 pass 最多推一話」;
-  //    日結每天都跑,三則全推會讓咖啡廳淹掉整個動態頁)。優先序 = 玩家最該知道的先講:
-  //    缺貨(客人真的被擋在門外)> 補不滿(錢的問題)> 損耗(最不痛不癢)。
-  //    平順的一天不推日誌,只留 history —— 那是 CAFE-15 面板要顯示的東西。
-  const shortageName = use.shortages.length > 0 ? getCafeIngredient(use.shortages[0])?.name ?? "備料" : "";
+  // 6) 敘事:**一天最多推一則**(稀疏哲學同 floorChain 的「每次 pass 最多推一話」)。
+  //    缺貨的第一則已經在當下由 cafeHourlyPass 推過了,所以這裡只在「整天都在說抱歉」
+  //    (撲空 >= CAFE_SHORTAGE_SUMMARY_MIN 人)時才補一則收尾摘要,
+  //    其餘照舊:補不滿(錢的問題)> 損耗(最不痛不癢)。平順的一天不推日誌。
   const missingLine = plan.lines.find((line) => line.bought < line.want);
-  if (shortageName) {
-    pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: shortageName }));
+  if (trading.refused >= CAFE_SHORTAGE_SUMMARY_MIN) {
+    pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: cafeTopShortageName(trading.day) }));
   } else if (plan.underfunded && missingLine) {
     pushCafeLog(cafeDailyLine({ kind: "underfunded", day, subject: missingLine.name, fulfillment: plan.fulfillment }));
   } else if (rot.totalSpoiled > 0) {
     pushCafeLog(cafeDailyLine({ kind: "spoilage", day, subject: rot.lines[0].name }));
   }
+}
+
+/** 收走最後一筆尚未結算的營業日成績;沒有就回零(例如剛開張、當天還沒營業過)。 */
+function settleCafeSales(): { day: number; revenue: number; served: number; refused: number } {
+  const sales = state.cafe.sales;
+  const last = Array.isArray(sales) && sales.length > 0 ? sales[sales.length - 1] : null;
+  if (!last || last.settled) return { day: -1, revenue: 0, served: 0, refused: 0 };
+  last.settled = true;
+  return { day: last.day, revenue: last.revenue, served: last.served, refused: last.refused };
+}
+
+/** 該日撲空最多的品項名(給日結摘要用);查無資料回「備料」。 */
+function cafeTopShortageName(day: number): string {
+  const entry = state.cafe.sales.find((row) => row.day === day);
+  if (!entry) return "備料";
+  let bestId = "";
+  let bestCount = 0;
+  // 依 id 排序後再挑,避免鍵的插入序讓同一存檔在不同 session 選到不同品項。
+  for (const id of Object.keys(entry.missed).sort()) {
+    if (entry.missed[id] > bestCount) { bestId = id; bestCount = entry.missed[id]; }
+  }
+  return menuItems(state.cafe.completed).find((item) => item.id === bestId)?.name ?? "備料";
 }
 
 /** 推進一個遊戲小時(live=true 才在換日時打 AI;補進度/快轉用模板避免大量 API 呼叫) */
@@ -752,6 +906,7 @@ export function hourlyTick(live = false) {
   dreamPass(hour); // 夢境彩蛋:全員本小時 visualState 已定,睡著者每 3~4 遊戲日留一則夢(零 RNG、零數值)
   outingEncounterPass(hour); // 樓外巧遇:同理由要等全員 visualState 定案,同時外出的兩人每 4~5 日低頻碰面(零 RNG)
   cafeGuestPass(hour); // 一樓咖啡廳來客/離場:未開張直接 return(零 RNG、不碰 runtimes,故快照零漂移)
+  cafeHourlyPass(hour); // 一樓咖啡廳逐位結帳:當日營收 = Σ 顧客實際點到的商品售價(未開張直接 return)
   roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動
   pruneFxByGame(state.gameMs); // 依遊戲時間清掉長效演出(快轉時不殘留)
   const interacted = interactionsPass(); // 同房/交誼廳的目錄式互動(§10-1/10-2,canInteract 把關)

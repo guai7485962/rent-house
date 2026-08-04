@@ -188,12 +188,37 @@ export interface CafeDayRecord {
 }
 
 /**
+ * 單一遊戲日的逐品項銷售紀錄(重設計 P1)。
+ *
+ * 由 `cafeHourlyPass()` 逐位顧客累加、`cafeDailyPass()` 讀來寫 `history`。
+ * P3 的「過去 7 日銷售排行」直接讀這個陣列,不需要再回頭解析日誌。
+ */
+export interface CafeSalesDay {
+  /** gameDayIndex 的日序號 */
+  day: number;
+  /** 品項 id → 當日賣出份數 */
+  sold: Record<string, number>;
+  /** 品項 id → 當日因缺料被拒的次數 */
+  missed: Record<string, number>;
+  /** 當日營收 = Σ 實際賣出品項的售價 */
+  revenue: number;
+  /** 當日耗掉的原料進貨價值(毛利用;不是當日進貨支出) */
+  ingredientCost: number;
+  /** 成功結帳人次 */
+  served: number;
+  /** 缺料撲空人次 */
+  refused: number;
+  /** 已被日結收走(避免同一天的營業成績被寫進兩筆 history) */
+  settled: boolean;
+}
+
+/**
  * 一樓寵物咖啡廳的單一 top-level 存檔 key(設計文件 §8)。
  *
  * 形狀一次定義完整,後續分期只填內容不改 schema:
  * CAFE-12 用 standingOrders/stock、CAFE-13 用 popularity/history、
  * CAFE-14 用 open/upgrades、CAFE-16 用 research/completed。
- * 本期(CAFE-11)只有 `guests` 會被實際讀寫。
+ * 重設計 P1 新增 `sales`(逐品項銷售紀錄) ⇒ SAVE_VERSION 8 → 9。
  */
 export interface CafeState {
   /** 玩家花錢開張才 true;未開張時所有咖啡廳 pass 直接 return(零漂移的天然閘門) */
@@ -214,6 +239,8 @@ export interface CafeState {
   popularity: number;
   /** 日結紀錄,最新在後,cap CAFE_HISTORY_CAP(CAFE-13) */
   history: CafeDayRecord[];
+  /** 逐日逐品項銷售紀錄,最新在後,cap CAFE_SALES_CAP(重設計 P1;P3 的銷售排行讀這裡) */
+  sales: CafeSalesDay[];
 }
 
 export interface Tenant {

@@ -22,7 +22,7 @@ const {
 } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
 const { state, defaultCafe, GAME_START } = await import("../src/sim/gameState");
-const { cafeDailyPass } = await import("../src/sim/tick");
+const { cafeDailyPass, cafeHourlyPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 
 let pass = 0;
 let fail = 0;
@@ -106,6 +106,9 @@ try {
   const dailyRent = Object.values(state.runtimes)
     .reduce((sum, runtime) => sum + Math.round(runtime.tenant.finance.monthlyRent / 30), 0);
 
+  // P1 起營收是 cafeHourlyPass 逐位顧客收的,所以量測必須跑完整的一天
+  // (11 個營業小時 + 換日日結),不能只呼叫 cafeDailyPass。
+  const HOUR_MS = 3600 * 1000;
   const measure = (completed: string[], days = 56) => {
     state.money = 5_000_000;
     state.ledger.splice(0, state.ledger.length);
@@ -119,8 +122,12 @@ try {
     });
     let net = 0;
     for (let day = 0; day < days; day++) {
-      setDay(day);
       const before = state.money;
+      for (let hour = CAFE_OPEN_HOUR; hour <= CAFE_CLOSE_HOUR; hour++) {
+        state.gameMs = GAME_START.getTime() + day * DAY_MS + hour * HOUR_MS;
+        cafeHourlyPass(hour);
+      }
+      setDay(day);
       cafeDailyPass();
       net += state.money - before;
     }

@@ -27,28 +27,44 @@ export interface CafeIngredient {
   /** 用在哪些品項(敘事與 UI 說明用,不參與計算)。 */
   usedIn: readonly string[];
   /**
-   * 每位客人的平均消耗量。
-   * 取值讓 30 位客人時的消耗量重現設計文件 §5.2 範例表的「今日消耗」欄
-   * (咖啡豆 12、牛奶 9、麵粉 4、貓罐頭 3)。
+   * 每位客人的**平均**消耗量。
+   *
+   * ⚠️ P1(逐位結帳)之後這個欄位**不再驅動任何扣料**——真正的消耗是
+   * `cafe.ts` 的 `CAFE_BASE_MENU_ITEMS[].recipe` 逐位顧客扣的。本欄位退居
+   * 「面板預估」與 `dailyDemand()` 的估算用途,取值是把各品項配方依基礎熱門度
+   * 加權平均回推的期望值(見 `docs/咖啡廳經營玩法-重設計.md` §4.1)。
    */
   perGuest: number;
   /**
    * 建議常備量(CAFE-15 的預設值;玩家可自行覆寫)。
-   * 前四項直接照抄設計文件 §5.2 範例表。
+   *
+   * P1 重訂:配方是「整數單位/份」,一份美式就吃掉 4 單位咖啡豆,舊值(20)撐不到半天。
+   * 取值原則 = **成熟期(產能上限 40 人、人氣滿)實測 200 天的單日尖峰消耗再留餘裕**
+   * (實測尖峰:咖啡豆 124 / 牛奶 12 / 麵粉 49 / 奶油 21 / 貓罐頭 51 / 寵物鮮食 21),
+   * 且三種生鮮一律 `<= SPOILAGE_FREE_UNITS + 1/SPOILAGE_RATE - 1`(= 24),
+   * 讓「照建議值玩」永遠零缺貨、零損耗——偷懶路線必須維持可行(設計文件 §4.3.1)。
    */
   defaultStandingOrder: number;
 }
 
 /**
- * 六種原料。設計文件 §5.2 只舉了四個例子,這裡增為六:
+ * 六種原料。設計文件 §5.2 只舉了四個例子,這裡增為六(三乾三鮮)。
  *
- * - **保留原文四項與其單價**(咖啡豆 $15、牛奶 $12、麵粉 $8、貓罐頭 $25),
- *   避免與已拍板的範例表對不上。
- * - **新增奶油 $18、寵物鮮食 $20**,理由是原文四項裡只有牛奶是生鮮,
- *   「生鮮才會損耗」這條規則會退化成單一原料的特例;補到三鮮三乾之後,
- *   損耗與缺貨兩種後果才都有足夠的樣本可以被玩家感知,也才測得動。
- * - 兩個新單價取在既有價帶 $8–$25 之內:奶油 $18(烘焙裡最貴的料)、
- *   寵物鮮食 $20(比常溫罐頭便宜,因為它會壞——玩家本來就該有理由不囤它)。
+ * ## 🔴 P1(2026-08-04)重訂了全部六個 `unitPrice`
+ *
+ * 舊值(咖啡豆 $15、牛奶 $12、麵粉 $8、奶油 $18、貓罐頭 $25、寵物鮮食 $20)是為
+ * 「平均每客消耗 $15.78」設計的**攤提價**,不是「一份商品實際吃掉多少料」的價。
+ * P1 把營收改成逐位顧客照配方結帳之後,配方成本直接等於原料成本,舊價會讓
+ * 咖啡毛利 56%、烘焙只剩 28%(重設計文件 §4.1 的警告)。
+ *
+ * 因此改成**低單價 × 多單位**:一份美式吃 4 單位咖啡豆($16)、一份烘焙小點吃
+ * 2 單位麵粉 + 1 單位奶油($16)。低單價換來的整數粒度,才有辦法讓 13 個品項
+ * (基礎 3 + 研發 10)的毛利**全部落在 45～60%** 這個 band 裡——
+ * 高價品同時也高成本,「研發完就穩賺」不成立(設計文件 §4.1)。
+ *
+ * 各品項的配方、成本與毛利率驗算在 `src/sim/cafe.ts` 的
+ * `CAFE_BASE_MENU_ITEMS` / `CAFE_RESEARCH_RECIPES`,並由
+ * `scripts/cafe-per-guest-test.ts` 逐項硬斷言守住 45～60%。
  *
  * ⚠️ 貓罐頭刻意是**乾貨**:罐頭的存在意義就是常溫保存。
  * 寵物線的生鮮由「寵物鮮食」承擔,不讓寵物餐點整條免疫損耗。
@@ -57,62 +73,62 @@ export const CAFE_INGREDIENTS = [
   {
     id: "coffee_bean",
     name: "咖啡豆",
-    unitPrice: 15,
+    unitPrice: 4,
     perishable: false,
     category: "brew",
     usedIn: ["美式咖啡", "拿鐵", "手沖單品", "冷萃"],
-    perGuest: 0.4,
-    defaultStandingOrder: 20,
+    perGuest: 1.9,
+    defaultStandingOrder: 130,
   },
   {
     id: "milk",
     name: "牛奶",
-    unitPrice: 12,
+    unitPrice: 3,
     perishable: true,
     category: "brew",
     usedIn: ["拿鐵", "造型拿鐵", "司康"],
-    perGuest: 0.3,
-    defaultStandingOrder: 15,
+    perGuest: 0.25,
+    defaultStandingOrder: 24,
   },
   {
     id: "flour",
     name: "麵粉",
-    unitPrice: 8,
+    unitPrice: 3,
     perishable: false,
     category: "bake",
-    usedIn: ["司康", "貓咪造型餅乾", "下午茶套餐"],
-    perGuest: 0.13,
-    defaultStandingOrder: 10,
+    usedIn: ["每日烘焙小點", "磅蛋糕", "司康", "貓咪造型餅乾"],
+    perGuest: 0.7,
+    defaultStandingOrder: 52,
   },
   {
     id: "butter",
     name: "奶油",
-    unitPrice: 18,
+    unitPrice: 10,
     perishable: true,
     category: "bake",
-    usedIn: ["司康", "貓咪造型餅乾"],
-    perGuest: 0.08,
-    defaultStandingOrder: 8,
+    usedIn: ["每日烘焙小點", "磅蛋糕", "司康", "貓咪造型餅乾"],
+    perGuest: 0.3,
+    defaultStandingOrder: 24,
   },
   {
     id: "cat_can",
     name: "貓罐頭",
-    unitPrice: 25,
+    unitPrice: 6,
     perishable: false,
     category: "pet",
-    usedIn: ["寵物友善點心"],
-    perGuest: 0.1,
-    defaultStandingOrder: 8,
+    usedIn: ["基礎寵物小點", "基礎寵物餐", "寵物友善點心"],
+    perGuest: 0.55,
+    defaultStandingOrder: 56,
   },
   {
     id: "pet_fresh",
     name: "寵物鮮食",
-    unitPrice: 20,
+    unitPrice: 5,
     perishable: true,
     category: "pet",
-    usedIn: ["寵物友善點心", "寵物生日蛋糕"],
-    perGuest: 0.06,
-    defaultStandingOrder: 6,
+    usedIn: ["基礎寵物餐", "寵物友善點心", "寵物生日蛋糕"],
+    perGuest: 0.2,
+    defaultStandingOrder: 24,
   },
 ] as const satisfies readonly CafeIngredient[];
 

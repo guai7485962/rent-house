@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -83,6 +83,20 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
    * 補過的不變、被守衛擋掉的補齊、開新局的本來就在開張時拿過。
    */
   7: (s) => ({ ...backfillCafeStarter(s), v: 8 }),
+  /**
+   * v8 → v9:咖啡廳重設計 P1(逐位顧客結帳)。
+   *
+   * 新增 `cafe.sales`(逐日逐品項銷售紀錄)。舊檔補一個空陣列就完事——
+   * 銷售紀錄本來就是「從現在開始累積」的東西,回填假資料只會讓 P3 的銷售排行
+   * 顯示玩家從來沒賣過的品項。
+   *
+   * `standingOrders` / `stock` **刻意原封不動**:原料 id 一個都沒變,變的只有
+   * `unitPrice`(進貨變便宜)與 `defaultStandingOrder`(建議值變大)。
+   * 舊檔玩家手上的庫存與自訂常備量都仍然合法,只是常備量偏低——
+   * 那會在下一個營業日以「缺貨」的形式讓玩家自己看到,並自己調高,
+   * 這正是設計文件 §4.3 要的經營回饋,不該由遷移偷偷改掉玩家設定。
+   */
+  8: (s) => ({ ...s, cafe: s?.cafe ? { ...s.cafe, sales: Array.isArray(s.cafe.sales) ? s.cafe.sales : [] } : s?.cafe, v: 9 }),
 };
 
 /** 已開張就把贈品補到 `placements`;重疊由 `starterPlacementsAgainst()` 擋,重跑安全。 */

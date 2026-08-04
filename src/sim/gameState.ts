@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeResearch, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeResearch, CafeSalesDay, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -184,6 +184,15 @@ export function addFlag(rt: TenantRuntime, flag: string) {
 export const CAFE_HISTORY_CAP = 60;
 
 /**
+ * 逐品項銷售紀錄上限(重設計 P1)。
+ *
+ * 14 天 = P3「過去 7 日銷售排行」需要的兩倍餘裕:日結是在**隔日午夜**才收走
+ * 前一天的成績,面板又可能在玩家離線好幾天後才打開,只留 7 天會在邊界上少一天。
+ * 每筆最多 13 個品項 × 2 個計數,14 天約 400 個數字——與 `history` 同一個量級。
+ */
+export const CAFE_SALES_CAP = 14;
+
+/**
  * 咖啡廳的預設狀態(設計文件 §8)。
  *
  * 整個咖啡廳只佔 1 個 top-level key,舊存檔沒有這個欄位就直接拿這份預設值,
@@ -201,6 +210,7 @@ export function defaultCafe(): CafeState {
     guests: [],
     popularity: 0,
     history: [],
+    sales: [],
   };
 }
 
@@ -269,6 +279,20 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
       cost: finiteOr(entry.cost, 0),
       net: finiteOr(entry.net, 0),
     }) satisfies CafeDayRecord);
+  // 重設計 P1:逐品項銷售紀錄。舊檔(v8 以前)沒有這個欄位 → 空陣列,
+  // 面板只會顯示「尚無資料」,不會壞;新的一天照樣開始累積。
+  const sales = (Array.isArray(raw.sales) ? raw.sales : [])
+    .filter(isPlainObject)
+    .map((entry) => ({
+      day: finiteOr(entry.day, 0),
+      sold: numberRecord(entry.sold),
+      missed: numberRecord(entry.missed),
+      revenue: finiteOr(entry.revenue, 0),
+      ingredientCost: finiteOr(entry.ingredientCost, 0),
+      served: finiteOr(entry.served, 0),
+      refused: finiteOr(entry.refused, 0),
+      settled: entry.settled === true,
+    }) satisfies CafeSalesDay);
   const guests = (Array.isArray(raw.guests) ? raw.guests : [])
     .map(sanitizeCafeGuest)
     .filter((guest): guest is CafeGuest => guest !== null);
@@ -283,6 +307,7 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
     guests: removeDepartedCafeGuests(unique, gameMs).slice(0, CAFE_GUEST_CAP),
     popularity: finiteOr(raw.popularity, 0),
     history: history.slice(-CAFE_HISTORY_CAP),
+    sales: sales.slice(-CAFE_SALES_CAP),
   };
 }
 

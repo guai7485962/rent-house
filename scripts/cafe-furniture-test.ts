@@ -197,7 +197,8 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
   const panelSrc = readSrc("src", "components", "CafePanel.vue");
   check("CafePanel 的開張流程確實呼叫 placeCafeStarterSet()", panelSrc.includes("placeCafeStarterSet()"));
   const tickSrc = readSrc("src", "sim", "tick.ts");
-  check("tick.cafeDailyPass 把氛圍點數餵進客流公式", /ambiancePoints:\s*cafeAmbiancePoints\(\)/.test(tickSrc));
+  // P1 之後客流是在 cafeHourlyPass 逐小時算的,氛圍點數仍然餵進同一條 cafeCrowd 公式。
+  check("tick 的客流公式把氛圍點數餵進去", /ambiancePoints:\s*cafeAmbiancePoints\(\)/.test(tickSrc));
 }
 
 // --- 舊存檔補發(v6 → v7) ---
@@ -208,7 +209,15 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
   const { starterPlacementsAgainst } = await import("../src/sim/placements");
   const cafeCount = (list: any[]) => list.filter((p) => cafeRegions.has(p.room)).length;
 
-  check("SAVE_VERSION 已升到 8", SAVE_VERSION === 8);
+  // 🔴 **刻意不寫 `SAVE_VERSION === <某個數字>`**:那種斷言只會在每次升版時被順手改掉,
+  // 擋不到任何真正的錯誤。要釘就釘**行為** —— 每一個曾經上線過的舊版本都升得到現行版。
+  const legacyVersions = [2, 3, 4, 5, 6, 7, 8].filter((v) => v < SAVE_VERSION);
+  check("每個舊版存檔都升得到現行 SAVE_VERSION(升級表沒有斷鏈)",
+    legacyVersions.length > 0 && legacyVersions.every((v) => {
+      const migrated = migrateSave({ v, cafe: { open: false }, placements: [] });
+      return migrated != null && migrated.v === SAVE_VERSION;
+    }),
+    `versions=${legacyVersions.join(",")} → ${SAVE_VERSION}`);
 
   // 🔴 v7 已經上線過,且當時的 MIGRATIONS[6] 帶著會誤擋的守衛。
   // 受影響的存檔已被標成 v7、升級表不會回頭 ⇒ 必須有 v7 → v8 才追得到他們。
@@ -217,8 +226,8 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
     cafe: { open: true },
     placements: [{ defId: "cafe_cat_tower", room: "cafe_pet", c: 11, r: 44, rotation: 0 }],
   });
-  check("已被舊守衛擋掉、卡在 v7 的存檔 → v8 補齊贈品",
-    strandedAtV7 != null && strandedAtV7.v === 8 && cafeCount(strandedAtV7.placements) > 1,
+  check("已被舊守衛擋掉、卡在 v7 的存檔 → 升到現行版時補齊贈品",
+    strandedAtV7 != null && strandedAtV7.v === SAVE_VERSION && cafeCount(strandedAtV7.placements) > 1,
     `一樓共 ${strandedAtV7 ? cafeCount(strandedAtV7.placements) : "null"} 件`);
 
   // 已經拿過贈品的 v7 存檔再升到 v8 不可以多送(重跑安全性)

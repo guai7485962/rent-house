@@ -5,7 +5,17 @@ import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
-import { departedGuestIds, guestAgentSignature, syncGuestAgents, tickGuestAgents, type GuestAgent } from "../floor/guestAgents";
+import {
+  departedGuestIds,
+  guestAgentSignature,
+  orderingGuestViews,
+  queuedGuestCount,
+  syncGuestAgents,
+  tickGuestAgents,
+  type GuestAgent,
+} from "../floor/guestAgents";
+import { staffAgentSignature, syncStaffAgents, tickStaffAgents, type StaffAgent } from "../floor/staffAgents";
+import { cafeStaffCount } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
 import type { CafeGuest } from "../types";
 import { layoutFloorTags } from "../floor/tagLayout";
@@ -62,6 +72,8 @@ let vacuumAgents: VacuumAgent[] = [];
 let vacuumSignature = "";
 let guestAgents: GuestAgent[] = [];
 let guestSignature = "";
+let staffAgents: StaffAgent[] = [];
+let staffSignature = "";
 let raf = 0;
 let last = 0;
 
@@ -110,7 +122,20 @@ function loop(t: number) {
       guestAgents = syncGuestAgents(guestAgents, state.cafe.guests);
       guestSignature = nextGuestSignature;
     }
-    tickGuestAgents(guestAgents, dt, state.gameMs, vacuumBlocked);
+    // 🔴 P4b:員工站在吧台後面(設計文件 §4.9)。人數只讀 P4a 的 `cafeStaffCount()`
+    // (開張費已含首位店員 ⇒ 開張後永遠至少一人),打烊/未開張時 signature 會回到
+    // 「關店」而讓 agent 清空 —— 空店裡不會有人在結帳。
+    const cafeHour = new Date(state.gameMs).getHours();
+    const cafeOpenNow = cafeBusinessOpen(state.cafe.open, cafeHour);
+    const staffCount = cafeStaffCount(state.cafe.extraStaff);
+    const nextStaffSignature = staffAgentSignature(staffCount, cafeOpenNow);
+    if (nextStaffSignature !== staffSignature) {
+      staffAgents = syncStaffAgents(staffAgents, staffCount, cafeOpenNow);
+      staffSignature = nextStaffSignature;
+    }
+    // 同時能結帳的人數 = 員工數 ⇒ 顧客多過人手就會在吧台前排隊(純表現層)。
+    tickGuestAgents(guestAgents, dt, state.gameMs, vacuumBlocked, undefined, staffCount);
+    tickStaffAgents(staffAgents, dt, orderingGuestViews(guestAgents), queuedGuestCount(guestAgents));
     const departed = departedGuestIds(guestAgents);
     if (departed.length > 0) {
       let remaining: CafeGuest[] = state.cafe.guests;
@@ -132,8 +157,7 @@ function loop(t: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, el.width, el.height);
       renderFloorViewport(ctx, view, 1, () => {
-        const hour = new Date(state.gameMs).getHours();
-        composeFloor(ctx, Math.floor(t / 500), agents, marks, hour, petAgents, vacuumAgents, guestAgents, cafeBusinessOpen(state.cafe.open, hour));
+        composeFloor(ctx, Math.floor(t / 500), agents, marks, cafeHour, petAgents, vacuumAgents, guestAgents, cafeOpenNow, staffAgents);
         const pv = props.preview;
         if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
       });

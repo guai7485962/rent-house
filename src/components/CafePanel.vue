@@ -12,14 +12,19 @@ import {
   CAFE_AMBIANCE_SWING,
   cafeResearchDaysLeft,
   cafeSalesRanking,
+  cafeStaffCount,
+  CAFE_MAX_EXTRA_STAFF,
+  CAFE_STAFF_WAGE,
   CAFE_RESEARCH,
   CAFE_SALES_WINDOW_DAYS,
   CAFE_OPENING_COST,
   CAFE_UPGRADES,
   consumeStock,
   dailyDemand,
+  fireCafeStaff,
   getCafeResearch,
   getCafeUpgrade,
+  hireCafeStaff,
   menuItems,
   openCafe,
   startCafeResearch,
@@ -31,7 +36,7 @@ import { removeCafeGuest } from "../sim/cafeGuests";
 import { isVacant, ROOM_APPEARANCE } from "../sim/gameState";
 import { acceptCafeGuestAdoption } from "../sim/pets";
 import { save } from "../sim/persistence";
-import { CAFE_PLACEMENT_REGIONS, cafeAmbiancePoints, getPlacements, placeCafeStarterSet } from "../sim/placements";
+import { CAFE_PLACEMENT_REGIONS, cafeAmbiancePoints, cafeSeatSpots, getPlacements, placeCafeStarterSet } from "../sim/placements";
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
@@ -46,7 +51,31 @@ const selectedPet = reactive<Record<string, string>>({});
 const selectedRoom = reactive<Record<string, string>>({});
 
 const latest = computed(() => state.cafe.history.at(-1) ?? null);
-const capability = computed(() => cafeCapability(state.cafe.upgrades));
+/**
+ * 🔴 P4b 修 bug:面板的產能一直讀「沒帶席次與員工」的 `cafeCapability()`。
+ *
+ * P4a 把產能改成 `min(外帶底量 + 席次 × 迴轉率, 員工數 × 每人杯數)`,不帶參數會退回
+ * 「席次不設限 + 只有首位店員」的預設值 ⇒ 面板顯示的「產能 N 單」與 `tick.ts`
+ * 真的用來夾客流的那個數字對不起來(雇了人也不會動)。這裡餵進與 `cafeHourlyPass()`
+ * **完全相同的兩個輸入**:`cafeSeatSpots().length` 與 `state.cafe.extraStaff`。
+ *
+ * `placements` 是 reactive ⇒ 玩家搬椅子,這個數字立刻跟著動。
+ */
+const seatCount = computed(() => cafeSeatSpots().length);
+const capability = computed(() => cafeCapability(state.cafe.upgrades, {
+  seats: seatCount.value,
+  extraStaff: state.cafe.extraStaff,
+}));
+// P4b 人力區塊:人數含開張費已付的首位店員,日薪只算第二位起(§4.9)。
+const staffCount = computed(() => cafeStaffCount(state.cafe.extraStaff));
+const extraStaffCount = computed(() => staffCount.value - 1);
+const todaySales = computed(() => state.cafe.sales.find((row) => row.day === currentDay.value) ?? null);
+const todayServed = computed(() => todaySales.value?.served ?? 0);
+const loadPercent = computed(() => (capability.value.capacity > 0
+  ? Math.min(100, Math.round((todayServed.value / capability.value.capacity) * 100))
+  : 0));
+/** 進度條轉紅的門檻:已經吃掉九成產能 ⇒ 畫面上的隊伍差不多也排起來了。 */
+const loadFull = computed(() => loadPercent.value >= 90);
 const adoptGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "adopt"));
 const rentGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "rent"));
 const eligiblePets = computed(() => permanentHousePetEntries().map(([id, pet]) => ({ id, pet })));
@@ -139,6 +168,27 @@ function onOpen() {
 
 function onBuy(id: string, name: string) {
   commitInvestment(buyCafeUpgrade(state.cafe, state.money, id), `✅ 「${name}」投資完成!`);
+}
+
+/**
+ * 雇用/資遣。**不扣任何一次性費用**——薪資是 `tick.ts` 日結時扣的固定成本
+ * (`hireCafeStaff()` 的註解說明了為什麼不共用投資那條路)。這裡只寫回 state 並存檔,
+ * 吧台後的人數下一幀就跟著變(`FloorMap` 讀同一個 `cafeStaffCount()`)。
+ */
+function onHire() {
+  const result = hireCafeStaff(state.cafe);
+  if (!result.ok) { emit("done", `無法雇用:${result.reason}`); return; }
+  Object.assign(state.cafe, result.cafe);
+  save();
+  emit("done", `👤 已雇用第 ${result.extraStaff + 1} 位店員,日薪合計 −$${result.dailyWage.toLocaleString()}`);
+}
+
+function onFire() {
+  const result = fireCafeStaff(state.cafe);
+  if (!result.ok) { emit("done", `無法資遣:${result.reason}`); return; }
+  Object.assign(state.cafe, result.cafe);
+  save();
+  emit("done", `已資遣一位店員,現在吧台後有 ${result.extraStaff + 1} 人,日薪合計 −$${result.dailyWage.toLocaleString()}`);
 }
 
 function onStartResearch(id: string) {
@@ -425,6 +475,40 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <button class="primary compact" @click="applyStandingOrders">套用常備量</button>
           </section>
 
+          <section class="card staff-card" aria-label="咖啡廳人力">
+            <div class="section-head">
+              <div><span class="kicker">STAFF</span><h3>人力</h3></div>
+              <span class="staff-wage">日薪合計 −${{ capability.dailyWage.toLocaleString() }}</span>
+            </div>
+            <div class="staff-line">
+              <span class="staff-faces" aria-hidden="true">{{ "👤".repeat(Math.min(6, staffCount)) }}<b v-if="staffCount > 6">×{{ staffCount }}</b></span>
+              <span class="staff-count">目前 {{ staffCount }} 人<small>（首位店員的薪水已含在每日固定開銷裡）</small></span>
+            </div>
+            <div class="staff-load">
+              <div class="staff-load-line">
+                <span>今日負荷</span>
+                <b :class="{ full: loadFull }">已處理 {{ todayServed }} / 產能 {{ capability.capacity }} 杯</b>
+              </div>
+              <div class="progress load" :class="{ full: loadFull }" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
+                <i :style="{ width: `${loadPercent}%` }"></i>
+              </div>
+              <small>產能 = min(席次 {{ seatCount }} 張換算的內用量, {{ staffCount }} 人 × {{ capability.cupsPerStaff }} 杯)</small>
+            </div>
+            <p class="alert" :class="loadFull ? 'warn' : 'good'">
+              {{ loadFull
+                ? "🧍 今天已經做到產能上限——想再多賣就得補人或加席次,否則吧台前只會越排越長。"
+                : "產能還有餘裕。真正該雇人的訊號在畫面上：吧台前排起隊、店員忙個不停。" }}
+            </p>
+            <div class="staff-actions">
+              <button class="secondary" :disabled="extraStaffCount >= CAFE_MAX_EXTRA_STAFF" @click="onHire">
+                {{ extraStaffCount >= CAFE_MAX_EXTRA_STAFF ? "已達人力上限" : `雇用（−$${CAFE_STAFF_WAGE}/日）` }}
+              </button>
+              <button class="ghost fire" :disabled="extraStaffCount <= 0" @click="onFire">
+                {{ extraStaffCount <= 0 ? "只剩首位店員" : "資遣" }}
+              </button>
+            </div>
+          </section>
+
           <section class="card">
             <div class="section-head">
               <div><span class="kicker">INVEST</span><h3>永久投資</h3></div>
@@ -591,6 +675,21 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .active-research small { display: block; margin-top: 6px; color: var(--text-dim); font-size: 9.5px; }
 .progress { height: 6px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.08); }
 .progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #76d39a, #ffc477); transition: width 0.25s ease; }
+/* P4b 人力區塊(§4.9):人數、今日負荷進度條、雇用/資遣 */
+.staff-card .staff-wage { color: #ffb1a4; font-size: 10.5px; white-space: nowrap; }
+.staff-line { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.staff-faces { font-size: 15px; line-height: 1; letter-spacing: -1px; }
+.staff-faces b { margin-left: 3px; font-size: 11px; color: #ffd39a; }
+.staff-count { color: var(--text); font-size: 11.5px; }
+.staff-count small { display: block; color: var(--text-dim); font-size: 9.5px; }
+.staff-load-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 5px; font-size: 10.5px; color: var(--text-dim); }
+.staff-load-line b { color: #ffe0b4; font-size: 12px; }
+.staff-load-line b.full { color: #ff9f9f; }
+.progress.load i { background: linear-gradient(90deg, #76d39a, #ffc477); }
+.progress.load.full i { background: linear-gradient(90deg, #ff9f6b, #ff6b6b); }
+.staff-load small { display: block; margin-top: 5px; color: var(--text-dim); font-size: 9.5px; }
+.staff-actions { display: grid; grid-template-columns: 1.6fr 1fr; gap: 7px; margin-top: 9px; }
+.staff-actions .fire { color: #ffb1a4; border-color: rgba(255,140,140,0.4); }
 .research-list { display: flex; flex-direction: column; gap: 7px; margin-top: 9px; }
 .research-item { padding: 10px; border: 1px solid rgba(255,180,94,0.24); border-radius: 10px; background: rgba(255,180,94,0.035); }
 .research-item.locked { border-color: var(--line); background: rgba(255,255,255,0.015); }

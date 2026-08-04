@@ -8,17 +8,21 @@
  * ## 動線(設計文件 §4.5 §4.6)
  *
  * ```
- * 店門 → 吧台 → ordering →(料齊)served →(有空席)seated → leaving → departed
- *                                        └(無空席)外帶 ─────→ leaving → departed
- *                        →(缺料)refused ──────────────────→ leaving → departed
+ * 店門 →[排隊]→ 吧台 → ordering →(料齊)served →(有空席)seated → leaving → departed
+ *                                               └(無空席)外帶 ─────→ leaving → departed
+ *                               →(缺料)refused ──────────────────→ leaving → departed
  * ```
+ *
+ * P4b 起 `entering` 多了一段**排隊**:同時能結帳的人數 = `min(員工數, 點餐位數)`,
+ * 輪不到的人站進 `cafeQueueTiles()` 的人龍(`queueTile`)。排隊是**純表現層**——
+ * 錢在 `tick.ts` 早就收完了,隊伍只是把「產能吃緊」畫出來(設計文件 §4.9)。
  *
  * 席次一律查 `placements`(`cafeSeatSpots()`),**沒有硬編座位表**——
  * P1 之前的 `CAFE_GUEST_PREFERRED_SEATS` 正是「顧客站在空地板上」的根因。
  */
 import type { CafeGuest } from "../types";
 import type { CharView } from "../pixel/sprites";
-import { cafeCounterSpots, cafeSeatSpots, type CafeSeatSpot } from "../sim/placements";
+import { cafeCounterSpots, cafeQueueTiles, cafeSeatSpots, type CafeSeatSpot } from "../sim/placements";
 import { TILE } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 
@@ -70,6 +74,13 @@ export interface GuestAgent {
   entryTile: Tile;
   /** 點餐位(吧台前)。 */
   counterTile: Tile;
+  /**
+   * 🔴 P4b:他正在排的那一格;`null` = 已經輪到他,可以走去 `counterTile` 點餐。
+   *
+   * 由 `tickGuestAgents()` 每幀依「同時能結帳的人數」重算 ⇒ 前面的人點完走掉,
+   * 後面整條隊伍就往前遞補一格。**純表現層**,不影響任何金流。
+   */
+  queueTile: Tile | null;
   /** 他的席位;`null` = 外帶或撲空,不入座。 */
   seatSpot: CafeSeatSpot | null;
   /** 下一格被別人擋住而原地等了多久(現實秒);超過門檻就繞路。 */
@@ -152,6 +163,7 @@ export function syncGuestAgents(
         view: "back" as const,
         entryTile,
         counterTile: { c: counter.c, r: counter.r },
+        queueTile: null,
         seatSpot,
         stuckT: 0,
       } satisfies GuestAgent;
@@ -179,6 +191,17 @@ function viewToward(agent: GuestAgent, next: Tile): CharView {
   return agent.view;
 }
 
+/** 面向某一格(可以隔好幾格);主軸取位移較大的那一軸。排隊時面向吧台用。 */
+function faceToward(agent: GuestAgent, tile: Tile): CharView {
+  const dc = tile.c - agent.c;
+  const dr = tile.r - agent.r;
+  if (Math.abs(dr) >= Math.abs(dc)) {
+    if (dr !== 0) return dr > 0 ? "front" : "back";
+    return agent.view;
+  }
+  return dc > 0 ? "side_r" : "side_l";
+}
+
 function reached(agent: GuestAgent, target: Tile) {
   return agent.c === target.c && agent.r === target.r && agent.path.length === 0 && !agent.moving;
 }
@@ -192,9 +215,56 @@ function enterPhase(agent: GuestAgent, phase: GuestAgentPhase) {
   agent.stuckT = 0;
 }
 
+/**
+ * 🔴 P4b:把「還沒點到餐的人」分成**正在被結帳的**與**在排隊的**兩批(設計文件 §4.9)。
+ *
+ * 這是整個員工系統的視覺理由:同時能結帳的人數 = `min(員工數, 點餐位數)`,
+ * 多出來的人只能站進 `cafeQueueTiles()` 的人龍裡。客流長大而人沒補 ⇒ 隊伍變長,
+ * 玩家不必讀任何數字就知道該雇人;淡季隊伍消失、員工發呆 ⇒ 該資遣。
+ *
+ * **不新增任何模擬**:錢在 `tick.ts` 的 `cafeHourlyPass()` 早就收完了,
+ * 這裡只決定「誰站哪一格、誰先演點餐」。排太久也不會有額外懲罰。
+ *
+ * 排序用 `arrivedMs` → `id`:先到先服務,而且是決定性的(零 RNG)。
+ */
+function assignCounterStations(agents: GuestAgent[], serviceSlots: number, blocked: boolean[][]) {
+  const pending = agents
+    .filter((agent) => !agent.hidden && (agent.phase === "entering" || agent.phase === "ordering"))
+    .sort((a, b) => a.guest.arrivedMs - b.guest.arrivedMs || a.guest.id.localeCompare(b.guest.id));
+  if (pending.length === 0) return;
+  const counters = cafeCounterSpots().filter((tile) => blocked[tile.r]?.[tile.c] === false);
+  if (counters.length === 0) return;
+  const slots = Math.max(1, Math.min(counters.length, Math.trunc(serviceSlots)));
+  // 已經站在吧台前演出的人先保住位子(玩家中途資遣也不會把他瞬移走)
+  const serving = pending.filter((agent) => agent.phase === "ordering");
+  const waiting = pending.filter((agent) => agent.phase !== "ordering");
+  const taken = new Set(serving.map((agent) => tileKey(agent.counterTile)));
+  const free = counters.filter((tile) => !taken.has(tileKey(tile)));
+  let openSlots = Math.max(0, slots - serving.length);
+  const queueNeeded = Math.max(0, waiting.length - openSlots);
+  // 已經坐下/演出中的人站著不動,他那一格不能排進隊伍,否則後面的人會頂著他原地抖。
+  const parked = new Set(
+    agents.filter((agent) => !agent.hidden && !waiting.includes(agent) && !agent.moving).map(tileKey),
+  );
+  const queue = queueNeeded > 0 ? cafeQueueTiles(queueNeeded + parked.size).filter((tile) => !parked.has(tileKey(tile))) : [];
+  let nextFree = 0;
+  let nextQueue = 0;
+  for (const agent of waiting) {
+    if (openSlots > 0 && nextFree < free.length) {
+      agent.counterTile = { ...free[nextFree++] };
+      agent.queueTile = null;
+      openSlots--;
+      continue;
+    }
+    const spot = queue[nextQueue++];
+    agent.queueTile = spot ? { c: spot.c, r: spot.r } : null;
+    // 隊伍格全被家具塞滿時退化成舊行為(直接擠去點餐位),不會有人卡在畫面外。
+  }
+}
+
 /** 目前階段的走位目標;`null` = 站著不動(演出中)。 */
 function targetFor(agent: GuestAgent): Tile | null {
-  if (agent.phase === "entering") return agent.counterTile;
+  if (agent.phase === "entering") return agent.queueTile ?? agent.counterTile;
   if (agent.phase === "seated") return agent.seatSpot?.stand ?? null;
   if (agent.phase === "leaving") return agent.entryTile;
   return null;
@@ -228,7 +298,13 @@ export function tickGuestAgents(
   gameMs: number,
   blockedCells: ReadonlySet<string> = EMPTY_BLOCKED,
   blocked = currentBlocked(),
+  /**
+   * 🔴 P4b:同時能結帳的人數(= `cafeStaffCount()`)。省略 = 只受點餐位數限制,
+   * 也就是 P4b 之前的行為 —— 舊呼叫端與既有測試一位元不變。
+   */
+  serviceSlots: number = Number.POSITIVE_INFINITY,
 ) {
+  assignCounterStations(agents, serviceSlots, blocked);
   const occupied = new Map<string, GuestAgent>();
   const reservedSteps = new Set<string>();
   for (const agent of agents) if (!agent.hidden) occupied.set(tileKey(agent), agent);
@@ -243,6 +319,8 @@ export function tickGuestAgents(
     // 2) 階段轉移
     switch (agent.phase) {
       case "entering":
+        // 排隊中:計時歸零(等待不算「走不到目的地」),輪到他才重新起算逾時。
+        if (agent.queueTile) { agent.phaseT = 0; break; }
         if (reached(agent, agent.counterTile) || agent.phaseT >= GUEST_WALK_TIMEOUT_SECONDS) {
           enterPhase(agent, "ordering");
           agent.view = "back"; // 面向吧台
@@ -279,6 +357,8 @@ export function tickGuestAgents(
         occupied.delete(tileKey(agent));
       } else if (agent.phase === "seated") {
         agent.view = "front";
+      } else if (agent.phase === "entering" && agent.queueTile) {
+        agent.view = faceToward(agent, agent.counterTile); // 站在隊伍裡,面向吧台
       }
       continue;
     }
@@ -333,8 +413,8 @@ export function tickGuestAgents(
           agent.hidden = true;
           occupied.delete(nextKey);
         } else if (agent.phase === "entering") {
-          enterPhase(agent, "ordering");
-          agent.view = "back";
+          if (agent.queueTile) agent.view = faceToward(agent, agent.counterTile); // 排進隊伍,面向吧台
+          else { enterPhase(agent, "ordering"); agent.view = "back"; }
         } else if (agent.phase === "seated") {
           agent.view = "front";
         }
@@ -361,6 +441,24 @@ function detourGrid(
     if (grid[other.r]) grid[other.r][other.c] = true;
   }
   return grid;
+}
+
+/**
+ * 🔴 P4b:正站在吧台前結帳的顧客(給 `staffAgents` 配對用的**唯讀**視圖)。
+ *
+ * 員工層拿到的只有「誰在哪一格」,拿不到 `GuestAgent` 本體 ⇒ 不可能反向改到顧客走位。
+ * 序固定(到店時間 → id),所以同一批輸入永遠配到同一位員工。
+ */
+export function orderingGuestViews(agents: readonly GuestAgent[]): { id: string; c: number; r: number }[] {
+  return agents
+    .filter((agent) => !agent.hidden && agent.phase === "ordering")
+    .sort((a, b) => a.guest.arrivedMs - b.guest.arrivedMs || a.guest.id.localeCompare(b.guest.id))
+    .map((agent) => ({ id: agent.guest.id, c: agent.c, r: agent.r }));
+}
+
+/** 🔴 P4b:此刻真的在排隊等的人數(> 0 ⇒ 員工進入「忙碌」表現)。 */
+export function queuedGuestCount(agents: readonly GuestAgent[]): number {
+  return agents.filter((agent) => !agent.hidden && agent.phase === "entering" && agent.queueTile !== null).length;
 }
 
 export function departedGuestIds(agents: readonly GuestAgent[]): string[] {

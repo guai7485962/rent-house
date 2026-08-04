@@ -364,23 +364,15 @@ export const CAFE_COUNTER_TILE: SeatTile = { c: 3, r: 38 };
  * 位置一律由 `placements` 推算,玩家把吧台搬走,點餐位就跟著搬。
  */
 export function cafeCounterSpots(): SeatTile[] {
-  const grid = buildGrid();
-  const occ = occupiedSet();
-  const walkable = (c: number, r: number) => {
-    const cell = grid[r]?.[c];
-    return !!cell && isWalkable(cell) && !occ.has(`${c},${r}`);
-  };
-  const counter = placements.list
-    .filter((p) => CAFE_PLACEMENT_REGION_SET.has(p.room) && p.defId === "cafe_counter")
-    .sort((a, b) => a.r - b.r || a.c - b.c)[0];
+  const walkable = cafeWalkable();
+  const counter = cafeCounterPlacement();
   const spots: SeatTile[] = [];
   if (counter) {
-    const fp = placementFootprint(counter);
-    const front = placementInteract(counter);
-    // 由互動格往兩側展開,序固定:互動格 → 右 → 左 → 更右 → 更左
-    const columns = [front.c];
-    for (let d = 1; d <= fp.w; d++) { columns.push(front.c + d); columns.push(front.c - d); }
-    for (const c of columns) if (walkable(c, front.r)) spots.push({ c, r: front.r });
+    const axis = counterAxis(counter);
+    for (const lane of counterLanes(counter, axis)) {
+      const tile = axis.vertical ? { c: lane, r: axis.frontLine } : { c: axis.frontLine, r: lane };
+      if (walkable(tile.c, tile.r)) spots.push(tile);
+    }
   }
   if (spots.length > 0) return spots;
   // 沒擺吧台(玩家拆了/舊存檔):退回吧台區 row-major 第一格可走地板,行為不崩。
@@ -389,6 +381,121 @@ export function cafeCounterSpots(): SeatTile[] {
     for (let c = box.c0; c <= box.c1; c++) if (walkable(c, r)) return [{ c, r }];
   }
   return [{ ...CAFE_COUNTER_TILE }];
+}
+
+/** 咖啡廳格位查詢共用的「可走且沒被家具佔住」判定。 */
+function cafeWalkable(): (c: number, r: number) => boolean {
+  const grid = buildGrid();
+  const occ = occupiedSet();
+  return (c: number, r: number) => {
+    const cell = grid[r]?.[c];
+    return !!cell && isWalkable(cell) && !occ.has(`${c},${r}`);
+  };
+}
+
+/** 目前擺著的點餐吧台(row-major 第一件);沒擺回 null。 */
+function cafeCounterPlacement(): Placement | null {
+  return placements.list
+    .filter((p) => CAFE_PLACEMENT_REGION_SET.has(p.room) && p.defId === "cafe_counter")
+    .sort((a, b) => a.r - b.r || a.c - b.c)[0] ?? null;
+}
+
+/**
+ * 吧台的「前後軸」。顧客站互動格那一側(`frontLine`),員工站對面那一側(`backLine`)。
+ *
+ * 不硬編方向:互動格落在 footprint 的哪一邊就決定哪邊是顧客側,所以玩家把吧台
+ * 旋轉 90°/180° 之後,員工照樣站在吧台**後面**、隊伍照樣往顧客側延伸。
+ */
+interface CounterAxis {
+  /** true = 前後差在 row(吧台橫著擺);false = 差在 column(吧台直著擺)。 */
+  vertical: boolean;
+  /** 顧客側那一排的固定座標。 */
+  frontLine: number;
+  /** 員工側那一排的固定座標。 */
+  backLine: number;
+  /** 由吧台指向顧客側的單位向量(排隊往這個方向延伸)。 */
+  step: 1 | -1;
+}
+
+function counterAxis(counter: Placement): CounterAxis {
+  const fp = placementFootprint(counter);
+  const front = placementInteract(counter);
+  if (front.r < counter.r) return { vertical: true, frontLine: front.r, backLine: counter.r + fp.h, step: -1 };
+  if (front.r >= counter.r + fp.h) return { vertical: true, frontLine: front.r, backLine: counter.r - 1, step: 1 };
+  if (front.c < counter.c) return { vertical: false, frontLine: front.c, backLine: counter.c + fp.w, step: -1 };
+  return { vertical: false, frontLine: front.c, backLine: counter.c - 1, step: 1 };
+}
+
+/** 沿吧台長邊展開的固定序:互動格所在的那一道 → 右 → 左 → 更右 → 更左。 */
+function counterLanes(counter: Placement, axis: CounterAxis): number[] {
+  const fp = placementFootprint(counter);
+  const front = placementInteract(counter);
+  const span = axis.vertical ? fp.w : fp.h;
+  const origin = axis.vertical ? front.c : front.r;
+  const lanes = [origin];
+  for (let d = 1; d <= span; d++) { lanes.push(origin + d); lanes.push(origin - d); }
+  return lanes;
+}
+
+/**
+ * 🔴 P4b:員工的站位 = 吧台**後方**那一排(設計文件 §4.9)。
+ *
+ * 與 `cafeCounterSpots()` 共用同一組 lane 展開序,只是換到軸的另一側 ⇒
+ * 玩家把吧台搬到哪裡、轉成什麼方向,員工就站到那裡的後面,沒有任何硬編座標。
+ * 吧台被拆掉時退化成「站在點餐位上」——不好看,但不會崩、也不會有人站進牆裡。
+ */
+export function cafeStaffSpots(): SeatTile[] {
+  const counter = cafeCounterPlacement();
+  if (!counter) return cafeCounterSpots();
+  const walkable = cafeWalkable();
+  const axis = counterAxis(counter);
+  const spots: SeatTile[] = [];
+  for (const lane of counterLanes(counter, axis)) {
+    const tile = axis.vertical ? { c: lane, r: axis.backLine } : { c: axis.backLine, r: lane };
+    if (walkable(tile.c, tile.r)) spots.push(tile);
+  }
+  return spots.length > 0 ? spots : cafeCounterSpots();
+}
+
+/** 隊伍最長探到離吧台幾格(防呆上限,正常流量遠遠用不到)。 */
+export const CAFE_QUEUE_MAX_DEPTH = 14;
+
+/**
+ * 🔴 P4b:吧台前的**排隊格**,由點餐位往顧客側一路延伸(設計文件 §4.9)。
+ *
+ * 回傳序就是隊伍順序(第 0 格最靠近吧台)。走不通就往旁邊讓一道並沿用新的那道,
+ * 所以玩家在動線上擺了桌子,隊伍會繞過去而不是斷掉。**純表現層**:排隊不改任何
+ * 結帳/薪資/產能運算,它只是把「已經發生的產能吃緊」畫成一條看得見的人龍。
+ */
+export function cafeQueueTiles(limit: number): SeatTile[] {
+  const max = Math.max(0, Math.min(CAFE_QUEUE_MAX_DEPTH * 2, Math.trunc(Number.isFinite(limit) ? limit : 0)));
+  if (max === 0) return [];
+  const walkable = cafeWalkable();
+  const counterSpots = cafeCounterSpots();
+  const counter = cafeCounterPlacement();
+  const head = counterSpots[0];
+  const axis: CounterAxis = counter
+    ? counterAxis(counter)
+    : { vertical: true, frontLine: head.r, backLine: head.r - 1, step: 1 };
+  const used = new Set(counterSpots.map((tile) => `${tile.c},${tile.r}`));
+  let lane = axis.vertical ? head.c : head.r;
+  const out: SeatTile[] = [];
+  for (let depth = 1; out.length < max && depth <= CAFE_QUEUE_MAX_DEPTH; depth++) {
+    const line = axis.frontLine + axis.step * depth;
+    let placed = false;
+    for (const candidate of [lane, lane + 1, lane - 1, lane + 2, lane - 2]) {
+      const tile = axis.vertical ? { c: candidate, r: line } : { c: line, r: candidate };
+      const key = `${tile.c},${tile.r}`;
+      if (used.has(key) || !walkable(tile.c, tile.r)) continue;
+      used.add(key);
+      out.push(tile);
+      lane = candidate; // 讓過去之後就沿用新的那一道,隊伍才是連續的一條線
+      placed = true;
+      break;
+    }
+    if (!placed) break;
+  }
+  return out;
 }
 
 export function cafeAmbiancePoints(): number {

@@ -16,8 +16,30 @@
 
 ## 現在狀態(2026-08-04)
 
-- **咖啡廳經營玩法重設計 P1 → P2 → P3 → P4a 都完成。P1/P2/P3 已提交(HEAD `e28b6cd`),
-  P4a 變更待提交。**
+- 🎉 **咖啡廳經營玩法重設計 P1 → P2 → P3 → P4a → P4b 全數完成,整個重設計結案。**
+  P1～P4a 已提交(HEAD `ae24bf6`),**P4b 變更待提交**。
+- **P4b(員工的畫面表現 + 人力區塊;重設計文件 §4.9)** —— 只做表現層,
+  `cafe.ts` 的產能公式與 `tick.ts` 的結帳/薪資一行未改:
+  - **新增 `src/floor/staffAgents.ts`**(~250 行):員工站在**吧台後方**,三狀態
+    `idle`(擦杯子)/ `serving`(面向顧客 + 頭上製作中泡泡)/ `busy`(外面有人排隊 ⇒ 動作加倍)。
+    人數只讀 P4a 的 `cafeStaffCount()`;`cafe.open` / 營業時段為 false 時回空陣列。
+  - **`placements.ts` 新增 `cafeStaffSpots()` 與 `cafeQueueTiles()`**:兩者都由吧台的
+    footprint + interact 推「前後軸」,沒有硬編座標 ⇒ 玩家搬動/旋轉吧台,員工站位與
+    隊伍方向一起跟著走。
+  - 🔴 **排隊**:`guestAgents` 的 `entering` 多一段排隊。同時能結帳的人數 =
+    `min(員工數, 點餐位數)`,其餘排進 `cafeQueueTiles()` 的人龍(先到先服務,零 RNG)。
+    **純表現層**——錢在 `cafeHourlyPass()` 早就收完了,排太久也沒有額外懲罰。
+  - **`CafePanel.vue` 新增「人力」區塊**(與永久投資並列):👤 ×N・日薪合計、
+    今日負荷進度條(滿載轉紅)、雇用/資遣(走 P4a 的 `hireCafeStaff()` / `fireCafeStaff()`)。
+  - 🔴 **修掉面板產能顯示 bug**:`cafeCapability()` 補上 `{ seats: cafeSeatSpots().length,
+    extraStaff }`。修前 1 人 15 席顯示 **26**、雇到 4 人**還是 26**;修後 4 人顯示 **85**。
+  - 改動檔:新增 `src/floor/staffAgents.ts`、`src/sim/placements.ts`、`src/floor/guestAgents.ts`、
+    `src/floor/floorScene.ts`、`src/components/FloorMap.vue`、`src/components/CafePanel.vue`
+    + 新測試 `scripts/cafe-p4b-staff-test.ts`(54 條)+ `scripts/run-all.ts` 登記。
+    **未動 `sim/cafe.ts`、`sim/tick.ts`、`sim/routine.ts`、`sim/persistence.ts`。**
+  - **UI 實拍**:`artifacts/ui-lab/rent/cafe-p4b-staff/`(容器內 Playwright、
+    `timezoneId: Asia/Taipei`)——吧台後三位待機店員、兩位同時結帳(+$36 浮字)、
+    一位店員時吧台前排成 5 人人龍、人力區塊滿載 26/26 紅色進度條。
 - **P4a(成長軸模擬層:招牌分級 + 員工/產能 + 客單價上限)** —— 只做模擬層,
   畫面(`staffAgents`)與人力面板留給 P4b:
   - **招牌 Lv1 → Lv4**:`cafeUpgrades.ts` **追加**兩個 id(`cafe_signboard_lv3` $60,000、
@@ -56,9 +78,9 @@
     `components/CafePanel.vue`、`scripts/cafe-opening-sim.ts` + 新測試
     `scripts/cafe-p3-economy-test.ts` + 三支既有咖啡廳測試跟著改語意。
     **未動 `src/floor/*`、未動 `sim/routine.ts`、未改五項投資與研發 id。**
-- **最新驗證(全綠)**:`npm test` **92/92**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)。UI 未動 ⇒ P4a 未重跑 `ui:shot`
-  (最後一次是 P3 的 18 張 0 error + `artifacts/ui-lab/rent/cafe-p3-panel/` 6 張面板實拍)。
+- **最新驗證(全綠)**:`npm test` **93/93**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、`npm run ui:shot -- rent` 18 張 **0 error**
+  (容器 bundle hash `index-BrPYznV6.js` 與本機 build 一致)。
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts:28`)。P3 在 `cafe.sales[]`
   加了兩個選填欄位(`restocked` / `restockCost`)、P4a 加了 `cafe.extraStaff`,
   `sanitizeCafeState` 都有預設值與夾值 ⇒ **兩次都不需要升版**
@@ -86,14 +108,17 @@
 
 ## 下一步
 
-- **提交 P4a**,然後 **P4b**:員工與產能的**畫面表現**(見重設計文件 §4.9)——
-  `src/floor/staffAgents.ts`(吧台後的店員、結帳動作、**排隊 = 產能不足的視覺信號**)
-  + `CafePanel.vue` 的「人力」區塊(👤 ×N・日薪合計、今日負荷進度條、雇用/資遣按鈕)。
-  模擬層已經齊備:`cafeCapability(upgrades, { seats, extraStaff })` 直接給得出
-  `capacity / seatCapacity / staffCapacity / staffCount / dailyWage`,
-  雇用/資遣走 `hireCafeStaff()` / `fireCafeStaff()` 純函式。
-  🔴 **`CafePanel.vue:307` 的「產能 N 單」目前讀的是沒帶席次的 `cafeCapability()`**
-  (回的是「只有首位店員」的 35 杯),P4b 要把真實席次接進去。
+- **提交 P4a + P4b**(兩批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
+  使用者的四點需求(經營感／開店關店看得到消費／會虧錢／座位)全部交付。
+- 🔴 **P4b 發現、未擅自處理的兩條張力**(細節見重設計文件 §4.9 末段):
+  1. **同時能結帳的人數被吧台寬度夾住**——點餐位由吧台前那一排可走格算出來,
+     贈品的 2 格吧台只有 4 個位子,雇到第 5 位以上不會再增加同時服務人數
+     (仍然算產能與薪資)。要突破得讓玩家擺更寬/第二座吧台。
+  2. **客流本來就被產能夾住**(`cafeCrowd()` 的 `min(base, capacity)`),
+     所以「人手不足 ⇒ 客流暴增到排爆」不會發生。席次是瓶頸時雇人確實讓隊伍變短;
+     員工是瓶頸時雇人會同時抬高客流,隊伍不消失而是換成更多營收。
+- **設計初稿寫的「排太久放棄離開($0 + 聲譽 −1)」P4b 刻意沒做**——那會改到金流,
+  屬於模擬層,要不要加請使用者拍板。
 - **使用者要拍板(P4a 新增)**:P4a 把開張期的產能天花板從 26 打開到 35 之後,
   §4.7 的「備太多反而虧」從 P3 的 −$35 回到 **+$74**(精準備貨 +$195,差距仍有 $121)。
   損耗旋鈕**已經頂到極限**(`(24 − 23) × 0.9 < 1` 是懶人路線零損耗的唯一解,`RATE` 不能 > 1),

@@ -26,6 +26,14 @@ import {
   GUEST_SERVED_SECONDS,
   type GuestAgent,
 } from "./guestAgents";
+import {
+  staffMoving,
+  staffWipeFrame,
+  staffWorkFrame,
+  STAFF_APRON,
+  STAFF_APRON_TIE,
+  type StaffAgent,
+} from "./staffAgents";
 import type { PetAgent } from "./petAgents";
 import { isVacuumDef, type VacuumAgent } from "./vacuumAgents";
 import { activeFx, type Fx } from "./fx";
@@ -113,7 +121,7 @@ export function dayNightTint(hour: number): { color: string; alpha: number } | n
   return { color: "#141840", alpha: 0.24 }; // 入夜
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[], guests?: GuestAgent[], cafeOpen?: boolean) {
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[], guests?: GuestAgent[], cafeOpen?: boolean, staff?: StaffAgent[]) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -134,7 +142,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     drawDef(ctx, getDef(p.defId), p.c * TILE, p.r * TILE, p.rotation ?? 0);
   }
 
-  if (agents || pets || vacuums || guests) {
+  if (agents || pets || vacuums || guests || staff) {
     // 租客、咖啡廳顧客、寵物與掃地機依 y 混排,讓靠下(近鏡頭)的蓋住上方。
     const items: { y: number; draw: () => void }[] = [];
     const petPairs = activePetPairs(pets ?? []);
@@ -149,11 +157,14 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       if (guest.hidden || guest.phase === "departed") continue;
       items.push({ y: guestDrawY(guest), draw: () => drawGuest(ctx, guest) });
     }
+    // P4b:員工站在吧台後方,和其他人一起依 y 混排(吧台本體會蓋住他的下半身)。
+    for (const worker of staff ?? []) items.push({ y: worker.py, draw: () => drawStaff(ctx, worker) });
     for (const v of vacuums ?? []) items.push({ y: v.py + 6, draw: () => drawVacuum(ctx, v, frame) });
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
     // 泡泡與浮字是資訊層,統一蓋在人物／家具之上(P2:點餐 → 收錢 → 入座三種演出)。
     for (const guest of guests ?? []) drawGuestBubble(ctx, guest, frame);
+    for (const worker of staff ?? []) drawStaffBubble(ctx, worker);
     for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
@@ -206,6 +217,77 @@ export function drawGuest(ctx: Ctx, agent: GuestAgent) {
   const yoff = secondStep ? -1 : 0;
   drawSprite(ctx, sprite, x + 3, y - 4 + yoff, palette);
   drawAppearanceOverlay(ctx, appearance, x + 3, y - 4 + yoff, agent.view);
+}
+
+// ---------------------------------------------------------------------------
+// 🔴 P4b:員工站在吧台後面(設計文件 §4.9)
+//
+// 三個狀態必須在畫面上分得出來,而且**不需要讀任何數字**:
+//   idle    → 站在吧台後,偶爾拿起杯子擦兩下
+//   serving → 轉身面向吧台前的顧客,頭上出現「製作中」的杯子圖示
+//   busy    → 同上,但動作不停(外面還有人在排隊)
+// 制服(深咖啡圍裙)是「這個人是店員不是顧客」唯一且最強的辨識訊號。
+// ---------------------------------------------------------------------------
+
+/** 員工本體:四方向人物骨架 + 圍裙 + 待機時手上的杯子。 */
+export function drawStaff(ctx: Ctx, agent: StaffAgent) {
+  const palette = guestPalette(agent.appearance);
+  const x = agent.px;
+  const y = agent.py;
+  groundShadow(ctx, x + TILE / 2, y + TILE - 1, 11);
+  const sprites = CHAR_SPRITES[agent.view];
+  const work = staffWorkFrame(agent);
+  const moving = staffMoving(agent);
+  // 忙碌/結帳中一律走「連續動作」的兩幀;待機且沒在挪位就站著。
+  const animated = moving || agent.phase !== "idle";
+  const sprite = animated ? (work === 0 ? sprites.walkA : sprites.walkB) : sprites.stand;
+  const yoff = animated && work === 1 ? -1 : 0;
+  const sx = x + 3;
+  const sy = y - 4 + yoff;
+  drawSprite(ctx, sprite, sx, sy, palette);
+  drawAppearanceOverlay(ctx, agent.appearance, sx, sy, agent.view);
+  drawStaffApron(ctx, sx, sy, agent.view);
+  const wipe = staffWipeFrame(agent);
+  if (wipe !== 0) drawStaffCup(ctx, sx, sy + (wipe === 1 ? 0 : 1), agent.view);
+}
+
+/** 圍裙:蓋在軀幹上(背面畫成交叉綁帶),一眼分得出店員與顧客。 */
+function drawStaffApron(ctx: Ctx, sx: number, sy: number, view: CharView) {
+  if (view === "back") {
+    rect(ctx, sx + 3, sy + 9, 5, 1, STAFF_APRON_TIE);
+    rect(ctx, sx + 4, sy + 10, 1, 4, STAFF_APRON_TIE);
+    rect(ctx, sx + 6, sy + 10, 1, 4, STAFF_APRON_TIE);
+    return;
+  }
+  const narrow = view !== "front";
+  const w = narrow ? 4 : 6;
+  const ox = narrow ? 3 : 2;
+  rect(ctx, sx + ox, sy + 9, w, 1, STAFF_APRON_TIE); // 腰帶
+  rect(ctx, sx + ox, sy + 10, w, 5, STAFF_APRON);    // 裙身
+  rect(ctx, sx + ox + 1, sy + 11, 1, 3, shade(STAFF_APRON, 18)); // 摺線
+}
+
+/** 待機時手上那只被擦來擦去的杯子。 */
+function drawStaffCup(ctx: Ctx, sx: number, sy: number, view: CharView) {
+  const cx = view === "side_l" ? sx + 1 : sx + 8;
+  rect(ctx, cx, sy + 9, 3, 4, "#f4efe4");
+  rect(ctx, cx, sy + 9, 3, 1, "#d8cfbe");
+}
+
+/** 結帳中/忙碌時頭上的「製作中」泡泡:杯子 + 兩股會動的熱氣。 */
+export function drawStaffBubble(ctx: Ctx, agent: StaffAgent) {
+  if (agent.phase === "idle") return;
+  const w = 16;
+  const h = 14;
+  const x = Math.round(agent.px) + Math.round((TILE - w) / 2);
+  const y = Math.round(agent.py) - h - 8;
+  bubbleBox(ctx, x, y, w, h, "#fff6e2", "#5a4230");
+  rect(ctx, x + 4, y + 6, 7, 5, "#8a5a37");   // 杯身
+  rect(ctx, x + 4, y + 6, 7, 2, "#c98b57");   // 液面
+  rect(ctx, x + 11, y + 7, 1, 3, "#8a5a37");  // 把手
+  const lift = staffWorkFrame(agent) === 0 ? 0 : 1; // 熱氣上下飄
+  rect(ctx, x + 5, y + 2 + lift, 1, 3, "#c9b7a4");
+  rect(ctx, x + 8, y + 3 - lift, 1, 3, "#c9b7a4");
 }
 
 // ---------------------------------------------------------------------------

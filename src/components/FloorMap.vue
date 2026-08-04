@@ -5,7 +5,7 @@ import { ROOM_INFO, TILE, type RoomInfo } from "../floor/map";
 import { createAgents, tickAgents, type Agent } from "../floor/agents";
 import { createPetAgents, petAgentSignature, tickPetAgents, type PetAgent } from "../floor/petAgents";
 import { createVacuumAgents, vacuumAgentSignature, tickVacuumAgents, vacuumCellKeys, type VacuumAgent } from "../floor/vacuumAgents";
-import { createGuestAgents, departedGuestIds, guestAgentSignature, tickGuestAgents, type GuestAgent } from "../floor/guestAgents";
+import { departedGuestIds, guestAgentSignature, syncGuestAgents, tickGuestAgents, type GuestAgent } from "../floor/guestAgents";
 import { removeCafeGuest } from "../sim/cafeGuests";
 import type { CafeGuest } from "../types";
 import { layoutFloorTags } from "../floor/tagLayout";
@@ -14,6 +14,7 @@ import { renderFloorViewport, viewportRect } from "../floor/viewport";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
 import { furnitureAt, roomRect } from "../sim/placements";
+import { cafeBusinessOpen } from "../sim/tick";
 import type { FurnitureRotation } from "../furniture/rotation";
 
 const props = defineProps<{
@@ -102,9 +103,11 @@ function loop(t: number) {
     tickPetAgents(petAgents, dt);
     // 一樓咖啡廳顧客(CAFE-11 接線):state.cafe.guests 是唯一來源,未開張時就是空陣列。
     // 顧客走回門口才標 departed,這裡再把 id 從 cafe state 移掉,不會原地消失也不留殘留。
+    // syncGuestAgents 依 id 保留既有 agent:每個營業小時都會進來一批新顧客,
+    // 整批重建會把已經坐下的人瞬移回店門口(P2 的入座演出就白做了)。
     const nextGuestSignature = guestAgentSignature(state.cafe.guests);
     if (nextGuestSignature !== guestSignature) {
-      guestAgents = createGuestAgents(state.cafe.guests);
+      guestAgents = syncGuestAgents(guestAgents, state.cafe.guests);
       guestSignature = nextGuestSignature;
     }
     tickGuestAgents(guestAgents, dt, state.gameMs, vacuumBlocked);
@@ -129,7 +132,8 @@ function loop(t: number) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, el.width, el.height);
       renderFloorViewport(ctx, view, 1, () => {
-        composeFloor(ctx, Math.floor(t / 500), agents, marks, new Date(state.gameMs).getHours(), petAgents, vacuumAgents, guestAgents);
+        const hour = new Date(state.gameMs).getHours();
+        composeFloor(ctx, Math.floor(t / 500), agents, marks, hour, petAgents, vacuumAgents, guestAgents, cafeBusinessOpen(state.cafe.open, hour));
         const pv = props.preview;
         if (pv) drawFootprintPreview(ctx, pv.c, pv.r, pv.w, pv.h, pv.ok, pv.rotation);
       });

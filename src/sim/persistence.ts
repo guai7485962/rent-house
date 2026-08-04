@@ -25,7 +25,7 @@ import { sanitizeGrowthTags } from "./growth";
 import { genderForKnownName } from "./recruit";
 
 export const SAVE_KEY = "rent_house_save_v1";
-export const SAVE_VERSION = 9;
+export const SAVE_VERSION = 10;
 
 /**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
@@ -97,6 +97,19 @@ const MIGRATIONS: Record<number, (s: any) => any> = {
    * 這正是設計文件 §4.3 要的經營回饋,不該由遷移偷偷改掉玩家設定。
    */
   8: (s) => ({ ...s, cafe: s?.cafe ? { ...s.cafe, sales: Array.isArray(s.cafe.sales) ? s.cafe.sales : [] } : s?.cafe, v: 9 }),
+  /**
+   * v9 → v10:咖啡廳重設計 P2(顧客與結帳合流)。
+   *
+   * `CafeGuest` 多了 `order`(他點了什麼、付了多少),而**舊檔裡的顧客沒有這份訂單**——
+   * 他們是舊那條「55% 門檻純裝飾」路徑生出來的,身上沒有任何一筆錢對應得上。
+   * 留著他們只會在畫面上出現「有人在店裡但沒點過任何東西」的殘影,
+   * 所以直接清空 `cafe.guests`:顧客本來就是**每小時重生的臨時體**
+   * (`sanitizeCafeState` 載入時也會把過期的清掉),清掉不損失任何玩家資產,
+   * 下一個營業小時就會有帶著真實訂單的新顧客走進來。
+   *
+   * `standingOrders` / `stock` / `sales` / `history` / `popularity` 全部原封不動。
+   */
+  9: (s) => ({ ...s, cafe: s?.cafe ? { ...s.cafe, guests: [] } : s?.cafe, v: 10 }),
 };
 
 /** 已開張就把贈品補到 `placements`;重疊由 `starterPlacementsAgainst()` 擋,重跑安全。 */

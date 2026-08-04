@@ -3,7 +3,7 @@
  * 作息+偏離 → 定位/日誌/數值、張力事件、交誼廳社交、換日(收租+AI 日記),
  * 以及補進度(syncToNow)與快轉(同步版給測試、分批版給 UI)。
  */
-import type { CafeSalesDay, StatDeltas, TenantVisualState, RoomPropState } from "../types";
+import type { CafeGuestOrder, CafeSalesDay, StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot, resolveTarget, type Role } from "./routine";
 import { rollEvent } from "./events";
@@ -63,7 +63,7 @@ import { communityPass, scheduledCommunityPass } from "./community";
 import { floorChainPass } from "./floorChain";
 import { dreamPass } from "./dreams";
 import { outingEncounterPass, outingSpot } from "./outing";
-import { appendCafeGuest, cafeGuestHash, CAFE_GUEST_CAP, generateCafeGuest, removeDepartedCafeGuests } from "./cafeGuests";
+import { CAFE_DINE_IN_CAP, CAFE_GUEST_CAP, generateCafeGuest, removeDepartedCafeGuests } from "./cafeGuests";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -71,7 +71,7 @@ import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
-import { cafeAmbiancePoints, placementFootprint, placementRotation } from "./placements";
+import { cafeAmbiancePoints, cafeSeatSpots, placementFootprint, placementRotation } from "./placements";
 import { roomComfort, comfortBaselineDelta, cleanlinessBaseline, communalQuality, communalBaselineDelta } from "./comfort";
 import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
@@ -531,8 +531,15 @@ export function applyHour(rt: TenantRuntime, hour: number, addLog: boolean) {
 /** 咖啡廳營業時段(含頭含尾);非營業時段只做離場,不生客。 */
 export const CAFE_OPEN_HOUR = 10;
 export const CAFE_CLOSE_HOUR = 20;
-/** 營業時段每小時的來客機率(0~100 的決定性門檻;真正的客流公式是 CAFE-13 的事) */
-export const CAFE_ARRIVAL_CHANCE = 55;
+/**
+ * 現在是不是營業中(設計文件 §4.4)。
+ *
+ * 畫面的明暗、招牌、店門與資料層的清場全部讀同一個判斷 ⇒ 不可能出現
+ * 「店是暗的但還有人在點餐」。未開張(`open === false`)永遠是打烊。
+ */
+export function cafeBusinessOpen(open: boolean, hour: number): boolean {
+  return open === true && hour >= CAFE_OPEN_HOUR && hour <= CAFE_CLOSE_HOUR;
+}
 /**
  * 到點顧客的「走出去」寬限:過了 leavesMs 之後,資料層再留這麼久才強制清掉。
  *
@@ -544,37 +551,30 @@ export const CAFE_ARRIVAL_CHANCE = 55;
 export const CAFE_GUEST_LINGER_MS = 2 * MS_PER_GAME_HOUR;
 
 /**
- * 咖啡廳顧客的生成與離場(CAFE-11)。
+ * 咖啡廳顧客的**離場與清場**(CAFE-11 建立,重設計 P2 縮編職責)。
  *
- * 零漂移三條:
- * 1. **第一行就是 `if (!state.cafe.open) return;`** —— 開張要玩家花錢,無頭的
- *    balance 快照局永遠不會開張,整個 pass 連碰都碰不到。比日數閘門更乾淨。
- * 2. **零新增 `Math.random()`** —— 來客與否走 `cafeGuestHash(日|時)`,顧客內容走
- *    `generateCafeGuest` 既有的決定性雜湊;同一存檔同一小時永遠得到同一位客人。
- * 3. **不碰 state.runtimes** —— 顧客是平行的輕量體,收租/社交/日記/成就全數不受影響。
+ * 🔴 **P2 起這個 pass 不再生客**。以前它用 `cafeGuestHash % 100 < 55` 另外生一批
+ * 「畫面上的顧客」,和 `cafeHourlyPass()` 裡結帳的那批虛擬顧客毫無關係——那正是
+ * 設計文件 §3 要修掉的分裂。現在**顧客只從結帳那條路生出來**(見 `cafeHourlyPass`),
+ * 這裡只負責兩件掃地的事:
  *
- * 本期刻意不做客流公式(招牌等級 × 天氣 × 星期,CAFE-13)與開張 UI(CAFE-15)。
+ * 1. **打烊清場**(§4.4):非營業時段一樓是空的,玩家一眼分得出營業中與打烊。
+ * 2. **寬限期保險絲**:過了 `leavesMs + CAFE_GUEST_LINGER_MS` 還在的顧客直接收掉。
+ *    寬限期內的離場交給 FloorMap 走回門口的演出;沒開 1F 頁面/離線補進度時
+ *    才由這裡收乾淨,不會殘留。
+ *
+ * 零漂移仍然靠第一行的 `if (!cafe.open) return;`,且全程零 `Math.random()`。
  */
 export function cafeGuestPass(hour: number) {
   const cafe = state.cafe;
   if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
-  // 1) 過了寬限期還在的顧客直接收掉。寬限期內的離場交給 FloorMap 走回門口的演出,
-  //    這裡只當保險絲,確保沒開 1F 頁面/離線補進度時也不會殘留。
+  if (!cafeBusinessOpen(cafe.open, hour)) {
+    // 打烊:顧客清場。門關、燈暗、店裡沒有人——三件事在同一個判斷上。
+    if (cafe.guests.length > 0) cafe.guests.splice(0, cafe.guests.length);
+    return;
+  }
   const stayed = removeDepartedCafeGuests(cafe.guests, state.gameMs - CAFE_GUEST_LINGER_MS);
   if (stayed.length !== cafe.guests.length) cafe.guests.splice(0, cafe.guests.length, ...stayed);
-  // 2) 只有營業時段才可能來客,且滿座就不再收
-  if (hour < CAFE_OPEN_HOUR || hour > CAFE_CLOSE_HOUR) return;
-  if (cafe.guests.length >= CAFE_GUEST_CAP) return;
-  const slot = `${gameDayIndex()}|${hour}`;
-  if (cafeGuestHash(`cafe-arrival|${slot}`) % 100 >= CAFE_ARRIVAL_CHANCE) return;
-  const guest = generateCafeGuest({
-    seed: `cafe|${slot}`,
-    arrivedMs: state.gameMs,
-    sequence: cafe.guests.length,
-    excludeNames: cafe.guests.map((entry) => entry.name), // 同時在店的客人不撞名
-  });
-  // cap 與去重的判斷一律交給 appendCafeGuest,不在這裡另寫一套規則。
-  if (appendCafeGuest(cafe.guests, guest).length > cafe.guests.length) cafe.guests.push(guest);
 }
 
 /**
@@ -654,6 +654,38 @@ const CAFE_SALE_LOG_EVERY_DAYS = 7;
 const CAFE_SHORTAGE_SUMMARY_MIN = 4;
 
 /**
+ * 把一筆結帳變成一位站得上畫面的顧客(重設計 P2)。
+ *
+ * seed / sequence 沿用 P1 之前 `cafeGuestPass()` 的 `cafe|日|時` + 逐位 index,
+ * 所以顧客的姓名、外觀、意圖、停留時數全部照舊是決定性雜湊,零 `Math.random()`。
+ *
+ * `CAFE_GUEST_CAP` 只是防爆保險絲,正常流量下不會綁到(理由見 `cafeGuests.ts`
+ * 的常數註解);真的滿了寧可少一位可見顧客也不讓陣列無限成長,
+ * `scripts/cafe-p2-flow-test.ts` 直接驗這條餘裕。
+ */
+function spawnCafeGuestForOrder(
+  day: number,
+  hour: number,
+  index: number,
+  order: CafeGuestOrder,
+  seatTile: { c: number; r: number } | null,
+) {
+  const cafe = state.cafe;
+  if (cafe.guests.length >= CAFE_GUEST_CAP) return;
+  const guest = generateCafeGuest({
+    seed: `cafe|${day}|${hour}`,
+    arrivedMs: state.gameMs,
+    sequence: index,
+    excludeNames: cafe.guests.map((entry) => entry.name), // 同時在店的客人不撞名
+    seatTile,
+    takeaway: seatTile === null, // 外帶與撲空都只停留 0.25 遊戲小時
+    order,
+  });
+  if (cafe.guests.some((entry) => entry.id === guest.id)) return;
+  cafe.guests.push(guest);
+}
+
+/**
  * 🔴 咖啡廳逐位結帳(重設計 P1,設計文件 §3 §4.2 §4.3 §4.8)。
  *
  * 掛在 `hourlyTick()` 的 `cafeGuestPass()` 正後方,營業時段每小時跑一次:
@@ -683,6 +715,17 @@ const CAFE_SHORTAGE_SUMMARY_MIN = 4;
  * 所以「線上逐時跑 11 次」與「離線回來一次補 11 次」逐欄位相同——
  * `syncToNow()` 本來就是逐小時呼叫 `hourlyTick()`,兩條路徑跑的是同一段程式碼。
  * `cafe-per-guest-test.ts` 有一條直接對打的斷言。
+ *
+ * ## 🔴 P2:合流(設計文件 §3 的唯一主張)
+ *
+ * P1 留下一個分裂:結帳走這裡的虛擬 index、畫面上的人由 `cafeGuestPass()` 另外
+ * 用 55% 門檻生。**P2 把兩批人變成同一批**——迴圈裡每完成一次結帳,就地生出
+ * 一位帶著這份訂單的可見顧客 `CafeGuest`,他頭上泡泡顯示的就是 `order.itemName`、
+ * 浮字顯示的就是 `order.price`,而那筆錢同一輪就進了 `addCafeRevenue()`。
+ *
+ * 席次來自 `cafeSeatSpots()`(玩家實際擺的椅子);沒有空席的顧客改成**外帶**
+ * (`takeaway`),點完直接走、停留時間只有 0.25 遊戲小時 ⇒ 不佔 `CAFE_GUEST_CAP`
+ * 的名額,合流不變式在高流量下仍然成立(§4.6)。
  */
 export function cafeHourlyPass(hour: number) {
   const cafe = state.cafe;
@@ -716,10 +759,40 @@ export function cafeHourlyPass(hour: number) {
   let saleLine = "";
   let refusedLine = "";
 
+  // 🔴 合流的席次來源:玩家實際擺的椅子。拆光 ⇒ seats 為空 ⇒ 全部外帶。
+  const seats = cafeSeatSpots();
+  const takenSeats = new Set(
+    cafe.guests
+      .filter((guest) => guest.seatTile)
+      .map((guest) => `${guest.seatTile!.c},${guest.seatTile!.r}`),
+  );
+  /** 取一個沒人坐的席位;客滿(或超過內用上限)回 null ⇒ 這位改成外帶。 */
+  const claimSeat = () => {
+    if (takenSeats.size >= CAFE_DINE_IN_CAP) return null;
+    for (const spot of seats) {
+      const key = `${spot.seat.c},${spot.seat.r}`;
+      if (takenSeats.has(key)) continue;
+      takenSeats.add(key);
+      return spot;
+    }
+    return null;
+  };
+
   for (let index = 0; index < count; index++) {
     const item = chooseCafeMenuItem({ menu, day, hour, index, weather });
     if (!item) break; // 菜單掛了(不該發生);不收錢也不罰聲譽
     const till = checkoutCafeOrder(cafe.stock, item);
+    // 撲空的顧客不佔席(他轉頭就走);服務到的才去搶一張真的椅子。
+    const spot = till.ok ? claimSeat() : null;
+    const order: CafeGuestOrder = {
+      itemId: item.id,
+      itemName: item.name,
+      price: item.price,
+      track: item.track,
+      served: till.ok,
+      missing: till.ok ? "" : getCafeIngredient(till.missing[0])?.name ?? "備料",
+      takeaway: till.ok && !spot,
+    };
     if (till.ok) {
       cafe.stock = till.stock;
       revenue += till.revenue;
@@ -735,10 +808,12 @@ export function cafeHourlyPass(hour: number) {
       if (!refusedLine && refusedBefore === 0 && refused === 1) {
         refusedLine = cafeOrderLine({
           kind: "refused", day, hour, itemName: item.name,
-          missingName: getCafeIngredient(till.missing[0])?.name ?? "備料",
+          missingName: order.missing,
         });
       }
     }
+    // 🔴 這一行就是合流:每一筆結帳都生出一位帶著這份訂單、走得進畫面的顧客。
+    spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null);
   }
 
   record.revenue += revenue;

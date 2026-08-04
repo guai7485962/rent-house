@@ -8,7 +8,7 @@
  * 放在獨立模組避免 store ↔ routine 的循環依賴。
  */
 import { reactive } from "vue";
-import { INITIAL_PLACEMENTS, ROOM_RECTS, FACILITY_RECTS, buildGrid, type Placement } from "../floor/map";
+import { INITIAL_PLACEMENTS, ROOM_RECTS, FACILITY_RECTS, CAFE_RECTS, buildGrid, isWalkable, type Placement } from "../floor/map";
 import { getDef } from "../furniture/catalog";
 import { normalizeRotation, rotateGridOffset, rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
 import { upgradeAttributes } from "./upgrades";
@@ -249,6 +249,148 @@ export function starterPlacementsAgainst(existing: readonly Placement[]): Placem
  * 兩者刻意不互相灌水);負值屬性夾成 0,免得未來有家具用負 cozy 做「髒亂」時
  * 把氛圍拉成負數。
  */
+// ---------------------------------------------------------------------------
+// P2:席次與吧台一律「查玩家實際擺的家具」,不再有硬編座位表
+// ---------------------------------------------------------------------------
+
+interface SeatTile { c: number; r: number }
+
+/**
+ * 一個內用席位:顧客**坐著的格**與他**走得到的格**。
+ *
+ * `seat: "on"`(椅子)的家具格本身是障礙,尋路走不進去 ⇒ `stand` 是它的互動格,
+ * 畫面再把坐姿畫到 `seat` 上(同 `agents.ts` 對沙發/床的作法)。
+ * `seat: "at"`(圓桌)本來就是坐在家具前面 ⇒ 兩者同一格。
+ */
+export interface CafeSeatSpot {
+  seat: SeatTile;
+  stand: SeatTile;
+  defId: string;
+}
+
+const seatKey = (t: SeatTile) => `${t.c},${t.r}`;
+
+/**
+ * 🔴 內用席次 = 一樓四區裡 `seat` 欄位不為空的家具(設計文件 §4.6)。
+ *
+ * 取代 P1 之前 `floor/guestAgents.ts` 的硬編 `CAFE_GUEST_PREFERRED_SEATS`——
+ * 那張表正是「顧客站在空地板上」的根因(開張贈品刻意避開那六格)。
+ * 現在顧客坐在玩家真的買、真的擺的椅子上;拆掉椅子不會壞,只是席次變少
+ * ⇒ 更多人只能外帶。**沒有任何 UI 鎖定邏輯。**
+ *
+ * 回傳序固定為 (r, c, defId),與呼叫次序無關 ⇒ 席次分配是決定性的。
+ */
+export function cafeSeatSpots(): CafeSeatSpot[] {
+  const grid = buildGrid();
+  const occ = occupiedSet();
+  const walkable = (c: number, r: number) => {
+    const cell = grid[r]?.[c];
+    return !!cell && isWalkable(cell) && !occ.has(`${c},${r}`);
+  };
+  // 🔴 只認「顧客真的走得到」的到達格。實測過:開張贈品的左側椅子,它的互動格
+  // (1,44)被自己那張圓桌與另一張椅子圍成死角,可走但走不到——顧客會永遠卡住。
+  const reachable = cafeReachableTiles(walkable);
+  const usable = (c: number, r: number) => walkable(c, r) && reachable.has(`${c},${r}`);
+  const spots: CafeSeatSpot[] = [];
+  const usedSeat = new Set<string>();
+  const usedStand = new Set<string>();
+  const seatFurniture = placements.list
+    .filter((p) => CAFE_PLACEMENT_REGION_SET.has(p.room) && !!getDef(p.defId).seat)
+    .sort((a, b) => a.r - b.r || a.c - b.c || a.defId.localeCompare(b.defId));
+  for (const p of seatFurniture) {
+    const def = getDef(p.defId);
+    const interact = placementInteract(p);
+    const stand = usable(interact.c, interact.r) ? { c: interact.c, r: interact.r } : ringUsable(p, usable);
+    if (!stand) continue; // 椅子被家具圍死 ⇒ 這張不算席次(不硬塞、不穿牆)
+    const seat = def.seat === "on" ? { c: p.c, r: p.r } : { ...stand };
+    if (usedSeat.has(seatKey(seat)) || usedStand.has(seatKey(stand))) continue;
+    usedSeat.add(seatKey(seat));
+    usedStand.add(seatKey(stand));
+    spots.push({ seat, stand, defId: p.defId });
+  }
+  return spots;
+}
+
+/**
+ * 從店門(`cafe_entrance`)泛洪出來的可達格集合。
+ *
+ * 刻意自己寫一次 BFS 而不是借 `floor/pathfind.ts`:那支檔案 import 本檔,
+ * 反向 import 會變成循環相依。範圍只有一樓 16×52 的網格,成本可以忽略。
+ */
+function cafeReachableTiles(walkable: (c: number, r: number) => boolean): Set<string> {
+  const seen = new Set<string>();
+  const queue: SeatTile[] = [];
+  const door = CAFE_RECTS.cafe_entrance;
+  for (let c = door.c0; c <= door.c1; c++) {
+    if (!walkable(c, door.r0)) continue;
+    seen.add(`${c},${door.r0}`);
+    queue.push({ c, r: door.r0 });
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const cur = queue[head];
+    for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const c = cur.c + dc;
+      const r = cur.r + dr;
+      const key = `${c},${r}`;
+      if (seen.has(key) || !walkable(c, r)) continue;
+      seen.add(key);
+      queue.push({ c, r });
+    }
+  }
+  return seen;
+}
+
+/** 家具外圈第一個「可走且走得到」的格(固定掃描序);全被擋住回 null。 */
+function ringUsable(p: Placement, usable: (c: number, r: number) => boolean): SeatTile | null {
+  const fp = placementFootprint(p);
+  for (let dr = -1; dr <= fp.h; dr++) {
+    for (let dc = -1; dc <= fp.w; dc++) {
+      if (dc >= 0 && dc < fp.w && dr >= 0 && dr < fp.h) continue;
+      const c = p.c + dc;
+      const r = p.r + dr;
+      if (usable(c, r)) return { c, r };
+    }
+  }
+  return null;
+}
+
+/** 開張贈品的吧台座標(設計文件 §4.9);沒擺吧台時的點餐位就以此格前方推算。 */
+export const CAFE_COUNTER_TILE: SeatTile = { c: 3, r: 38 };
+
+/**
+ * 點餐位:吧台**前方**那一排可走格(顧客站這裡點餐)。
+ *
+ * 多於一格是刻意的——同一小時會有好幾位顧客一起進來,只有一格會互相卡死。
+ * 位置一律由 `placements` 推算,玩家把吧台搬走,點餐位就跟著搬。
+ */
+export function cafeCounterSpots(): SeatTile[] {
+  const grid = buildGrid();
+  const occ = occupiedSet();
+  const walkable = (c: number, r: number) => {
+    const cell = grid[r]?.[c];
+    return !!cell && isWalkable(cell) && !occ.has(`${c},${r}`);
+  };
+  const counter = placements.list
+    .filter((p) => CAFE_PLACEMENT_REGION_SET.has(p.room) && p.defId === "cafe_counter")
+    .sort((a, b) => a.r - b.r || a.c - b.c)[0];
+  const spots: SeatTile[] = [];
+  if (counter) {
+    const fp = placementFootprint(counter);
+    const front = placementInteract(counter);
+    // 由互動格往兩側展開,序固定:互動格 → 右 → 左 → 更右 → 更左
+    const columns = [front.c];
+    for (let d = 1; d <= fp.w; d++) { columns.push(front.c + d); columns.push(front.c - d); }
+    for (const c of columns) if (walkable(c, front.r)) spots.push({ c, r: front.r });
+  }
+  if (spots.length > 0) return spots;
+  // 沒擺吧台(玩家拆了/舊存檔):退回吧台區 row-major 第一格可走地板,行為不崩。
+  const box = CAFE_RECTS.cafe_counter;
+  for (let r = box.r0; r <= box.r1; r++) {
+    for (let c = box.c0; c <= box.c1; c++) if (walkable(c, r)) return [{ c, r }];
+  }
+  return [{ ...CAFE_COUNTER_TILE }];
+}
+
 export function cafeAmbiancePoints(): number {
   let points = 0;
   for (const p of placements.list) {

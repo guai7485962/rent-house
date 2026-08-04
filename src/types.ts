@@ -155,15 +155,40 @@ export interface Appearance {
 /** 咖啡廳顧客只帶畫面與意圖所需的輕量資料，不是 TenantRuntime。 */
 export type CafeGuestIntent = "coffee" | "adopt" | "rent";
 
+/**
+ * 這位顧客實際點的東西(重設計 P2)。
+ *
+ * 🔴 這個欄位就是「合流」本身:`cafeHourlyPass()` 每做一次結帳,就生一位帶著這份
+ * 訂單的可見顧客。畫面上泡泡顯示的品項、浮字顯示的金額,都直接讀這裡,
+ * **不是另外算一份**。`null` 只出現在舊存檔或測試手捏的顧客。
+ */
+export interface CafeGuestOrder {
+  itemId: string;
+  itemName: string;
+  /** 售價。`served` 時 = 實際進帳金額;`refused` 時 = 他原本想付的錢(泡泡顯示用)。 */
+  price: number;
+  /** 菜單三條線,泡泡用它決定畫咖啡杯/可頌/肉球。 */
+  track: "coffee" | "bakery" | "pet";
+  /** true = 料齊、已收錢;false = 缺料、$0。 */
+  served: boolean;
+  /** `served === false` 時缺的那項原料名稱;否則空字串。 */
+  missing: string;
+  /** true = 沒有空席,點完直接走(設計文件 §4.6)。 */
+  takeaway: boolean;
+}
+
 export interface CafeGuest {
   id: string;
   name: string;
   appearance: Appearance;
   intent: CafeGuestIntent;
   arrivedMs: number;
-  /** 抵達後 1～3 個遊戲小時離開。 */
+  /** 內用 1～3 個遊戲小時;外帶/撲空只停留很短(點完就走)。 */
   leavesMs: number;
+  /** 他坐的那張**真椅子**的格(來自 `placements`);`null` = 外帶,不佔席。 */
   seatTile: import("./floor/pathfind").Tile | null;
+  /** P2:他點了什麼、付了多少。舊存檔沒有這欄 ⇒ `null`。 */
+  order: CafeGuestOrder | null;
 }
 
 /** 進行中的咖啡廳研發(CAFE-16 才會實際寫入;本期只保留欄位)。 */

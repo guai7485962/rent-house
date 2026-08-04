@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeResearch, CafeSalesDay, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeGuestOrder, CafeResearch, CafeSalesDay, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -249,6 +249,25 @@ function sanitizeCafeGuest(raw: unknown): CafeGuest | null {
     arrivedMs,
     leavesMs,
     seatTile: tile,
+    order: sanitizeCafeGuestOrder((raw as Record<string, unknown>).order),
+  };
+}
+
+const CAFE_ORDER_TRACKS: readonly CafeGuestOrder["track"][] = ["coffee", "bakery", "pet"];
+
+/** P2:顧客訂單同樣逐欄檢查;壞資料整份丟掉(畫面退回沒有訂單的舊行為,不會炸)。 */
+function sanitizeCafeGuestOrder(raw: unknown): CafeGuestOrder | null {
+  if (!isPlainObject(raw)) return null;
+  const { itemId, itemName, price, track, served, missing, takeaway } = raw;
+  if (typeof itemId !== "string" || !itemId || typeof itemName !== "string" || !itemName) return null;
+  return {
+    itemId,
+    itemName,
+    price: Math.max(0, finiteOr(price, 0)),
+    track: CAFE_ORDER_TRACKS.includes(track as CafeGuestOrder["track"]) ? (track as CafeGuestOrder["track"]) : "coffee",
+    served: served === true,
+    missing: typeof missing === "string" ? missing : "",
+    takeaway: takeaway === true,
   };
 }
 

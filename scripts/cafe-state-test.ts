@@ -10,8 +10,9 @@ const mem: Record<string, string> = {};
 
 const { state, defaultCafe, sanitizeCafeState, CAFE_HISTORY_CAP, GAME_START } = await import("../src/sim/gameState");
 const { SAVE_KEY, SAVE_VERSION, migrateSave, save, load } = await import("../src/sim/persistence");
-const { cafeGuestPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR, CAFE_GUEST_LINGER_MS } = await import("../src/sim/tick");
+const { cafeGuestPass, cafeHourlyPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR, CAFE_GUEST_LINGER_MS } = await import("../src/sim/tick");
 const { CAFE_GUEST_CAP, generateCafeGuest } = await import("../src/sim/cafeGuests");
+const { suggestedStandingOrders } = await import("../src/sim/cafe");
 const { MS_PER_GAME_HOUR } = await import("../src/sim/clock");
 
 let pass = 0;
@@ -41,17 +42,26 @@ const hourMs = (day: number, hour: number) => {
   d.setHours(hour, 0, 0, 0);
   return d.getTime();
 };
-/** 從 startMs 起逐小時推進並跑 pass;不碰任何其他 pass。回傳期間出現過的顧客 id。 */
+/**
+ * 從 startMs 起逐小時推進並跑咖啡廳的兩個 pass(順序照 `hourlyTick()`)。
+ *
+ * 🔴 P2 起顧客**只從 `cafeHourlyPass()` 的結帳迴圈生出來**,`cafeGuestPass()`
+ * 只負責清場與寬限期保險絲,所以這裡兩支都要跑才看得到人。
+ */
 function runHours(startMs: number, hours: number): string[] {
   const seen: string[] = [];
   state.gameMs = startMs;
   for (let i = 0; i < hours; i++) {
     state.gameMs += MS_PER_GAME_HOUR;
-    cafeGuestPass(new Date(state.gameMs).getHours());
+    const hour = new Date(state.gameMs).getHours();
+    cafeGuestPass(hour);
+    cafeHourlyPass(hour);
     for (const guest of state.cafe.guests) if (!seen.includes(guest.id)) seen.push(guest.id);
   }
   return seen;
 }
+/** 開張 + 有料的店(不備料的話顧客照樣會來,只是全部撲空)。 */
+const openStocked = () => setCafe({ open: true, standingOrders: suggestedStandingOrders(), stock: suggestedStandingOrders(), popularity: 50 });
 const seatedGuest = (index: number, leavesMs: number): CafeGuest =>
   ({ ...generateCafeGuest({ seed: "fixture", arrivedMs: 0, sequence: index }), leavesMs });
 
@@ -83,14 +93,15 @@ try {
   const closedMoney = state.money;
   const closedLedger = state.ledger.length;
   const closedRandom = countRandom(() => {
-    for (let hour = 0; hour < 24; hour++) cafeGuestPass(hour);
+    for (let hour = 0; hour < 24; hour++) { cafeGuestPass(hour); cafeHourlyPass(hour); }
   });
-  check("未開張時 cafeGuestPass 不動 state.cafe", cafeJson() === closedCafe);
-  check("未開張時 cafeGuestPass 不動 runtimes／money／ledger", runtimeIds() === closedRuntimes && state.money === closedMoney && state.ledger.length === closedLedger);
-  check("未開張時 cafeGuestPass 零 Math.random 呼叫", closedRandom === 0, `calls=${closedRandom}`);
+  check("未開張時兩個咖啡廳 pass 都不動 state.cafe", cafeJson() === closedCafe);
+  check("未開張時不動 runtimes／money／ledger", runtimeIds() === closedRuntimes && state.money === closedMoney && state.ledger.length === closedLedger);
+  check("未開張時零 Math.random 呼叫", closedRandom === 0, `calls=${closedRandom}`);
 
   // --- 3. 開張後的生成:零 RNG、決定性、營業時段 ---
-  setCafe({ open: true });
+  state.money = 400_000;
+  openStocked();
   const openBase = hourMs(1, 0);
   const runtimesBeforeOpen = runtimeIds();
   const openRandom = countRandom(() => runHours(openBase, 72));
@@ -98,19 +109,20 @@ try {
   check("state.runtimes 零污染:key 集合完全相同", runtimeIds() === runtimesBeforeOpen, runtimeIds());
   check("顧客不會被塞進 state.runtimes", !Object.keys(state.runtimes).some((id) => id.startsWith("cafe_guest_")));
 
-  setCafe({ open: true });
+  openStocked();
   const firstSeen = runHours(openBase, 72);
   const firstRun = JSON.stringify(state.cafe.guests);
-  setCafe({ open: true });
+  openStocked();
   const secondSeen = runHours(openBase, 72);
   check("同一起點跑兩次得到逐欄相同的顧客", JSON.stringify(state.cafe.guests) === firstRun && firstSeen.join("|") === secondSeen.join("|"));
   check("跑完 72 小時確實來過多位客人(顧客系統真的有接上)", firstSeen.length >= 10, `seen=${firstSeen.length}`);
 
   const producingHours: number[] = [];
   for (let hour = 0; hour < 24; hour++) {
-    setCafe({ open: true });
+    openStocked();
     state.gameMs = hourMs(2, hour);
     cafeGuestPass(hour);
+    cafeHourlyPass(hour);
     if (state.cafe.guests.length > 0) producingHours.push(hour);
   }
   check("只有營業時段會來客", producingHours.every((hour) => hour >= CAFE_OPEN_HOUR && hour <= CAFE_CLOSE_HOUR), `hours=${producingHours.join(",")}`);
@@ -118,10 +130,20 @@ try {
 
   // --- 4. 上限與離場 ---
   const farFuture = hourMs(9, 12);
-  setCafe({ open: true, guests: Array.from({ length: CAFE_GUEST_CAP }, (_, i) => seatedGuest(i, farFuture)) });
+  openStocked();
+  state.cafe.guests.splice(0, state.cafe.guests.length,
+    ...Array.from({ length: CAFE_GUEST_CAP }, (_, i) => seatedGuest(i, farFuture)));
   const fullIds = state.cafe.guests.map((g) => g.id).join("|");
-  runHours(hourMs(3, 9), 12);
-  check("滿座時不再新增顧客(cap = CAFE_GUEST_CAP)", state.cafe.guests.length === CAFE_GUEST_CAP && state.cafe.guests.map((g) => g.id).join("|") === fullIds, `len=${state.cafe.guests.length}`);
+  // 只跑營業時段(打烊會清場,那是另一條斷言的事)
+  runHours(hourMs(3, CAFE_OPEN_HOUR - 1), CAFE_CLOSE_HOUR - CAFE_OPEN_HOUR + 1);
+  check("滿載時不再新增顧客(cap = CAFE_GUEST_CAP)", state.cafe.guests.length === CAFE_GUEST_CAP && state.cafe.guests.map((g) => g.id).join("|") === fullIds, `len=${state.cafe.guests.length}`);
+
+  // P2:打烊清場(設計文件 §4.4)——非營業時段一樓是空的
+  openStocked();
+  state.cafe.guests.splice(0, state.cafe.guests.length, seatedGuest(0, farFuture), seatedGuest(1, farFuture));
+  state.gameMs = hourMs(3, CAFE_CLOSE_HOUR + 1);
+  cafeGuestPass(CAFE_CLOSE_HOUR + 1);
+  check("🔴 打烊時顧客清場(即使他們的 leavesMs 還很久)", state.cafe.guests.length === 0, `len=${state.cafe.guests.length}`);
 
   const leaveBase = hourMs(4, 12);
   const leaving = seatedGuest(0, leaveBase + MS_PER_GAME_HOUR);
@@ -137,7 +159,7 @@ try {
   check("超過寬限期的顧客被移出 state.cafe.guests、不殘留", !state.cafe.guests.some((g) => g.id === leaving.id));
   check("未到點顧客仍留在店裡", state.cafe.guests.some((g) => g.id === staying.id) && state.cafe.guests.every((g) => g.leavesMs > state.gameMs));
 
-  setCafe({ open: true });
+  openStocked();
   runHours(hourMs(5, 8), 48);
   check("長跑後店裡不會有超過寬限期的顧客", state.cafe.guests.every((g) => g.leavesMs > state.gameMs - CAFE_GUEST_LINGER_MS));
   check("長跑後顧客數永遠不超過 cap", state.cafe.guests.length <= CAFE_GUEST_CAP, `len=${state.cafe.guests.length}`);
@@ -220,7 +242,7 @@ try {
   check("popularity 非數字回退為 0", dirty.popularity === 0);
   check(`日結紀錄 cap 為 ${CAFE_HISTORY_CAP}`, dirty.history.length === CAFE_HISTORY_CAP && dirty.history[0].day === 20);
   check("壞顧客與白名單外髮型被丟掉、重複 id 去重", dirty.guests.length === 1 && dirty.guests[0].id === seatedGuest(4, 0).id, dirty.guests.map((g) => g.id).join(","));
-  const overflow = sanitizeCafeState({ guests: Array.from({ length: 20 }, (_, i) => seatedGuest(i, 10_000)) }, 0);
+  const overflow = sanitizeCafeState({ guests: Array.from({ length: CAFE_GUEST_CAP + 8 }, (_, i) => seatedGuest(i, 10_000)) }, 0);
   check("載入時顧客也套用 cap", overflow.guests.length === CAFE_GUEST_CAP, `len=${overflow.guests.length}`);
   check("載入時就濾掉已到點的顧客", sanitizeCafeState({ guests: [seatedGuest(0, 100)] }, 100).guests.length === 0);
   const sanitizeRandom = countRandom(() => { sanitizeCafeState({ guests: [seatedGuest(0, 10_000)] }, 0); });

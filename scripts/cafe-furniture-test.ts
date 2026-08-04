@@ -118,9 +118,14 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
   });
   check("不擋樓梯↔店門的中央走道 c7/c8", corridor.length === 0, corridor.join(" "));
 
-  const { CAFE_GUEST_PREFERRED_SEATS } = await import("../src/floor/guestAgents");
-  const takenSeats = CAFE_GUEST_PREFERRED_SEATS.filter((t) => occupied.has(`${t.c},${t.r}`));
-  check("不佔用顧客偏好座位格", takenSeats.length === 0, JSON.stringify(takenSeats));
+  // P2:席次不再是硬編座位表,而是「贈品裡那幾張 seat 家具本身」。
+  // 舊斷言(贈品不可以佔到六格偏好座位)已隨 CAFE_GUEST_PREFERRED_SEATS 一起廢除。
+  const { cafeSeatSpots } = await import("../src/sim/placements");
+  const spots = cafeSeatSpots();
+  check("開張贈品直接提供內用席次(顧客坐得到真的椅子)", spots.length >= 6, `seats=${spots.length}`);
+  check("每個席位都有可走的到達格,且不落在中央走道 c7/c8", spots.every((s) =>
+    !occupied.has(`${s.stand.c},${s.stand.r}`) && s.stand.c !== 7 && s.stand.c !== 8),
+    spots.map((s) => `${s.defId}@${s.seat.c},${s.seat.r}→${s.stand.c},${s.stand.r}`).join(" "));
 }
 
 // --- 4. 只擺一次 ---

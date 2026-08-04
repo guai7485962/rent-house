@@ -4,7 +4,7 @@
  * 顧客不進 state.runtimes，也不碰關係、收租或日誌。所有選擇由 caller 提供的
  * seed 決定，刻意不呼叫 Math.random，避免改變既有模擬的 RNG 序列。
  */
-import type { Appearance, CafeGuest, CafeGuestIntent, Gender } from "../types";
+import type { Appearance, CafeGuest, CafeGuestIntent, CafeGuestOrder, Gender } from "../types";
 import { cafeGuestNames } from "../content/cafeGuestNames";
 import {
   ALL_ACCESSORIES,
@@ -16,7 +16,34 @@ import {
 } from "../pixel/parts";
 import { MS_PER_GAME_HOUR } from "./clock";
 
-export const CAFE_GUEST_CAP = 6;
+/**
+ * 同時在店的顧客上限。
+ *
+ * 🔴 P2 從 6 提高到 32,理由是**合流**:每一筆結帳都必須有一位可見顧客,
+ * 上限一旦綁死就會出現「帳本上收了錢、畫面上沒有人」的分裂。
+ *
+ * 32 是「席次上限 + 一小時到客上限」的保守和:
+ * - 內用另受 `CAFE_DINE_IN_CAP`(20)限制 ⇒ 長時間佔位的最多 20 位
+ * - 剩下 12 格是**每小時到客的餘裕**。現行客流上限 = 產能上限 40 人/日
+ *   (`CAFE_BASE_CAPACITY 26 + CAFE_CAPACITY_PER_MACHINE 14`),攤到 11 個
+ *   營業小時 ⇒ 單一小時最多 4 位 ≪ 12。
+ *
+ * `scripts/cafe-p2-flow-test.ts` 直接斷言這條餘裕成立;若未來 P4b 把產能推到
+ * 每小時 12 位以上,這裡必須同步放大,否則合流不變式會退化。
+ */
+export const CAFE_GUEST_CAP = 32;
+
+/** 內用(佔席)顧客的上限;剩下的 cap 留給當小時的外帶/撲空客。 */
+export const CAFE_DINE_IN_CAP = 20;
+
+/**
+ * 外帶／撲空顧客的停留時間(遊戲小時)。
+ *
+ * 0.25 遊戲小時 ≈ 128 現實秒(`REAL_SECONDS_PER_GAME_HOUR ≈ 514`),
+ * 足夠走進門 → 走到吧台 → 點餐演出 → 走出去,又短到下一個整點就被清乾淨
+ * ⇒ 他們不會霸著 `CAFE_GUEST_CAP` 的名額。
+ */
+export const CAFE_TAKEAWAY_STAY_HOURS = 0.25;
 
 export interface GenerateCafeGuestInput {
   /** 同一 seed + sequence 永遠得到同一位顧客。 */
@@ -28,6 +55,10 @@ export interface GenerateCafeGuestInput {
   seatTile?: CafeGuest["seatTile"];
   /** 生成同批顧客時排除已使用姓名；全池皆排除時才允許循環。 */
   excludeNames?: readonly string[];
+  /** P2:這位顧客實際點的東西(合流的核心)。 */
+  order?: CafeGuestOrder | null;
+  /** P2:true = 沒空席,點完就走 ⇒ 停留時間縮成 `CAFE_TAKEAWAY_STAY_HOURS`。 */
+  takeaway?: boolean;
 }
 
 /** FNV-1a 32-bit：穩定、快速、零 RNG。 */
@@ -99,15 +130,16 @@ function intentFor(key: string): CafeGuestIntent {
 export function generateCafeGuest(input: GenerateCafeGuestInput): CafeGuest {
   const sequence = Math.max(0, Math.trunc(input.sequence ?? 0));
   const key = `${String(input.seed)}|${sequence}|${Math.trunc(input.arrivedMs)}`;
-  const stayHours = 1 + indexFor(`${key}|stay`, 3);
+  const stayHours = input.takeaway === true ? CAFE_TAKEAWAY_STAY_HOURS : 1 + indexFor(`${key}|stay`, 3);
   return {
     id: `cafe_guest_${cafeGuestHash(key).toString(36)}_${sequence}`,
     name: nameFor(key, new Set(input.excludeNames ?? [])),
     appearance: appearanceFor(key),
     intent: input.intent ?? intentFor(key),
     arrivedMs: input.arrivedMs,
-    leavesMs: input.arrivedMs + stayHours * MS_PER_GAME_HOUR,
+    leavesMs: input.arrivedMs + Math.round(stayHours * MS_PER_GAME_HOUR),
     seatTile: input.seatTile ? { ...input.seatTile } : null,
+    order: input.order ? { ...input.order } : null,
   };
 }
 

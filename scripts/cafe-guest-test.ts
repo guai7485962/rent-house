@@ -14,6 +14,7 @@ import {
 import { MS_PER_GAME_HOUR } from "../src/sim/clock";
 import {
   appendCafeGuest,
+  CAFE_DINE_IN_CAP,
   CAFE_GUEST_CAP,
   cafeGuestHash,
   generateCafeGuest,
@@ -58,11 +59,24 @@ try {
   check("生成時會避開同批已使用姓名", generateCafeGuest({ seed: 9, arrivedMs: 0, excludeNames: excluded }).name === cafeGuestNames.at(-1));
   check("hash 對相同輸入穩定且為 unsigned 32-bit", cafeGuestHash("咖啡廳") === cafeGuestHash("咖啡廳") && cafeGuestHash("咖啡廳") >= 0);
 
-  const six = generated.slice(0, CAFE_GUEST_CAP);
-  const capped = appendCafeGuest(six, generated[CAFE_GUEST_CAP]);
-  check("顧客陣列 cap 固定為 6", CAFE_GUEST_CAP === 6 && capped.length === 6);
-  check("appendCafeGuest 不修改來源陣列", six.length === 6 && capped !== six);
+  // P2:cap 從 6 提高到 32(合流後每筆結帳都要有一位可見顧客),內用另受 CAFE_DINE_IN_CAP 限制。
+  const full = generated.slice(0, CAFE_GUEST_CAP);
+  const capped = appendCafeGuest(full, generated[CAFE_GUEST_CAP]);
+  check("顧客陣列 cap = CAFE_GUEST_CAP,且留得下一整天的席次與到客",
+    capped.length === CAFE_GUEST_CAP && CAFE_GUEST_CAP > CAFE_DINE_IN_CAP);
+  check("appendCafeGuest 不修改來源陣列", full.length === CAFE_GUEST_CAP && capped !== full);
   check("重複 id 不會加入第二次", appendCafeGuest([first], first).length === 1);
+  const takeaway = generateCafeGuest({ seed: "takeaway", arrivedMs: 0, takeaway: true });
+  const dineIn = generateCafeGuest({ seed: "takeaway", arrivedMs: 0 });
+  check("外帶客停留時間明顯短於內用客(點完就走,不佔 cap)",
+    takeaway.leavesMs - takeaway.arrivedMs < dineIn.leavesMs - dineIn.arrivedMs,
+    `${takeaway.leavesMs - takeaway.arrivedMs} vs ${dineIn.leavesMs - dineIn.arrivedMs}`);
+  check("訂單原封帶進 CafeGuest(合流:泡泡顯示的就是結帳的那一筆)", (() => {
+    const order = { itemId: "x", itemName: "招牌美式咖啡", price: 34, track: "coffee" as const, served: true, missing: "", takeaway: false };
+    const withOrder = generateCafeGuest({ seed: "order", arrivedMs: 0, order });
+    return JSON.stringify(withOrder.order) === JSON.stringify(order) && withOrder.order !== order;
+  })());
+  check("沒給訂單時 order 為 null(舊存檔/測試手捏的顧客)", first.order === null);
 
   const beforeLeave = [
     { ...generated[0], id: "left", leavesMs: 100 },

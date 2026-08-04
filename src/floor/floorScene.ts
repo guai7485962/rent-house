@@ -19,7 +19,13 @@ import {
   type CharView,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
-import type { GuestAgent } from "./guestAgents";
+import {
+  guestDrawX,
+  guestDrawY,
+  guestSeated,
+  GUEST_SERVED_SECONDS,
+  type GuestAgent,
+} from "./guestAgents";
 import type { PetAgent } from "./petAgents";
 import { isVacuumDef, type VacuumAgent } from "./vacuumAgents";
 import { activeFx, type Fx } from "./fx";
@@ -107,7 +113,7 @@ export function dayNightTint(hour: number): { color: string; alpha: number } | n
   return { color: "#141840", alpha: 0.24 }; // 入夜
 }
 
-export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[], guests?: GuestAgent[]) {
+export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: FloorMark[], hour?: number, pets?: PetAgent[], vacuums?: VacuumAgent[], guests?: GuestAgent[], cafeOpen?: boolean) {
   rect(ctx, 0, 0, FLOOR_W, FLOOR_H, "#0d0c12");
 
   drawFloorTiles(ctx);
@@ -141,13 +147,13 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     }
     for (const guest of guests ?? []) {
       if (guest.hidden || guest.phase === "departed") continue;
-      items.push({ y: guest.py, draw: () => drawGuest(ctx, guest) });
+      items.push({ y: guestDrawY(guest), draw: () => drawGuest(ctx, guest) });
     }
     for (const v of vacuums ?? []) items.push({ y: v.py + 6, draw: () => drawVacuum(ctx, v, frame) });
     for (const p of pets ?? []) items.push({ y: p.py + 4, draw: () => p.kind === "dog" ? drawDog(ctx, p, frame) : drawCat(ctx, p, frame) });
     for (const it of items.sort((m, n) => m.y - n.y)) it.draw();
-    // 意圖泡泡是資訊層，統一蓋在人物／家具之上；只有已入座顧客顯示。
-    for (const guest of guests ?? []) drawIntentBubble(ctx, guest, frame);
+    // 泡泡與浮字是資訊層,統一蓋在人物／家具之上(P2:點餐 → 收錢 → 入座三種演出)。
+    for (const guest of guests ?? []) drawGuestBubble(ctx, guest, frame);
     for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
@@ -161,6 +167,12 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
       const appearance = getCustomAppearance(spot.tenantId);
       if (appearance) drawAppearanceOverlay(ctx, appearance, px + 3, spriteY);
     }
+  }
+
+  // 咖啡廳開店/關店(設計文件 §4.4):店門、招牌、一樓亮度三件事讀同一個旗標。
+  if (cafeOpen !== undefined) {
+    drawCafeShopfront(ctx, cafeOpen, frame);
+    if (!cafeOpen) drawCafeClosedDim(ctx);
   }
 
   // 日夜色調(工作項 9;疊在場景之上、警示之下——警示要保持醒目)
@@ -179,49 +191,271 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
 export function drawGuest(ctx: Ctx, agent: GuestAgent) {
   const appearance = agent.guest.appearance;
   const palette = guestPalette(appearance);
-  groundShadow(ctx, agent.px + TILE / 2, agent.py + TILE - 1, 11);
-  if (!agent.moving && agent.phase === "seated") {
-    drawSprite(ctx, CHAR_SIT, agent.px + 3, agent.py + 1, palette);
-    drawAppearanceOverlay(ctx, appearance, agent.px + 3, agent.py + 1, "front");
+  const x = guestDrawX(agent);
+  const y = guestDrawY(agent);
+  groundShadow(ctx, x + TILE / 2, y + TILE - 1, 11);
+  // P2：坐姿只在「真的走到那張椅子上」時出現，不再是「停在空地板上也算入座」。
+  if (guestSeated(agent)) {
+    drawSprite(ctx, CHAR_SIT, x + 3, y + 1, palette);
+    drawAppearanceOverlay(ctx, appearance, x + 3, y + 1, "front");
     return;
   }
   const sprites = CHAR_SPRITES[agent.view];
   const secondStep = agent.moving && Math.floor(agent.walkPhase) % 2 !== 0;
   const sprite = agent.moving ? (secondStep ? sprites.walkB : sprites.walkA) : sprites.stand;
   const yoff = secondStep ? -1 : 0;
-  drawSprite(ctx, sprite, agent.px + 3, agent.py - 4 + yoff, palette);
-  drawAppearanceOverlay(ctx, appearance, agent.px + 3, agent.py - 4 + yoff, agent.view);
+  drawSprite(ctx, sprite, x + 3, y - 4 + yoff, palette);
+  drawAppearanceOverlay(ctx, appearance, x + 3, y - 4 + yoff, agent.view);
 }
 
-/** CAFE-10：已入座顧客的 coffee／adopt／rent 兩幀意圖泡泡。 */
+// ---------------------------------------------------------------------------
+// P2:看得見的消費(設計文件 §4.5)
+//
+// 這一段是整期的視覺主體。三件事必須在畫面上分得出來:
+//   ordering → 他點的是**什麼**(品名圖示 + 價格,不是抽象符號)
+//   served   → 我**收到了多少錢**(綠色 +$34 浮字)
+//   refused  → 這一單**沒做成**(紅色 ❌)
+// 另外兩種「可互動」意圖(想認養/想租房)要一眼看得出可以點,見 drawIntentBubble。
+// ---------------------------------------------------------------------------
+
+/** 3×5 像素字模。canvas 上沒有任何 fillText,金額只能自己畫。 */
+const PIXEL_GLYPHS: Record<string, readonly string[]> = {
+  "0": ["111", "101", "101", "101", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "2": ["111", "001", "111", "100", "111"],
+  "3": ["111", "001", "111", "001", "111"],
+  "4": ["101", "101", "111", "001", "001"],
+  "5": ["111", "100", "111", "001", "111"],
+  "6": ["111", "100", "111", "101", "111"],
+  "7": ["111", "001", "010", "010", "010"],
+  "8": ["111", "101", "111", "101", "111"],
+  "9": ["111", "101", "111", "001", "111"],
+  "$": ["011", "110", "111", "011", "110"],
+  "+": ["000", "010", "111", "010", "000"],
+  "-": ["000", "000", "111", "000", "000"],
+};
+
+/** 畫一串像素字(只支援 PIXEL_GLYPHS 收錄的字元);回傳實際寬度。 */
+export function drawPixelText(ctx: Ctx, text: string, x: number, y: number, color: string): number {
+  let cursor = 0;
+  for (const ch of text) {
+    const glyph = PIXEL_GLYPHS[ch];
+    if (!glyph) { cursor += 2; continue; }
+    for (let row = 0; row < glyph.length; row++) {
+      for (let col = 0; col < 3; col++) {
+        if (glyph[row][col] === "1") rect(ctx, x + cursor + col, y + row, 1, 1, color);
+      }
+    }
+    cursor += 4;
+  }
+  return Math.max(0, cursor - 1);
+}
+
+export const PIXEL_TEXT_HEIGHT = 5;
+export const pixelTextWidth = (text: string) => Math.max(0, text.length * 4 - 1);
+
+/** 商品圖示:咖啡杯 / 烘焙 / 肉球。玩家看的是「他點了什麼」,不是抽象意圖。 */
+function drawMenuIcon(ctx: Ctx, track: "coffee" | "bakery" | "pet", x: number, y: number) {
+  if (track === "coffee") {
+    rect(ctx, x + 1, y + 2, 7, 6, "#8a5a37"); // 杯身
+    rect(ctx, x + 1, y + 2, 7, 2, "#c98b57"); // 咖啡面
+    rect(ctx, x + 8, y + 3, 2, 3, "#8a5a37"); // 把手
+    rect(ctx, x + 2, y, 1, 2, "#d9c8bb");     // 熱氣
+    rect(ctx, x + 5, y, 1, 2, "#d9c8bb");
+    return;
+  }
+  if (track === "bakery") {
+    rect(ctx, x + 1, y + 3, 8, 5, "#d9a45c"); // 麵包體
+    rect(ctx, x + 2, y + 2, 6, 2, "#f0c583"); // 上緣亮面
+    rect(ctx, x + 3, y + 5, 2, 1, "#a56a33"); // 烤紋
+    rect(ctx, x + 6, y + 5, 2, 1, "#a56a33");
+    return;
+  }
+  rect(ctx, x + 2, y + 4, 6, 4, "#e0913f");   // 肉球
+  rect(ctx, x + 1, y + 1, 2, 2, "#e0913f");
+  rect(ctx, x + 4, y, 2, 2, "#e0913f");
+  rect(ctx, x + 7, y + 1, 2, 2, "#e0913f");
+}
+
+/** 泡泡底板(圓角靠切角模擬)+ 指向角色的小尾巴。 */
+function bubbleBox(ctx: Ctx, x: number, y: number, w: number, h: number, fill: string, edge: string) {
+  rect(ctx, x + 1, y + 1, w, h, "#2b2838");     // 陰影
+  rect(ctx, x, y, w, h, edge);
+  rect(ctx, x + 1, y + 1, w - 2, h - 2, fill);
+  rect(ctx, x + w / 2 - 2, y + h, 4, 2, edge);  // 尾巴
+  rect(ctx, x + w / 2 - 1, y + h, 2, 1, fill);
+}
+
+/**
+ * 顧客頭上的資訊層。依 phase 分派,一次只畫一種,不會疊在一起。
+ *
+ * 位置一律用 `guestDrawX/Y`(坐著時是椅子格),泡泡才不會飄在別的格子上。
+ */
+export function drawGuestBubble(ctx: Ctx, agent: GuestAgent, frame: number) {
+  if (agent.hidden || agent.phase === "departed") return;
+  if (agent.phase === "ordering") return drawOrderBubble(ctx, agent);
+  if (agent.phase === "served") return drawServedFloat(ctx, agent);
+  if (agent.phase === "refused") return drawRefusedBubble(ctx, agent);
+  drawIntentBubble(ctx, agent, frame);
+}
+
+/** `ordering`：站在吧台前，頭上顯示**他點的商品**（圖示 + 價格）。 */
+export function drawOrderBubble(ctx: Ctx, agent: GuestAgent) {
+  const order = agent.guest.order;
+  if (!order) return;
+  const label = `$${Math.round(order.price)}`;
+  const w = 10 + 2 + pixelTextWidth(label) + 6;
+  const h = 13;
+  const x = Math.round(guestDrawX(agent)) + Math.round((TILE - w) / 2);
+  const y = Math.round(guestDrawY(agent)) - h - 6;
+  bubbleBox(ctx, x, y, w, h, "#fdf6ea", "#4a3f52");
+  drawMenuIcon(ctx, order.track, x + 3, y + 2);
+  drawPixelText(ctx, label, x + 15, y + 4, "#3f3446");
+}
+
+/** `served`：綠色 `+$34` 從頭上升起，末段淡出。 */
+export function drawServedFloat(ctx: Ctx, agent: GuestAgent) {
+  const order = agent.guest.order;
+  if (!order) return;
+  const t = Math.min(1, Math.max(0, agent.phaseT / GUEST_SERVED_SECONDS));
+  const label = `+$${Math.round(order.price)}`;
+  const w = pixelTextWidth(label);
+  const x = Math.round(guestDrawX(agent)) + Math.round((TILE - w) / 2);
+  const y = Math.round(guestDrawY(agent)) - 10 - Math.round(t * 12);
+  ctx.save();
+  ctx.globalAlpha = t > 0.75 ? Math.max(0, (1 - t) * 4) : 1;
+  // 深色描邊：地板是暖木色，純綠字在上面會糊掉。
+  drawPixelText(ctx, label, x, y + 1, "#14301c");
+  drawPixelText(ctx, label, x + 1, y, "#14301c");
+  drawPixelText(ctx, label, x, y, "#5ee08a");
+  ctx.restore();
+}
+
+/** `refused`：紅色 ❌ 泡泡（他想點的東西做不出來）。 */
+export function drawRefusedBubble(ctx: Ctx, agent: GuestAgent) {
+  const w = 15;
+  const h = 13;
+  const x = Math.round(guestDrawX(agent)) + Math.round((TILE - w) / 2);
+  const y = Math.round(guestDrawY(agent)) - h - 6;
+  bubbleBox(ctx, x, y, w, h, "#ffe3e6", "#7a2334");
+  for (let i = 0; i < 7; i++) {
+    rect(ctx, x + 4 + i, y + 3 + i, 2, 1, "#e5395a");
+    rect(ctx, x + 10 - i, y + 3 + i, 2, 1, "#e5395a");
+  }
+}
+
+/**
+ * CAFE-10 的意圖泡泡（P2 重做）。
+ *
+ * 使用者原話：「不知道這些人走進來後頭上的標誌代表什麼意思」。舊版是 8px 的抽象
+ * 像素圖，三種意圖長得差不多、也看不出哪些**可以互動**。改成：
+ *
+ * - `coffee`：小小一杯咖啡，安靜地表示「他只是來喝東西」（不可互動）
+ * - `adopt` / `rent`：**加大的醒目牌子 + 閃爍的驚嘆號 + 外框光暈**，
+ *   一眼看得出「這個人有事找你」，對應咖啡廳面板上真的可以按的那兩張卡。
+ */
 export function drawIntentBubble(ctx: Ctx, agent: GuestAgent, frame: number) {
   if (agent.hidden || agent.phase !== "seated" || agent.moving) return;
-  // FloorMap 每 500ms 推進一格 frame；偶數／奇數切幀，形成約 1 秒循環。
   const phase = Math.floor(Math.max(0, frame)) % 2;
-  const x = Math.round(agent.px);
-  const y = Math.round(agent.py) - 18;
-  if (tryDrawLimezuThinkingEmote(ctx, agent.guest.intent, phase, x, y)) return;
+  const intent = agent.guest.intent;
+  const x = Math.round(guestDrawX(agent));
+  const y = Math.round(guestDrawY(agent)) - 18;
 
-  // atlas 未載入／繪製失敗時的簡潔程序 fallback；不修改共用人物 sprite。
-  rect(ctx, x + 1, y + 1, 14, 11, "#4a4764");
-  rect(ctx, x + 2, y, 12, 11, "#f5f1ff");
-  rect(ctx, x + 6, y + 11, 4, 2, "#f5f1ff");
-  rect(ctx, x + 7, y + 13, 2, 2, "#d8d1ed");
-  if (agent.guest.intent === "adopt") {
-    rect(ctx, x + 5, y + 4, 2, 2, "#e95a72");
-    rect(ctx, x + 9, y + 4, 2, 2, "#e95a72");
-    rect(ctx, x + 4, y + 5, 8, 2, "#e95a72");
-    rect(ctx, x + 6, y + 7, 4, 2, "#c93f5b");
-  } else if (agent.guest.intent === "rent") {
-    rect(ctx, x + 4, y + 4, 8, 5, "#5f83c1");
-    rect(ctx, x + 5, y + 5, 3, 1, "#f5f1ff");
-    rect(ctx, x + 8, y + 6, 3, 1, "#f5f1ff");
-  } else {
-    rect(ctx, x + 5, y + 5, 6, 4, "#a86942");
-    rect(ctx, x + 11, y + 6, 2, 2, "#a86942");
-    rect(ctx, x + 6, y + 3, 1, 2, "#d9b28f");
-    rect(ctx, x + 9, y + 3, 1, 2, "#d9b28f");
+  if (intent === "coffee") {
+    if (tryDrawLimezuThinkingEmote(ctx, intent, phase, x, y)) return;
+    bubbleBox(ctx, x + 2, y + 2, 12, 11, "#f5f1ff", "#4a4764");
+    rect(ctx, x + 5, y + 6, 6, 4, "#a86942");
+    rect(ctx, x + 11, y + 7, 2, 2, "#a86942");
+    rect(ctx, x + 6, y + 4, 1, 2, "#d9b28f");
+    rect(ctx, x + 9, y + 4, 1, 2, "#d9b28f");
+    return;
   }
+
+  // 可互動意圖：外框光暈（兩幀呼吸）+ 大牌子 + 驚嘆號
+  const w = 22;
+  const h = 15;
+  const bx = x + Math.round((TILE - w) / 2);
+  const by = y - 2;
+  const accent = intent === "adopt" ? "#e95a72" : "#5f83c1";
+  ctx.save();
+  ctx.globalAlpha = phase === 0 ? 0.5 : 0.28;
+  rect(ctx, bx - 2, by - 2, w + 4, h + 4, accent);
+  ctx.restore();
+  bubbleBox(ctx, bx, by, w, h, "#fffbe8", accent);
+  if (intent === "adopt") {
+    // 愛心 + 貓耳，表示「想帶一隻回家」
+    rect(ctx, bx + 4, by + 4, 2, 2, accent);
+    rect(ctx, bx + 8, by + 4, 2, 2, accent);
+    rect(ctx, bx + 3, by + 5, 8, 3, accent);
+    rect(ctx, bx + 5, by + 8, 4, 2, "#c93f5b");
+    rect(ctx, bx + 6, by + 10, 2, 1, "#c93f5b");
+  } else {
+    // 房子（屋頂 + 門），表示「想租房」
+    rect(ctx, bx + 3, by + 6, 9, 6, accent);
+    rect(ctx, bx + 5, by + 3, 5, 3, "#3d5a8c");
+    rect(ctx, bx + 6, by + 8, 3, 4, "#fffbe8");
+  }
+  // 驚嘆號：閃爍，代表「這個可以點」
+  const bang = phase === 0 ? "#f6b93b" : "#ffd66e";
+  rect(ctx, bx + 15, by + 3, 2, 5, bang);
+  rect(ctx, bx + 15, by + 9, 2, 2, bang);
+}
+
+// ---------------------------------------------------------------------------
+// P2:開店 / 關店(設計文件 §4.4)
+// ---------------------------------------------------------------------------
+
+/** 店門(`cafe_entrance` 兩格)與招牌。開店 = 門開、招牌亮;打烊 = 門關、招牌熄。 */
+function drawCafeShopfront(ctx: Ctx, open: boolean, frame: number) {
+  const doorRect = CAFE_RECTS.cafe_entrance;
+  const x = doorRect.c0 * TILE;
+  const y = doorRect.r0 * TILE;
+  const w = (doorRect.c1 - doorRect.c0 + 1) * TILE;
+  const h = TILE;
+  const wood = ramp(open ? "#a3794c" : "#6a5235");
+  box(ctx, x - 1, y - 2, w + 2, h + 3, wood.dark, "#2c2018"); // 門框
+  if (open) {
+    // 兩扇門往兩側開,中間透出室內暖光
+    block(ctx, x, y, 5, h, wood, 2);
+    block(ctx, x + w - 5, y, 5, h, wood, 2);
+    rect(ctx, x + 5, y + 1, w - 10, h - 2, "#ffe0a3");
+    rect(ctx, x + 5, y + h - 3, w - 10, 2, "#fff3d0");
+  } else {
+    block(ctx, x, y, w / 2, h, wood, 2);
+    block(ctx, x + w / 2, y, w / 2, h, wood, 2);
+    rect(ctx, x + 2, y + 2, w / 2 - 4, h - 4, shade("#6a5235", -22));
+    rect(ctx, x + w / 2 + 2, y + 2, w / 2 - 4, h - 4, shade("#6a5235", -22));
+    rect(ctx, x + w / 2 - 2, y + h / 2 - 1, 2, 3, "#c8a86a"); // 把手
+    rect(ctx, x + w / 2, y + h / 2 - 1, 2, 3, "#c8a86a");
+  }
+
+  // 招牌:掛在門正上方。亮著 = 營業中,一眼可辨。
+  const sw = 26;
+  const sx = x + Math.round((w - sw) / 2);
+  const sy = y - 13;
+  if (open) {
+    ctx.save();
+    ctx.globalAlpha = Math.floor(Math.max(0, frame)) % 2 === 0 ? 0.34 : 0.22;
+    rect(ctx, sx - 3, sy - 3, sw + 6, 16, "#ffd66e");
+    ctx.restore();
+  }
+  box(ctx, sx, sy, sw, 10, open ? "#ffcf6b" : "#4c4437", "#2b2318");
+  rect(ctx, sx + 1, sy + 1, sw - 2, 8, open ? "#7a4a2c" : "#332c22");
+  const bar = open ? "#ffe9a8" : "#5b5346";
+  rect(ctx, sx + 3, sy + 3, 6, 2, bar);
+  rect(ctx, sx + 11, sy + 3, 4, 2, bar);
+  rect(ctx, sx + 17, sy + 3, 6, 2, bar);
+  rect(ctx, sx + 3, sy + 6, 20, 1, open ? "#f6b93b" : "#453e33");
+}
+
+/** 打烊：整個一樓（樓梯口以下）壓暗。玩家一眼分得出「營業中」與「打烊」。 */
+function drawCafeClosedDim(ctx: Ctx) {
+  const top = CAFE_RECTS.stairs.r0 * TILE;
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = "#0a0913";
+  ctx.fillRect(0, top, FLOOR_W, FLOOR_H - top);
+  ctx.restore();
 }
 
 /** 擺放/移動預覽:半透明 footprint 疊在地圖上(可放=綠、不可=紅),再點確認才成交 */

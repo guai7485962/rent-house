@@ -6,7 +6,10 @@ import { defaultCafe } from "../src/sim/gameState";
 import {
   buyCafeUpgrade,
   cafeCapability,
-  CAFE_BASE_CAPACITY,
+  CAFE_MACHINE_CUPS_BONUS,
+  CAFE_MAX_SIGN_LEVEL,
+  CAFE_SIGNBOARD_IDS,
+  CAFE_STAFF_CUPS_PER_DAY,
   CAFE_COLD_STORAGE_FREE_MULT,
   CAFE_COLD_STORAGE_RATE_MULT,
   CAFE_OPENING_COST,
@@ -31,12 +34,20 @@ Math.random = () => { randomCalls++; return 0.25; };
 
 try {
   const ids = CAFE_UPGRADES.map((item) => item.id);
-  check("共有五個投資項且 id 不重複", CAFE_UPGRADES.length === 5 && new Set(ids).size === 5);
+  check("共有七個投資項且 id 不重複(P4a 追加兩級招牌)", CAFE_UPGRADES.length === 7 && new Set(ids).size === 7);
   check("投資 id 與 CAFE-13 既有能力讀取面完全一致",
     Object.values(CAFE_UPGRADE_IDS).every((id) => ids.includes(id)) && ids.every((id) => Object.values(CAFE_UPGRADE_IDS).includes(id)));
-  check("五項名稱／效果完整且價格為正整數",
+  check("每一項名稱／效果完整且價格為正整數",
     CAFE_UPGRADES.every((item) => item.name.trim().length > 0 && item.effect.trim().length > 0 && Number.isInteger(item.price) && item.price > 0));
-  check("五項價格與設計文件一致", JSON.stringify(CAFE_UPGRADES.map((item) => item.price)) === JSON.stringify([30000, 18000, 25000, 15000, 12000]));
+  // 🔴 既有五項的 id 與順序不可改(`cafeCapability()` 與所有存檔都吃它們);
+  //    P4a 的兩級招牌一律追加在最後面。
+  check("既有五項的 id 與順序原封不動",
+    JSON.stringify(ids.slice(0, 5)) === JSON.stringify([
+      "cafe_signboard", "cafe_second_machine", "cafe_outdoor_seats", "cafe_cold_storage", "cafe_pet_tower",
+    ]), JSON.stringify(ids));
+  check("價格與設計文件一致(既有五項一毛未動)",
+    JSON.stringify(CAFE_UPGRADES.map((item) => item.price)) === JSON.stringify([30000, 18000, 25000, 15000, 12000, 60000, 110000]),
+    JSON.stringify(CAFE_UPGRADES.map((item) => item.price)));
   // 2026-08-03 改寫:吧台($16,000)現在由開張免費附贈,玩家不必自己買,原斷言的前提已不成立。
   // 新校準改釘兩件事 ——
   // (1) 付完開張費後仍買得起第二台咖啡機($18,000),開張不會變成無法營業的陷阱;
@@ -85,14 +96,33 @@ try {
     cafe = result.cafe;
     money = result.moneyAfter;
   }
-  check("依資料順序可購齊五項且總扣款精確", cafe.upgrades.length === 5 && money === 0);
+  check("依資料順序可購齊七項且總扣款精確", cafe.upgrades.length === 7 && money === 0,
+    `${cafe.upgrades.length} 項、餘 ${money}`);
   const all = cafeCapability(cafe.upgrades);
-  check("第二台咖啡機提高產能", all.capacity > CAFE_BASE_CAPACITY);
+  check("第二台咖啡機提高每位員工的杯數", all.cupsPerStaff === CAFE_STAFF_CUPS_PER_DAY + CAFE_MACHINE_CUPS_BONUS);
   check("戶外座位旗標生效", all.outdoorSeats);
   check("大型冷藏同時提高免損耗量並降低損耗率",
     all.spoilage.freeUnits === SPOILAGE_FREE_UNITS * CAFE_COLD_STORAGE_FREE_MULT
       && all.spoilage.rate === SPOILAGE_RATE * CAFE_COLD_STORAGE_RATE_MULT);
-  check("貓跳台永久記錄但不污染日結能力欄位", cafe.upgrades.includes(CAFE_UPGRADE_IDS.petTower) && Object.keys(all).length === 4);
+  check("買齊三塊招牌 = 招牌 Lv4", all.signLevel === CAFE_MAX_SIGN_LEVEL && all.signLevel === 4);
+  check("貓跳台永久記錄但不污染日結能力欄位", cafe.upgrades.includes(CAFE_UPGRADE_IDS.petTower));
+
+  // P4a:招牌必須逐級升(前置檢查)
+  const lv3Def = getCafeUpgrade(CAFE_UPGRADE_IDS.signboardLv3)!;
+  const skipLv2 = buyCafeUpgrade(opened.cafe, 999999, CAFE_UPGRADE_IDS.signboardLv3);
+  check("沒有 Lv2 招牌不能直接買 Lv3", !skipLv2.ok && skipLv2.cost === 0
+    && (skipLv2.reason ?? "").includes("店面招牌"), skipLv2.reason);
+  const skipLv3 = buyCafeUpgrade(boughtSign.cafe, 999999, CAFE_UPGRADE_IDS.signboardLv4);
+  check("只有 Lv2 招牌不能跳過 Lv3 直接買 Lv4", !skipLv3.ok && skipLv3.cost === 0);
+  const boughtLv3 = buyCafeUpgrade(boughtSign.cafe, lv3Def.price, lv3Def.id);
+  check("有 Lv2 就買得到 Lv3,且招牌等級升到 3",
+    boughtLv3.ok && cafeCapability(boughtLv3.cafe.upgrades).signLevel === 3);
+  check("既有五項都沒有前置條件(行為與 P4a 之前完全相同)",
+    CAFE_UPGRADES.slice(0, 5).every((item) => (item as { requires?: string }).requires === undefined));
+  check("手改存檔只塞了 Lv4 也只算 Lv2(少算不多算)",
+    cafeCapability([CAFE_UPGRADE_IDS.signboardLv4]).signLevel === 2);
+  check("招牌 id 清單就是三塊招牌", CAFE_SIGNBOARD_IDS.length === 3
+    && CAFE_SIGNBOARD_IDS[0] === CAFE_UPGRADE_IDS.signboard);
 
   const here = dirname(fileURLToPath(import.meta.url));
   const src = readFileSync(join(here, "..", "src", "sim", "cafe.ts"), "utf8");

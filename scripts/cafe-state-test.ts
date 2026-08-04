@@ -33,7 +33,7 @@ function countRandom(fn: () => void): number {
 }
 
 // "sales" 是重設計 P1 新增的逐品項銷售紀錄(同批升 SAVE_VERSION 8 → 9)。
-const CAFE_KEYS = ["open", "standingOrders", "stock", "research", "completed", "upgrades", "guests", "popularity", "history", "sales"];
+const CAFE_KEYS = ["open", "standingOrders", "stock", "research", "completed", "upgrades", "extraStaff", "guests", "popularity", "history", "sales"];
 const runtimeIds = () => Object.keys(state.runtimes).sort().join("|");
 const cafeJson = () => JSON.stringify(state.cafe);
 const setCafe = (patch: Partial<typeof state.cafe>) => Object.assign(state.cafe, defaultCafe(), patch);

@@ -32,7 +32,7 @@ const {
 } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
 const { CAFE_RESEARCH_IDS } = await import("../src/content/cafeResearch");
-const { placeCafeStarterSet } = await import("../src/sim/placements");
+const { cafeSeatSpots, placeCafeStarterSet, placements } = await import("../src/sim/placements");
 import type { CafeSalesDay } from "../src/types";
 
 let pass = 0;
@@ -258,10 +258,41 @@ try {
   const overNet = measure(over);
   console.log(`   · 開張期日淨利:補貨精準 $${preciseNet.toFixed(0)} / 備貨過量 $${overNet.toFixed(0)}`);
   check("🔴 端到端:補貨精準是賺錢的(開店不是陷阱)", preciseNet > 0, `$${preciseNet.toFixed(0)}`);
-  check("🔴 端到端:易腐品多備 50% 變成明確的負值(P1 時是 +$59)",
-    overNet < 0, `$${overNet.toFixed(0)}`);
   check("備貨過量與精準備貨的差距 > $100/日(不是誤差等級的差別)",
     preciseNet - overNet > 100, `$${(preciseNet - overNet).toFixed(0)}`);
+  // 🔴 **P4a 改寫了這一條的形狀,原因記在這裡以免日後被當成偷偷放水。**
+  //
+  // P3 時代這條是 `overNet < 0`(易腐多備 50% ⇒ 明確虧錢),當時成立是因為
+  // `CAFE_BASE_CAPACITY = 26` 這個硬產能**同時**在當開張期的平衡錨:人氣滿 + 氛圍
+  // 加成之下基礎客流本來就有 30 人,全被那個 26 夾掉,所以日淨利只有 +$95,
+  // 而 −$121 的損耗剛好能把它壓成負的。
+  //
+  // P4a 把那個天花板換成 `min(席次×迴轉率 + 外帶底量, 員工×杯數)`(設計文件 §4.7
+  // 三個天花板之一),一位店員的 35 杯不再夾住 30 人的客流 ⇒ 開張期變成 +$195,
+  // 同一筆 −$121 的損耗就翻不過來了。
+  //
+  // 損耗旋鈕**已經頂到極限、加不動**:懶人路線必須零損耗這條硬性條件是
+  // `(24 − FREE_UNITS) × RATE < 1`,RATE 又不能 > 1 ⇒ (23, 0.9) 就是那條不等式的解。
+  // 所以這裡改守兩件仍然為真、而且才是設計原意的事:
+  //   (1) 備太多會吃掉當日**大部分**的淨利(不是誤差等級);
+  //   (2) 在真的被產能夾住的小店(拆到只剩 3 張椅子 ⇒ 產能 25),機制本身照樣把它打成負的。
+  // 「開張期整體變好賺」這件事本身要不要回頭調,是使用者的平衡決定,P4a 不擅自動。
+  check("🔴 端到端:備貨過量吃掉當日大部分淨利(> 55%)",
+    (preciseNet - overNet) / preciseNet > 0.55,
+    `精準 $${preciseNet.toFixed(0)} → 過量 $${overNet.toFixed(0)}(吃掉 ${((preciseNet - overNet) / preciseNet * 100).toFixed(0)}%)`);
+  // 小店(產能被席次夾到 25)裡,損耗機制照樣把備貨過量打成負值 ⇒ 機制沒退化,是量體變了。
+  const seatIds = new Set(["cafe_chair_front", "cafe_chair_side", "cafe_table"]);
+  const removed: typeof placements.list = [];
+  while (cafeSeatSpots().length > 3) {
+    const index = placements.list.findIndex((p) => seatIds.has(p.defId));
+    if (index < 0) break;
+    removed.push(...placements.list.splice(index, 1));
+  }
+  const smallShopOver = measure(over);
+  console.log(`   · 拆到 ${cafeSeatSpots().length} 席的小店:備貨過量日淨利 $${smallShopOver.toFixed(0)}`);
+  check("🔴 產能受限的小店裡,易腐品多備 50% 仍然是明確的負值(損耗機制沒退化)",
+    smallShopOver < 0, `$${smallShopOver.toFixed(0)}`);
+  for (const p of removed) placements.list.push(p); // 還原,不影響後續段落
 
   // =========================================================================
   // 五、建議常備量(拍板 Q3 的懶人路線)

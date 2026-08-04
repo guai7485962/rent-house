@@ -26,6 +26,8 @@ import type { WeeklyReport } from "./weeklyReport";
 import { save } from "./persistence";
 import { weekdayShort } from "./week";
 import { CAFE_GUEST_CAP, removeDepartedCafeGuests } from "./cafeGuests";
+// 純資料常數(`sim/cafe.ts` 不 import 本檔,不會有循環相依);人力上限只有一個來源。
+import { CAFE_MAX_EXTRA_STAFF } from "./cafe";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 export const LOG_CAP = 60;
@@ -207,6 +209,8 @@ export function defaultCafe(): CafeState {
     research: null,
     completed: [],
     upgrades: [],
+    // P4a:開張費已含首位店員,額外雇用從 0 起算。
+    extraStaff: 0,
     guests: [],
     popularity: 0,
     history: [],
@@ -327,6 +331,9 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
     research,
     completed: stringList(raw.completed),
     upgrades: stringList(raw.upgrades),
+    // P4a:舊檔沒有這個欄位 ⇒ 0(只有開張費附的那位店員)。手改存檔的負數/小數/
+    // 天文數字一律夾成 0 ~ CAFE_MAX_EXTRA_STAFF 的整數,薪資因此永遠是有限值。
+    extraStaff: Math.min(CAFE_MAX_EXTRA_STAFF, Math.max(0, Math.trunc(finiteOr(raw.extraStaff, 0)))),
     guests: removeDepartedCafeGuests(unique, gameMs).slice(0, CAFE_GUEST_CAP),
     popularity: finiteOr(raw.popularity, 0),
     history: history.slice(-CAFE_HISTORY_CAP),

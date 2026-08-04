@@ -22,6 +22,13 @@ const { state, defaultCafe, GAME_START } = await import("../src/sim/gameState");
 const { cafeDailyPass, cafeHourlyPass, cafeRestockPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const { suggestedStandingOrders, CAFE_FIXED_COST, CAFE_POPULARITY_MAX } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
+const { placeCafeStarterSet, cafeSeatSpots, cafeAmbiancePoints } = await import("../src/sim/placements");
+
+// 🔴 P4a 起產能吃**席次**(`min(外帶底量 + 席次×迴轉率, 員工×杯數)`),
+// 所以模擬必須先把開張贈品擺上——那是玩家按下開張時真的會拿到的東西。
+// P1/P3 時代不擺也量得到數字(產能是常數 26),現在不擺就是在量一家沒有椅子的店。
+// 順帶一提,擺上之後氛圍加成也跟著生效(+9.3% 客流),這同樣是玩家真實會遇到的。
+const starterSeats = placeCafeStarterSet().length;
 
 const DAY_MS = 24 * 3600 * 1000;
 const HOUR_MS = 3600 * 1000;
@@ -151,7 +158,8 @@ function table(pinned: boolean) {
   }
 }
 
-console.log(`\n招牌 Lv1、零投資、${DAYS} 個遊戲日平均;固定開銷每日 −$${CAFE_FIXED_COST}`);
+console.log(`\n招牌 Lv1、零投資、${DAYS} 個遊戲日平均;固定開銷每日 −$${CAFE_FIXED_COST}(P4a 起已含首位店員)`);
+console.log(`開張贈品 ${starterSeats} 件 ⇒ 內用席次 ${cafeSeatSpots().length} 席、氛圍 ${cafeAmbiancePoints()} 點`);
 table(true);
 table(false);
 console.log("\n設計文件 §4.7 的目標值:①+$98 ②−$89 ③−$114 ④−$270(⑤ 是 P3 補的對照組,設計表沒有)");

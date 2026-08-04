@@ -44,7 +44,9 @@
  */
 import { CAFE_INGREDIENTS, type CafeIngredient, type CafeIngredientId } from "../content/cafeIngredients";
 import {
+  CAFE_MAX_SIGN_LEVEL,
   CAFE_OPENING_COST,
+  CAFE_SIGNBOARD_IDS,
   CAFE_UPGRADES,
   CAFE_UPGRADE_IDS,
   type CafeUpgrade,
@@ -60,7 +62,13 @@ import {
 import type { CafeSalesDay, CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
-export { CAFE_OPENING_COST, CAFE_UPGRADES, CAFE_UPGRADE_IDS } from "../content/cafeUpgrades";
+export {
+  CAFE_MAX_SIGN_LEVEL,
+  CAFE_OPENING_COST,
+  CAFE_SIGNBOARD_IDS,
+  CAFE_UPGRADES,
+  CAFE_UPGRADE_IDS,
+} from "../content/cafeUpgrades";
 export { CAFE_RESEARCH, CAFE_RESEARCH_IDS } from "../content/cafeResearch";
 
 // ---------------------------------------------------------------------------
@@ -463,32 +471,178 @@ export function applySpoilage(
  * 轉成日結能力。購買命令在下方回傳純交易結果，不直接碰全域 state 或金流。
  */
 
-/** 沒有任何投資時的產能上限。招牌等級 1 的基礎客流(22)略低於它 ⇒ 只有尖峰日會撞到天花板。 */
-export const CAFE_BASE_CAPACITY = 26;
-/** 每台額外咖啡機提高的產能上限。 */
-export const CAFE_CAPACITY_PER_MACHINE = 14;
 /** 大型冷藏的免損耗額度倍率與損耗率折扣。 */
 export const CAFE_COLD_STORAGE_FREE_MULT = 2;
 export const CAFE_COLD_STORAGE_RATE_MULT = 0.5;
 
+/**
+ * 🔴 **P4a:產能不再是「買機器買出來的一個數字」,而是席次與員工的交集**(設計文件 §4.7)。
+ *
+ * ```
+ * 日產能 = min( 外帶底量 + 席次 × 迴轉率 , 員工數 × 每人每日杯數 )
+ * ```
+ *
+ * P4a 之前是 `CAFE_BASE_CAPACITY 26 + CAFE_CAPACITY_PER_MACHINE 14 = 40` 的硬天花板,
+ * 那個天花板正是設計文件 §4.7 說「追不上收租」的三個天花板之一:
+ * 產能 40 × 客單價 $38 = 日營收上限 $1,520,扣完成本淨利只有淨租金的 36%。
+ *
+ * 新公式讓**兩條腿都得自己長**:
+ *
+ * - 只買椅子不雇人 → 員工那條夾住(一個人一天做不出 100 杯);
+ * - 只雇人不買椅子 → 席次那條夾住(沒地方坐,而且薪水照付 ⇒ 直接虧錢)。
+ *
+ * 這也是設計文件 §4.7 第五條虧損管道「過度擴張」得以成立的機制基礎。
+ */
+
+/**
+ * 一個席位一天可以翻幾輪。
+ *
+ * 11 個營業小時(`CAFE_BUSINESS_HOURS`)除以 5 ≈ 每位內用客佔用 2.2 小時,
+ * 這與 `cafeGuests.ts` 給內用客的停留時間同一個量級,不是憑空取的倍數。
+ */
+export const CAFE_SEAT_TURNOVER = 5;
+
+/**
+ * 零席次也做得到的外帶量(設計文件 §4.6「全店零席次 = 純外帶店,能活但收入明顯較差」)。
+ *
+ * 沒有這條下界的話,玩家把椅子全拆掉 ⇒ 產能 0 ⇒ 咖啡廳直接歸零,
+ * 那就變成「拆家具 = 失敗狀態」,違反本作一貫的「有代價但不是失敗狀態」。
+ * 10 杯/日 大約是固定開銷的一半,活得下去但明顯不賺 —— 正是設計要的手感。
+ */
+export const CAFE_TAKEAWAY_CAPACITY = 10;
+
+/**
+ * 一位員工一天處理得了的杯數。
+ *
+ * 設計文件 §4.7 原文寫 35,但 **26 才是對的**,理由是它同時要當**開張期的平衡錨**。
+ *
+ * P4a 之前產能是 `CAFE_BASE_CAPACITY = 26`,那個常數一直兼任兩個角色:
+ * 「產能上限」與「開張期客流的錨」。開張期人氣滿 + 氛圍加成下基礎客流本來就有 30 人,
+ * 全靠這個 26 夾住,P3 的損耗與虧損試算都是踩在這個數字上校準的。
+ *
+ * P4a 換成 `min(席次腿, 員工腿)` 後,一位店員若能做 35 杯就不再夾得住 ⇒ 開張期
+ * 日客流 24.5 → 29.5、淨利 +$99 → +$195,連帶讓 P3 剛做成立的「備太多反而虧」
+ * 退回 −$35 → **+$74**(不再虧)。那是使用者需求 3 的東西,不能默默退回去。
+ *
+ * 損耗旋鈕沒有餘裕可以補救:懶人路線零損耗的硬性條件是 `(24 − FREE_UNITS) × RATE < 1`
+ * 且 `RATE ≤ 1`,(23, 0.9) 已是唯一解。所以要還原的是**產能錨**本身。
+ *
+ * 26 同時滿足兩端:
+ * - 開張期(1 位店員)產能 = 26,與 P4a 之前的 `CAFE_BASE_CAPACITY` 完全相同 ⇒ 校準不變
+ * - 名店期(5 位店員)產能 = 130 ≥ 該階段客流 129.9 ⇒ 成長曲線仍然走得完
+ * 代價是中後期要多雇一點人才吃得下同樣的客流——那正是 §4.7 想要的經營張力。
+ */
+export const CAFE_STAFF_CUPS_PER_DAY = 26;
+
+/**
+ * 第二台咖啡機讓**每位員工**每日多做 10 杯。
+ *
+ * 為什麼改成「加乘員工」而不是像 P4a 之前那樣加一個固定的 +14 產能:
+ * 新公式裡固定加成會在店還小的時候被席次夾掉、完全沒有感覺;
+ * 而「機器讓每個人手不用排隊等萃取」本來就是這台機器在現實裡的作用。
+ * 名店期 5 人 ⇒ +50 杯/日,$18,000 的投資才配得上它在設備清單上的位置。
+ */
+export const CAFE_MACHINE_CUPS_BONUS = 10;
+
+/** 每位**額外**員工的日薪(設計文件 §4.7 原文)。首位店員的薪資已含在 `CAFE_FIXED_COST` 裡。 */
+export const CAFE_STAFF_WAGE = 260;
+
+/**
+ * 額外員工的人數上限。
+ *
+ * 8 位(連首位共 9 位)的產能是 9 × 45 = 405 杯/日,遠高於招牌 Lv4 + 滿氛圍
+ * 撐得起的客流(約 135 人),所以它**不是平衡旋鈕,是防呆**:擋住手改存檔
+ * 或面板連點把薪資灌成天文數字。
+ */
+export const CAFE_MAX_EXTRA_STAFF = 8;
+
 export interface CafeCapability {
-  /** 招牌等級,無招牌 = 1。 */
+  /** 招牌等級,無招牌 = 1,最高 `CAFE_MAX_SIGN_LEVEL`。 */
   signLevel: number;
-  /** 產能上限(當日客流的硬天花板)。 */
+  /** 產能上限(當日客流的硬天花板)= `min(seatCapacity, staffCapacity)`。 */
   capacity: number;
+  /**
+   * 席次那條腿。`null` = caller 沒告訴我們席次(面板、舊呼叫端)⇒ 這一輪不讓席次成為瓶頸。
+   * 席次是 `placements` 的狀態,本檔不 import state,只能由 caller 餵進來。
+   */
+  seatCapacity: number | null;
+  /** 員工那條腿 = `staffCount × cupsPerStaff`。 */
+  staffCapacity: number;
+  /** 總員工數,**含開張費已包含的首位店員**(所以永遠 >= 1)。 */
+  staffCount: number;
+  /** 每位員工每日杯數(第二台咖啡機會加成)。 */
+  cupsPerStaff: number;
+  /** 額外員工的日薪合計(首位不計,他在 `CAFE_FIXED_COST` 裡)。 */
+  dailyWage: number;
   /** 有沒有戶外座位(只在晴天生效)。 */
   outdoorSeats: boolean;
   /** 直接餵給 `applySpoilage()` 的損耗參數。 */
   spoilage: SpoilageOptions;
 }
 
-/** 由已購買的投資項 id 陣列推出日結需要的四項能力。**純讀取,不改輸入。** */
-export function cafeCapability(upgrades: readonly string[] = []): CafeCapability {
+export interface CafeCapabilityContext {
+  /**
+   * 內用席次數,由 caller 從 `sim/placements.ts` 的 `cafeSeatSpots().length` 取得。
+   * **省略 = 不知道**(不是 0):`seatCapacity` 回 `null`、產能只由員工那條腿決定。
+   * 這讓還沒接線的呼叫端(例如 P4b 才會改的 `CafePanel.vue`)看到的仍是一個合理的數字,
+   * 而不是「零席次 = 產能 10」這種會誤導玩家的假天花板。
+   */
+  seats?: number;
+  /** 額外雇用的員工數(不含首位店員),來自 `state.cafe.extraStaff`。 */
+  extraStaff?: number;
+}
+
+/** 總員工數 = 開張費已含的首位店員 + 額外雇用;壞資料一律夾成 `1 ~ 1 + 上限`。 */
+export function cafeStaffCount(extraStaff: unknown = 0): number {
+  return 1 + Math.min(CAFE_MAX_EXTRA_STAFF, Math.max(0, Math.trunc(finiteOr(extraStaff, 0))));
+}
+
+/**
+ * 每日薪資支出。**只算額外員工**——首位店員的薪水在 `CAFE_FIXED_COST = 370` 裡
+ * (該常數的語意由「水電雜支」擴充為「水電 + 首位店員」,設計文件 §4.9),
+ * 所以開張期的試算維持 +$98 不變,第二位起才是真的多出來的 −$260/日。
+ */
+export function cafeStaffWage(extraStaff: unknown = 0): number {
+  return (cafeStaffCount(extraStaff) - 1) * CAFE_STAFF_WAGE;
+}
+
+/** 席次那條腿:`外帶底量 + 席次 × 迴轉率`。負數/NaN 一律當 0 席。 */
+export function cafeSeatCapacity(seats: unknown): number {
+  return CAFE_TAKEAWAY_CAPACITY + Math.max(0, Math.trunc(finiteOr(seats, 0))) * CAFE_SEAT_TURNOVER;
+}
+
+/**
+ * 由已購買的投資項與(選填的)席次／人力推出日結需要的能力。**純讀取,不改輸入。**
+ *
+ * 招牌等級改成「數已買的招牌 id」而不是 P4a 之前的 `1 + (有招牌 ? 1 : 0)`:
+ * 三個 id 逐級解鎖(`buyCafeUpgrade()` 擋前置),所以數量就是等級差。
+ * 手改存檔只塞了 Lv4 也只會得到 Lv2 —— 少算不會多算,對玩家沒有便宜可佔。
+ */
+export function cafeCapability(
+  upgrades: readonly string[] = [],
+  context: CafeCapabilityContext = {},
+): CafeCapability {
   const owned = new Set(Array.isArray(upgrades) ? upgrades : []);
   const cold = owned.has(CAFE_UPGRADE_IDS.coldStorage);
+  const signLevel = Math.min(
+    CAFE_MAX_SIGN_LEVEL,
+    1 + CAFE_SIGNBOARD_IDS.filter((id) => owned.has(id)).length,
+  );
+  const staffCount = cafeStaffCount(context.extraStaff);
+  const cupsPerStaff = CAFE_STAFF_CUPS_PER_DAY
+    + (owned.has(CAFE_UPGRADE_IDS.secondMachine) ? CAFE_MACHINE_CUPS_BONUS : 0);
+  const staffCapacity = staffCount * cupsPerStaff;
+  const seatCapacity = context.seats === undefined || context.seats === null
+    ? null
+    : cafeSeatCapacity(context.seats);
   return {
-    signLevel: 1 + (owned.has(CAFE_UPGRADE_IDS.signboard) ? 1 : 0),
-    capacity: CAFE_BASE_CAPACITY + (owned.has(CAFE_UPGRADE_IDS.secondMachine) ? CAFE_CAPACITY_PER_MACHINE : 0),
+    signLevel,
+    capacity: seatCapacity === null ? staffCapacity : Math.min(seatCapacity, staffCapacity),
+    seatCapacity,
+    staffCapacity,
+    staffCount,
+    cupsPerStaff,
+    dailyWage: cafeStaffWage(context.extraStaff),
     outdoorSeats: owned.has(CAFE_UPGRADE_IDS.outdoorSeats),
     spoilage: cold
       ? { freeUnits: SPOILAGE_FREE_UNITS * CAFE_COLD_STORAGE_FREE_MULT, rate: SPOILAGE_RATE * CAFE_COLD_STORAGE_RATE_MULT }
@@ -543,12 +697,20 @@ export function openCafe(cafe: CafeState, money: number): CafeInvestmentResult {
   };
 }
 
-/** 一次性、永久、不可退的投資；檢查順序與既有 `buyUpgrade()` 同構。 */
+/**
+ * 一次性、永久、不可退的投資；檢查順序與既有 `buyUpgrade()` 同構。
+ *
+ * P4a 多一道 `requires` 前置檢查(招牌必須逐級升)。既有五項都沒有 `requires`,
+ * 所以它們的行為一個字都沒變。
+ */
 export function buyCafeUpgrade(cafe: CafeState, money: number, upgradeId: string): CafeInvestmentResult {
   const def = getCafeUpgrade(upgradeId);
   if (!def) return rejectCafeInvestment(cafe, money, "沒有這種咖啡廳投資");
   if (cafe.upgrades.includes(def.id)) return rejectCafeInvestment(cafe, money, "咖啡廳已經做過這項投資");
   if (!cafe.open) return rejectCafeInvestment(cafe, money, "咖啡廳尚未開張");
+  if (def.requires && !cafe.upgrades.includes(def.requires)) {
+    return rejectCafeInvestment(cafe, money, `需要先完成「${getCafeUpgrade(def.requires)?.name ?? def.requires}」`);
+  }
   if (!canAffordCafeInvestment(money, def.price)) return rejectCafeInvestment(cafe, money, "金錢不足");
   return {
     ok: true,
@@ -558,6 +720,57 @@ export function buyCafeUpgrade(cafe: CafeState, money: number, upgradeId: string
     label: `咖啡廳投資:${def.name}`,
     category: "cafe",
   };
+}
+
+// ---------------------------------------------------------------------------
+// 5b. P4a:雇用與資遣(設計文件 §4.7 §4.9)
+// ---------------------------------------------------------------------------
+
+/**
+ * 雇用/資遣的純交易結果。
+ *
+ * **刻意不共用 `CafeInvestmentResult`**:那個型別帶著 `cost` / `moneyAfter`,
+ * 會讓呼叫端以為雇人要先付一筆錢。員工**沒有一次性費用**,只有每天結算的
+ * `CAFE_STAFF_WAGE`(由 `tick.ts` 的日結扣),所以這裡連 `money` 都不接。
+ * 資遣同理:沒有遣散費,懲罰是「你之前白付的那些薪水」,不是一筆罰款。
+ */
+export interface CafeStaffResult {
+  ok: boolean;
+  reason?: string;
+  /** 成功 = 新物件;失敗 = 原參考(caller 不可能誤寫入)。 */
+  cafe: CafeState;
+  /** 交易後的額外員工數。 */
+  extraStaff: number;
+  /** 交易後的每日薪資合計(只含額外員工)。 */
+  dailyWage: number;
+}
+
+function cafeStaffResult(cafe: CafeState, ok: boolean, reason?: string): CafeStaffResult {
+  return { ok, reason, cafe, extraStaff: cafeStaffCount(cafe.extraStaff) - 1, dailyWage: cafeStaffWage(cafe.extraStaff) };
+}
+
+/**
+ * 多雇一位店員。**不扣款**——薪資是每日固定成本,不是一次性投資。
+ *
+ * 沒有「錢不夠不准雇」的檢查:錢不夠的懲罰在設計上是**縮水而不是禁止**
+ * (設計文件 §4.9 的「不倒店」),薪資扣款走既有 `addMoney` 的下限 0,
+ * 玩家不會欠債,但會眼睜睜看著現金被薪水吃光 —— 那才是「過度擴張」該有的體感。
+ */
+export function hireCafeStaff(cafe: CafeState): CafeStaffResult {
+  if (!cafe.open) return cafeStaffResult(cafe, false, "咖啡廳尚未開張");
+  const current = cafeStaffCount(cafe.extraStaff) - 1;
+  if (current >= CAFE_MAX_EXTRA_STAFF) return cafeStaffResult(cafe, false, "已經達到人力上限");
+  const next: CafeState = { ...cafe, extraStaff: current + 1 };
+  return cafeStaffResult(next, true);
+}
+
+/** 資遣一位店員。首位店員是開張費附的,資遣不到 ⇒ 額外員工為 0 時直接拒絕。 */
+export function fireCafeStaff(cafe: CafeState): CafeStaffResult {
+  if (!cafe.open) return cafeStaffResult(cafe, false, "咖啡廳尚未開張");
+  const current = cafeStaffCount(cafe.extraStaff) - 1;
+  if (current <= 0) return cafeStaffResult(cafe, false, "吧台後至少要留一位店員");
+  const next: CafeState = { ...cafe, extraStaff: current - 1 };
+  return cafeStaffResult(next, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -690,8 +903,13 @@ export function advanceCafeResearch(cafe: CafeState, currentDay: number): CafeRe
  * 每一級招牌帶來的基礎客流。
  *
  * 22 這個數字是回推出來的,不是拍腦袋:設計文件 §5.2 的範例表以「30 位客人」為基準,
- * 而 §5.1 要求成熟期日淨利只能是日租金的 30–50%。招牌 1 級 ≈ 22 人(剛開張、只夠打平多一點)、
- * 2 級 ≈ 44 人但被產能夾到 40 人(成熟期),兩點連起來剛好落在目標帶。
+ * 招牌 1 級 ≈ 22 人(剛開張、只夠打平多一點)。
+ *
+ * 🔴 **P4a:招牌從「有/沒有」變成 Lv1~Lv4,本常數一級不變,四級就是 22/44/66/88。**
+ * 乘上長期平均乘數之後大約是 30 / 60 / 90 / 120 人/日,對應設計文件 §4.7 的
+ * 開張期→名店期四階段。舊註解裡「2 級 ≈ 44 人但被產能夾到 40」那句已經不成立:
+ * 產能不再是固定的 40,而是 `min(席次×迴轉率, 員工×杯數)`(見 `cafeCapability()`)。
+ * ⇒ **光升招牌不會自己變成錢**,席次與人力沒跟上就只是多買了一塊招牌。
  */
 export const CAFE_CROWD_PER_SIGN_LEVEL = 22;
 
@@ -827,7 +1045,8 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
   const raw = signLevel * CAFE_CROWD_PER_SIGN_LEVEL * weatherMultiplier * weekdayMultiplier
     * popularityMultiplier * ambianceMultiplier * outdoor;
   const base = Math.max(0, Math.round(quantize(raw)));
-  const capacity = Math.max(0, Math.floor(finiteOr(input.capacity, CAFE_BASE_CAPACITY)));
+  // 壞資料的退路取「只有首位店員」的產能:少算不會多算,玩家拿不到便宜。
+  const capacity = Math.max(0, Math.floor(finiteOr(input.capacity, CAFE_STAFF_CUPS_PER_DAY)));
   const guests = Math.min(base, capacity);
   return { base, guests, weatherMultiplier, weekdayMultiplier, popularityMultiplier, ambianceMultiplier, cappedByCapacity: base > capacity };
 }
@@ -843,10 +1062,16 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
 export const CAFE_BASE_TICKET = 36;
 
 /**
- * 每日固定成本(水電、清潔、耗材、雜支)——設計文件 §5.5 的「淨利 = 營收 − 原料成本 − 固定成本」。
+ * 每日固定成本——設計文件 §5.5 的「淨利 = 營收 − 原料成本 − 固定成本」。
  *
  * 370 是解一個兩點聯立解出來的:成熟期(40 人)淨利要落在 $300–500,
  * 剛開張(26 人)又不能是負的、否則開店變成陷阱。
+ *
+ * 🔴 **P4a 語意擴充:「水電雜支」→「水電雜支 + 首位店員」**(設計文件 §4.9)。
+ * 開張費 $22,000 已經包含第一位店員,吧台後永遠至少有一個人 ——
+ * 否則「開張期 0 員工」的成長曲線第一格會出現「沒人能結帳」的洞。
+ * **數值一毛不動**(370),所以開張期試算維持 +$98/日;
+ * 第二位起才是額外的 `CAFE_STAFF_WAGE`,由 `cafeStaffWage()` 另外算。
  */
 export const CAFE_FIXED_COST = 370;
 
@@ -947,10 +1172,24 @@ export function cafeItemMargin(item: Pick<CafeMenuItem, "recipe" | "price">): nu
 }
 
 /**
- * 完整研發後的硬上限。$38 在 56 日成熟期實測仍約為日租金的 46.9%，
- * 保留在設計要求的 30～50% 內；即使後續誤加高價品項也不能突破。
+ * 平均客單價的**硬上限防呆**。P4a 由 $38 調到 $55(設計文件 §4.7)。
+ *
+ * ### 為什麼原本的 $38 是個天花板,又為什麼把它抬到 $55 目前「還沒有」立刻加價
+ *
+ * $38 這個數字原本是 CAFE-17 為了守住「成熟期只能是日租金的 30~50%」而設的。
+ * §4.7 拍板推翻了那條副業定位(咖啡廳要能取代收租),所以這個上限的**用途**
+ * 也跟著換了:它不再是收益護欄,而是**「未來新增品項時的防呆」**——
+ * 第三層研發(季節限定豆、造型拿鐵、下午茶套餐)本來就會帶進 $50 以上的品項,
+ * $55 是那批品項全上線之後平均客單價的合理天花板。
+ *
+ * 🔴 **誠實記錄**:抬高這個常數**本身不會讓咖啡廳多賺一毛錢**。
+ * P1 之後營收是逐位顧客照 `item.price` 真的結出來的(`checkoutCafeOrder()`),
+ * `avgTicket()` 只是面板上的顯示值與這道防呆的量尺。現行菜單(3 個基礎品 +
+ * 10 個研發品,售價 $34~$42)的平均就是 $38,離 $55 還有很大的餘裕 ——
+ * 那個餘裕要等第三層研發真的加進 `content/cafeResearch.ts` 才會被用掉。
+ * P4a 因此**不靠加價**達成 §4.7 的成長曲線,而是靠招牌分級 + 席次/員工產能。
  */
-export const CAFE_MAX_AVG_TICKET = 38;
+export const CAFE_MAX_AVG_TICKET = 55;
 
 /**
  * 依完成研發產生菜單。未知／重複 id 會被忽略，輸出永遠按 content 宣告序，
@@ -980,14 +1219,27 @@ export function menuItems(completed: readonly string[] = []): CafeMenuItem[] {
 }
 
 /**
- * 平均客單價採「第二層菜單多樣性里程碑」：完成 2 項升到 $37，完成 5 項升到 $38。
- * 根節點建立客群但不直接加價；不再把每項研發當成可無限疊加的百分比。
- * 這讓任何完成順序都只升不降，且 $38 硬上限守住成熟期收益邊界。
+ * 平均客單價 = **目前菜單標價的平均**,四捨五入後夾在 `CAFE_MAX_AVG_TICKET` 以下。
+ *
+ * ### P4a 為什麼把它從「里程碑表」改成「真的去算平均」
+ *
+ * 舊版是一張手調的里程碑表(完成 2 項第二層 → $37、5 項 → $38),那在 P1
+ * 把營收改成逐位顧客照 `item.price` 結帳之後就**與帳本脫鉤**了:面板上寫 $37,
+ * 玩家實際收到的卻是菜單價的加權平均。同一個數字有兩種意思正是本次重設計要修的病。
+ *
+ * 現在它就是菜單平均,面板顯示什麼、玩家大致就收到什麼;而 `CAFE_MAX_AVG_TICKET`
+ * 從「里程碑的終點」變成一道**只在資料寫壞時才會生效的夾子**——
+ * 日後誰在 `content/cafeResearch.ts` 誤加一個 $200 的品項,平均也不會衝破 $55。
+ *
+ * 沒有研發時 = 三個基礎品項 `(34 + 36 + 38) / 3` = **$36**,與 `CAFE_BASE_TICKET`
+ * 完全一致(既有行為不變);完整前兩層 13 項的平均 = $38.15 → **$38**,
+ * 與舊里程碑表的終點也一致。⇒ 這次改寫對現有存檔的顯示值零位移。
  */
 export function avgTicket(completed: readonly string[] = []): number {
-  const levelTwoCount = menuItems(completed).filter((item) => item.source === "research" && item.level === 2).length;
-  const diversityBonus = levelTwoCount >= 5 ? 2 : levelTwoCount >= 2 ? 1 : 0;
-  return Math.min(CAFE_MAX_AVG_TICKET, CAFE_BASE_TICKET + diversityBonus);
+  const menu = menuItems(completed);
+  if (menu.length === 0) return CAFE_BASE_TICKET;
+  const mean = menu.reduce((sum, item) => sum + Math.max(0, finiteOr(item.price, 0)), 0) / menu.length;
+  return Math.min(CAFE_MAX_AVG_TICKET, Math.round(quantize(mean)));
 }
 
 /** 舊 API 保留給測試／呼叫端；回傳值改由菜單平均價反推，不接受未知 id 灌水。 */

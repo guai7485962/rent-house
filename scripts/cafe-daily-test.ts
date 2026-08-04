@@ -25,13 +25,20 @@ const { state, defaultCafe, GAME_START, CAFE_HISTORY_CAP } = await import("../sr
 const { cafeDailyPass, cafeHourlyPass, cafeRestockPass, hourlyTick, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const {
   cafeCapability, cafeCrowd, cafeDailyLine, cafeTicketPrice, menuItems, suggestedStandingOrders,
-  CAFE_BASE_CAPACITY, CAFE_BASE_TICKET, CAFE_CROWD_PER_SIGN_LEVEL, CAFE_FIXED_COST,
-  CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_RESEARCH_IDS, CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
+  CAFE_BASE_TICKET, CAFE_CROWD_PER_SIGN_LEVEL, CAFE_FIXED_COST, CAFE_MACHINE_CUPS_BONUS,
+  CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_RESEARCH_IDS, CAFE_STAFF_CUPS_PER_DAY,
+  CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
   SPOILAGE_FREE_UNITS, SPOILAGE_RATE,
   nextCafePopularity,
 } = await import("../src/sim/cafe");
 const { weatherForDay } = await import("../src/sim/weather");
 const { weekdayOf } = await import("../src/sim/week");
+const { placeCafeStarterSet, cafeSeatSpots } = await import("../src/sim/placements");
+
+// 🔴 P4a:產能改成 `min(外帶底量 + 席次×迴轉率, 員工×杯數)`,所以**任何端到端的
+// 營運量測都必須先擺上開張贈品** —— 那是玩家按下開張時真的會拿到的東西。
+// 不擺就是在量一家沒有椅子的店(產能只剩外帶底量 10 杯),量出來的數字沒有意義。
+placeCafeStarterSet();
 
 let pass = 0;
 let fail = 0;
@@ -288,18 +295,23 @@ try {
     CAFE_UPGRADE_IDS.signboard, CAFE_UPGRADE_IDS.secondMachine, CAFE_UPGRADE_IDS.outdoorSeats, CAFE_UPGRADE_IDS.coldStorage,
   ], CAFE_POPULARITY_MAX);
   const freshNet = measure("剛開張(零投資,人氣 0)", [], 0);
-  const ratio = matureNet / dailyRent;
-  check(`🔴 成熟期日淨利 $${matureNet.toFixed(0)} 落在日租金 $${dailyRent} 的 30–50%(實測 ${(ratio * 100).toFixed(1)}%)`,
-    ratio >= 0.3 && ratio <= 0.5);
-  check("咖啡廳不該比收租賺錢:成熟期日淨利 < 日租金", matureNet < dailyRent);
+  // 🔴 P4a:設計文件 §4.7 拍板推翻了 CAFE-13 的「30~50% 副業」定位——
+  // 咖啡廳現在**可以也應該**長到超過收租。這裡改守新的兩條:
+  // (1) 只買招牌不加席次/人力,成長是有限的(這一局席次仍是開張贈品的 9 席);
+  // (2) 剛開張不是陷阱。四階段成長曲線的完整護欄在 `cafe-p4a-growth-test.ts`。
+  check("開張贈品的席次是這一局的產能瓶頸(招牌買再多也要有位子坐)",
+    cafeCapability([CAFE_UPGRADE_IDS.signboard], { seats: cafeSeatSpots().length, extraStaff: 0 }).capacity
+    <= CAFE_STAFF_CUPS_PER_DAY);
   check("剛開張不是陷阱:零投資也不會日日虧錢", freshNet > 0, `$${freshNet.toFixed(0)}`);
   check("投資有意義:成熟期日淨利明顯高於剛開張", matureNet > freshNet * 2);
+  console.log(`   · 成熟期/日租金 = ${((matureNet / dailyRent) * 100).toFixed(1)}%(P4a 起不再設 30~50% 的上界)`);
 
   // 能力表本身
-  check("零投資時招牌 1 級、產能為預設值",
-    cafeCapability([]).signLevel === 1 && cafeCapability([]).capacity === CAFE_BASE_CAPACITY);
+  check("零投資時招牌 1 級、產能為只有首位店員的杯數",
+    cafeCapability([]).signLevel === 1 && cafeCapability([]).capacity === CAFE_STAFF_CUPS_PER_DAY);
   check("招牌讓基礎客流翻倍(等級 1 → 2)", cafeCapability([CAFE_UPGRADE_IDS.signboard]).signLevel === 2);
-  check("第二台咖啡機提高產能上限", cafeCapability([CAFE_UPGRADE_IDS.secondMachine]).capacity > CAFE_BASE_CAPACITY);
+  check("第二台咖啡機提高每位員工的杯數",
+    cafeCapability([CAFE_UPGRADE_IDS.secondMachine]).cupsPerStaff === CAFE_STAFF_CUPS_PER_DAY + CAFE_MACHINE_CUPS_BONUS);
   check("大型冷藏放寬損耗參數", (() => {
     const s = cafeCapability([CAFE_UPGRADE_IDS.coldStorage]).spoilage;
     return (s.freeUnits ?? 0) > SPOILAGE_FREE_UNITS && (s.rate ?? SPOILAGE_RATE) < SPOILAGE_RATE;
@@ -454,7 +466,10 @@ try {
       invested: 4000,
     },
   });
-  check("背景研發測試前置:只有一項第二層時客單仍為 $36", cafeTicketPrice(state.cafe.completed) === 36);
+  // P4a:客單價改成「目前菜單標價的平均」。基礎三項 $108 + 本日配方 $36 + 手沖 $42
+  // ⇒ $186 / 5 = $37.2 → $37。(P4a 之前是里程碑表,這一局會回 $36。)
+  check("背景研發測試前置:菜單平均客單價 = $37", cafeTicketPrice(state.cafe.completed) === 37,
+    String(cafeTicketPrice(state.cafe.completed)));
   const dueResearchRandom = countRandom(() => cafeDailyPass());
   const researchDayRecord = state.cafe.history[state.cafe.history.length - 1];
   check("到期研發在沒有 CafePanel 時也會清空 active 並去重加入 completed",
@@ -563,10 +578,10 @@ try {
     ["rent", "furniture", "upgrade", "event", "upkeep", "other"].every((c) => txnLine.includes(`"${c}"`)), txnLine);
 
   // 常數本身的合理性(避免有人日後隨手改壞)
-  check("基礎客流 / 產能 / 客單價 / 固定成本都是正數",
-    CAFE_CROWD_PER_SIGN_LEVEL > 0 && CAFE_BASE_CAPACITY > 0 && CAFE_BASE_TICKET > 0 && CAFE_FIXED_COST > 0);
-  check("招牌 1 級的基礎客流略低於預設產能(只有尖峰日會撞天花板)",
-    CAFE_CROWD_PER_SIGN_LEVEL < CAFE_BASE_CAPACITY);
+  check("基礎客流 / 每人杯數 / 客單價 / 固定成本都是正數",
+    CAFE_CROWD_PER_SIGN_LEVEL > 0 && CAFE_STAFF_CUPS_PER_DAY > 0 && CAFE_BASE_TICKET > 0 && CAFE_FIXED_COST > 0);
+  check("招牌 1 級的基礎客流略低於一位店員的杯數(只有尖峰日會撞天花板)",
+    CAFE_CROWD_PER_SIGN_LEVEL < CAFE_STAFF_CUPS_PER_DAY);
 } finally {
   Math.random = originalRandom;
 }

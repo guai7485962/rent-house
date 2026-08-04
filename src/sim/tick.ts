@@ -42,6 +42,7 @@ import {
   cafeHourlyGuestCount,
   cafeOrderLine,
   cafeServicePopularity,
+  cafeStaffWage,
   checkoutCafeOrder,
   chooseCafeMenuItem,
   clampCafePopularity,
@@ -737,7 +738,10 @@ export function cafeHourlyPass(hour: number) {
 
   const day = gameDayIndex();
   const weather = weatherForDay(day);
-  const cap = cafeCapability(cafe.upgrades);
+  // 🔴 P4a:席次與員工同時進產能公式。兩者都是 state(placements / cafe.extraStaff),
+  // 所以在這裡取,`cafe.ts` 仍然只吃參數。
+  const seats = cafeSeatSpots();
+  const cap = cafeCapability(cafe.upgrades, { seats: seats.length, extraStaff: cafe.extraStaff });
   const crowd = cafeCrowd({
     weather,
     weekday: weekdayOf(state.gameMs),
@@ -762,8 +766,8 @@ export function cafeHourlyPass(hour: number) {
   let saleLine = "";
   let refusedLine = "";
 
-  // 🔴 合流的席次來源:玩家實際擺的椅子。拆光 ⇒ seats 為空 ⇒ 全部外帶。
-  const seats = cafeSeatSpots();
+  // 🔴 合流的席次來源:玩家實際擺的椅子(上面算產能時已經取過同一份 `seats`)。
+  // 拆光 ⇒ seats 為空 ⇒ 全部外帶,且產能掉到 `CAFE_TAKEAWAY_CAPACITY`。
   const takenSeats = new Set(
     cafe.guests
       .filter((guest) => guest.seatTile)
@@ -931,6 +935,15 @@ export function cafeDailyPass() {
   // 2) 固定成本(addMoney 下限 0,錢不夠也不會變負)
   const moneyBefore = state.money;
   addMoney(-CAFE_FIXED_COST, "咖啡廳固定開銷", "cafe");
+
+  // 2b) 🔴 P4a:額外員工的薪資(設計文件 §4.7 的第五條虧損管道「過度擴張」)。
+  //     **時點刻意與固定開銷同一行**——理由是三件事必須同時成立:
+  //     - 一天只扣一次:本 pass 由換日區塊呼叫,每個遊戲日恰好跑一次(同 CAFE_FIXED_COST);
+  //     - 離線一致:離線補進度走 `syncToNow()` 的逐日換日,經過的是同一段程式碼;
+  //     - 淡季照付:扣款不看今天有沒有客人、開沒開店,雇了就是雇了。
+  //     首位店員不在這裡——他的薪水已經算在 `CAFE_FIXED_COST` 裡(設計文件 §4.9)。
+  const wage = cafeStaffWage(cafe.extraStaff);
+  if (wage > 0) addMoney(-wage, "咖啡廳員工薪資", "cafe");
 
   // 3) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)。
   //    🔴 P3:進貨已經在 09:00 做完,所以這裡吃到的是**打烊後剩下的庫存**——

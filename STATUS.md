@@ -16,8 +16,32 @@
 
 ## 現在狀態(2026-08-04)
 
-- **咖啡廳經營玩法重設計 P1 → P2 → P3 都完成。P1/P2 已提交(HEAD `941283e`),
-  P3 變更待提交。**
+- **咖啡廳經營玩法重設計 P1 → P2 → P3 → P4a 都完成。P1/P2/P3 已提交(HEAD `e28b6cd`),
+  P4a 變更待提交。**
+- **P4a(成長軸模擬層:招牌分級 + 員工/產能 + 客單價上限)** —— 只做模擬層,
+  畫面(`staffAgents`)與人力面板留給 P4b:
+  - **招牌 Lv1 → Lv4**:`cafeUpgrades.ts` **追加**兩個 id(`cafe_signboard_lv3` $60,000、
+    `cafe_signboard_lv4` $110,000),**既有五項的 id、順序與價格一格未動** ⇒
+    舊存檔零影響、不需要升 `SAVE_VERSION`。`CafeUpgrade.requires` 讓招牌必須逐級升。
+  - 🔴 **產能公式換掉**:`CAFE_BASE_CAPACITY 26 + 14/台` → **`min(外帶底量 10 + 席次 × 5,
+    員工數 × 每人 35 杯)`**。席次來自 P2 的 `cafeSeatSpots()`(玩家真的擺的椅子),
+    第二台咖啡機改成加**每位員工** +10 杯。⇒ 只買椅子或只雇人都夾得住。
+  - **員工**:`CafeState.extraStaff`(**額外**雇用數,不含開張費已含的首位店員),
+    純函式 `hireCafeStaff()` / `fireCafeStaff()` / `cafeStaffWage()` 在 `cafe.ts`;
+    薪資 $260/人/日 由 `cafeDailyPass()` 緊接固定開銷後扣(一天一次、淡季照付、離線一致)。
+  - **客單價**:`CAFE_MAX_AVG_TICKET` $38 → **$55**(硬上限防呆保留),`avgTicket()`
+    改成「目前菜單標價的平均」而不是手調里程碑表。⚠️ **餘裕目前是空的**——
+    現行菜單標價平均就是 $38,要等第三層研發才用得到(詳見下方實測)。
+  - 改動檔:`sim/cafe.ts`、`content/cafeUpgrades.ts`、`types.ts`、`sim/gameState.ts`、
+    `sim/tick.ts` + 新測試 `scripts/cafe-p4a-growth-test.ts`(40 條)
+    + 新實測腳本 `scripts/cafe-growth-sim.ts` + 六支既有咖啡廳測試跟著改語意。
+    **未動 `CafePanel.vue`、`src/floor/*`、`sim/routine.ts`、`sim/persistence.ts`。**
+- **§4.7 四階段成長曲線實測(`npx tsx scripts/cafe-growth-sim.ts`,28 天暖身 + 112 天量測)**:
+  開張期 **+$166**(15%)/ 成長期 **+$501**(46%)/ 成熟期 **+$887**(82%)/
+  名店期 **+$1,092**(**101%**);人力調到剛好夠用的 +3 人是 **+$1,256**(116%)、
+  再買齊五項投資是 **+$1,543**(142%)。百分比對的是設計靶 $1,083/日(四房滿租淨租金)。
+  **過度擴張**(成長期客流卻雇 4 人)**−$279** ⇒ 第五條虧損管道成立。
+  ⚠️ 客單價停在 ~$37(設計表要 $53),因為菜單標價本身沒漲;名店期因此是 101% 而非 150%。
 - **P3(進貨時機 + 損耗調校 + 銷售排行 + 一鍵建議常備量)**:
   - 🔴 **進貨從日結搬到開店前 09:00**(`tick.ts` 的 `cafeRestockPass`)。玩家**先付錢、後賺錢**,
     「備了料卻沒客人」與「沒備料所以賣不出去」兩個方向都變成真的損失。
@@ -32,12 +56,13 @@
     `components/CafePanel.vue`、`scripts/cafe-opening-sim.ts` + 新測試
     `scripts/cafe-p3-economy-test.ts` + 三支既有咖啡廳測試跟著改語意。
     **未動 `src/floor/*`、未動 `sim/routine.ts`、未改五項投資與研發 id。**
-- **最新驗證(全綠)**:`npm test` **91/91**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、`npm run ui:shot -- rent` 18 張 0 error
-  + `artifacts/ui-lab/rent/cafe-p3-panel/` 6 張面板實拍
-- **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts:28`)。P3 只在 `cafe.sales[]`
-  **加了兩個選填欄位**(`restocked` / `restockCost`),`sanitizeCafeState` 有預設值 ⇒
-  **不需要升版**(慣例同 floorChain 的選填欄位)。舊檔讀進來當天若還沒打烊會補進一次貨。
+- **最新驗證(全綠)**:`npm test` **92/92**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)。UI 未動 ⇒ P4a 未重跑 `ui:shot`
+  (最後一次是 P3 的 18 張 0 error + `artifacts/ui-lab/rent/cafe-p3-panel/` 6 張面板實拍)。
+- **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts:28`)。P3 在 `cafe.sales[]`
+  加了兩個選填欄位(`restocked` / `restockCost`)、P4a 加了 `cafe.extraStaff`,
+  `sanitizeCafeState` 都有預設值與夾值 ⇒ **兩次都不需要升版**
+  (慣例同 floorChain 的選填欄位)。舊檔讀進來 `extraStaff` 一律是 0。
 - **§4.7 實測(P3 後,`npx tsx scripts/cafe-opening-sim.ts`,112 遊戲日、人氣固定)**:
   ① 補貨精準 **+$99** / ② 缺貨(只砍咖啡豆)**+$2** / ③ 備貨過量 **−$35** / ④ 放著不管 **−$346** /
   ⑤ 備錯料(咖啡豆 30% + 其餘多備 50%)**−$132**。
@@ -61,12 +86,26 @@
 
 ## 下一步
 
-- **提交 P3**,然後 **咖啡廳重設計 P4a**(見 `docs/咖啡廳經營玩法-重設計.md` §六):
-  聲譽即時化 + 招牌分級(Lv1～Lv4)。接著 **P4b**:員工系統
-  (`staffAgents` + 吧台結帳 + 排隊 + 人力區塊),**沿用 P2 建立的動線骨架**
-- **使用者要拍板**:P3 之後 ③「備太多反而虧」已成立(−$35),但 ② 只砍一種原料仍是 +$2。
-  要不要讓「缺貨」本身也倒賠,得改常備訂單的語意(從「補到水位」改成「每天固定買一批」),
-  那會連帶打死懶人路線 ⇒ **未擅自動,理由寫在重設計文件 §4.7 的 P3 實測表下方**
+- **提交 P4a**,然後 **P4b**:員工與產能的**畫面表現**(見重設計文件 §4.9)——
+  `src/floor/staffAgents.ts`(吧台後的店員、結帳動作、**排隊 = 產能不足的視覺信號**)
+  + `CafePanel.vue` 的「人力」區塊(👤 ×N・日薪合計、今日負荷進度條、雇用/資遣按鈕)。
+  模擬層已經齊備:`cafeCapability(upgrades, { seats, extraStaff })` 直接給得出
+  `capacity / seatCapacity / staffCapacity / staffCount / dailyWage`,
+  雇用/資遣走 `hireCafeStaff()` / `fireCafeStaff()` 純函式。
+  🔴 **`CafePanel.vue:307` 的「產能 N 單」目前讀的是沒帶席次的 `cafeCapability()`**
+  (回的是「只有首位店員」的 35 杯),P4b 要把真實席次接進去。
+- **使用者要拍板(P4a 新增)**:P4a 把開張期的產能天花板從 26 打開到 35 之後,
+  §4.7 的「備太多反而虧」從 P3 的 −$35 回到 **+$74**(精準備貨 +$195,差距仍有 $121)。
+  損耗旋鈕**已經頂到極限**(`(24 − 23) × 0.9 < 1` 是懶人路線零損耗的唯一解,`RATE` 不能 > 1),
+  ⇒ 要不要為了維持「開張期只賺 $98」而回頭調(提高 `CAFE_FIXED_COST`、或降低氛圍加成上限),
+  **P4a 刻意不擅自決定**,理由寫在重設計文件 §4.7 的 P4a 實測表下方。
+- **使用者要拍板(承 P3)**:② 只砍一種原料仍接近損益兩平是**結構性**的
+  (常備訂單是「補到水位」,少備料等於少付錢),真正會痛的形狀是 ⑤「備錯料」。
+  要讓缺貨本身倒賠得改常備訂單語意,那會連帶打死懶人路線 ⇒ **未擅自動**
+- 🔴 **客單價的餘裕還沒被用掉**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價
+  平均仍是 $38 ⇒ 成長曲線的名店期只到淨租金的 101%(設計值 150%)。
+  要補上這一段,得把**第三層研發**(季節限定豆、造型拿鐵、下午茶套餐)
+  加進 `src/content/cafeResearch.ts`,那是 P4a 範圍外的新工作項
 - 🔴 **`PixelDollhouse` 在受限視窗高度下被壓成 2px**(本批截圖時發現,**與本批無關**,
   已用未改動的 baseline build 驗過是既有問題):`main` 是 `display:flex; flex-direction:column`
   且高度確定,`.pixel-room` 的 canvas 是 `height:auto` 的取代元素 ⇒ min-content 算 0

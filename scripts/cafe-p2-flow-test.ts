@@ -32,7 +32,7 @@ const {
 } = await import("../src/sim/tick");
 const {
   cafeCapability, cafeCrowd, cafeHourlyGuestCount, menuItems, suggestedStandingOrders,
-  CAFE_BASE_CAPACITY, CAFE_BUSINESS_HOURS, CAFE_CAPACITY_PER_MACHINE,
+  CAFE_BUSINESS_HOURS,
 } = await import("../src/sim/cafe");
 const { CAFE_DINE_IN_CAP, CAFE_GUEST_CAP } = await import("../src/sim/cafeGuests");
 const {
@@ -358,7 +358,12 @@ try {
   // =========================================================================
   // 七、🔴 cap 餘裕:合流不變式在現行客流上限下不會退化
   // =========================================================================
-  const maxCapacity = CAFE_BASE_CAPACITY + CAFE_CAPACITY_PER_MACHINE;
+  // 🔴 P4a:產能改成 `min(席次×迴轉率 + 外帶底量, 員工×杯數)`。cap 餘裕的推導前提
+  // 因此改成「這一局實際的產能上限」——席次是這支測試自己擺出來的那些椅子。
+  const maxCapacity = cafeCapability(
+    ["cafe_espresso_machine", "cafe_signboard"],
+    { seats: cafeSeatSpots().length, extraStaff: state.cafe.extraStaff },
+  ).capacity;
   const maxHourly = Math.max(...Array.from({ length: CAFE_BUSINESS_HOURS },
     (_, i) => cafeHourlyGuestCount(maxCapacity, i)));
   check("🔴 cap 餘裕 = CAFE_GUEST_CAP − CAFE_DINE_IN_CAP 夠塞下一小時的最大到客",
@@ -391,7 +396,10 @@ try {
     `壞掉的小時數=${lostGuests} ${detail.join(" / ")}`);
 
   // 客流上限的來源(未來 P4b 若把產能推高,上面那條餘裕要跟著放大)
-  const cap = cafeCapability(["cafe_espresso_machine"]);
+  const cap = cafeCapability(
+    ["cafe_espresso_machine", "cafe_signboard"],
+    { seats: cafeSeatSpots().length, extraStaff: state.cafe.extraStaff },
+  );
   const crowd = cafeCrowd({
     weather: weatherForDay(60), weekday: weekdayOf(state.gameMs), signLevel: cap.signLevel,
     capacity: cap.capacity, popularity: 100, outdoorSeats: true, ambiancePoints: cafeAmbiancePoints(),

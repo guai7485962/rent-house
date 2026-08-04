@@ -268,6 +268,14 @@ export interface CafeState {
   completed: string[];
   /** 已購買的咖啡廳設備 id;刻意不進 placements,免得咖啡機被搬到三樓(CAFE-14) */
   upgrades: string[];
+  /**
+   * **額外**雇用的店員數(重設計 P4a,設計文件 §4.7 §4.9)。
+   *
+   * 🔴 不含開張費 $22,000 已經包含的**首位店員**——他的薪資記在 `CAFE_FIXED_COST`
+   * 裡,所以吧台後永遠至少有一個人。這個欄位是「第二位起」的人數,
+   * 每人每日 `CAFE_STAFF_WAGE`,由日結扣款。舊存檔沒有這個欄位 ⇒ 消毒時補 0。
+   */
+  extraStaff: number;
   /** 目前在店裡的顧客,cap CAFE_GUEST_CAP;不進 state.runtimes */
   guests: CafeGuest[];
   /** 人氣(CAFE-13 客流公式用) */

@@ -22,11 +22,12 @@ const mem: Record<string, string> = {};
 };
 
 const { state, defaultCafe, GAME_START, CAFE_HISTORY_CAP } = await import("../src/sim/gameState");
-const { cafeDailyPass, cafeHourlyPass, hourlyTick, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
+const { cafeDailyPass, cafeHourlyPass, cafeRestockPass, hourlyTick, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const {
   cafeCapability, cafeCrowd, cafeDailyLine, cafeTicketPrice, menuItems, suggestedStandingOrders,
   CAFE_BASE_CAPACITY, CAFE_BASE_TICKET, CAFE_CROWD_PER_SIGN_LEVEL, CAFE_FIXED_COST,
   CAFE_LOG_PREFIX, CAFE_POPULARITY_MAX, CAFE_RESEARCH_IDS, CAFE_UPGRADE_IDS, CAFE_WEEKDAY_MULTIPLIER,
+  SPOILAGE_FREE_UNITS, SPOILAGE_RATE,
   nextCafePopularity,
 } = await import("../src/sim/cafe");
 const { weatherForDay } = await import("../src/sim/weather");
@@ -66,13 +67,17 @@ const worldSnapshot = () => JSON.stringify({
   notices: state.noticeLog.length,
 });
 /**
- * 跑完整的一個營業日:11 個營業小時的逐位結帳 + 換日日結。
+ * 跑完整的一個營業日:**開店前進貨** + 11 個營業小時的逐位結帳 + 換日日結。
  *
  * 🔴 P1 之後營收是 `cafeHourlyPass()` 逐位顧客收的,只呼叫 `cafeDailyPass()`
  * 量到的會是「只有支出、沒有收入」的半條路徑。
+ * 🔴 P3 之後進貨是 `cafeRestockPass()` 在 09:00 扣的,少了它就變成
+ * 「有固定開銷、卻永遠沒有原料」的另一條半路徑。
  */
 const HOUR_MS = 3600 * 1000;
 function runBusinessDay(day: number) {
+  state.gameMs = GAME_START.getTime() + day * DAY_MS + (CAFE_OPEN_HOUR - 1) * HOUR_MS;
+  cafeRestockPass(CAFE_OPEN_HOUR - 1);
   for (let hour = CAFE_OPEN_HOUR; hour <= CAFE_CLOSE_HOUR; hour++) {
     state.gameMs = GAME_START.getTime() + day * DAY_MS + hour * HOUR_MS;
     cafeHourlyPass(hour);
@@ -297,7 +302,7 @@ try {
   check("第二台咖啡機提高產能上限", cafeCapability([CAFE_UPGRADE_IDS.secondMachine]).capacity > CAFE_BASE_CAPACITY);
   check("大型冷藏放寬損耗參數", (() => {
     const s = cafeCapability([CAFE_UPGRADE_IDS.coldStorage]).spoilage;
-    return (s.freeUnits ?? 0) > 0 && (s.rate ?? 1) < 0.1;
+    return (s.freeUnits ?? 0) > SPOILAGE_FREE_UNITS && (s.rate ?? SPOILAGE_RATE) < SPOILAGE_RATE;
   })());
   check("戶外座位只在晴天生效", (() => {
     const withSeats = (w: Parameters<typeof cafeCrowd>[0]["weather"]) =>
@@ -341,8 +346,12 @@ try {
   };
 
   // 缺貨:咖啡豆只夠做兩杯,其餘品項充足 → 想點咖啡的客人整天撲空
+  // 🔴 P3:常備量也要一起壓低——不然 09:00 的進貨會把咖啡豆補回 130,缺不成貨。
   const shortageLogs = runAndCollectLogs(
-    { standingOrders: suggestedStandingOrders(), stock: { ...suggestedStandingOrders(), coffee_bean: 8 } },
+    {
+      standingOrders: { ...suggestedStandingOrders(), coffee_bean: 8 },
+      stock: { ...suggestedStandingOrders(), coffee_bean: 8 },
+    },
     22,
   );
   check("缺貨 → 當下就推一則「有人想點⋯沒了」的即時日誌",
@@ -354,9 +363,12 @@ try {
   // 補不滿:庫存夠今天賣(不缺貨),但常備量設得遠超過買得起的錢
   const hugeOrders = Object.fromEntries(Object.keys(suggestedStandingOrders()).map((id) => [id, 5000]));
   const plentiful = Object.fromEntries(Object.keys(suggestedStandingOrders()).map((id) => [id, 300]));
+  // 🔴 P3:「補不滿」跟著進貨一起搬到 09:00,所以它是**當天的第一則**;
+  // 這一局的庫存(300)遠高於免損耗額度,午夜日結會再補一則損耗句,共兩則。
   const underLogs = runAndCollectLogs({ standingOrders: hugeOrders, stock: plentiful }, 23, 3000);
-  check("補不滿 → 推一則日誌", underLogs.length === 1, JSON.stringify(underLogs));
-  check("補不滿日誌是 underfunded 句(含「成」的措辭)", /成/.test(underLogs[0] ?? ""), underLogs[0]);
+  check("補不滿 → 開店前進貨時就推一則日誌", underLogs.length >= 1, JSON.stringify(underLogs));
+  check("補不滿日誌是當天第一則、且是 underfunded 句(含「成」的措辭)",
+    /成/.test(underLogs[0] ?? ""), JSON.stringify(underLogs));
   check("補不滿日誌帶咖啡廳前綴", underLogs[0]?.startsWith(CAFE_LOG_PREFIX) === true);
 
   // 損耗:生鮮囤到遠高於免損耗額度,且不缺貨、不補貨
@@ -369,16 +381,20 @@ try {
   const quietLogs = runAndCollectLogs({ standingOrders: suggestedStandingOrders(), stock: openStock() }, 25);
   check("平順的一天不推日誌(稀疏哲學:日結每天都跑,天天推會淹掉動態頁)", quietLogs.length === 0, JSON.stringify(quietLogs));
 
-  // 三個旗標同時成立:即時撲空 + 日結摘要,日結端仍然只推一則,且優先講缺貨
+  // 三個旗標同時成立。🔴 P3 之後這一天的敘事分成兩個時刻:
+  //   09:00 進貨補不滿 1 則 → 營業中即時撲空 1 則 → 午夜日結摘要 1 則。
+  // 「日結端一天只推一則」這條不變式仍然成立(最後那一則),而且優先講缺貨。
   const allThreeLogs = runAndCollectLogs(
     { standingOrders: hugeOrders, stock: { coffee_bean: 1, milk: 300, flour: 1, butter: 300, cat_can: 1, pet_fresh: 300 } },
     26,
     500,
   );
-  check("三個旗標同時成立時,日結端仍然一天只推一則(即時撲空 1 + 日結 1)",
-    allThreeLogs.length === 2, JSON.stringify(allThreeLogs));
+  check("三個旗標同時成立時,日結端仍然一天只推一則(進貨 1 + 即時撲空 1 + 日結 1)",
+    allThreeLogs.length === 3, JSON.stringify(allThreeLogs));
+  check("進貨補不滿那一則排在最前面(它發生在開店前)",
+    /成/.test(allThreeLogs[0] ?? ""), allThreeLogs[0]);
   check("三個旗標同時成立時日結優先講缺貨(玩家最該知道的先講)",
-    isShortageSummary(allThreeLogs[1] ?? ""), allThreeLogs[1]);
+    isShortageSummary(allThreeLogs[2] ?? ""), allThreeLogs[2]);
 
   // 文案本身
   check("cafeDailyLine 決定性:同輸入永遠同一句",

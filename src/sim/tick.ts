@@ -632,7 +632,10 @@ function todaysCafeSales(day: number): CafeSalesDay {
   if (!Array.isArray(cafe.sales)) cafe.sales = [];
   const last = cafe.sales[cafe.sales.length - 1];
   if (last && last.day === day) return last;
-  cafe.sales.push({ day, sold: {}, missed: {}, revenue: 0, ingredientCost: 0, served: 0, refused: 0, settled: false });
+  cafe.sales.push({
+    day, sold: {}, missed: {}, revenue: 0, ingredientCost: 0, served: 0, refused: 0,
+    settled: false, restocked: false, restockCost: 0,
+  });
   if (cafe.sales.length > CAFE_SALES_CAP) cafe.sales.splice(0, cafe.sales.length - CAFE_SALES_CAP);
   return cafe.sales[cafe.sales.length - 1];
 }
@@ -827,19 +830,80 @@ export function cafeHourlyPass(hour: number) {
 }
 
 /**
- * 咖啡廳日結(CAFE-13 起,重設計 P1 縮編職責)。
+ * 開店前一小時(09:00)進貨。**設計文件 §4.3 §4.4 的 P3 核心改動。**
+ *
+ * ## 為什麼要把進貨從日結搬到開店前
+ *
+ * P1 的實測(`scripts/cafe-opening-sim.ts`)顯示「缺貨」一點都不痛:當時進貨在
+ * **日結時**發生,而且是「補到常備量」——少備料的同時也少付錢,當天大致損益兩平。
+ * 搬到開店前之後玩家**先付整批錢、再開門賺錢**,於是
+ *
+ * - 「備了料卻沒客人」= 真的付出去的現金,
+ * - 「沒備料所以賣不出去」= 付了固定開銷卻沒有營收,
+ *
+ * 兩個方向都變成真的損失。這正是「經營」與「領被動收入」的分野。
+ *
+ * ## 🔴 一天只扣一次:旗標記在存檔裡的當日銷售紀錄上
+ *
+ * 冪等性完全比照 P1 的 `settled`:`todaysCafeSales(day).restocked`。
+ * 因此
+ *
+ * - **同一小時被呼叫兩次**(手動快轉 + 前景同步撞在一起)→ 第二次直接 return;
+ * - **離線補進度**:`syncToNow()` 逐小時呼叫 `hourlyTick()`,09:00 那一刻照樣
+ *   會經過本 pass,與線上逐時完全走同一段程式碼、同一個旗標;
+ * - **旗標進存檔**(`sanitizeCafeState` 有補),重讀存檔也不會再扣一次。
+ *
+ * 觸發條件寫成 `09:00 ~ 20:00 之間、今天還沒進過貨`,而不是「剛好等於 09:00」:
+ * 玩家離線超過 `MAX_CATCHUP_HOURS` 被重錨、或存檔剛好停在中午,09:00 那一刻可能
+ * 根本沒被跑到;那時「進門第一件事先補貨」才是玩家預期的行為。打烊後(> 20:00)
+ * 就不補了——那只會買一批東西進來等著半夜壞掉。
+ *
+ * 未開張 ⇒ 第一行 return,`money` / `ledger` / `cafe` 一個欄位都不碰 ⇒ 平衡快照零漂移。
+ */
+export function cafeRestockPass(hour: number) {
+  const cafe = state.cafe;
+  if (!cafe.open) return; // 天然閘門:未開張 = 完全沒有這個子系統
+  const h = Math.trunc(Number.isFinite(hour) ? hour : -1);
+  if (h < CAFE_OPEN_HOUR - 1 || h > CAFE_CLOSE_HOUR) return;
+
+  const day = gameDayIndex();
+  const record = todaysCafeSales(day);
+  if (record.restocked) return; // 🔴 今天已經進過貨了
+  record.restocked = true;
+
+  const moneyBefore = state.money;
+  const plan = restockPlan(cafe.standingOrders, cafe.stock, state.money);
+  if (plan.totalCost > 0) addMoney(-plan.totalCost, "咖啡廳進貨", "cafe");
+  cafe.stock = plan.stock;
+  // 記「實際扣掉的錢」而非帳面應付:日結寫 history 時要與 money/ledger 三方對得起來。
+  record.restockCost = Math.max(0, moneyBefore - state.money);
+
+  // 錢不夠、進貨補不滿是**跨日的軟性扣分**(逐位結帳的 ±0.15/−2 管不到這件事)。
+  // 它在 P1 掛在日結,現在跟著進貨一起搬到這裡——事件發生在哪裡,後果就記在哪裡。
+  if (plan.underfunded) {
+    cafe.popularity = clampCafePopularity(cafe.popularity - CAFE_POPULARITY_SOFT_LOSS);
+    const missingLine = plan.lines.find((line) => line.bought < line.want);
+    if (missingLine) {
+      pushCafeLog(cafeDailyLine({ kind: "underfunded", day, subject: missingLine.name, fulfillment: plan.fulfillment }));
+    }
+  }
+}
+
+/**
+ * 咖啡廳日結(CAFE-13 起,重設計 P1/P3 兩度縮編職責)。
  *
  * 掛在換日區塊 `collectRent()` 的**正後方**,讓咖啡廳損益與租金/管理費落在同一個帳日。
  * 既有 pass 的順序一行未動。
  *
- * ## 🔴 P1 之後這個 pass **不再計算營收**
+ * ## 🔴 P1 之後不再計算營收,P3 之後不再進貨
  *
- * 營收是 `cafeHourlyPass()` 逐位顧客當場收的。本 pass 只剩四件跨日的事:
+ * 營收是 `cafeHourlyPass()` 逐位顧客當場收的,進貨是 `cafeRestockPass()` 開店前扣的。
+ * 本 pass 只剩三件跨日的事:
  *
  * 1. 到期研發結清(要早於下一個營業日的菜單)
- * 2. **進貨扣款**(先付錢、後賺錢——這是「經營」與「領被動收入」的分野)
- * 3. **固定開銷**與**生鮮損耗**
- * 4. 收走剛結束那個營業日的成績寫進 `history`,並補上「補不滿」的軟性聲譽扣分
+ * 2. **固定開銷**與**生鮮損耗**——損耗的對象因此變成「打烊後真正剩下的庫存」,
+ *    而不是 P1 時代「剛補滿的常備量」(見 `cafe.ts` 的 `SPOILAGE_FREE_UNITS` 推導)
+ * 3. 收走剛結束那個營業日的成績寫進 `history`(含當日開店前的進貨支出)
  *
  * ## 零漂移 / 零 RNG
  *
@@ -860,50 +924,51 @@ export function cafeDailyPass() {
   }
   const cap = cafeCapability(cafe.upgrades);
 
-  // 1) 收走剛結束的那個營業日的成績(逐位結帳已經把錢收進來了,這裡只是對帳)
+  // 1) 收走剛結束的那個營業日的成績(逐位結帳已經把錢收進來了,這裡只是對帳;
+  //    當日開店前的進貨支出也記在同一筆銷售紀錄上,一起收回來)
   const trading = settleCafeSales();
 
-  // 2) 補貨 → 扣款 → 固定成本(addMoney 下限 0,錢不夠也不會變負)
+  // 2) 固定成本(addMoney 下限 0,錢不夠也不會變負)
   const moneyBefore = state.money;
-  const plan = restockPlan(cafe.standingOrders, cafe.stock, state.money);
-  if (plan.totalCost > 0) addMoney(-plan.totalCost, "咖啡廳進貨", "cafe");
   addMoney(-CAFE_FIXED_COST, "咖啡廳固定開銷", "cafe");
 
-  // 3) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)
-  const rot = applySpoilage(plan.stock, cap.spoilage);
+  // 3) 生鮮損耗(每個遊戲日恰好一次,見 applySpoilage 的冪等性說明)。
+  //    🔴 P3:進貨已經在 09:00 做完,所以這裡吃到的是**打烊後剩下的庫存**——
+  //    訂得剛好的人幾乎沒東西可壞,囤積的人才會天天丟。
+  const rot = applySpoilage(cafe.stock, cap.spoilage);
   cafe.stock = rot.stock;
 
-  // 4) 聲譽收尾。即時的 +0.15 / −2.0 已經在 cafeHourlyPass 給過(設計文件 §4.8),
-  //    這裡只補「錢不夠、進貨補不滿」這條純粹屬於跨日的軟性扣分。
-  if (plan.underfunded) cafe.popularity = clampCafePopularity(cafe.popularity - CAFE_POPULARITY_SOFT_LOSS);
-
-  // 5) 日結紀錄。cost 取「實際扣掉的錢」而非帳面應付,才會與 money/ledger 三方對得起來
+  // 4) 日結紀錄。cost = 今天的固定開銷 + 今天開店前的進貨,
+  //    兩筆都取「實際扣掉的錢」而非帳面應付,才會與 money/ledger 三方對得起來
   //    (帳上不夠時 addMoney 會夾在 0,這遊戲不讓玩家欠債)。
-  const cost = moneyBefore - state.money;
+  const cost = (moneyBefore - state.money) + trading.restockCost;
   cafe.history.push({ day, guests: trading.served, revenue: trading.revenue, cost, net: trading.revenue - cost });
   if (cafe.history.length > CAFE_HISTORY_CAP) cafe.history.splice(0, cafe.history.length - CAFE_HISTORY_CAP);
 
-  // 6) 敘事:**一天最多推一則**(稀疏哲學同 floorChain 的「每次 pass 最多推一話」)。
+  // 5) 敘事:**一天最多推一則**(稀疏哲學同 floorChain 的「每次 pass 最多推一話」)。
   //    缺貨的第一則已經在當下由 cafeHourlyPass 推過了,所以這裡只在「整天都在說抱歉」
-  //    (撲空 >= CAFE_SHORTAGE_SUMMARY_MIN 人)時才補一則收尾摘要,
-  //    其餘照舊:補不滿(錢的問題)> 損耗(最不痛不癢)。平順的一天不推日誌。
-  const missingLine = plan.lines.find((line) => line.bought < line.want);
+  //    (撲空 >= CAFE_SHORTAGE_SUMMARY_MIN 人)時才補一則收尾摘要。
+  //    「補不滿」那一則跟著進貨一起搬去 cafeRestockPass 了,這裡只剩損耗。
   if (trading.refused >= CAFE_SHORTAGE_SUMMARY_MIN) {
     pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: cafeTopShortageName(trading.day) }));
-  } else if (plan.underfunded && missingLine) {
-    pushCafeLog(cafeDailyLine({ kind: "underfunded", day, subject: missingLine.name, fulfillment: plan.fulfillment }));
   } else if (rot.totalSpoiled > 0) {
     pushCafeLog(cafeDailyLine({ kind: "spoilage", day, subject: rot.lines[0].name }));
   }
 }
 
 /** 收走最後一筆尚未結算的營業日成績;沒有就回零(例如剛開張、當天還沒營業過)。 */
-function settleCafeSales(): { day: number; revenue: number; served: number; refused: number } {
+function settleCafeSales(): { day: number; revenue: number; served: number; refused: number; restockCost: number } {
   const sales = state.cafe.sales;
   const last = Array.isArray(sales) && sales.length > 0 ? sales[sales.length - 1] : null;
-  if (!last || last.settled) return { day: -1, revenue: 0, served: 0, refused: 0 };
+  if (!last || last.settled) return { day: -1, revenue: 0, served: 0, refused: 0, restockCost: 0 };
   last.settled = true;
-  return { day: last.day, revenue: last.revenue, served: last.served, refused: last.refused };
+  return {
+    day: last.day,
+    revenue: last.revenue,
+    served: last.served,
+    refused: last.refused,
+    restockCost: Math.max(0, last.restockCost ?? 0),
+  };
 }
 
 /** 該日撲空最多的品項名(給日結摘要用);查無資料回「備料」。 */
@@ -980,6 +1045,7 @@ export function hourlyTick(live = false) {
 
   dreamPass(hour); // 夢境彩蛋:全員本小時 visualState 已定,睡著者每 3~4 遊戲日留一則夢(零 RNG、零數值)
   outingEncounterPass(hour); // 樓外巧遇:同理由要等全員 visualState 定案,同時外出的兩人每 4~5 日低頻碰面(零 RNG)
+  cafeRestockPass(hour); // 一樓咖啡廳開店前進貨(09:00,一天只扣一次):必須早於同一小時的結帳(未開張直接 return)
   cafeGuestPass(hour); // 一樓咖啡廳來客/離場:未開張直接 return(零 RNG、不碰 runtimes,故快照零漂移)
   cafeHourlyPass(hour); // 一樓咖啡廳逐位結帳:當日營收 = Σ 顧客實際點到的商品售價(未開張直接 return)
   roomVisitPass(hour); // 作息都確定後再配對；拜訪成立就由 interactionsPass 保證共同活動

@@ -235,6 +235,16 @@ export interface CafeSalesDay {
   refused: number;
   /** 已被日結收走(避免同一天的營業成績被寫進兩筆 history) */
   settled: boolean;
+  /**
+   * P3:當日開店前(09:00)的進貨已經扣過款。
+   *
+   * 這支旗標就是「一天只進一次貨」的唯一保證——比照 `settled` 的作法把冪等性
+   * 記在**存檔裡的當日紀錄**上,而不是模組層變數,離線補進度、重讀存檔、
+   * 同一小時被呼叫兩次都不會重複扣款。
+   */
+  restocked: boolean;
+  /** P3:當日開店前實際扣掉的進貨金額(日結寫 history 的 cost 時要加回來)。 */
+  restockCost: number;
 }
 
 /**

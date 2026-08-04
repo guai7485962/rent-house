@@ -16,17 +16,33 @@
 
 ## 現在狀態(2026-08-04)
 
-- **咖啡廳經營玩法重設計 P1(逐位顧客結帳)已完成,變更待提交**。營收不再是換日時
-  `客流 × 平均客單價` 一條公式,改成**每個營業小時逐位顧客照配方點餐、扣料、結帳**
-  (`tick.ts` 的 `cafeHourlyPass`);缺料就 $0 + 聲譽 −2 + 當場推日誌。
-  改動檔:`sim/cafe.ts`、`content/cafeIngredients.ts`、`sim/tick.ts`、`types.ts`、
-  `sim/gameState.ts`、`sim/persistence.ts` + 新測試 `scripts/cafe-per-guest-test.ts`
-  + 實測腳本 `scripts/cafe-opening-sim.ts`;**未動任何 `.vue` 與 `src/floor/*`**(那是 P2/P3)
-- **最新驗證(全綠)**:`npm test` **89/89**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)
-- **存檔版本**:`SAVE_VERSION = 9`(`src/sim/persistence.ts:28`;改存檔結構從 `MIGRATIONS[9]` 往上加)
-  ——v9 新增 `cafe.sales`(逐日逐品項銷售紀錄,cap 14 天,給 P3 的銷售排行用);
-  舊檔的 `standingOrders` / `stock` 原封保留(原料 id 一個都沒變)
+- **咖啡廳經營玩法重設計 P1 → P2 → P3 都完成。P1/P2 已提交(HEAD `941283e`),
+  P3 變更待提交。**
+- **P3(進貨時機 + 損耗調校 + 銷售排行 + 一鍵建議常備量)**:
+  - 🔴 **進貨從日結搬到開店前 09:00**(`tick.ts` 的 `cafeRestockPass`)。玩家**先付錢、後賺錢**,
+    「備了料卻沒客人」與「沒備料所以賣不出去」兩個方向都變成真的損失。
+    一天只扣一次靠 `CafeSalesDay.restocked` 旗標(**進存檔**,比照 P1 的 `settled`)⇒
+    離線補進度、重讀存檔、同小時重入都不會重扣。
+  - **損耗調校**:`SPOILAGE_FREE_UNITS` 15 → **23**、`SPOILAGE_RATE` 0.1 → **0.9**。
+    因為日結看到的已經是「打烊後真正剩下的庫存」,才調得動而不誤傷懶人路線
+    (建議常備量 24 ≤ 收斂上界 24 ⇒ **零損耗是數學保證**)。
+  - **`CafePanel.vue` 新增「銷售排行」區塊**(過去 7 日各品項賣出杯數 + 紅色缺貨徽章)
+    與「**依上週銷量建議**」按鈕(`ceil(7 日單日尖峰 × 1.15)`,無歷史時 fallback)。
+  - 改動檔:`sim/tick.ts`、`sim/cafe.ts`、`types.ts`、`sim/gameState.ts`、
+    `components/CafePanel.vue`、`scripts/cafe-opening-sim.ts` + 新測試
+    `scripts/cafe-p3-economy-test.ts` + 三支既有咖啡廳測試跟著改語意。
+    **未動 `src/floor/*`、未動 `sim/routine.ts`、未改五項投資與研發 id。**
+- **最新驗證(全綠)**:`npm test` **91/91**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、`npm run ui:shot -- rent` 18 張 0 error
+  + `artifacts/ui-lab/rent/cafe-p3-panel/` 6 張面板實拍
+- **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts:28`)。P3 只在 `cafe.sales[]`
+  **加了兩個選填欄位**(`restocked` / `restockCost`),`sanitizeCafeState` 有預設值 ⇒
+  **不需要升版**(慣例同 floorChain 的選填欄位)。舊檔讀進來當天若還沒打烊會補進一次貨。
+- **§4.7 實測(P3 後,`npx tsx scripts/cafe-opening-sim.ts`,112 遊戲日、人氣固定)**:
+  ① 補貨精準 **+$99** / ② 缺貨(只砍咖啡豆)**+$2** / ③ 備貨過量 **−$35** / ④ 放著不管 **−$346** /
+  ⑤ 備錯料(咖啡豆 30% + 其餘多備 50%)**−$132**。
+  ⇒ ③「備太多反而虧」已成立(P1 是 +$59);② 仍接近損益兩平是**結構性**的
+  (常備訂單是「補到水位」,少備料等於少付錢),真正會痛的形狀是 ⑤。詳見重設計文件 §4.7。
 
 ## 🎉 一樓寵物咖啡廳 CAFE-01～22 全數完成並部署
 
@@ -45,12 +61,12 @@
 
 ## 下一步
 
-- **咖啡廳重設計 P2**(見 `docs/咖啡廳經營玩法-重設計.md` §六):開店/關店節奏 +
-  顧客動線(店門 → 吧台 → 真的椅子)+ 點餐演出。⚠️ P2 與 P4b 共用 `guestAgents` 動線地基,
-  P2 要把骨架一次做完。P1 已經把「錢」接好,P2 是把「畫面」接上去
-- **使用者要拍板**:P1 實測顯示「缺貨」與「備貨過量」的痛感都比設計值弱
-  (缺貨在 P1 是「賺不到」而非「倒賠」;備貨過量仍淨賺 +$59)。
-  原因與可能的加碼方式已寫在重設計文件 §4.7 的實測表下方,**未擅自調參數**
+- **提交 P3**,然後 **咖啡廳重設計 P4a**(見 `docs/咖啡廳經營玩法-重設計.md` §六):
+  聲譽即時化 + 招牌分級(Lv1～Lv4)。接著 **P4b**:員工系統
+  (`staffAgents` + 吧台結帳 + 排隊 + 人力區塊),**沿用 P2 建立的動線骨架**
+- **使用者要拍板**:P3 之後 ③「備太多反而虧」已成立(−$35),但 ② 只砍一種原料仍是 +$2。
+  要不要讓「缺貨」本身也倒賠,得改常備訂單的語意(從「補到水位」改成「每天固定買一批」),
+  那會連帶打死懶人路線 ⇒ **未擅自動,理由寫在重設計文件 §4.7 的 P3 實測表下方**
 - 🔴 **`PixelDollhouse` 在受限視窗高度下被壓成 2px**(本批截圖時發現,**與本批無關**,
   已用未改動的 baseline build 驗過是既有問題):`main` 是 `display:flex; flex-direction:column`
   且高度確定,`.pixel-room` 的 canvas 是 `height:auto` 的取代元素 ⇒ min-content 算 0
@@ -90,7 +106,7 @@
 | 怎麼跑測試 / 部署 / 驗證 | `工作日誌.md` 第一節「如何執行 / 驗證」 |
 | 最近幾天發生什麼事 | `工作日誌.md` 第二節(2026-08-01 起的逐日紀錄) |
 | 更早以前發生什麼事 | `docs/工作日誌-封存.md`(2026-07-12～07-31)— **用 grep 查日期,不要通讀** |
-| 咖啡廳怎麼設計的 | `docs/一樓寵物咖啡廳-設計.md`(第一版)/ `docs/咖啡廳經營玩法-重設計.md`(**現行**,P1 已完成) |
+| 咖啡廳怎麼設計的 | `docs/一樓寵物咖啡廳-設計.md`(第一版)/ `docs/咖啡廳經營玩法-重設計.md`(**現行**,P1/P2/P3 已完成) |
 | 某個 CAFE-xx 工作項要做什麼 | `docs/一樓寵物咖啡廳-工作分解.md` — 22 個工作項的規格與驗收 |
 | 原始設計檢討與各節完成度 | `docs/設計檢討與優化.md` |
 | AI 觀察回饋機制怎麼設計的 | `docs/AI觀察回饋設計.md` |

@@ -11,7 +11,9 @@ import {
   CAFE_AMBIANCE_FULL_POINTS,
   CAFE_AMBIANCE_SWING,
   cafeResearchDaysLeft,
+  cafeSalesRanking,
   CAFE_RESEARCH,
+  CAFE_SALES_WINDOW_DAYS,
   CAFE_OPENING_COST,
   CAFE_UPGRADES,
   consumeStock,
@@ -22,6 +24,7 @@ import {
   openCafe,
   startCafeResearch,
   suggestedStandingOrders,
+  suggestStandingOrdersFromSales,
   type CafeInvestmentResult,
 } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
@@ -73,6 +76,14 @@ const availableResearchIds = computed(() => new Set(availableCafeResearch(state.
 const remainingResearch = computed(() => CAFE_RESEARCH.filter((item) =>
   !completedResearch.value.has(item.id) && item.id !== state.cafe.research?.id));
 const cafeMenu = computed(() => menuItems(state.cafe.completed));
+// P3 銷售排行:過去 7 個遊戲日各品項的賣出杯數與缺貨次數(資料來自 P1 的 state.cafe.sales)。
+const salesRanking = computed(() => cafeSalesRanking(state.cafe.sales, cafeMenu.value, CAFE_SALES_WINDOW_DAYS));
+const salesDays = computed(() => state.cafe.sales.slice(-CAFE_SALES_WINDOW_DAYS).length);
+const salesHasData = computed(() => salesRanking.value.some((row) => row.sold > 0 || row.missed > 0));
+const salesTotalMissed = computed(() => salesRanking.value.reduce((sum, row) => sum + row.missed, 0));
+/** 長條圖用的相對長度;沒有任何銷量時全部顯示 0 寬(不會出現 0/0 的 NaN)。 */
+const salesTopSold = computed(() => salesRanking.value.reduce((best, row) => Math.max(best, row.sold), 0));
+const soldBarWidth = (sold: number) => (salesTopSold.value > 0 ? Math.round((sold / salesTopSold.value) * 100) : 0);
 const cafeAverageTicket = computed(() => avgTicket(state.cafe.completed));
 const hotItem = computed(() => {
   if (!latest.value?.guests) return "尚無資料";
@@ -177,13 +188,28 @@ function resetSuggestedOrders() {
   Object.assign(orderDraft, suggestedStandingOrders());
 }
 
+/**
+ * 拍板 Q3 的懶人路線:一鍵把常備量草稿設成「過去 7 個遊戲日的實際消耗」。
+ *
+ * 算式與 fallback 全部在 `suggestStandingOrdersFromSales()`(純函式、有測試);
+ * 這裡只負責寫進草稿並告訴玩家依據了幾天資料——**還是要按「套用常備量」才生效**,
+ * 與既有的「恢復建議」按鈕行為一致,不會偷偷改玩家的設定。
+ */
+function suggestOrdersFromSales() {
+  const result = suggestStandingOrdersFromSales(state.cafe.sales, cafeMenu.value, CAFE_SALES_WINDOW_DAYS);
+  Object.assign(orderDraft, result.orders);
+  emit("done", result.fallback
+    ? "📈 還沒有銷售紀錄，先帶入內建建議值；營業幾天後再按一次會更準"
+    : `📈 已依過去 ${result.days} 個遊戲日的尖峰銷量填好草稿，確認後按「套用常備量」`);
+}
+
 function applyStandingOrders() {
   state.cafe.standingOrders = Object.fromEntries(
     CAFE_INGREDIENTS.map((item) => [item.id, safeUnits(orderDraft[item.id])]),
   );
   Object.assign(orderDraft, state.cafe.standingOrders);
   save();
-  emit("done", "📦 常備量已套用，下次日結會依這份清單補貨");
+  emit("done", "📦 常備量已套用，明天開店前（09:00）會依這份清單進貨");
 }
 
 function removeHandledGuest(guestId: string) {
@@ -352,12 +378,44 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <p class="menu-note">完成 2／5 項第二層研發時，平均客單會提升到 $37／$38。</p>
           </section>
 
+          <section class="card sales-card" aria-label="咖啡廳銷售排行">
+            <div class="section-head">
+              <div><span class="kicker">SALES</span><h3>銷售排行</h3></div>
+              <span class="window">過去 {{ salesDays }} 日</span>
+            </div>
+            <p v-if="!salesHasData" class="empty">還沒有銷售紀錄；營業一天之後這裡會列出每個品項賣了幾杯、又有幾次做不出來。</p>
+            <template v-else>
+              <p class="section-note">依賣出杯數排序。<b class="miss-word">缺貨次數</b>是有人想買、你卻做不出來的次數——那是正在流掉的錢。</p>
+              <ol class="rank-list">
+                <li v-for="(row, i) in salesRanking" :key="row.id" class="rank-row" :class="{ quiet: row.sold === 0 }">
+                  <span class="rank-no">{{ i + 1 }}</span>
+                  <div class="rank-body">
+                    <div class="rank-line">
+                      <b>{{ row.name }}</b>
+                      <span class="rank-sold">{{ row.sold }} 杯</span>
+                    </div>
+                    <div class="rank-bar"><i :style="{ width: `${soldBarWidth(row.sold)}%` }"></i></div>
+                  </div>
+                  <span v-if="row.missed > 0" class="rank-miss">缺貨 {{ row.missed }}</span>
+                  <span v-else class="rank-ok">—</span>
+                </li>
+              </ol>
+              <p v-if="salesTotalMissed > 0" class="alert warn miss-total">
+                過去 {{ salesDays }} 日共 {{ salesTotalMissed }} 位客人空手離開。照上面的排行把常備量往熱門品調。
+              </p>
+              <p v-else class="miss-none">過去 {{ salesDays }} 日沒有任何一位客人撲空，備料節奏抓得剛好。</p>
+            </template>
+          </section>
+
           <section class="card">
             <div class="section-head">
               <div><span class="kicker">STOCK</span><h3>常備量</h3></div>
-              <button class="ghost" @click="resetSuggestedOrders">恢復建議</button>
+              <div class="order-tools">
+                <button class="ghost" @click="resetSuggestedOrders">恢復建議</button>
+                <button class="ghost suggest" @click="suggestOrdersFromSales">依上週銷量建議</button>
+              </div>
             </div>
-            <p class="section-note">每天日結後自動補到這個數量；先改草稿，按下套用才會保存。</p>
+            <p class="section-note">每天<b>開店前（09:00）</b>自動補到這個數量、當場扣款；先改草稿，按下套用才會保存。</p>
             <div class="order-list">
               <label v-for="item in CAFE_INGREDIENTS" :key="item.id" class="order-row">
                 <span><b>{{ item.name }}</b><small>庫存 {{ state.cafe.stock[item.id] ?? 0 }} · 單價 ${{ item.unitPrice }}</small></span>
@@ -488,6 +546,27 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .alert.bad { color: #ffacb7; background: rgba(232,101,122,0.1); }
 .alert.good { color: #b9f6ce; background: rgba(83,196,126,0.09); }
 .ghost { margin-left: auto; padding: 5px 8px; color: #cdbcff; background: rgba(143,123,255,0.1); border: 1px solid rgba(143,123,255,0.4); font-size: 10.5px; }
+.order-tools { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.order-tools .ghost { margin-left: 0; }
+.ghost.suggest { color: #ffd6a3; background: rgba(255,180,94,0.12); border-color: rgba(255,180,94,0.55); font-weight: 700; }
+
+/* P3 銷售排行 —— 缺貨次數要比賣出杯數更搶眼:那是玩家在虧錢的訊號 */
+.window { color: var(--text-dim); font-size: 10.5px; }
+.miss-word { color: #ff9fae; }
+.rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rank-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
+.rank-row.quiet { opacity: 0.5; }
+.rank-no { flex: none; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: rgba(255,180,94,0.16); color: #ffd39a; font-size: 9.5px; font-weight: 800; }
+.rank-body { flex: 1; min-width: 0; }
+.rank-line { display: flex; align-items: baseline; gap: 8px; }
+.rank-line b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.rank-sold { margin-left: auto; color: #ffd39a; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.rank-bar { margin-top: 4px; height: 4px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.rank-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #cf8b5b, #e8b271); }
+.rank-miss { flex: none; padding: 3px 7px; border-radius: 999px; background: rgba(232,101,122,0.18); border: 1px solid rgba(232,101,122,0.5); color: #ffacb7; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.rank-ok { flex: none; width: 34px; text-align: center; color: var(--text-dim); font-size: 10px; }
+.miss-total { font-weight: 700; }
+.miss-none { margin: 8px 0 0; color: var(--good); font-size: 10.8px; line-height: 1.45; }
 .order-list, .upgrade-list { display: flex; flex-direction: column; gap: 7px; }
 .order-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
 .order-row > span { min-width: 0; display: flex; flex-direction: column; }

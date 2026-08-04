@@ -218,19 +218,24 @@ try {
     byTheBook.totalSpoiled === 0 && byTheBook.lines.length === 0);
   check("免損耗額度以內完全不壞", applySpoilage({ milk: SPOILAGE_FREE_UNITS }).totalSpoiled === 0);
 
-  // 冪等性/收斂:這是「每日」函式,連套兩次 = 過了兩天,但有硬性下界
-  const day1 = applySpoilage({ milk: 30 });
+  // 冪等性/收斂:這是「每日」函式,連套兩次 = 過了兩天,但有硬性下界。
+  // 起始量必須高到「壞完一天還在免損耗額度之上」,否則第二天本來就不該再壞
+  // (P3 調高 SPOILAGE_RATE 之後,一天就會掉到收斂上界)。
+  const HOARD = SPOILAGE_FREE_UNITS * 3;
+  const day1 = applySpoilage({ milk: HOARD });
   const day2 = applySpoilage(day1.stock);
   check("連套兩次 = 兩天,第二次從更小的基數再損耗一次",
-    day2.stock.milk < day1.stock.milk && day1.stock.milk < 30);
+    day2.stock.milk < day1.stock.milk && day1.stock.milk < HOARD,
+    `${HOARD} → ${day1.stock.milk} → ${day2.stock.milk}`);
   check("連續套用永不產生負庫存",
     day2.stock.milk >= 0 && applySpoilage(applySpoilage(applySpoilage({ milk: 1 }).stock).stock).stock.milk === 1);
 
-  let converge: Record<string, number> = { milk: 30, butter: 100, pet_fresh: 5, coffee_bean: 40 };
+  let converge: Record<string, number> = { milk: 300, butter: 100, pet_fresh: 5, coffee_bean: 40 };
   for (let i = 0; i < 200; i++) converge = applySpoilage(converge).stock;
   const settled = applySpoilage(converge);
-  // 收斂上界 = freeUnits + 1/rate − 1(預設 12 + 10 − 1 = 21):公式推出來的,不是寫死的數字。
-  const CONVERGE_CEIL = SPOILAGE_FREE_UNITS + Math.round(1 / SPOILAGE_RATE) - 1;
+  // 收斂上界 = freeUnits + ceil(1/rate) − 1(P3 預設 23 + 2 − 1 = 24):
+  // 公式推出來的,不是寫死的數字——`floor` 讓「超額 × rate < 1」的那一刻停住。
+  const CONVERGE_CEIL = SPOILAGE_FREE_UNITS + Math.ceil(1 / SPOILAGE_RATE) - 1;
   check("反覆套用會收斂並停住,不會把櫃子清空(誤呼叫的保險絲)",
     settled.totalSpoiled === 0 && converge.milk === CONVERGE_CEIL && converge.butter === CONVERGE_CEIL && converge.pet_fresh === 5,
     JSON.stringify(converge));

@@ -1,9 +1,10 @@
 /**
- * 咖啡廳重設計 P1:開張期試算的**實測**腳本(設計文件 §4.7)。
+ * 咖啡廳重設計 P1 建立、P3 更新:開張期試算的**實測**腳本(設計文件 §4.7)。
  *
  * 設計文件的三個情境是拍腦袋前先算出來的目標值:
  *   補貨精準 +$98 / 缺貨 20% −$89 / 備貨過量 −$114
- * 本腳本用**真的模擬迴圈**(逐小時 `cafeHourlyPass` + 換日 `cafeDailyPass`)量一次,
+ * 本腳本用**真的模擬迴圈**(開店前 `cafeRestockPass` + 逐小時 `cafeHourlyPass`
+ * + 換日 `cafeDailyPass`)量一次,
  * 把實測值印出來。**實測與設計值有出入是正常的**——這支腳本的用途是讓中控/使用者
  * 看到真實手感,不是拿來反過來硬調參數。
  *
@@ -18,7 +19,7 @@ const mem: Record<string, string> = {};
 };
 
 const { state, defaultCafe, GAME_START } = await import("../src/sim/gameState");
-const { cafeDailyPass, cafeHourlyPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
+const { cafeDailyPass, cafeHourlyPass, cafeRestockPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const { suggestedStandingOrders, CAFE_FIXED_COST, CAFE_POPULARITY_MAX } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
 
@@ -65,6 +66,9 @@ function run(scenario: Scenario, pinned: boolean) {
     if (pinned) state.cafe.popularity = PINNED_POPULARITY;
     const before = state.money;
     const stockBefore = stockValue(state.cafe.stock);
+    // 🔴 P3:進貨在開店前一刻(09:00),不再是日結。先付錢、後賺錢。
+    state.gameMs = GAME_START.getTime() + day * DAY_MS + (CAFE_OPEN_HOUR - 1) * HOUR_MS;
+    cafeRestockPass(CAFE_OPEN_HOUR - 1);
     for (let hour = CAFE_OPEN_HOUR; hour <= CAFE_CLOSE_HOUR; hour++) {
       state.gameMs = GAME_START.getTime() + day * DAY_MS + hour * HOUR_MS;
       cafeHourlyPass(hour);
@@ -78,8 +82,9 @@ function run(scenario: Scenario, pinned: boolean) {
     refused += sale?.refused ?? 0;
     const used = sale?.ingredientCost ?? 0;
     ingredientCost += used;
-    // 當日進貨支出 = 日結扣掉的錢 − 固定開銷(日結只有這兩筆)
-    const bought = Math.max(0, record.cost - CAFE_FIXED_COST);
+    // 🔴 P3:進貨支出改由當日銷售紀錄帶著走(開店前扣的),日結只剩固定開銷。
+    // 舊算式(record.cost − 固定開銷)仍然等價,留作對帳:兩者不一致代表帳串掉了。
+    const bought = sale?.restockCost ?? Math.max(0, record.cost - CAFE_FIXED_COST);
     restockCost += bought;
     // 庫存守恆:期末 = 期初 − 賣掉 + 進貨 − 損耗 ⇒ 損耗 = 期初 − 期末 − 賣掉 + 進貨
     spoiledValue += stockBefore - stockValue(state.cafe.stock) - used + bought;
@@ -117,6 +122,14 @@ const SCENARIOS: Scenario[] = [
   { label: "② 缺貨(咖啡豆只備 30%)", orders: { ...base, coffee_bean: 30 } },
   { label: "③ 備貨過量(易腐多備 50%)", orders: scaled(1.5, perishable) },
   { label: "④ 完全放著不管(常備量歸零)", orders: {}, stock: base },
+  // ⑤ 才是設計文件 §4.7 那一列「缺貨 20%」真正想描述的形狀:
+  //   **照樣付了一大筆進貨錢,卻還是做不出客人要的東西。**
+  //   ② 只砍咖啡豆時進貨費用會跟著自己縮水(常備訂單是「補到水位」,不是「每天固定買一批」),
+  //   所以那條線天生接近損益兩平;把其餘原料一起囤起來才會同時吃到兩頭。
+  {
+    label: "⑤ 備錯料(咖啡豆 30% + 其餘多備 50%)",
+    orders: { ...scaled(1.5, (id) => id !== "coffee_bean"), coffee_bean: 30 },
+  },
 ];
 
 function table(pinned: boolean) {
@@ -141,4 +154,4 @@ function table(pinned: boolean) {
 console.log(`\n招牌 Lv1、零投資、${DAYS} 個遊戲日平均;固定開銷每日 −$${CAFE_FIXED_COST}`);
 table(true);
 table(false);
-console.log("\n設計文件 §4.7 的目標值:①+$98 ②−$89 ③−$114 ④−$270");
+console.log("\n設計文件 §4.7 的目標值:①+$98 ②−$89 ③−$114 ④−$270(⑤ 是 P3 補的對照組,設計表沒有)");

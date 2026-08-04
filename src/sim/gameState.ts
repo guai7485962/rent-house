@@ -311,6 +311,10 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
       served: finiteOr(entry.served, 0),
       refused: finiteOr(entry.refused, 0),
       settled: entry.settled === true,
+      // P3:舊檔沒有這兩欄 ⇒ restocked=false ⇒ 讀檔當天若還沒到打烊,
+      // 開店前那個 pass 會把「今天的貨」補上(而不是永遠不進貨)。
+      restocked: entry.restocked === true,
+      restockCost: Math.max(0, finiteOr(entry.restockCost, 0)),
     }) satisfies CafeSalesDay);
   const guests = (Array.isArray(raw.guests) ? raw.guests : [])
     .map(sanitizeCafeGuest)

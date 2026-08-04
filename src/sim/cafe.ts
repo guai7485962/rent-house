@@ -39,8 +39,8 @@
  * 因此本檔所有旋鈕都往溫和的方向調,兩個方向的代價都設了硬性下界:
  *
  * - 設太低 → 缺貨 → 客流打折,但 `CROWD_MULTIPLIER_FLOOR = 0.7`,**最慘也只掉三成**。
- * - 設太高 → 生鮮損耗,但 `SPOILAGE_FREE_UNITS = 6` 且損耗無條件捨去,
- *   庫存會**收斂到 15 就停住,永遠不會被損耗歸零**。
+ * - 設太高 → 生鮮損耗,但 `SPOILAGE_FREE_UNITS = 23` 且損耗無條件捨去,
+ *   庫存會**收斂到 24 就停住,永遠不會被損耗歸零**(24 = 生鮮的建議常備量)。
  */
 import { CAFE_INGREDIENTS, type CafeIngredient, type CafeIngredientId } from "../content/cafeIngredients";
 import {
@@ -57,7 +57,7 @@ import {
   type CafeResearchTrack,
 } from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
-import type { CafeState } from "../types";
+import type { CafeSalesDay, CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
 export { CAFE_OPENING_COST, CAFE_UPGRADES, CAFE_UPGRADE_IDS } from "../content/cafeUpgrades";
@@ -84,22 +84,46 @@ export const CROWD_PENALTY_PER_SHORTAGE = 0.08;
 export const CROWD_MULTIPLIER_FLOOR = 0.7;
 
 /**
- * 生鮮的免損耗額度:這個量以內完全不會壞(一兩天內就用得完的量)。
+ * 生鮮的免損耗額度:這個量以內完全不會壞(一天內就用得完的量)。
  *
- * 🔴 **P1 從 6 調到 15**。理由是尺度變了,不是平衡放水:P1 之後扣料改成
- * 「一份商品照配方吃掉整數單位」,同一天的生鮮週轉量比舊的 `perGuest` 攤提值
- * 高了好幾倍(奶油從每日 ~3 單位變成成熟期每日 ~21 單位)。額度若留在 6,
- * `CAFE_INGREDIENTS` 的建議常備量會**天天損耗**,直接打死設計文件 §4.3.1
- * 要求保留的懶人路線。
+ * 🔴 **P3 從 15 調到 23,同時 `SPOILAGE_RATE` 從 0.1 調到 0.9。**
+ * 這兩顆旋鈕必須一起看,推導如下(設計文件 §4.7「備太多反而虧」那條虧損管道)。
  *
- * 取值原則:**額度 ≈ 成熟期一天用得完的量**(15 < 奶油尖峰日的 21)——
- * 「一兩天內就用得完的量不會壞」這個語意完全沒變,只是「一天的量」變大了。
- * 收斂上界跟著從 15 變成 24(見 `applySpoilage` 的說明)。
+ * ### 前提:P3 把進貨移到開店前,損耗的對象因此換了一個東西
+ *
+ * P1/P2 時代進貨在日結、且緊接著就損耗 ⇒ 損耗算的是**剛補滿的常備量**。
+ * P3 之後進貨在 09:00、損耗在午夜 ⇒ 損耗算的是**打烊後真正剩下來的庫存**。
+ * 語意從「你訂了多少」變成「你今晚放著沒用完多少」——這才是生鮮會壞的原因,
+ * 也讓兩顆旋鈕第一次可以只針對「囤積」下手,而不會誤傷「訂得剛好」。
+ *
+ * ### 推導:一條不等式夾出唯一的取值帶
+ *
+ * 令免損耗額度 `F`、損耗率 `R`,損耗 = `floor(max(0, 剩餘 − F) × R)`。
+ *
+ * - **懶人路線必須零損耗**(§4.3.1):照 `CAFE_INGREDIENTS` 的建議常備量玩,
+ *   三種生鮮都是 24;開張期菜單根本用不到牛奶與寵物鮮食,**夜間剩餘就是 24**。
+ *   ⇒ 硬性條件 `(24 − F) × R < 1`。
+ * - **備太多必須是負值**(§4.7):易腐品多備 50% ⇒ 常備量 36、夜間剩餘約 29~36。
+ *   要吃掉開張期 +$95 的淨利,每日損耗價值得跨過 $100 這個量級。
+ *
+ * 第一條把 `F` 頂到 23(再高就等於免疫),於是 `R < 1`;`R` 取 0.9 時
+ * 多備 50% 的每日損耗 = 牛奶 11 + 奶油 5 + 寵物鮮食 11 單位 ≈ **$138/日**,
+ * 足以把開張期打成明確負值。`R` 再往下調(0.5 → $78、0.75 → $112)就補不回
+ * 淨利,所以 0.9 不是「調到滿」,是這條不等式的解。
+ *
+ * ### 語意:生鮮只有一天的保鮮期
+ *
+ * `F = 23` ≈ 成熟期一天的尖峰用量(奶油 21、貓罐頭以外的生鮮都在這之下),
+ * `R = 0.9` = 超出一天用量的部分,隔夜幾乎全壞。這對牛奶／奶油／寵物鮮食
+ * 完全合乎直覺,不是為了數字硬湊的懲罰。
+ *
+ * 收斂上界 = `F + ceil(1/R) − 1` = **24**,剛好等於生鮮的建議常備量:
+ * 玩家囤到天上去、然後完全不管,庫存也只會慢慢掉回 24 就停住,**永遠不歸零**。
  */
-export const SPOILAGE_FREE_UNITS = 15;
+export const SPOILAGE_FREE_UNITS = 23;
 
-/** 超出免損耗額度的部分,每日損耗比例(無條件捨去)。 */
-export const SPOILAGE_RATE = 0.1;
+/** 超出免損耗額度的部分,每日損耗比例(無條件捨去)。推導見 `SPOILAGE_FREE_UNITS`。 */
+export const SPOILAGE_RATE = 0.9;
 
 // ---------------------------------------------------------------------------
 // 小工具(全部決定性)
@@ -377,19 +401,25 @@ export interface SpoilageResult {
  *
  * ### 為什麼要有 `freeUnits` 這個免損耗額度
  *
- * 這條公式有一個刻意設計的**下界**:當 `庫存 − freeUnits < 1/rate`(預設 15 + 10 = 25)時,
+ * 這條公式有一個刻意設計的**下界**:當 `庫存 − freeUnits < 1/rate`(預設 23 + 1.12)時,
  * `floor` 會讓損耗歸 0,庫存就停在那裡不再減少。所以
  *
  * - 反覆套用會**收斂到 24 並停住,永遠不會把櫃子清空**;
  * - 照 `CAFE_INGREDIENTS` 的建議常備量玩(三種生鮮都是 24),損耗恆為 0;
- * - 只有玩家刻意把生鮮囤到 25 以上,才開始每天壞一點點。
+ * - 只有玩家刻意把生鮮囤到 25 以上,才開始每天壞。
+ *
+ * ### P3:呼叫點的語意換了(算式一行沒改)
+ *
+ * 進貨從日結移到開店前(09:00)之後,日結呼叫本函式時傳進來的是
+ * **打烊後真正剩下的庫存**,不再是「剛補滿的常備量」。
+ * ⇒ 訂得剛好的人夜裡幾乎沒有存貨可壞;囤積的人才會天天丟東西。
  *
  * ### 冪等性:這是「每日」函式,不是「載入」函式
  *
  * 連套兩次 = 過了兩天,第二次會從更小的基數再壞一次——這是正確語意,不是 bug。
  * 但它**不該被載入流程呼叫**(否則玩家每讀一次檔就少一點庫存)。
- * 上面的下界是這件事的保險絲:就算有人誤呼叫很多次,庫存也只會收斂到 15,不會歸零。
- * 正確的呼叫點只有一個:CAFE-13 的日結 pass,每個遊戲日一次。
+ * 上面的下界是這件事的保險絲:就算有人誤呼叫很多次,庫存也只會收斂到 24,不會歸零。
+ * 正確的呼叫點只有一個:日結 pass,每個遊戲日一次。
  */
 export function applySpoilage(
   stock: Readonly<Record<string, number>>,
@@ -1294,4 +1324,168 @@ export function cafeOrderLine(input: CafeOrderLineInput): string {
   }
   const missing = typeof input.missingName === "string" && input.missingName.trim() ? input.missingName.trim() : "備料";
   return `${CAFE_LOG_PREFIX} ${REFUSED_LINES[index](item, missing)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 14. P3:銷售排行 + 依上週銷量建議常備量(設計文件 §4.2 末段、§4.3.1)
+//
+// 兩者吃的是同一份原料:`state.cafe.sales`(P1 建立的逐日逐品項紀錄)。
+// 本節一樣是純函式——`sales` 由 caller 傳進來,本檔仍然不 import state。
+// ---------------------------------------------------------------------------
+
+/** 銷售排行與建議常備量預設回看的遊戲日數(設計文件寫死「過去 7 個遊戲日」)。 */
+export const CAFE_SALES_WINDOW_DAYS = 7;
+
+/**
+ * 建議常備量在「過去尖峰」之上再留的餘裕。
+ *
+ * 15% 是回推的:尖峰日 ≈ 週末 × 晴天(`1.25 × 1.15 = 1.44` 倍於平均),
+ * 一週的窗口通常已經含到一個週末,所以真正要防的只是「下週比這週再旺一點」。
+ * 餘裕再大就會把生鮮推過 `SPOILAGE_FREE_UNITS`,變成建議按鈕自己害玩家損耗。
+ */
+export const CAFE_SUGGEST_BUFFER = 1.15;
+
+/**
+ * 在菜單上、但過去 7 日一份都沒賣掉的原料,至少建議備幾份的量。
+ *
+ * 沒有這條的話,「剛研發完的新品」會被建議成 0(它當然還沒有銷售紀錄),
+ * 玩家按了建議按鈕反而保證缺貨。2 份是最小的「至少做得出來」。
+ */
+export const CAFE_SUGGEST_MIN_SERVINGS = 2;
+
+/** 銷售排行的一列。 */
+export interface CafeSalesRankRow {
+  /** 菜單品項 id。 */
+  id: string;
+  name: string;
+  /** 窗口內賣出的份數。 */
+  sold: number;
+  /** 窗口內因缺料被拒的次數(玩家在虧錢的訊號)。 */
+  missed: number;
+}
+
+/** 取窗口內的銷售紀錄(最新 `days` 筆,壞資料略過)。 */
+function salesWindow(sales: readonly CafeSalesDay[] | undefined, days: number): CafeSalesDay[] {
+  const span = Math.max(1, Math.trunc(finiteOr(days, CAFE_SALES_WINDOW_DAYS)));
+  const rows = (Array.isArray(sales) ? sales : []).filter((row): row is CafeSalesDay =>
+    !!row && typeof row === "object");
+  return rows.slice(-span);
+}
+
+const countOf = (record: Record<string, number> | undefined, id: string) => safeUnits((record ?? {})[id]);
+
+/**
+ * 過去 `days` 個遊戲日各品項的**賣出份數**與**缺貨次數**,由高到低。
+ *
+ * 排序鍵刻意是三段的:賣出 ↓ → 缺貨 ↓ → 菜單宣告序。第三段讓「兩個都是 0」的
+ * 新品維持穩定順序,不會因為 `Object.keys()` 的插入序在不同存檔跳來跳去。
+ *
+ * **回傳目前菜單上的每一項**(含零銷量),因為玩家要看的是「誰賣得好、誰賣不動」,
+ * 把賣不動的藏起來反而讓面板騙人。已下架/未知 id 的舊紀錄一律略過。
+ */
+export function cafeSalesRanking(
+  sales: readonly CafeSalesDay[] = [],
+  menu: readonly CafeMenuItem[] = [],
+  days: number = CAFE_SALES_WINDOW_DAYS,
+): CafeSalesRankRow[] {
+  const window = salesWindow(sales, days);
+  const rows = (Array.isArray(menu) ? menu : [])
+    .filter((item) => item && typeof item.id === "string")
+    .map((item, order): CafeSalesRankRow & { order: number } => {
+      let sold = 0;
+      let missed = 0;
+      for (const record of window) {
+        sold += countOf(record.sold, item.id);
+        missed += countOf(record.missed, item.id);
+      }
+      return { id: item.id, name: item.name, sold, missed, order };
+    });
+  rows.sort((a, b) => (b.sold - a.sold) || (b.missed - a.missed) || (a.order - b.order));
+  return rows.map(({ id, name, sold, missed }) => ({ id, name, sold, missed }));
+}
+
+/**
+ * 窗口內**單日尖峰**的各原料需求量(份數 × 配方,含被拒的那幾份)。
+ *
+ * 用尖峰而不是平均:平均會讓週末必缺貨(週末客流是平日的 1.39 倍)。
+ * 把 `missed` 一起算進需求,是因為那些人本來就想買、只是我們做不出來——
+ * 依「實際賣出」補貨會讓缺貨自我實現,永遠補不回來。
+ */
+export function cafeIngredientPeakDemand(
+  sales: readonly CafeSalesDay[] = [],
+  menu: readonly CafeMenuItem[] = [],
+  days: number = CAFE_SALES_WINDOW_DAYS,
+): Record<string, number> {
+  const window = salesWindow(sales, days);
+  const items = (Array.isArray(menu) ? menu : []).filter((item) => item && typeof item.id === "string");
+  const peak: Record<string, number> = {};
+  for (const ingredient of CAFE_INGREDIENTS) peak[ingredient.id] = 0;
+  for (const record of window) {
+    for (const ingredient of CAFE_INGREDIENTS) {
+      let need = 0;
+      for (const item of items) {
+        const units = safeUnits((item.recipe ?? {})[ingredient.id as CafeIngredientId]);
+        if (units <= 0) continue;
+        need += (countOf(record.sold, item.id) + countOf(record.missed, item.id)) * units;
+      }
+      if (need > peak[ingredient.id]) peak[ingredient.id] = need;
+    }
+  }
+  return peak;
+}
+
+export interface CafeSuggestedOrdersResult {
+  /** 原料 id → 建議常備量,一律非負整數,順序照 `CAFE_INGREDIENTS` 宣告序。 */
+  orders: Record<string, number>;
+  /** 實際用到幾個遊戲日的紀錄。 */
+  days: number;
+  /** true = 沒有可用的銷售歷史,已退回 `suggestedStandingOrders()` 的內建建議值。 */
+  fallback: boolean;
+}
+
+/**
+ * 「依上週銷量建議」按鈕的算式(拍板 Q3 的懶人路線)。
+ *
+ * ```
+ * 建議量 = max( ceil(過去 7 日單日尖峰需求 × 1.15), 菜單上該原料的「兩份」底線 )
+ * ```
+ *
+ * **fallback**:窗口裡一天都沒有、或這 7 天一份都沒賣掉(剛開張、離線太久、
+ * 舊存檔沒有 `sales`)⇒ 整份退回 `suggestedStandingOrders()`。
+ * 這條保證按鈕**永遠不會算出全 0 或 NaN**——那會讓玩家按一下就整店斷料。
+ *
+ * 有歷史時個別原料算出 0 是**正確**的:開張期菜單根本用不到牛奶與寵物鮮食,
+ * 建議 0 正是「別買你用不到的東西」。研發解鎖新品之後它會進菜單,
+ * 那條「兩份」底線就會把它從 0 拉起來(前提是玩家再按一次按鈕)。
+ */
+export function suggestStandingOrdersFromSales(
+  sales: readonly CafeSalesDay[] = [],
+  menu: readonly CafeMenuItem[] = [],
+  days: number = CAFE_SALES_WINDOW_DAYS,
+): CafeSuggestedOrdersResult {
+  const window = salesWindow(sales, days);
+  const items = (Array.isArray(menu) ? menu : []).filter((item) => item && typeof item.id === "string");
+  const activity = window.reduce((sum, record) => {
+    let day = 0;
+    for (const item of items) day += countOf(record.sold, item.id) + countOf(record.missed, item.id);
+    return sum + day;
+  }, 0);
+  if (window.length === 0 || activity === 0) {
+    return { orders: suggestedStandingOrders(), days: window.length, fallback: true };
+  }
+
+  const peak = cafeIngredientPeakDemand(window, items, window.length);
+  const orders: Record<string, number> = {};
+  for (const ingredient of CAFE_INGREDIENTS) {
+    // 菜單上「一份最多要幾單位」× 兩份 = 這項原料的底線(沒進菜單就沒有底線)
+    let perServing = 0;
+    for (const item of items) {
+      const units = safeUnits((item.recipe ?? {})[ingredient.id as CafeIngredientId]);
+      if (units > perServing) perServing = units;
+    }
+    const floorUnits = perServing * CAFE_SUGGEST_MIN_SERVINGS;
+    const wanted = Math.ceil(quantize(safeUnits(peak[ingredient.id]) * CAFE_SUGGEST_BUFFER));
+    orders[ingredient.id] = Math.max(0, Math.max(wanted, floorUnits));
+  }
+  return { orders, days: window.length, fallback: false };
 }

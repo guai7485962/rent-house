@@ -16,6 +16,37 @@
 
 ## 現在狀態(2026-08-05)
 
+- 🆕 **B 批:店貓「辣椒」完成,未提交**——使用者實玩回報的第四點。
+  一隻**白底虎斑**的咖啡廳店貓,可以到整棟樓各地溜達,**不能被送養、不佔寄養欄位**。
+  - **登場時機 = 跟著咖啡廳開張**(`ensureShopCat()` 第一行 `if (!state.cafe.open) return false`)。
+    這是整個咖啡廳系統的老招:無頭的 balance 快照局永遠不會開張 ⇒ `state.pets` 一個 key 都不多,
+    **快照零漂移**。呼叫點只有兩個:`ensurePets()`(開新局/載檔)與 `petsPass()`(逐小時、冪等)。
+  - **身分**:新增選填欄位 `Pet.shopCat` + 專屬哨兵飼主 `SHOP_CAT_OWNER = "shopkeeper"`
+    (**刻意不等於 `HOUSE_PET_OWNER`**)。`housePetEntries()` 是永久名額與所有送養流程的
+    唯一入口,她不是樓寵物 ⇒ `permanentHousePetEntries()` / `processPetRehoming()` /
+    超量安置會議一律碰不到她。四條出場路徑(房東送養、咖啡廳顧客認養、取消媒合、孤兒修復)
+    各補一條明確守衛並回「辣椒是店貓,不送養也不佔寄養名額」。
+    唯一性靠固定 record key `shop_cat_chili` + 非正規 key 收斂。
+  - **外觀**:`CAT_PALS` **append** 第 5 個花色(既有四色與順序一字未動,`pet.color` 是存檔索引)。
+    白底 `#f7f2e9` + 棕灰虎斑 `#a68f6d`/`#7f6c52` + 白胸白襪 + 綠眼 `#63ad5c` + 粉鼻 `#f0a1ad`。
+    三花那兩塊寫死的補丁色抽成選填 `patchA`/`patchB`,預設值就是原常數 ⇒ **既有四色像素指紋不變**
+    (測試裡有 sha256 釘子,實測改動前後同值 `9d1cc780408535f2`)。
+  - **全樓溜達**:sim 層 `pickShopCatHangout()` 讓她巡交誼廳/浴室/洗衣間/有人住的套房;
+    一樓沿用 CAFE-22 的 `petAgentRegion()`(同一個雜湊、同一個 `cafe_pet` 目的地),
+    只是窗口放寬成 08–21 點、比例 55%。**沒有第二套跨樓層尋路。**
+  - **互動**:沿用既有機制(`pairAction` 雙貓/貓狗互動、串門子、搗蛋),文案透過
+    `housePetLabel()` 一律顯示「店貓」;新增店貓專屬觀察筆記(7 遊戲日一則,進 Feed)與
+    「在店裡上工」的房東通知(**走 `notify()` 不佔 `rt.log` 的 60 格,冷卻 20h = 一天最多一則**)。
+  - **存檔**:`shopCat` 是選填欄位 + `ensureShopCat()` 消毒 ⇒ **`SAVE_VERSION` 維持 10,不升版**。
+  - 改動檔:`types.ts`、`sim/pets.ts`、`floor/petAgents.ts`、`floor/floorScene.ts`、`store.ts`、
+    `components/PetPanel.vue`(新增「一樓店貓」區塊,無送養按鈕)+ 新測試
+    `scripts/shop-cat-test.ts`(42 條)+ `scripts/run-all.ts` 登記 + `scripts/render-cats.ts` 補第 5 色。
+    **未動 `sim/routine.ts`、`sim/persistence.ts`、`data/events.json`、`scripts/balance-snapshot.json`。**
+  - **驗證(全綠)**:`npm test` **96/96**、app + worker typecheck、`npm run build` 成功、
+    balance 快照**零漂移**(未用 `--update`)、`ui:shot -- rent` 18 張 0 error,
+    另用容器內 Playwright(`timezoneId: "Asia/Taipei"`)實拍 1F/3F 的辣椒本人,
+    截圖在 `artifacts/ui-lab/rent/shop-cat/`。
+
 - 🆕 **A 批(2026-08-05 實玩回報三修)完成,未提交**——三項都跑過完整驗證:
   1. **排太久放棄離開**(使用者拍板加,重設計文件 §4.9 初稿):一小時內「想上門的人 −
      產能」超過 **8 位**(`CAFE_ABANDON_QUEUE_TOLERANCE`)才有人走,每小時上限 3 位。
@@ -80,7 +111,7 @@
 
 ## 下一步
 
-- **提交 P4a + P4b + A 批**(三批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
+- **提交 P4a + P4b + A 批 + B 批(店貓辣椒)**(四批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
   使用者的四點需求(經營感／開店關店看得到消費／會虧錢／座位)全部交付。
 - **使用者要拍板(P4a 新增)**:P4a 把開張期的產能天花板從 26 打開到 35 之後,
   §4.7 的「備太多反而虧」從 P3 的 −$35 回到 **+$74**(精準備貨 +$195,差距仍有 $121)。

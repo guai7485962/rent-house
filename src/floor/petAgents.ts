@@ -8,6 +8,7 @@ import { TILE, GRID_W, GRID_H, buildGrid, type Region } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
 import { cafeGuestHash } from "../sim/cafeGuests";
+import { isShopCat } from "../sim/pets";
 import type { Pet, PetKind } from "../types";
 
 export interface PetAgent {
@@ -39,8 +40,21 @@ export const CAFE_PET_VISIT_END_HOUR = 16;
 export const CAFE_PET_VISIT_PERCENT = 35;
 
 /**
+ * 店貓「辣椒」的一樓時段：她是店裡的員工，白天大半時間都該在店裡，
+ * 所以窗口比訪客型樓寵物寬（08–21）、比例也高（55%）。
+ * 剩下的時間她在三樓 `pet.hangout`（套房／交誼廳／浴室／洗衣間）——
+ * 兩邊合起來就是使用者要的「整棟樓各地溜達」。
+ */
+export const SHOP_CAT_CAFE_START_HOUR = 8;
+export const SHOP_CAT_CAFE_END_HOUR = 21;
+export const SHOP_CAT_CAFE_PERCENT = 55;
+
+/**
  * CAFE-22：只改渲染目的地，不改 Pet.hangout 或任何 sim 狀態。
  * 同一寵物、同一遊戲小時永遠得到相同結果，避免多呼叫 Math.random 擾動既有演出。
+ *
+ * 店貓沿用同一條路（同一個雜湊、同一個 `cafe_pet` 目的地），只是換窗口與比例；
+ * 沒有第二套跨樓層尋路。
  */
 export function petAgentRegion(
   petId: string,
@@ -53,11 +67,18 @@ export function petAgentRegion(
   const pairActive = !!pet.pairWith && !!pet.pairAction && (pet.pairUntilMs ?? 0) > gameMs;
   const time = new Date(gameMs);
   const hour = time.getHours();
-  if (!cafeOpen || !permanentHousePet || pairActive
+  if (!cafeOpen || pairActive) return pet.hangout;
+  const hourKey = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}-${hour}`;
+  if (isShopCat(pet)) {
+    if (hour < SHOP_CAT_CAFE_START_HOUR || hour >= SHOP_CAT_CAFE_END_HOUR) return pet.hangout;
+    return cafeGuestHash(`${petId}|${hourKey}|shop_cat`) % 100 < SHOP_CAT_CAFE_PERCENT
+      ? "cafe_pet"
+      : pet.hangout;
+  }
+  if (!permanentHousePet
     || hour < CAFE_PET_VISIT_START_HOUR || hour >= CAFE_PET_VISIT_END_HOUR) {
     return pet.hangout;
   }
-  const hourKey = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}-${hour}`;
   return cafeGuestHash(`${petId}|${hourKey}|cafe_pet`) % 100 < CAFE_PET_VISIT_PERCENT
     ? "cafe_pet"
     : pet.hangout;

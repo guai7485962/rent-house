@@ -108,7 +108,8 @@ const petAgent = (kind: "cat" | "dog", color: number, c: number, r: number, o: P
   ...o,
 });
 const cats: PetAgent[] = [];
-for (let color = 0; color < 4; color++) {
+// 花色 0~3 = 橘/黑/白/三花,4 = 店貓「辣椒」的白底虎斑
+for (let color = 0; color < 5; color++) {
   const r = 10 + color;
   cats.push(petAgent("cat", color, 2, r, { moving: true, facing: 1 }));
   cats.push(petAgent("cat", color, 4, r, { moving: true, facing: -1, walkPhase: 1 }));

@@ -506,6 +506,13 @@ export interface Pet {
   rehomingDestination?: PetRehomingDestination;
   /** 原飼主顯示名；轉樓寵物時留下，供日後團圓文案使用。 */
   formerOwnerName?: string;
+  /**
+   * 店貓標記（咖啡廳的「辣椒」）。刻意**不重用** `housePlacement` 的三個值——
+   * 那三個值在送養／中途媒合流程裡都有語意，硬塞會讓店貓被算進永久名額或被送養。
+   * 店貓不屬於任何租客也不屬於公寓寵物名冊：不佔 `PERMANENT_HOUSE_PET_LIMIT`、
+   * 所有送養路徑都擋掉，只跟著咖啡廳開張而存在。舊存檔沒有此欄位 → 一律非店貓。
+   */
+  shopCat?: boolean;
 }
 
 /** 樓寵物完成媒合後留下的幸福新家紀錄。 */

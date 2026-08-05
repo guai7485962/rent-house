@@ -36,7 +36,7 @@ export const petIcon = (petOrKind: Pet | PetKind) =>
   (typeof petOrKind === "string" ? petOrKind : petOrKind.kind) === "dog" ? "🐕" : "🐈";
 export const petSpecies = (petOrKind: Pet | PetKind) =>
   (typeof petOrKind === "string" ? petOrKind : petOrKind.kind) === "dog" ? "狗" : "貓";
-const housePetLabel = (pet: Pet) => pet.kind === "dog" ? "公寓犬" : "樓貓";
+const housePetLabel = (pet: Pet) => isShopCat(pet) ? "店貓" : pet.kind === "dog" ? "公寓犬" : "樓貓";
 
 /** 事件冷卻(遊戲毫秒);借用 interactionCooldowns 儲存(入存檔) */
 const CD = {
@@ -59,6 +59,29 @@ export const HOUSE_PET_OWNER = "landlord";
 /** 舊測試與存檔語意相容。 */
 export const HOUSE_CAT_OWNER = HOUSE_PET_OWNER;
 const isHousePet = (pet: Pet) => pet.ownerId === HOUSE_PET_OWNER;
+
+// ---------------------------------------------------------------------------
+// 店貓「辣椒」(咖啡廳店貓;不送養、不佔寄養欄位)
+// ---------------------------------------------------------------------------
+
+/**
+ * 店貓的哨兵飼主 id。**刻意不等於 `HOUSE_PET_OWNER`**——
+ * `housePetEntries()` 是永久名額與所有送養流程的唯一入口,只要辣椒不是樓寵物,
+ * `permanentHousePetEntries()` / `fosterHousePetEntries()` / `processPetRehoming()`
+ * 就一個都碰不到她,不必在每一條流程各補一次濾網。
+ */
+export const SHOP_CAT_OWNER = "shopkeeper";
+/** `state.pets` 的固定 record key;唯一性靠這個 key(存檔往返、重複呼叫都覆蓋同一格)。 */
+export const SHOP_CAT_ID = "shop_cat_chili";
+export const SHOP_CAT_NAME = "辣椒";
+/** `CAT_PALS` 第 5 個花色(白底虎斑);既有四色索引不動。 */
+export const SHOP_CAT_COLOR = 4;
+/** 兩個判準取聯集:存檔往返只要保住其中一個,她就不會被誤認成孤兒貓而轉成樓寵物。 */
+export const isShopCat = (pet: Pet) => pet.shopCat === true || pet.ownerId === SHOP_CAT_OWNER;
+/** 沒有租客飼主的貓狗(樓寵物 + 店貓):日誌落點、關係變動都走「房東視角」那條路。 */
+const isOwnerlessPet = (pet: Pet) => isHousePet(pet) || isShopCat(pet);
+const shopCatRefusal = (pet: Pet) => `「${pet.name}」是店貓,不送養也不佔寄養名額`;
+
 export const PERMANENT_HOUSE_PET_LIMIT = 2;
 export const IN_HOUSE_FOSTER_LIMIT = 1;
 export const PET_HOME_CAP = 50;
@@ -181,6 +204,7 @@ export function acceptCafeGuestAdoption(
   }
 
   const pet = state.pets[petId];
+  if (pet && isShopCat(pet)) return { ok: false, text: shopCatRefusal(pet) };
   if (!pet || !isHousePet(pet)) return { ok: false, text: "只有樓寵物能由咖啡廳顧客認養" };
   if ((pet.housePlacement ?? "permanent") !== "permanent" || pet.rehomingAtMs != null || pet.rehomingDestination != null) {
     return { ok: false, text: "這隻動物已經在媒合中" };
@@ -205,6 +229,7 @@ export function startHousePetRehoming(
   destination: PetRehomingDestination = "adopter",
 ): { ok: boolean; text: string } {
   const pet = state.pets[petId];
+  if (pet && isShopCat(pet)) return { ok: false, text: shopCatRefusal(pet) };
   if (!pet || !isHousePet(pet)) return { ok: false, text: "只有樓寵物能由房東安排送養" };
   if ((pet.housePlacement ?? "permanent") !== "permanent") return { ok: false, text: "這隻動物已經在媒合中" };
   beginRehoming(petId, pet, destination);
@@ -216,6 +241,7 @@ export function startHousePetRehoming(
 /** 媒合完成前可取消；永久樓寵物名額已滿時不能帶回。 */
 export function cancelHousePetRehoming(petId: string): { ok: boolean; text: string } {
   const pet = state.pets[petId];
+  if (pet && isShopCat(pet)) return { ok: false, text: shopCatRefusal(pet) };
   if (!pet || !isHousePet(pet) || (pet.housePlacement !== "foster" && pet.housePlacement !== "partner_foster")) {
     return { ok: false, text: "這隻動物目前沒有進行中的媒合" };
   }
@@ -263,7 +289,8 @@ export function processPetRehoming() {
 export function repairOrphanPets() {
   let changed = false;
   for (const [petId, pet] of Object.entries(state.pets)) {
-    if (isHousePet(pet) || state.runtimes[pet.ownerId]) continue;
+    // 🔴 店貓的 ownerId 本來就不對應任何 runtime,不是孤兒——漏掉這條她會被轉成樓寵物並吃掉永久名額。
+    if (isOwnerlessPet(pet) || state.runtimes[pet.ownerId]) continue;
     const hasPermanentSlot = permanentHousePetEntries().length < PERMANENT_HOUSE_PET_LIMIT;
     pet.formerOwnerName ??= formerOwnerName(petId, pet);
     pet.ownerId = HOUSE_PET_OWNER;
@@ -317,7 +344,62 @@ export function ensurePets() {
     };
     changed = true;
   }
-  return repairOrphanPets() || changed;
+  // 三段都必須真的跑到(不能用 || 短路),否則孤兒修復成立時店貓補登會被跳過。
+  const repaired = repairOrphanPets();
+  const shopCat = ensureShopCat();
+  return repaired || shopCat || changed;
+}
+
+/**
+ * 店貓「辣椒」的補登(冪等)。
+ *
+ * ## 登場時機:跟著咖啡廳開張
+ *
+ * 第一行是 `if (!state.cafe.open) return false;`——與整個咖啡廳系統同一招
+ * (`cafeDailyPass()` 等的天然閘門)。她是**店貓**,敘事上本來就該跟店一起上工;
+ * 而無頭的 balance 快照局永遠不會開張咖啡廳 ⇒ `state.pets` 一個 key 都不會多,
+ * `petsPass()` 的迭代次序、RNG 消耗與所有租客數值都不受影響(**快照零漂移**)。
+ *
+ * ## 唯一性
+ *
+ * 只認一個固定 record key `SHOP_CAT_ID`。重複呼叫、存檔往返、離線補進度逐小時重跑
+ * 走的都是同一格 ⇒ 只可能有一隻;若有任何非正規 key 也帶著店貓標記(手改存檔、
+ * 未來的匯入),這裡順手清掉,收斂到唯一的正規那隻。
+ */
+export function ensureShopCat(): boolean {
+  if (!state.cafe.open) return false; // 天然閘門:未開張 = 完全沒有這隻貓
+  let changed = false;
+  for (const [petId, pet] of Object.entries(state.pets)) {
+    if (petId !== SHOP_CAT_ID && isShopCat(pet)) {
+      delete state.pets[petId];
+      clearPetLinks(petId);
+      changed = true;
+    }
+  }
+  const existing = state.pets[SHOP_CAT_ID];
+  if (existing) {
+    // 消毒:兩個判準與「不進樓寵物名冊」的前提都補回來(舊檔手改、部分欄位遺失皆可收斂)
+    if (existing.shopCat !== true) { existing.shopCat = true; changed = true; }
+    if (existing.ownerId !== SHOP_CAT_OWNER) { existing.ownerId = SHOP_CAT_OWNER; changed = true; }
+    if (existing.housePlacement) { delete existing.housePlacement; changed = true; }
+    if (existing.rehomingAtMs != null || existing.rehomingDestination != null) {
+      delete existing.rehomingAtMs;
+      delete existing.rehomingDestination;
+      changed = true;
+    }
+    return changed;
+  }
+  state.pets[SHOP_CAT_ID] = {
+    name: SHOP_CAT_NAME,
+    kind: "cat",
+    color: SHOP_CAT_COLOR,
+    ownerId: SHOP_CAT_OWNER,
+    shopCat: true,
+    hangout: "lounge",
+    sinceMs: state.gameMs,
+  };
+  notify(`🐈 店貓「${SHOP_CAT_NAME}」跟著咖啡廳一起上工了——白底虎斑、四隻白襪,整棟樓都是她的地盤`);
+  return true;
 }
 
 /** 圓夢畢業「寵物去留」抉擇的套用(tenancy.decide 呼叫)。 */
@@ -436,8 +518,24 @@ function residentOf(roomId: string): TenantRuntime | null {
   return tid ? state.runtimes[tid] ?? null : null;
 }
 
+/** 共用設施也算「某地」——店貓會巡到這裡,一般寵物的 pickHangout 不會挑到。 */
+const AREA_LABELS: Record<string, string> = { lounge: "交誼廳", bathroom: "浴室", laundry: "洗衣間" };
+
+/**
+ * 店貓沒有主人房,**整棟樓都是她的地盤**:交誼廳(權重加倍,那是全樓的十字路口)、
+ * 浴室、洗衣間,加上所有有人住的套房。一樓咖啡廳不在這裡——那是渲染層
+ * `petAgentRegion()` 的跨樓層目的地(沿用 CAFE-22 已經做過的那條路),
+ * 不需要在 sim 層多開一種 hangout 值。
+ */
+function pickShopCatHangout(): string {
+  const rooms = Object.keys(state.occupancy).filter((r) => state.runtimes[state.occupancy[r]]);
+  const spots = ["lounge", "lounge", "bathroom", "laundry", ...rooms];
+  return spots[Math.floor(Math.random() * spots.length)];
+}
+
 /** 這小時寵物要待的區域。狗比貓更常待在交誼廳,讓兩種動物的生活感不同。 */
 function pickHangout(pet: Pet): string {
+  if (isShopCat(pet)) return pickShopCatHangout();
   const home = roomOfTenant(pet.ownerId) ?? "lounge";
   const roll = Math.random();
   const homeCut = pet.kind === "dog" ? 0.45 : 0.55;
@@ -456,15 +554,17 @@ function fxAt(roomId: string, kind: Parameters<typeof spawnFx>[0], dur = 10000) 
 
 /** 每遊戲小時:每隻貓換去處 + 擲骰貓咪事件(owner=null 代表樓貓) */
 export function petsPass() {
+  ensureShopCat(); // 咖啡廳開張後才成立;未開張直接 return false(零 RNG、快照零漂移)
   repairOrphanPets();
   processPetRehoming();
   for (const [petId, pet] of Object.entries(state.pets)) {
     if (!isPetOnSite(pet)) continue;
-    const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId] ?? null;
+    const owner = isOwnerlessPet(pet) ? null : state.runtimes[pet.ownerId] ?? null;
     pet.hangout = pickHangout(pet);
     rollVisit(petId, pet, owner);
     rollMischief(petId, pet, owner);
   }
+  rollShopCatShift();
   // 每個遊戲小時最多開一場寵物互動；同物種優先，未觸發才嘗試貓狗相遇。
   if (resolveCatPairs()) return;
   if (resolveDogPairs()) return;
@@ -494,7 +594,7 @@ function clearExpiredPetPairs() {
  *  不能拿來配對;一般貓的 catId === ownerId,舊存檔的 pairWith/冷卻 key 完全相容。 */
 export function resolveCatPairs(random: () => number = Math.random, force = false): CatPairAction | null {
   clearExpiredPetPairs();
-  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isOwnerlessPet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
   // 兩隻貓原本沒碰面時,偶爾主動去找貓伴；避免「雙貓互動」只能靠兩次獨立亂數巧遇。
@@ -529,8 +629,8 @@ export function resolveCatPairs(random: () => number = Math.random, force = fals
 }
 
 function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
-  const A = isHousePet(a) ? null : state.runtimes[a.ownerId] ?? null;
-  const B = isHousePet(b) ? null : state.runtimes[b.ownerId] ?? null;
+  const A = isOwnerlessPet(a) ? null : state.runtimes[a.ownerId] ?? null;
+  const B = isOwnerlessPet(b) ? null : state.runtimes[b.ownerId] ?? null;
   const owners = [A, B].filter((rt): rt is TenantRuntime => !!rt);
   const place = a.hangout === "lounge" ? "交誼廳" : "房間裡";
   const logBoth = (text: string) => {
@@ -570,7 +670,7 @@ function applyCatPairEvent(a: Pet, b: Pet, action: CatPairAction) {
 /** 同區域的兩隻狗會追球、互聞或靠著午睡；force 僅供測試與美術預覽。 */
 export function resolveDogPairs(random: () => number = Math.random, force = false): DogPairAction | null {
   clearExpiredPetPairs();
-  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const entries = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isOwnerlessPet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = entries.some(([, a], i) => entries.some(([, b], j) => j > i && a.hangout === b.hangout));
   if (!force && !alreadyTogether && entries.length >= 2 && random() < 0.16) {
@@ -601,8 +701,8 @@ export function resolveDogPairs(random: () => number = Math.random, force = fals
 /** 同區域的一貓一狗會友善打招呼或互相保持距離。 */
 export function resolveCrossSpeciesPairs(random: () => number = Math.random, force = false): CrossPairAction | null {
   clearExpiredPetPairs();
-  const cats = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
-  const dogs = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isHousePet(pet) || !!state.runtimes[pet.ownerId]));
+  const cats = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "cat" && (isOwnerlessPet(pet) || !!state.runtimes[pet.ownerId]));
+  const dogs = Object.entries(state.pets).filter(([, pet]) => isPetOnSite(pet) && pet.kind === "dog" && (isOwnerlessPet(pet) || !!state.runtimes[pet.ownerId]));
   let arrangedKey = "";
   const alreadyTogether = cats.some(([, cat]) => dogs.some(([, dog]) => cat.hangout === dog.hangout));
   if (!force && !alreadyTogether && cats.length > 0 && dogs.length > 0 && random() < 0.1) {
@@ -637,7 +737,7 @@ function startPetPair(aId: string, a: Pet, bId: string, b: Pet, action: PetPairA
 
 function pairOwners(a: Pet, b: Pet): TenantRuntime[] {
   const runtimes = [a, b]
-    .map((pet) => isHousePet(pet) ? null : state.runtimes[pet.ownerId] ?? null)
+    .map((pet) => isOwnerlessPet(pet) ? null : state.runtimes[pet.ownerId] ?? null)
     .filter((rt): rt is TenantRuntime => !!rt);
   return [...new Map(runtimes.map((rt) => [rt.tenant.id, rt])).values()];
 }
@@ -658,7 +758,7 @@ function applyDogPairEvent(a: Pet, b: Pet, action: DogPairAction) {
   } else if (action === "sniff") {
     for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 2, 0, 100);
     logPetPair(a, b, "雙狗互動", `${a.name} 和 ${b.name} 小心靠近互聞,很快就搖著尾巴一起巡樓。`);
-    if (a.ownerId !== b.ownerId && !isHousePet(a) && !isHousePet(b)) adjustRelationship(a.ownerId, b.ownerId, 1);
+    if (a.ownerId !== b.ownerId && !isOwnerlessPet(a) && !isOwnerlessPet(b)) adjustRelationship(a.ownerId, b.ownerId, 1);
     fxAt(a.hangout, "hearts");
   } else {
     for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 4, 0, 100);
@@ -675,12 +775,12 @@ function applyCrossPairEvent(cat: Pet, dog: Pet, action: CrossPairAction) {
       rt.tenant.stats.stress = clamp(rt.tenant.stats.stress - 2, 0, 100);
     }
     logPetPair(cat, dog, "貓狗相遇", `${dog.name} 伏低身子慢慢靠近,${cat.name} 聞了聞牠的鼻尖,最後和平地並肩坐下。`);
-    if (cat.ownerId !== dog.ownerId && !isHousePet(cat) && !isHousePet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, 1);
+    if (cat.ownerId !== dog.ownerId && !isOwnerlessPet(cat) && !isOwnerlessPet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, 1);
     fxAt(cat.hangout, "hearts");
   } else {
     for (const rt of owners) rt.tenant.stats.stress = clamp(rt.tenant.stats.stress + 1, 0, 100);
     logPetPair(cat, dog, "貓狗相遇", `${cat.name} 豎起尾巴退到高處,${dog.name} 也停下腳步轉開視線,彼此保留安全距離。`);
-    if (cat.ownerId !== dog.ownerId && !isHousePet(cat) && !isHousePet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, -1);
+    if (cat.ownerId !== dog.ownerId && !isOwnerlessPet(cat) && !isOwnerlessPet(dog)) adjustRelationship(cat.ownerId, dog.ownerId, -1);
     fxAt(cat.hangout, "chat");
   }
 }
@@ -720,19 +820,69 @@ function dogJournalLines(petName: string, ownerName: string, neighbor: string): 
   ];
 }
 
+/** 店貓的口吻:她是「這間店的員工」,不是誰家的貓——文案要一眼看得出這件事。 */
+function shopCatJournalLines(neighbor: string): string[] {
+  return [
+    `本店的生意由我負責監工,吧台後面那位只是負責煮咖啡。`,
+    `一樓的客人摸完我以後都笑得很開心,這叫服務業。`,
+    `${neighbor} 下樓時我剛好在門口坐鎮,他多待了半小時才走。`,
+    `這棟樓從三樓的洗衣間到一樓的座位區,我一天巡兩次,零遺漏。`,
+    `有人問我可不可以帶回家。不行,我有店要顧。`,
+    `午後的窗邊位置是我的辦公桌,客人可以坐,但要跟我共用。`,
+    `今天的重點工作是趴在收銀機旁邊,監督每一杯咖啡的去向。`,
+    `樓上浴室的水聲很吵,但那裡的地板夏天最涼,我原諒它。`,
+  ];
+}
+
+/**
+ * 店貓在一樓上工的畫面(互動,不是敘事洗版)。
+ *
+ * **走 `notify()` 而不是 `pushSocialLog()`**:`rt.log` 的 `LOG_CAP` 只有 60 而且是
+ * AI 敘事的素材來源,店貓天天在店裡是常態、不是某位租客的人生大事,
+ * 塞進去只會把租客自己的日誌擠掉。房東通知這條路玩家照樣看得見。
+ *
+ * 頻率:**一個遊戲日最多一則**(冷卻 20h,同 P1 的稀疏哲學),且只在營業中、
+ * 店裡真的有客人時才成立。選句用 `stableHash` 不擲 RNG。
+ */
+const SHOP_CAT_SHIFT_CD = 20 * 3600 * 1000;
+
+function shopCatShiftLines(guestName: string): string[] {
+  return [
+    `跳上窗邊的空位坐鎮,${guestName} 一邊喝咖啡一邊偷偷伸手摸了兩下`,
+    `在吧台旁邊翻肚睡成一攤,${guestName} 拍了張照才捨得走`,
+    `繞著 ${guestName} 的腳邊走了三圈,確認過氣味才願意讓他坐下`,
+    `把尾巴掃過 ${guestName} 的小腿,得到了一句「牠是店長吧」的評價`,
+    `蹲在點餐台前面看客人排隊,${guestName} 讓她先過`,
+  ];
+}
+
+function rollShopCatShift() {
+  const pet = state.pets[SHOP_CAT_ID];
+  if (!pet || !state.cafe.open) return;
+  const guest = state.cafe.guests[0];
+  if (!guest) return; // 打烊或店裡沒人 → 沒有互動對象
+  const key = `pet|${SHOP_CAT_ID}|shift`;
+  if (onCooldown(key, SHOP_CAT_SHIFT_CD)) return;
+  markCooldown(key);
+  const pool = shopCatShiftLines(guest.name);
+  notify(`🐈 店貓「${pet.name}」${pool[stableHash(`${SHOP_CAT_ID}|${state.gameMs}`) % pool.length]}`);
+}
+
 /** 每遊戲日呼叫(自帶 7 日冷卻):輪到的貓發一篇觀察筆記進 Feed。
  *  樓貓沒有飼主 → 筆記掛在任一位在住租客的日誌上(Feed 彙整全樓日誌,玩家都看得到)。 */
 export function catJournalPass() {
   for (const [petId, pet] of Object.entries(state.pets)) {
     if (!isPetOnSite(pet)) continue;
-    const owner = isHousePet(pet) ? null : state.runtimes[pet.ownerId];
+    const owner = isOwnerlessPet(pet) ? null : state.runtimes[pet.ownerId];
     const host = owner ?? Object.values(state.runtimes)[0]; // 樓貓筆記的落點
-    if (!host || (!owner && !isHousePet(pet))) continue;
+    if (!host || (!owner && !isOwnerlessPet(pet))) continue;
     const ck = `pet|${petId}|journal`;
     if (onCooldown(ck, JOURNAL_CD)) continue;
     markCooldown(ck);
     const ownerName = owner ? owner.tenant.name : "房東";
-    const pool = (pet.kind === "dog" ? dogJournalLines : catJournalLines)(pet.name, ownerName, randomNeighborName(pet.ownerId));
+    const pool = isShopCat(pet)
+      ? shopCatJournalLines(randomNeighborName(pet.ownerId))
+      : (pet.kind === "dog" ? dogJournalLines : catJournalLines)(pet.name, ownerName, randomNeighborName(pet.ownerId));
     const i = Math.floor(Math.random() * pool.length);
     const j = (i + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length; // 另一句、不重複
     pushSocialLog(host, `🐾 ${owner ? "" : housePetLabel(pet)}「${pet.name}」的觀察筆記:${pool[i]}${pool[j]}`, "notable");
@@ -785,7 +935,10 @@ function rollVisit(petId: string, pet: Pet, owner: TenantRuntime | null) {
 function rollMischief(petId: string, pet: Pet, owner: TenantRuntime | null) {
   const here = pet.hangout;
   const victim = here === "lounge" ? null : residentOf(here);
-  const place = here === "lounge" ? "交誼廳" : victim && victim.tenant.id !== pet.ownerId ? `${victim.tenant.name} 的房間` : "房間";
+  // 共用設施只有店貓巡得到(一般寵物的 pickHangout 挑不到 bathroom/laundry),
+  // 既有寵物的文案因此逐字不變。
+  const place = AREA_LABELS[here]
+    ?? (victim && victim.tenant.id !== pet.ownerId ? `${victim.tenant.name} 的房間` : "房間");
   const relief = mischiefRelief(pet);
   const breakChance = 0.03 * relief.break; // 貓跳台:破壞降到三成
   const poopChance = 0.03 * relief.poop; // 貓砂盆:隨地大小便降到 15%

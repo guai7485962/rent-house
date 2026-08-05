@@ -14,6 +14,7 @@ import {
   cancelHousePetRehoming,
   resolveHousePetOverload,
   petIcon,
+  isShopCat,
 } from "../store";
 
 const emit = defineEmits<{ close: []; done: [message: string] }>();
@@ -23,8 +24,10 @@ const armedPetId = ref<string | null>(null);
 
 const housePets = computed(() => housePetEntries()
   .sort((a, b) => a[1].sinceMs - b[1].sinceMs || a[0].localeCompare(b[0])));
+// 店貓不是樓寵物也不是房客的寵物 —— 自成一區,而且沒有任何送養按鈕。
+const shopPets = computed(() => Object.entries(state.pets).filter(([, pet]) => isShopCat(pet)));
 const residentPets = computed(() => Object.entries(state.pets)
-  .filter(([, pet]) => pet.ownerId !== HOUSE_PET_OWNER)
+  .filter(([, pet]) => pet.ownerId !== HOUSE_PET_OWNER && !isShopCat(pet))
   .map(([id, pet]) => ({ id, pet, owner: state.runtimes[pet.ownerId]?.tenant.name ?? "房客" })));
 const permanentCount = computed(() => permanentHousePetEntries().length);
 const fosterCount = computed(() => fosterHousePetEntries().length);
@@ -146,6 +149,18 @@ function fmtDay(ms: number) {
           </article>
         </template>
 
+        <template v-if="shopPets.length">
+          <h3>一樓店貓</h3>
+          <article v-for="[id, pet] in shopPets" :key="id" class="pet-card shop">
+            <div class="pet-icon">{{ petIcon(pet) }}</div>
+            <div class="pet-body">
+              <div class="pet-name">{{ pet.name }} <span>白底虎斑</span></div>
+              <div class="pet-status">咖啡廳店貓 · 全樓走透透</div>
+              <div class="pet-origin">不送養,也不佔永久／中途名額</div>
+            </div>
+          </article>
+        </template>
+
         <template v-if="residentPets.length">
           <h3>跟房客一起住</h3>
           <article v-for="{ id, pet, owner } in residentPets" :key="id" class="pet-card resident">
@@ -158,7 +173,7 @@ function fmtDay(ms: number) {
           </article>
         </template>
 
-        <p v-if="!housePets.length && !residentPets.length" class="empty">公寓目前沒有動物入住。</p>
+        <p v-if="!housePets.length && !residentPets.length && !shopPets.length" class="empty">公寓目前沒有動物入住。</p>
       </div>
 
       <div v-else class="list">
@@ -200,6 +215,7 @@ h3 { margin: 7px 2px 1px; font-size: 12px; color: var(--text-dim); font-weight: 
 .pet-card, .home-card { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
 .pet-card.foster { border-color: #d69963; }
 .pet-card.partner_foster { border-color: #7fa9d8; opacity: 0.9; }
+.pet-card.shop { border-color: #8fbf7a; }
 .pet-icon { flex: 0 0 34px; font-size: 26px; text-align: center; }
 .pet-body { min-width: 0; flex: 1; }
 .pet-name { font-size: 14px; font-weight: 700; }

@@ -1043,18 +1043,40 @@ function drawPlainChair(ctx: Ctx, x: number, y: number) {
 }
 
 // ---------------------------------------------------------------------------
-// 寵物貓(寵物系統):走路/坐/捲成一團睡,四種花色
+// 寵物貓(寵物系統):走路/坐/捲成一團睡,五種花色
 // ---------------------------------------------------------------------------
 
-const CAT_PALS = [
+/**
+ * 🔴 **既有四個花色的順序與色碼不可動** —— `pet.color` 是存進存檔的索引。
+ * 新花色一律 append 到尾端。
+ *
+ * `patchA` / `patchB` 是三花那兩塊補丁的顏色,以前寫死在 drawCat 裡;
+ * 抽成選填欄位、預設值就是原本的常數 ⇒ 三花逐像素不變,新花色才換得掉補丁顏色。
+ * `tabby` / `nose` 只有店貓有,既有四色完全不進那幾行。
+ */
+const CAT_PALS: Array<{
+  body: string; dark: string; belly: string; eye: string; patch: boolean;
+  patchA?: string; patchB?: string; tabby?: boolean; nose?: string;
+}> = [
   { body: "#e0913f", dark: "#b46c22", belly: "#f6cb9e", eye: "#26232f", patch: false }, // 橘貓
   { body: "#413e4e", dark: "#2b2937", belly: "#8d89a0", eye: "#ffd23e", patch: false }, // 黑貓
   { body: "#eae5da", dark: "#c6bfb0", belly: "#faf7f0", eye: "#26232f", patch: false }, // 白貓
   { body: "#eae5da", dark: "#c6bfb0", belly: "#faf7f0", eye: "#26232f", patch: true }, // 三花
+  // 店貓「辣椒」:白底 + 頭/背/尾的棕灰虎斑塊 + 白胸白襪 + 綠眼 + 粉鼻(參照使用者的貓)
+  {
+    body: "#f7f2e9", dark: "#9c8768", belly: "#fffdf7", eye: "#63ad5c", patch: true,
+    patchA: "#a68f6d", patchB: "#7f6c52", tabby: true, nose: "#f0a1ad",
+  },
 ];
+
+/** 三花原本寫死的補丁色;抽成常數只為了讓新花色能覆寫,既有像素一個不動。 */
+const CALICO_PATCH_A = "#cd7f32";
+const CALICO_PATCH_B = "#413e4e";
 
 function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
   const pal = CAT_PALS[a.color] ?? CAT_PALS[0];
+  const patchA = pal.patchA ?? CALICO_PATCH_A;
+  const patchB = pal.patchB ?? CALICO_PATCH_B;
   const x = a.px + 1; // 貓佔位 14px 寬,置中於 16px tile
   const y = a.py;
   const f = a.facing;
@@ -1072,9 +1094,15 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
     rect(ctx, x + 8, y + 6, 1, 1, pal.dark); // 耳
     rect(ctx, x + 11, y + 6, 1, 1, pal.dark);
     rect(ctx, x + 2, y + 11, 3, 1, pal.dark); // 尾巴圍到身前
-    if (pal.patch) {
-      rect(ctx, x + 4, y + 9, 3, 2, "#cd7f32");
-      rect(ctx, x + 8, y + 10, 2, 2, "#413e4e");
+    if (pal.tabby) {
+      // 白底虎斑:背脊一條 + 頭頂一塊 + 壓回來的白肚 + 粉鼻
+      rect(ctx, x + 3, y + 8, 8, 1, patchB);
+      rect(ctx, x + 8, y + 7, 3, 1, patchA);
+      rect(ctx, x + 4, y + 10, 4, 2, pal.belly);
+      if (pal.nose) rect(ctx, x + 11, y + 8, 1, 1, pal.nose);
+    } else if (pal.patch) {
+      rect(ctx, x + 4, y + 9, 3, 2, patchA);
+      rect(ctx, x + 8, y + 10, 2, 2, patchB);
     }
     pxPat(ctx, PAT_Z, x + 12, y + 1 - (frame % 2), "#cfd6ff", 0.8);
     return;
@@ -1091,9 +1119,17 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
     rect(ctx, x + 7, y + 5, 1, 1, frame % 7 === 3 ? pal.body : pal.eye);
     rect(ctx, x + 9, y + 12, 3, 1, pal.dark); // 尾巴
     rect(ctx, x + 11, y + 11, 1, 1, pal.dark);
-    if (pal.patch) {
-      rect(ctx, x + 4, y + 4, 2, 2, "#cd7f32");
-      rect(ctx, x + 7, y + 9, 2, 2, "#413e4e");
+    if (pal.tabby) {
+      // 頭頂只鋪額前一列 —— 三花那塊 2×2 會蓋掉一隻眼睛,而綠眼是辣椒的招牌
+      rect(ctx, x + 4, y + 4, 5, 1, patchA);
+      rect(ctx, x + 4, y + 8, 5, 1, patchB); // 肩背的鞍狀虎斑
+      rect(ctx, x + 5, y + 10, 2, 3, pal.belly); // 胸口白毛
+      rect(ctx, x + 4, y + 12, 1, 1, pal.belly); // 白襪
+      rect(ctx, x + 8, y + 12, 1, 1, pal.belly);
+      if (pal.nose) rect(ctx, x + 6, y + 6, 1, 1, pal.nose);
+    } else if (pal.patch) {
+      rect(ctx, x + 4, y + 4, 2, 2, patchA);
+      rect(ctx, x + 7, y + 9, 2, 2, patchB);
     }
     return;
   }
@@ -1110,9 +1146,16 @@ function drawCat(ctx: Ctx, a: PetAgent, frame: number) {
   for (const off of legs) rect(ctx, fx(off, 1), y + 11, 1, 2, pal.body);
   rect(ctx, fx(1, 1), y + 5, 1, 2, pal.dark); // 尾巴翹起
   rect(ctx, fx(2, 1), y + 7, 1, 1, pal.dark);
-  if (pal.patch) {
-    rect(ctx, fx(4, 3), y + 8, 3, 2, "#cd7f32");
-    rect(ctx, fx(10, 2), y + 5, 2, 2, "#413e4e");
+  if (pal.tabby) {
+    rect(ctx, fx(2, 8), y + 8, 8, 1, patchB); // 背脊虎斑
+    rect(ctx, fx(3, 6), y + 10, 6, 1, pal.belly); // 白肚
+    for (const off of legs) rect(ctx, fx(off, 1), y + 12, 1, 1, pal.belly); // 白襪
+    rect(ctx, fx(9, 3), y + 5, 3, 1, patchA); // 頭頂斑塊(眼睛在 y+6,不會被蓋到)
+    rect(ctx, fx(1, 1), y + 5, 1, 2, patchB); // 尾巴的深色環
+    if (pal.nose) rect(ctx, fx(12, 1), y + 8, 1, 1, pal.nose);
+  } else if (pal.patch) {
+    rect(ctx, fx(4, 3), y + 8, 3, 2, patchA);
+    rect(ctx, fx(10, 2), y + 5, 2, 2, patchB);
   }
 }
 

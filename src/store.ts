@@ -72,6 +72,7 @@ export {
   housePetEntries, permanentHousePetEntries, fosterHousePetEntries, needsHousePetReview,
   petRehomingDaysLeft, startHousePetRehoming, cancelHousePetRehoming,
   resolveHousePetOverload, processPetRehoming, isPetOnSite,
+  ensureShopCat, isShopCat, SHOP_CAT_ID, SHOP_CAT_NAME, SHOP_CAT_OWNER, SHOP_CAT_COLOR,
 } from "./sim/pets";
 export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";

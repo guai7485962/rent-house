@@ -192,8 +192,24 @@ export const ARCHETYPES: Archetype[] = [
 /**
  * 隨機應徵者姓名與性別綁定。舊版將姓名、性別分開亂抽，會出現「邱柏翰」
  * 被存成女性、關係因此顯示成閨密的情況。這份表也供舊存檔載入時校正。
+ *
+ * 🔴 **只能 append,不可改動或重排既有項目**(2026-08-05 A 批再次確認):
+ * `genderForKnownName()` 是舊存檔載入時的性別校正來源,任何一筆的 name → gender
+ * 對應改掉,存檔裡的同名租客就會當場換性別,連帶把戀愛線配對整組打亂。
+ *
+ * ## 2026-08-05 A 批:20 → 72 筆(使用者實玩回報「都是類似的名字重複出現」)
+ *
+ * 只有 20 筆時,一間房抽 3 位、四間房輪替幾次就一定撞名,重複感是**數量問題**
+ * 而不是抽樣問題。補到 72 筆(前 20 筆一字未動,以下 52 筆全是新增)。
+ *
+ * **風格:藝名感,不是真實藝人。** 使用者要「多一些藝人的名字」,但本作的 AI 會替
+ * 角色生成戀愛、衝突與私生活敘事,把真實可辨識的藝人本名放進去是另一回事
+ * (肖像/名譽風險,且玩家會出戲)。所以改成**藝名風格**:少見的姓 + 明亮有記憶點的名,
+ * 讀起來像藝名或角色名、不像菜市場名,但不對應任何真實藝人。
+ * 男女各 26 筆,`gender` 逐筆標註(戀愛線配對只讀這一欄)。
  */
 const NAME_IDENTITIES: Array<{ name: string; gender: Gender }> = [
+  // --- 既有 20 筆(2026-07 建立):🔴 只能保留,不可改動或重排 ---
   { name: "王大明", gender: "male" }, { name: "李佳蓉", gender: "female" },
   { name: "張偉", gender: "male" }, { name: "陳思妤", gender: "female" },
   { name: "林俊傑", gender: "male" }, { name: "黃美玲", gender: "female" },
@@ -204,6 +220,33 @@ const NAME_IDENTITIES: Array<{ name: string; gender: Gender }> = [
   { name: "曾冠廷", gender: "male" }, { name: "賴思穎", gender: "female" },
   { name: "潘建宏", gender: "male" }, { name: "簡莉雯", gender: "female" },
   { name: "邱柏翰", gender: "male" }, { name: "溫若晴", gender: "female" },
+  // --- 2026-08-05 A 批 append:藝名風格 52 筆(男 26 / 女 26)---
+  { name: "凌宸曜", gender: "male" }, { name: "藍思禾", gender: "female" },
+  { name: "藍嶼帆", gender: "male" }, { name: "池雨凝", gender: "female" },
+  { name: "白澈", gender: "male" }, { name: "白樂遙", gender: "female" },
+  { name: "商墨言", gender: "male" }, { name: "歐陽芷", gender: "female" },
+  { name: "歐陽澔", gender: "male" }, { name: "莫允薇", gender: "female" },
+  { name: "莫聿凡", gender: "male" }, { name: "樊詩晴", gender: "female" },
+  { name: "樊星野", gender: "male" }, { name: "商語柔", gender: "female" },
+  { name: "池映辰", gender: "male" }, { name: "凌若曦", gender: "female" },
+  { name: "聶朗風", gender: "male" }, { name: "席念安", gender: "female" },
+  { name: "席燁", gender: "male" }, { name: "雲初棠", gender: "female" },
+  { name: "雲亦洋", gender: "male" }, { name: "諶亞恩", gender: "female" },
+  { name: "諶佑光", gender: "male" }, { name: "岑映月", gender: "female" },
+  { name: "岑赫", gender: "male" }, { name: "翟語彤", gender: "female" },
+  { name: "翟予謙", gender: "male" }, { name: "宮綺", gender: "female" },
+  { name: "宮騁", gender: "male" }, { name: "苗采晴", gender: "female" },
+  { name: "苗子昂", gender: "male" }, { name: "麥昕語", gender: "female" },
+  { name: "麥泓宸", gender: "male" }, { name: "費書瑤", gender: "female" },
+  { name: "費昱恆", gender: "male" }, { name: "雷佩宜", gender: "female" },
+  { name: "雷靖翔", gender: "male" }, { name: "詹亦柔", gender: "female" },
+  { name: "詹亮堯", gender: "male" }, { name: "涂沐晴", gender: "female" },
+  { name: "涂律安", gender: "male" }, { name: "阮曉星", gender: "female" },
+  { name: "阮亦帆", gender: "male" }, { name: "康芯瑜", gender: "female" },
+  { name: "康子睿", gender: "male" }, { name: "童羽茜", gender: "female" },
+  { name: "童立揚", gender: "male" }, { name: "竺念慈", gender: "female" },
+  { name: "竺懷恩", gender: "male" }, { name: "邵晞", gender: "female" },
+  { name: "邵星辰", gender: "male" }, { name: "聶婉柔", gender: "female" },
 ];
 
 export function genderForKnownName(name: string): Gender | undefined {
@@ -276,6 +319,45 @@ function shuffle<T>(a: T[]): T[] {
   return r;
 }
 
+/**
+ * 🐾 A 批(2026-08-05):應徵者自帶貓狗入住的機率,**0.22 → 0.45**。
+ *
+ * ## 為什麼要調(使用者實玩回報「撿到寵物/帶寵物來太少見」)
+ *
+ * 寵物只有兩條到來路徑,而其中一條**實際上是零**:
+ * `adopt_cat` 行為指令只能由 **AI 生成事件**的選項帶進來 —— `data/events.json` 的
+ * 規則事件目錄一則都沒有提供它,`observationEffects` 又明文把 `adopt_cat` 排除在
+ * AI 自發行為之外(「真的領養寵物、影響經濟與存檔狀態,屬房東層級的決定」)。
+ * ⇒ 沒金鑰/離線/走模板 fallback 時這條路徑不會發生,有 AI 時也全看模型當天想不想寫。
+ * 所以「寵物多久出現一次」幾乎完全由本常數決定,0.22 就是使用者體感的根因。
+ *
+ * ## 為什麼是 0.45 而不是更高
+ *
+ * 四間房。租客在住的期望寵物數 = `4 × p`:
+ *
+ * | p | 四房期望寵物數 | 加上種子貓「橘子」 |
+ * |---|---|---|
+ * | 0.22(舊) | 0.88 | 1.9 |
+ * | **0.45(新)** | **1.8** | **2.8** |
+ * | 0.60 | 2.4 | 3.4 |
+ *
+ * 0.45 讓「樓裡通常有兩三隻動物」成為常態(這是一款一樓開寵物咖啡廳的遊戲,
+ * 該有的密度),同時**過半數(55%)的應徵者仍然沒有寵物** —— 「這位帶了一隻狗」
+ * 才還是一個資訊,不會退化成背景噪音。再往上就變成「幾乎每個人都有寵物」,
+ * 反而讓 `petAttitude()` 的怕貓/過敏標籤與「要不要收養寵物家庭」的取捨失去意義。
+ *
+ * ## 🔴 不會爆量的三道結構性上界(`scripts/pet-arrival-sim.ts` 實測驗證)
+ *
+ * 1. `adoptPet()` 第一行是 `if (state.pets[tenantId]) return null` ⇒ **一人最多一隻**,
+ *    在住租客的寵物數硬上限就是房間數 4。
+ * 2. 飼主退租時寵物跟著走;只有玩家在圓夢畢業選「留下」才會變成樓寵物,
+ *    而 `PERMANENT_HOUSE_PET_LIMIT = 2` 一滿,`resolvePetFarewell()` / `repairOrphanPets()`
+ *    會**自動**轉成中途媒合(`beginRehoming`),不會累積,也不會逼玩家一直手動送養。
+ * 3. ⇒ 同時在樓的寵物結構上界 = 4(在住)+ 2(永久樓寵物)+ 1(中途)= 7,
+ *    與調整前完全相同 —— 本次只改「多快到達」,沒有改「最多幾隻」。
+ */
+export const PET_CHANCE = 0.45;
+
 /** 依「當前」房間屬性重算一批應徵者的契合星等與租金行情(裝潢/升級改變後即時反映,不必重抽人) */
 export function rescoreApplicants(list: Applicant[], roomId: string): Applicant[] {
   const attrs = roomAttributes(roomId);
@@ -306,8 +388,8 @@ export function generateApplicants(roomId: string, excludeNames: string[] = []):
       stars: matchStars(a.preferences, attrs),
       ...randomIdentity(identities[i].gender),
       appearance: randomAppearance(),
-      // 總寵物率維持約兩成,只把其中一部分分流成狗,避免無意提高事件密度。
-      ...(Math.random() < 0.22 ? { pet: randomPetPreset() } : {}),
+      // 🔴 A 批把總寵物率 0.22 → PET_CHANCE(推導見該常數註解);貓狗分流仍在 randomPetPreset()。
+      ...(Math.random() < PET_CHANCE ? { pet: randomPetPreset() } : {}),
     }));
 }
 

@@ -262,16 +262,18 @@ const CAFE_ORDER_TRACKS: readonly CafeGuestOrder["track"][] = ["coffee", "bakery
 /** P2:顧客訂單同樣逐欄檢查;壞資料整份丟掉(畫面退回沒有訂單的舊行為,不會炸)。 */
 function sanitizeCafeGuestOrder(raw: unknown): CafeGuestOrder | null {
   if (!isPlainObject(raw)) return null;
-  const { itemId, itemName, price, track, served, missing, takeaway } = raw;
+  const { itemId, itemName, price, track, served, missing, takeaway, abandoned } = raw;
   if (typeof itemId !== "string" || !itemId || typeof itemName !== "string" || !itemName) return null;
   return {
     itemId,
     itemName,
     price: Math.max(0, finiteOr(price, 0)),
     track: CAFE_ORDER_TRACKS.includes(track as CafeGuestOrder["track"]) ? (track as CafeGuestOrder["track"]) : "coffee",
-    served: served === true,
+    // 放棄離開的人從來沒結過帳 ⇒ served 一律 false,壞資料也不會憑空變成一筆營收。
+    served: served === true && abandoned !== true,
     missing: typeof missing === "string" ? missing : "",
     takeaway: takeaway === true,
+    abandoned: abandoned === true,
   };
 }
 
@@ -319,6 +321,8 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
       // 開店前那個 pass 會把「今天的貨」補上(而不是永遠不進貨)。
       restocked: entry.restocked === true,
       restockCost: Math.max(0, finiteOr(entry.restockCost, 0)),
+      // A 批:舊檔沒有這欄 ⇒ 0(排到放棄的人次只是紀錄,不進任何金流算式)。
+      abandoned: Math.max(0, Math.trunc(finiteOr(entry.abandoned, 0))),
     }) satisfies CafeSalesDay);
   const guests = (Array.isArray(raw.guests) ? raw.guests : [])
     .map(sanitizeCafeGuest)

@@ -40,6 +40,7 @@ import {
   cafeCrowd,
   cafeDailyLine,
   cafeHourlyGuestCount,
+  cafeAbandonCount,
   cafeOrderLine,
   cafeServicePopularity,
   cafeStaffWage,
@@ -695,11 +696,27 @@ function spawnCafeGuestForOrder(
  * 掛在 `hourlyTick()` 的 `cafeGuestPass()` 正後方,營業時段每小時跑一次:
  *
  * ```
- * 當日客流 → 攤到 11 個營業小時 → 這小時的每位顧客各選一項商品
+ * 當日客流(= min(想上門的人, 產能)) → 攤到 11 個營業小時 → 每位顧客各選一項商品
  *                                 ├─ 料齊 → 扣料、收錢、聲譽 +0.15
  *                                 └─ 缺料 → $0、聲譽 −2.0、轉頭就走
+ * 被產能夾掉的人(想上門 − 產能)  → 走進店裡排隊 → 排到放棄、$0、聲譽 −1.0(A 批)
  * 當日營收 = Σ 每位顧客實際點到的商品售價
  * ```
+ *
+ * ## 🔴 A 批:排太久放棄離開(使用者 2026-08-05 拍板;設計文件 §4.9 初稿)
+ *
+ * 放棄的人選在**這裡**產生而不是在渲染層,理由有三:
+ *
+ * 1. **$0 必須是「從沒收過」而不是「收了再退」**。錢在本 pass 當場入帳,若讓畫面層
+ *    事後判定放棄,就得倒扣一筆退款——收支頁會出現玩家沒做過的交易。
+ *    走 `cafeAbandonCount()` 這條路完全沒有這個問題:那批人本來就不在 `crowd.guests` 裡。
+ * 2. **離線一致性**。畫面層走現實秒數,玩家沒開 1F 頁面就不會演;若懲罰掛在那裡,
+ *    「有沒有在看」會改變帳本,P1/P3 建立的「線上逐時 = 離線補進度」立刻破功。
+ * 3. **零 RNG**。人數是純算術(累積差分),選品仍走 `chooseCafeMenuItem()` 的 FNV-1a。
+ *
+ * 渲染層(`guestAgents`)拿到的是已經標好 `order.abandoned` 的顧客,只負責把他演出來:
+ * 走進門 → 站進人龍(永遠拿不到點餐位)→ 等超過 `GUEST_ABANDON_SECONDS` → 走出大門。
+ * 他排最久、最後放棄——畫面說的故事與帳本說的完全一致。
  *
  * ## 零漂移
  *
@@ -754,15 +771,19 @@ export function cafeHourlyPass(hour: number) {
     ambiancePoints: cafeAmbiancePoints(),
   });
   const count = cafeHourlyGuestCount(crowd.guests, hour - CAFE_OPEN_HOUR);
-  if (count <= 0) return;
+  // 🔴 A 批:被產能夾掉的那些人(`base − guests`)這小時有幾位會排到放棄。
+  const abandonCount = cafeAbandonCount(crowd.base, crowd.guests, hour - CAFE_OPEN_HOUR);
+  if (count <= 0 && abandonCount <= 0) return;
 
   const menu = menuItems(cafe.completed);
   const record = todaysCafeSales(day);
   const servedBefore = record.served;
   const refusedBefore = record.refused;
+  const abandonedBefore = record.abandoned ?? 0;
   let revenue = 0;
   let served = 0;
   let refused = 0;
+  let abandoned = 0;
   let saleLine = "";
   let refusedLine = "";
 
@@ -799,6 +820,9 @@ export function cafeHourlyPass(hour: number) {
       served: till.ok,
       missing: till.ok ? "" : getCafeIngredient(till.missing[0])?.name ?? "備料",
       takeaway: till.ok && !spot,
+      // 欄位一律寫齊(而不是靠 undefined):存檔消毒會補成 false,
+      // 少寫這一欄會讓「訂單通過存檔往返後逐欄相同」的斷言破功。
+      abandoned: false,
     };
     if (till.ok) {
       cafe.stock = till.stock;
@@ -823,14 +847,40 @@ export function cafeHourlyPass(hour: number) {
     spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null);
   }
 
+  // 🔴 A 批:被產能夾掉的那幾位——他們真的走進店裡、站進人龍,然後放棄離開。
+  // 不扣原料、不收錢、不佔席:`crowd.guests` 從第一天起就沒把他們算進營收,
+  // 所以這裡沒有任何金流改動,新增的只有聲譽 −1/人與一則日誌。
+  for (let i = 0; i < abandonCount; i++) {
+    const index = count + i; // 續號,不與結帳那批的 seed/sequence 撞在一起
+    const item = chooseCafeMenuItem({ menu, day, hour, index, weather });
+    if (!item) break;
+    abandoned += 1;
+    spawnCafeGuestForOrder(day, hour, index, {
+      itemId: item.id,
+      itemName: item.name,
+      price: item.price,
+      track: item.track,
+      served: false,
+      missing: "",
+      takeaway: true, // 不佔席、停留 0.25 遊戲小時(足夠演完「排到放棄」再走出門)
+      abandoned: true,
+    }, null);
+  }
+
   record.revenue += revenue;
   record.served += served;
   record.refused += refused;
+  if (abandoned > 0) record.abandoned = abandonedBefore + abandoned;
   if (revenue > 0) addCafeRevenue(revenue);
-  if (served > 0 || refused > 0) cafe.popularity = cafeServicePopularity(cafe.popularity, served, refused);
-  // 敘事一樣走稀疏路線:一天最多一則賣出(且七日一次)、一則撲空。
+  if (served > 0 || refused > 0 || abandoned > 0) {
+    cafe.popularity = cafeServicePopularity(cafe.popularity, served, refused, abandoned);
+  }
+  // 敘事一樣走稀疏路線:一天最多一則賣出(且七日一次)、一則撲空、一則排到放棄。
   if (saleLine) pushCafeLog(saleLine);
   if (refusedLine) pushCafeLog(refusedLine);
+  if (abandoned > 0 && abandonedBefore === 0) {
+    pushCafeLog(cafeOrderLine({ kind: "abandoned", day, hour, itemName: "", abandoned }));
+  }
 }
 
 /**

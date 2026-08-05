@@ -1383,6 +1383,77 @@ export function cafeHourlyGuestCount(dayGuests: number, hourIndex: number): numb
   return Math.max(0, upTo - prev);
 }
 
+/**
+ * 🔴 A 批:一小時最多演出幾位「排到放棄」的顧客(使用者 2026-08-05 拍板)。
+ *
+ * 不是平衡旋鈕而是**畫面與存檔的保險絲**:放棄的人也是真的走進店裡的 `CafeGuest`,
+ * 塞進 `CAFE_GUEST_CAP`(32)與人龍格是有限的。3 位/小時 ⇒ 一天最多 33 位,
+ * 隊伍看得出「排到門口」的壓迫感,又不會把 1F 畫面塞爆。
+ */
+export const CAFE_ABANDON_CAP_PER_HOUR = 3;
+
+/**
+ * 🔴 A 批:一小時內「站得下、也等得起」的排隊人數;超過這條線才會有人排到放棄。
+ *
+ * ## 為什麼一定要有這條容忍線
+ *
+ * `base > capacity` 是一間**經營良好**的店的常態——客流公式的 `min(base, capacity)`
+ * 就是為此存在的。天天懲罰它等於把 §4.7 的整條成長曲線打掉,也會讓「稀疏敘事」
+ * 天天推同一則日誌。有隊伍不等於有人走掉;**隊伍站不下才有人走掉。**
+ *
+ * ## 8 的推導
+ *
+ * P4b 的人龍(`placements.cafeQueueTiles()`)實體最深 `CAFE_QUEUE_MAX_DEPTH = 14` 格。
+ * 取一半多一點的 **8** 當耐心線:
+ *
+ * - 一小時內多出來的人 ≤ 8 ⇒ 全部站得進人龍,玩家看得到隊伍變長(P4b 的視覺信號),
+ *   但沒有人走 —— 生意好本來就該長這樣
+ * - 多出來的人 > 8 ⇒ 隊伍排到門口、後面的人連位子都排不到,才開始有人轉身離開
+ *
+ * ⇒ 一天要多出 `8 × 11 = 88` 人次才會開始有人放棄。實務上只有一種形狀會踩到:
+ * **招牌一直升、店卻沒跟著擴張**(例:Lv4 招牌 base ≈ 158,產能卻還停在開張期的 26)。
+ * 那正是設計文件 §4.9 想要的信號:名氣長過店面,就會開始漏客人。
+ */
+export const CAFE_ABANDON_QUEUE_TOLERANCE = 8;
+
+/**
+ * 🔴 A 批:這一小時有幾位顧客**排到放棄**(設計文件 §4.9 初稿的「$0 + 聲譽 −1」)。
+ *
+ * ## 這些人本來就已經存在,只是以前無聲無息地消失
+ *
+ * `cafeCrowd()` 一直都在算兩個數:想上門的人 `base`,以及被產能夾住之後真的做得成
+ * 生意的人 `guests = min(base, capacity)`。**兩者的差額就是「上門了卻結不到帳的人」**
+ * ——P4b 把他們畫成吧台前的人龍,但他們在資料層是憑空蒸發的(`cappedByCapacity`
+ * 只拿來顯示)。A 批只做一件事:讓這批人真的走進店裡、排隊、然後**放棄離開**。
+ *
+ * ## 為什麼這是「排太久」而不是別的
+ *
+ * 產能吃緊的體感本來就是隊伍變長。差額愈大 ⇒ 人龍愈長 ⇒ 排最後面的人等愈久,
+ * 而 `guestAgents` 演的正是「他站在人龍裡直到失去耐性才走」。玩家不必讀任何數字。
+ *
+ * ## 🔴 對營收的影響是 0,對聲譽才有影響(這是刻意的)
+ *
+ * 這些人從來沒被收過錢——`guests` 早就是 `min(base, capacity)`,他們從第一天起就不在
+ * 營收裡。所以 A 批**沒有動任何一條金流算式**,也不需要退款。真正新增的是
+ * **聲譽 −1/人**,而它自帶負回饋:聲譽掉 ⇒ `popularityMultiplier` 降 ⇒ `base` 降 ⇒
+ * 差額收斂到 0 ⇒ 聲譽又靠 `+0.15/位` 回升。系統會停在 **`base ≈ capacity`**,
+ * 也就是「你的名氣長不過你的店」。要突破就得擴張(席次或人力)——正是設計文件
+ * §4.9 想要的成長迴圈,只是現在有了看得見也算得出來的代價。
+ *
+ * `hourIndex` 走與到客同一套累積差分 ⇒ 每小時只依賴 `(差額, hourIndex)`,
+ * 線上逐時與離線一次補完全等價。
+ */
+export function cafeAbandonCount(base: unknown, capacity: unknown, hourIndex: number): number {
+  const wanted = Math.max(0, Math.floor(finiteOr(base, 0)));
+  const served = Math.max(0, Math.floor(finiteOr(capacity, 0)));
+  if (wanted <= served) return 0;
+  // 兩邊都走同一套累積差分 ⇒ 每小時只依賴 `(base, capacity, hourIndex)`,離線一次補完全等價。
+  const waiting = cafeHourlyGuestCount(wanted, hourIndex) - cafeHourlyGuestCount(served, hourIndex);
+  const overflow = waiting - CAFE_ABANDON_QUEUE_TOLERANCE;
+  if (overflow <= 0) return 0;
+  return Math.min(CAFE_ABANDON_CAP_PER_HOUR, overflow);
+}
+
 /** 顧客的口味偏好只有三種,對齊菜單的三條 track。 */
 export const CAFE_TASTE_TRACKS: readonly CafeResearchTrack[] = ["coffee", "bakery", "pet"];
 /** 命中偏好 track 的權重加成(設計文件 §4.2 的「客群修正」)。 */
@@ -1510,6 +1581,14 @@ export function checkoutCafeOrder(
 export const CAFE_POPULARITY_SERVE_GAIN = 0.15;
 /** 缺貨害一位顧客空手離開。兩次(−4)大致抵銷一整天的服務累積。 */
 export const CAFE_POPULARITY_REFUSE_LOSS = 2;
+/**
+ * 🔴 A 批:排太久放棄離開(設計文件 §4.9 初稿的「$0 + 聲譽 −1」,使用者 2026-08-05 拍板)。
+ *
+ * 比缺貨的 −2 輕:缺貨是「你沒準備」,排隊是「你生意太好而人手/吧台跟不上」——
+ * 後者仍然是玩家的責任,但體感上不該和「連牛奶都沒買」一樣重。
+ * 一天放棄 7 位(−7)大致抵銷 46 位成功服務(+6.9),是「明顯有感但救得回來」的量級。
+ */
+export const CAFE_POPULARITY_ABANDON_LOSS = 1;
 
 /** 聲譽夾在 0~100;壞資料一律回退成 0(不產生 NaN)。 */
 export function clampCafePopularity(value: number): number {
@@ -1517,15 +1596,26 @@ export function clampCafePopularity(value: number): number {
 }
 
 /**
- * 一小時內服務 `served` 位、讓 `refused` 位撲空之後的新聲譽。
- * 純算術、可交換、夾值——同樣的 (served, refused) 不管拆成幾次呼叫結果相同,
+ * 一小時內服務 `served` 位、讓 `refused` 位撲空、`abandoned` 位排到放棄之後的新聲譽。
+ * 純算術、可交換、夾值——同樣的 (served, refused, abandoned) 不管拆成幾次呼叫結果相同,
  * 這正是「線上逐時 = 離線補進度」的必要條件之一。
+ *
+ * 🔴 A 批的 `abandoned` 是**選填第四參數**:舊呼叫端(與既有測試)一位元不變。
  */
-export function cafeServicePopularity(current: number, served: number, refused: number): number {
+export function cafeServicePopularity(
+  current: number,
+  served: number,
+  refused: number,
+  abandoned: number = 0,
+): number {
   const ok = Math.max(0, Math.trunc(finiteOr(served, 0)));
   const bad = Math.max(0, Math.trunc(finiteOr(refused, 0)));
+  const gone = Math.max(0, Math.trunc(finiteOr(abandoned, 0)));
   return clampCafePopularity(
-    clampCafePopularity(current) + ok * CAFE_POPULARITY_SERVE_GAIN - bad * CAFE_POPULARITY_REFUSE_LOSS,
+    clampCafePopularity(current)
+      + ok * CAFE_POPULARITY_SERVE_GAIN
+      - bad * CAFE_POPULARITY_REFUSE_LOSS
+      - gone * CAFE_POPULARITY_ABANDON_LOSS,
   );
 }
 
@@ -1549,8 +1639,16 @@ const REFUSED_LINES = [
   (item: string, missing: string) => `${item}做不出來——${missing}早就用光了。客人聳聳肩,轉身離開。`,
 ];
 
+/** 🔴 A 批:排到放棄——玩家要看得到「生意上門了,卻因為結不完帳而流掉」。 */
+const ABANDONED_LINES = [
+  (count: number) => `吧台前的隊伍排到了門口,${count} 位客人看了看手錶,把菜單放回架上就走了。`,
+  (count: number) => `等太久了——${count} 位客人在隊伍裡站到失去耐性,轉身推門離開,一杯都沒賣出去。`,
+  (count: number) => `隊伍前進得太慢,${count} 位客人互看一眼便退出人龍,門鈴響了兩聲就沒了聲音。`,
+  (count: number) => `${count} 位客人排了半天還輪不到,最後聳聳肩走了;收銀機一次都沒有打開。`,
+];
+
 export interface CafeOrderLineInput {
-  kind: "sale" | "refused";
+  kind: "sale" | "refused" | "abandoned";
   /** 決定性選句用。 */
   day: number;
   hour: number;
@@ -1559,6 +1657,8 @@ export interface CafeOrderLineInput {
   price?: number;
   /** kind = "refused" 時缺的那項原料中文名。 */
   missingName?: string;
+  /** kind = "abandoned" 時這小時排到放棄的人數。 */
+  abandoned?: number;
 }
 
 /**
@@ -1573,6 +1673,10 @@ export function cafeOrderLine(input: CafeOrderLineInput): string {
   if (input.kind === "sale") {
     const price = Math.max(0, Math.round(finiteOr(input.price, 0)));
     return `${CAFE_LOG_PREFIX} ${SALE_LINES[index](item, price)}`;
+  }
+  if (input.kind === "abandoned") {
+    const count = Math.max(1, Math.trunc(finiteOr(input.abandoned, 1)));
+    return `${CAFE_LOG_PREFIX} ${ABANDONED_LINES[index](count)}`;
   }
   const missing = typeof input.missingName === "string" && input.missingName.trim() ? input.missingName.trim() : "備料";
   return `${CAFE_LOG_PREFIX} ${REFUSED_LINES[index](item, missing)}`;

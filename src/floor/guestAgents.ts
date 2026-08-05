@@ -17,6 +17,11 @@
  * 輪不到的人站進 `cafeQueueTiles()` 的人龍(`queueTile`)。排隊是**純表現層**——
  * 錢在 `tick.ts` 早就收完了,隊伍只是把「產能吃緊」畫出來(設計文件 §4.9)。
  *
+ * 🔴 A 批(2026-08-05,使用者拍板)在人龍上加了**唯一一個出口**:
+ * `order.abandoned` 的顧客永遠拿不到點餐位,排滿 `GUEST_ABANDON_SECONDS` 就轉進
+ * `leaving` 走出大門。**判定不在這裡**——$0 與聲譽 −1 早在 `cafeHourlyPass()`
+ * 就結算完了(理由見該函式註解),本層只演。先到先服務的配對邏輯一行未改。
+ *
  * 席次一律查 `placements`(`cafeSeatSpots()`),**沒有硬編座位表**——
  * P1 之前的 `CAFE_GUEST_PREFERRED_SEATS` 正是「顧客站在空地板上」的根因。
  */
@@ -56,6 +61,24 @@ export const GUEST_REFUSED_SECONDS = 2.4;
  */
 export const GUEST_WALK_TIMEOUT_SECONDS = 14;
 
+/**
+ * 🔴 A 批:排隊排到放棄的秒數(現實秒)。
+ *
+ * 只作用在**模擬層已經判定會放棄**的顧客(`guest.order.abandoned`)——這裡不做任何
+ * 新判定,只決定「他在畫面上站多久才轉身」。錢與聲譽早在 `cafeHourlyPass()` 就結算完了。
+ *
+ * 18 秒的推導:一次結帳演出是 `GUEST_ORDER_SECONDS 2.2` + 走到吧台約 1.5 秒 ≈ 3.7 秒,
+ * 也就是隊伍每 ~3.7 秒前進一位。18 秒 ≈ **眼看著前面走掉四、五個人還輪不到自己**,
+ * 玩家看得出他是「等到不耐煩」而不是「一進門就走」;同時遠短於外帶客的停留時間
+ * (`CAFE_TAKEAWAY_STAY_HOURS 0.25` 遊戲小時 ≈ 128 現實秒),所以他一定演得完才被清掉。
+ */
+export const GUEST_ABANDON_SECONDS = 18;
+
+/** 這位顧客是不是模擬層判定「排到放棄」的那一批(舊存檔沒有這欄 ⇒ false)。 */
+export function guestAbandons(agent: GuestAgent): boolean {
+  return agent.guest.order?.abandoned === true;
+}
+
 export interface GuestAgent {
   guest: CafeGuest;
   c: number;
@@ -81,6 +104,13 @@ export interface GuestAgent {
    * 後面整條隊伍就往前遞補一格。**純表現層**,不影響任何金流。
    */
   queueTile: Tile | null;
+  /**
+   * 🔴 A 批:他已經在人龍裡等了幾現實秒(輪到他 ⇒ 歸零)。
+   *
+   * `phaseT` 在排隊時被刻意歸零(排隊不算「走不到目的地」),所以放棄計時需要
+   * 自己這一格。只有 `guestAbandons()` 的顧客會因為它而離場。
+   */
+  queueT: number;
   /** 他的席位;`null` = 外帶或撲空,不入座。 */
   seatSpot: CafeSeatSpot | null;
   /** 下一格被別人擋住而原地等了多久(現實秒);超過門檻就繞路。 */
@@ -164,6 +194,7 @@ export function syncGuestAgents(
         entryTile,
         counterTile: { c: counter.c, r: counter.r },
         queueTile: null,
+        queueT: 0,
         seatSpot,
         stuckT: 0,
       } satisfies GuestAgent;
@@ -241,7 +272,10 @@ function assignCounterStations(agents: GuestAgent[], serviceSlots: number, block
   const taken = new Set(serving.map((agent) => tileKey(agent.counterTile)));
   const free = counters.filter((tile) => !taken.has(tileKey(tile)));
   let openSlots = Math.max(0, slots - serving.length);
-  const queueNeeded = Math.max(0, waiting.length - openSlots);
+  // 🔴 A 批:排到放棄的人一定要有一格人龍可站(他永遠不會遞補點餐位),
+  // 否則只剩他一個人在等時 queueNeeded 會算成 0,他反而被送去吧台點餐。
+  const abandoning = waiting.filter(guestAbandons).length;
+  const queueNeeded = abandoning + Math.max(0, waiting.length - abandoning - openSlots);
   // 已經坐下/演出中的人站著不動,他那一格不能排進隊伍,否則後面的人會頂著他原地抖。
   const parked = new Set(
     agents.filter((agent) => !agent.hidden && !waiting.includes(agent) && !agent.moving).map(tileKey),
@@ -250,7 +284,9 @@ function assignCounterStations(agents: GuestAgent[], serviceSlots: number, block
   let nextFree = 0;
   let nextQueue = 0;
   for (const agent of waiting) {
-    if (openSlots > 0 && nextFree < free.length) {
+    // 🔴 A 批的唯一出口:模擬層已經判定他排不到(`order.abandoned`),所以他永遠
+    // 拿不到點餐位、只會被排進人龍。先到先服務的配對本身**一行未改**。
+    if (openSlots > 0 && nextFree < free.length && !guestAbandons(agent)) {
       agent.counterTile = { ...free[nextFree++] };
       agent.queueTile = null;
       openSlots--;
@@ -318,14 +354,32 @@ export function tickGuestAgents(
 
     // 2) 階段轉移
     switch (agent.phase) {
-      case "entering":
+      case "entering": {
+        const givesUp = guestAbandons(agent);
         // 排隊中:計時歸零(等待不算「走不到目的地」),輪到他才重新起算逾時。
-        if (agent.queueTile) { agent.phaseT = 0; break; }
+        if (agent.queueTile) {
+          agent.phaseT = 0;
+          if (givesUp) {
+            agent.queueT += Math.max(0, dt);
+            // 🔴 A 批的出口:排滿門檻就轉身走人。走位沿用既有的 `leaving`,
+            // 他會照樣走回 `entryTile`(店門)才 `departed` ⇒ 不會原地消失。
+            if (agent.queueT >= GUEST_ABANDON_SECONDS) enterPhase(agent, "leaving");
+          }
+          break;
+        }
+        agent.queueT = 0;
+        if (givesUp) {
+          // 人龍格全被家具/其他顧客塞住的退化情況:站在原地等滿同一個門檻再走,
+          // 一樣不會走到收銀機前點餐(帳本上他本來就沒有這筆)。
+          if (agent.phaseT >= GUEST_ABANDON_SECONDS) enterPhase(agent, "leaving");
+          break;
+        }
         if (reached(agent, agent.counterTile) || agent.phaseT >= GUEST_WALK_TIMEOUT_SECONDS) {
           enterPhase(agent, "ordering");
           agent.view = "back"; // 面向吧台
         }
         break;
+      }
       case "ordering":
         if (agent.phaseT >= GUEST_ORDER_SECONDS) {
           // 訂單缺料 ⇒ 紅色 ❌;沒有訂單資料(舊存檔)一律當作服務成功。
@@ -413,7 +467,8 @@ export function tickGuestAgents(
           agent.hidden = true;
           occupied.delete(nextKey);
         } else if (agent.phase === "entering") {
-          if (agent.queueTile) agent.view = faceToward(agent, agent.counterTile); // 排進隊伍,面向吧台
+          // 排到放棄的人不論站到哪一格都不會點餐;下一幀由階段轉移計時把他送出門。
+          if (agent.queueTile || guestAbandons(agent)) agent.view = faceToward(agent, agent.counterTile);
           else { enterPhase(agent, "ordering"); agent.view = "back"; }
         } else if (agent.phase === "seated") {
           agent.view = "front";

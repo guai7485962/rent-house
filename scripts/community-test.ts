@@ -22,7 +22,7 @@ Math.random = () => {
 };
 
 const { COMMUNITY_EVENTS, communityPass, rollGroupEvent, resolveGroupEvent } = await import("../src/sim/community");
-const { relationships, pairKey, getRel } = await import("../src/sim/social");
+const { relationships, pairKey, getRel, compatibility } = await import("../src/sim/social");
 const { generateApplicants } = await import("../src/sim/recruit");
 const { moveIn } = await import("../src/sim/tenancy");
 const { save, load } = await import("../src/sim/persistence");
@@ -93,7 +93,17 @@ relationships[pairKey(trio[0].tenant.id, trio[2].tenant.id)] = { value: 40, roma
 const relTrioBefore = getRel(trio[0].tenant.id, trio[2].tenant.id)!.value;
 ev("group_order").fire(trio, Math.random);
 check("揪團:全員心情上升", trio.every((rt) => rt.tenant.stats.mood > 50));
-check("揪團:兩兩關係上升", getRel(trio[0].tenant.id, trio[2].tenant.id)!.value > relTrioBefore);
+// ⚠️ 這裡不能無條件斷言「上升」:`adjustGroupBond()` 明文規定 compatibility ≤ −2 的一對
+// **不加好感**(只降積怨)。r303/r304 的租客是隨機抽的,抽到八字不合的組合是合法結果,
+// 2026-08-05 姓名池擴充後亂數序列位移就抽到了。改成按設計分兩種情況驗。
+const trioComp = compatibility(trio[0].tenant, trio[2].tenant);
+const trioRelAfter = getRel(trio[0].tenant.id, trio[2].tenant.id)!.value;
+check("揪團:兩兩關係上升(八字不合 ≤ −2 的一對照設計不加分,只降積怨)",
+  trioComp <= -2 ? trioRelAfter === relTrioBefore : trioRelAfter > relTrioBefore,
+  `comp=${trioComp} ${relTrioBefore} -> ${trioRelAfter}`);
+check("揪團:不論合不合得來,積怨都下降",
+  (getRel(trio[0].tenant.id, trio[2].tenant.id)!.tension ?? 0) <= 0
+  || (getRel(trio[0].tenant.id, trio[2].tenant.id)!.tension ?? 0) < 100);
 check("揪團:每人都有一筆 Feed 日誌", trio.every((rt) => rt.log.some((e) => e.text.includes("揪團") && e.importance === "notable")));
 
 // --- 頂樓乘涼:壓力↓ ---

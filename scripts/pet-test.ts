@@ -262,7 +262,7 @@ delete state.pets[LIN];
 adoptPet(LIN, { name: "可樂", color: 2, kind: "dog" });
 
 // --- 招租:總寵物率維持約兩成,其中同時有貓與狗 ---
-const { generateApplicants: genApp } = await import("../src/sim/recruit");
+const { generateApplicants: genApp, PET_CHANCE } = await import("../src/sim/recruit");
 let withPet = 0;
 let withCat = 0;
 let withDog = 0;
@@ -277,7 +277,11 @@ for (let i = 0; i < 120; i++) {
     }
   }
 }
-check("應徵者自帶寵物:總比例落在合理區間(5%~40%)", withPet > 0 && withPet / sampled >= 0.05 && withPet / sampled <= 0.4, `${withPet}/${sampled}`);
+// 2026-08-05 A 批:使用者實玩回報「帶寵物來的太少見」,`PET_CHANCE` 0.22 → 0.45。
+// 區間跟著改成「圍著設定值 ±12%」,而不是寫死的 5%~40%;新舊值都由同一個常數驅動,
+// 未來再調機率只要改 recruit.ts 一處,這條會自動跟上。
+check(`應徵者自帶寵物:總比例圍著 PET_CHANCE=${PET_CHANCE} ±12%`,
+  withPet > 0 && Math.abs(withPet / sampled - PET_CHANCE) <= 0.12, `${withPet}/${sampled}`);
 check("應徵者自帶寵物:貓狗都會出現", withCat > 0 && withDog > 0, `cat=${withCat}, dog=${withDog}`);
 
 // --- 貓咪觀察筆記(彩蛋):7 遊戲日一篇,進 Feed ---

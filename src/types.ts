@@ -175,6 +175,14 @@ export interface CafeGuestOrder {
   missing: string;
   /** true = 沒有空席,點完直接走(設計文件 §4.6)。 */
   takeaway: boolean;
+  /**
+   * 🔴 A 批:true = 這位顧客**排到放棄**,從頭到尾沒結過帳($0、沒扣原料)。
+   *
+   * 由 `cafeHourlyPass()` 在結帳迴圈裡決定(決定性、離線一致),渲染層 `guestAgents`
+   * 只負責把他演出來:走進門 → 站進人龍 → 等超過 `GUEST_ABANDON_SECONDS` → 走出去。
+   * 舊存檔沒有這欄 ⇒ `undefined`,一律視為 false。
+   */
+  abandoned?: boolean;
 }
 
 export interface CafeGuest {
@@ -245,6 +253,12 @@ export interface CafeSalesDay {
   restocked: boolean;
   /** P3:當日開店前實際扣掉的進貨金額(日結寫 history 的 cost 時要加回來)。 */
   restockCost: number;
+  /**
+   * 🔴 A 批:當日排到放棄的人次(選填;舊存檔沒有 ⇒ `sanitizeCafeState` 補 0)。
+   *
+   * 只是紀錄與敘事素材,**不進任何金流算式**——放棄的人從來沒被收過錢。
+   */
+  abandoned?: number;
 }
 
 /**

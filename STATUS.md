@@ -14,7 +14,29 @@
 
 ---
 
-## 現在狀態(2026-08-05)
+## 現在狀態(2026-08-07)
+
+- 🆕 **月度全樓事件鏈:抽檔 + 3 → 8 條,未提交**(`docs/待辦.md` 第四節規格,使用者核可)。
+  使用者反映「每月事件的文本太少」——一個月一條、只有 3 條 ⇒ 三個月就重複。
+  - **資料與邏輯分家**:新增 `src/content/floorChains.ts`(純資料,零 sim import),
+    `sim/floorChain.ts` 只留挑鏈/推進/收束/結算 + 掛勾表。**既有 3 條逐字搬移**:
+    抽檔當下把 `git show HEAD:src/sim/floorChain.ts` 當第二份實作,同一份 state 交錯跑
+    **200 遊戲日 / 7 次抉擇 / 含全員外出與離線跳日**,比對完整轉錄 ⇒ **逐位元相同**;
+    基準凍結成 `scripts/floor-chain-baseline.json`,回歸持續比對(扣除純追加的 `notices`)。
+  - **5 條新鏈**(都有真實系統掛勾,不是純文字):`noise_complaint_chain`(隔音選項清掉
+    噪音記憶 + 兩兩積怨 ∓)、`water_outage`(wellbeing + 房間整潔)、`stray_litter`
+    (選「留下」**真的領養一隻貓**,決定性名字/花色)、`night_market`(整潔 + 咖啡廳聲譽,
+    未開張則不動)、`old_resident_return`(`{alumni}` 代入名冊最近離開者 + 留下記憶標籤)。
+    掛勾一律寫在 `STAGE_HOOKS`/`CHOICE_HOOKS` 兩張表,內容檔維持純資料。
+  - **旁白變體**:每階段 `notice` + 2 句 `notices`,依「鏈 id + 話數 + **開章日**」決定性挑一句
+    ⇒ 同一條鏈下次輪到會換句,同一次跑動內冪等。零 `Math.random`。
+  - **存檔**:沿用 `state.floorChain` 既有形狀、**零新欄位** ⇒ `SAVE_VERSION` 維持 10。
+  - 改動檔:`src/content/floorChains.ts`(新)、`src/sim/floorChain.ts`、
+    `scripts/floor-chain-data-test.ts`(新,45 條)、`scripts/floor-chain-baseline.json`(新,基準)、
+    `scripts/run-all.ts` 登記、`scripts/floor-chain-test.ts` 一條斷言 3 → 8。
+    **未動 `data/events.json`、`sim/routine.ts`、`sim/persistence.ts`、`scripts/balance-snapshot.json`。**
+  - **驗證(全綠)**:`npm test` **97/97**、app + worker typecheck、`npm run build` 成功、
+    balance 快照**零漂移**(未 `--update`)。無 UI 改動 ⇒ 未跑 `ui:shot`。
 
 - 🆕 **B 批:店貓「辣椒」完成,未提交**——使用者實玩回報的第四點。
   一隻**白底虎斑**的咖啡廳店貓,可以到整棟樓各地溜達,**不能被送養、不佔寄養欄位**。
@@ -111,7 +133,7 @@
 
 ## 下一步
 
-- **提交 P4a + P4b + A 批 + B 批(店貓辣椒)**(四批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
+- **提交 P4a + P4b + A 批 + B 批(店貓辣椒)+ 月度事件鏈擴充**(五批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
   使用者的四點需求(經營感／開店關店看得到消費／會虧錢／座位)全部交付。
 - **使用者要拍板(P4a 新增)**:P4a 把開張期的產能天花板從 26 打開到 35 之後,
   §4.7 的「備太多反而虧」從 P3 的 −$35 回到 **+$74**(精準備貨 +$195,差距仍有 $121)。
@@ -132,12 +154,13 @@
 
 ## 待使用者決策(不要自行動工)
 
-- 🔴 **「租客撿到寵物」這條路徑目前的機率是 0** —— A 批查證:`adopt_cat` 行為指令
-  **只由 AI 生成事件的選項**帶進來,`data/events.json` 的規則事件目錄一則都沒有提供它,
-  `observationEffects` 又明文把它排除在 AI 自發行為之外(「屬房東層級的決定」)。
-  ⇒ 沒金鑰/離線/走模板 fallback 時**永遠不會發生**。要補上得在 `data/events.json`
-  加一則「撿到流浪貓狗」規則事件,但那會改變 `rollEvent()` 的比對序 ⇒
-  **可能需要 `balance-test --update` 重建基準**,A 批刻意不擅自動。
+- 🔴 **「租客撿到寵物」要不要再補一則規則事件**(2026-08-07 更新:已**部分解決**)——
+  A 批查證:`adopt_cat` 行為指令**只由 AI 生成事件的選項**帶進來,`data/events.json` 的
+  規則事件目錄一則都沒有提供它 ⇒ 沒金鑰/離線/走模板 fallback 時永遠不會發生。
+  **2026-08-07**:事件鏈 `stray_litter`(後巷的一窩小貓)第三話選「留一隻下來」會
+  **真的呼叫 `adoptPet()`**,這是一條完全不靠 AI 的路徑(決定性名字/花色,零 RNG)。
+  剩下要決定的是:**還要不要另外在 `data/events.json` 加一則「撿到流浪貓狗」規則事件**?
+  那會改變 `rollEvent()` 的比對序 ⇒ **可能需要 `balance-test --update` 重建基準**,故未擅自動。
 - **AI context 快取 C-9** — 裁剪那半早已實作,只剩 worker 端快取;免費層 + 有模板 fallback,
   是否值得做**待使用者決定是否直接結案**(`docs/待辦.md` 第一節)
 - **家具 tier 第三階段**(沙發/電視/浴缸/書桌的恢復乘數)— 種子局這些活動全踩 premium 家具,

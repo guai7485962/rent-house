@@ -259,7 +259,8 @@ check("降級:沒有人在場就不掛抉擇給空名單", state.pendingChainEve
 allPresent();
 
 // --- 9. 內容規則:三條鏈都是 4 話、抉擇不含驅逐 --------------------------------
-check("內容:共三條鏈", CHAIN_DEFS.length === 3);
+// 2026-08-07 擴充到 8 條(資料搬到 src/content/floorChains.ts;完整資料驗證在 floor-chain-data-test.ts)
+check("內容:共八條鏈", CHAIN_DEFS.length === 8);
 check("內容:每條鏈都是 4 話", CHAIN_DEFS.every((d) => d.stages.length === 4));
 check("內容:每條鏈剛好一個關鍵抉擇", CHAIN_DEFS.every((d) => d.stages.filter((s) => s.decision).length === 1));
 const allChoiceText = CHAIN_DEFS.flatMap((d) => d.stages.flatMap((s) => (s.decision?.choices ?? []).map((c) => `${c.label}${c.hint}`))).join("");

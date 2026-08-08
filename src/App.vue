@@ -83,6 +83,8 @@ const showSummary = ref(false);
 const showShop = ref(false);
 /** 玩家目前在看哪個樓層頁面(由 FloorMap 回報):家具商店用它預選場地分頁 */
 const floorView = ref<"3f" | "1f">("3f");
+/** 樓層切換鈕移到底部動作區後，由這個 ref 呼叫 FloorMap 內的 switchFloorPage()。 */
+const floorMapRef = ref<{ switchFloorPage: () => void } | null>(null);
 const showRels = ref(false);
 const showFinance = ref(false);
 const showNotices = ref(false);
@@ -656,6 +658,7 @@ function onChainResolve(choiceId: string) {
     <p v-else class="hint">點房間看觀察 · 點家具查看/移動/賣掉 · 現實 1 天 = 遊戲 7 天</p>
     <div class="map-viewport">
       <FloorMap
+        ref="floorMapRef"
         :pending-rooms="pendingRooms"
         :unread="unreadRooms"
         :preview="preview"
@@ -665,6 +668,17 @@ function onChainResolve(choiceId: string) {
         @floor-change="floorView = $event"
       />
     </div>
+
+    <!--
+      2026-08-09:樓層切換鈕從 FloorMap 的頁首搬到這裡(使用者要求放到畫面下半部)。
+      獨立一列而不是擠進下面那四顆——它是「換場景」不是「開面板」,語意不同,
+      而且四顆已經是 390px 塞得下的極限。
+    -->
+    <button class="floor-switch" @click="floorMapRef?.switchFloorPage()">
+      <span class="floor-switch-icon">{{ floorView === "3f" ? "☕" : "🏠" }}</span>
+      <span>{{ floorView === "3f" ? "前往 1F 寵物咖啡廳" : "返回 3F 租屋樓" }}</span>
+      <span class="floor-switch-arrow" aria-hidden="true">›</span>
+    </button>
 
     <div class="floor-actions">
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
@@ -1253,6 +1267,28 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .arrow { font-size: 10px; }
 
 .floor-actions { display: flex; gap: 8px; }
+/* 2026-08-09:樓層切換鈕。獨立一列、撐滿寬度,字級與下面那排動作鍵同一量級。 */
+.floor-switch {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  color: #fff4df;
+  background: rgba(255, 180, 94, 0.14);
+  border: 1px solid rgba(255, 180, 94, 0.62);
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  flex-shrink: 0;
+}
+.floor-switch:hover { background: rgba(255, 180, 94, 0.22); }
+.floor-switch-icon { font-size: 15px; }
+.floor-switch-arrow { color: var(--accent); font-size: 18px; line-height: 1; }
+
 /*
  * 2026-08-08 版面調整:移除「⏩ 1 天」後由五顆變四顆。
  * 三顆功能鍵等寬(flex:1)、快轉鍵略寬(flex:1.15)因為它是主要動作;

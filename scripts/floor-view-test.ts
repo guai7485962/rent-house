@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const source = readFileSync(fileURLToPath(new URL("../src/components/FloorMap.vue", import.meta.url)), "utf8");
+/** 樓層切換鈕 2026-08-09 起住在 App.vue 的底部動作區,不在 FloorMap 裡。 */
+const appSource = readFileSync(fileURLToPath(new URL("../src/App.vue", import.meta.url)), "utf8");
 
 let pass = 0;
 let fail = 0;
@@ -22,11 +24,22 @@ check(
   source.includes(':aria-label="`${activeFloorView.floor} ${activeFloorView.label}頁面`"')
     && source.includes('<div :key="floorView" class="floor-wrap">'),
 );
+// 2026-08-09:切換鈕從 FloorMap 的頁首搬到 App.vue 底部的動作區(使用者要求放到
+// 畫面下半部;留在地圖下方會被 `.floor-main` 的 `overflow: hidden` 裁掉)。
+// 要保護的不變式沒變 ——「每層只有一顆目的地按鈕、且由 switchFloorPage 觸發」——
+// 只是按鈕與觸發點現在跨兩個檔,所以分開驗。
 check(
-  "3F 只有前往咖啡廳按鈕、1F 只有返回租屋樓按鈕",
+  "FloorMap 仍是唯一決定目的地文案的地方,並把切換動作 expose 出去",
   source.includes('label: "前往 1F 寵物咖啡廳"')
     && source.includes('label: "返回 3F 租屋樓"')
-    && source.includes('@click="switchFloorPage"'),
+    && source.includes("defineExpose({ switchFloorPage })"),
+);
+check(
+  "3F 只有前往咖啡廳按鈕、1F 只有返回租屋樓按鈕(按鈕在 App 的底部動作區)",
+  appSource.includes('floorMapRef?.switchFloorPage()')
+    && appSource.includes('floorView === "3f" ? "前往 1F 寵物咖啡廳" : "返回 3F 租屋樓"')
+    // 兩個文案是三元的兩端 ⇒ 同一時間只會出現一顆,不可能兩顆並存
+    && (appSource.match(/floorMapRef\?\.switchFloorPage\(\)/g) ?? []).length === 1,
 );
 check(
   "不再使用同頁雙 tab 樣式",

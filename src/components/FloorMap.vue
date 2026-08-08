@@ -62,6 +62,16 @@ function switchFloorPage() {
   emit("floorChange", floorView.value);
 }
 
+/**
+ * 2026-08-09:樓層切換鈕搬到 `App.vue` 底下那排動作鍵(使用者要求放到畫面下半部)。
+ *
+ * 為什麼不是把按鈕留在本元件、只挪到地圖下方 —— 試過了,會被 `.floor-main` 的
+ * `overflow: hidden` 整顆裁掉(canvas 已經吃滿高度)。與其跟 overflow 纏鬥,
+ * 不如放進本來就在畫面底部、也不受該裁切影響的動作列。
+ * `floorView` 仍是本元件的區域狀態,只把切換動作 expose 出去。
+ */
+defineExpose({ switchFloorPage });
+
 const placing = computed(() => state.pendingPlace !== null || state.pendingMove !== null);
 
 const canvas = ref<HTMLCanvasElement | null>(null);
@@ -270,16 +280,6 @@ function onClick(e: MouseEvent) {
         <span>目前樓層</span>
         <h2>{{ isTenantFloor ? "🏠" : "☕" }} {{ activeFloorView.floor }} {{ activeFloorView.label }}</h2>
       </div>
-      <button
-        type="button"
-        class="floor-page-nav"
-        :aria-label="floorPageNavigation.label"
-        @click="switchFloorPage"
-      >
-        <span class="floor-page-nav-icon">{{ floorPageNavigation.icon }}</span>
-        <span>{{ floorPageNavigation.label }}</span>
-        <span class="floor-page-nav-arrow" aria-hidden="true">›</span>
-      </button>
     </header>
     <div :key="floorView" class="floor-wrap">
       <canvas
@@ -364,19 +364,26 @@ function onClick(e: MouseEvent) {
   font-size: 13px;
   white-space: nowrap;
 }
+/*
+ * 2026-08-09:本鈕由頁首移到地圖下方(使用者要求放到畫面下半部)。
+ * 從 header 的 flex 子元素變成 `.floor-shell` 的直接子元素 ⇒ 要自己撐滿寬度,
+ * 並把字級/內距放大到與 App.vue `.floor-actions` 那一列同一個量級(那是它的新鄰居)。
+ */
 .floor-page-nav {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 5px;
-  min-height: 38px;
-  padding: 6px 8px;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
   color: #fff4df;
   background: rgba(255, 180, 94, 0.14);
   border: 1px solid rgba(255, 180, 94, 0.62);
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 600;
   text-align: left;
 }
 .floor-page-nav:hover {

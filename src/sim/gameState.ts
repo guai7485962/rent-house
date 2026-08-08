@@ -228,6 +228,20 @@ const numberRecord = (v: unknown): Record<string, number> => {
   for (const [k, n] of Object.entries(v)) if (typeof n === "number" && Number.isFinite(n)) out[k] = n;
   return out;
 };
+/**
+ * 兩層的數字表(缺貨歸因 `missedBy`:品項 id → 原料 id → 份數)。
+ * 逐層走 `numberRecord`,並丟掉整層空掉的鍵——手改存檔塞的 `{"x": {}}`
+ * 不會在面板上變成一列「沒有任何原因」的缺貨。
+ */
+const nestedNumberRecord = (v: unknown): Record<string, Record<string, number>> => {
+  if (!isPlainObject(v)) return {};
+  const out: Record<string, Record<string, number>> = {};
+  for (const [k, row] of Object.entries(v)) {
+    const inner = numberRecord(row);
+    if (Object.keys(inner).length > 0) out[k] = inner;
+  }
+  return out;
+};
 const CAFE_INTENTS: readonly CafeGuestIntent[] = ["coffee", "adopt", "rent"];
 
 /** 存檔裡的顧客可能是舊版、手改或壞資料;逐欄檢查後才放行,壞的整筆丟掉。 */
@@ -312,6 +326,9 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
       day: finiteOr(entry.day, 0),
       sold: numberRecord(entry.sold),
       missed: numberRecord(entry.missed),
+      // 🔴 缺貨歸因(品項 → 原料 → 份數)。舊檔沒有這欄 ⇒ `{}`,
+      // 面板會退回顯示配方,不會壞;新的一天照樣開始累積 ⇒ 不需要升 SAVE_VERSION。
+      missedBy: nestedNumberRecord(entry.missedBy),
       revenue: finiteOr(entry.revenue, 0),
       ingredientCost: finiteOr(entry.ingredientCost, 0),
       served: finiteOr(entry.served, 0),

@@ -635,7 +635,9 @@ function todaysCafeSales(day: number): CafeSalesDay {
   const last = cafe.sales[cafe.sales.length - 1];
   if (last && last.day === day) return last;
   cafe.sales.push({
-    day, sold: {}, missed: {}, revenue: 0, ingredientCost: 0, served: 0, refused: 0,
+    // `missedBy` 一律寫齊(而不是靠 undefined):消毒後是 `{}`,
+    // 少寫這一欄會讓「銷售紀錄通過存檔往返後逐欄相同」的斷言破功。
+    day, sold: {}, missed: {}, missedBy: {}, revenue: 0, ingredientCost: 0, served: 0, refused: 0,
     settled: false, restocked: false, restockCost: 0,
   });
   if (cafe.sales.length > CAFE_SALES_CAP) cafe.sales.splice(0, cafe.sales.length - CAFE_SALES_CAP);
@@ -835,6 +837,12 @@ export function cafeHourlyPass(hour: number) {
       }
     } else {
       record.missed[item.id] = (record.missed[item.id] ?? 0) + 1;
+      // 🔴 缺貨歸因:記下**當下真的不夠的那些原料**,而不是事後拿配方回推。
+      // 同一個品項在不同日子可能缺不同的料(拉花拿鐵可能缺咖啡豆、也可能缺牛奶),
+      // 只有這裡的 `till.missing` 講得出來。面板的「缺貨 → 要補哪個原料」讀的就是它。
+      const missedBy = record.missedBy ?? (record.missedBy = {});
+      const blame = missedBy[item.id] ?? (missedBy[item.id] = {});
+      for (const ingredientId of till.missing) blame[ingredientId] = (blame[ingredientId] ?? 0) + 1;
       refused += 1;
       if (!refusedLine && refusedBefore === 0 && refused === 1) {
         refusedLine = cafeOrderLine({

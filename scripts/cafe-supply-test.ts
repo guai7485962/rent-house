@@ -39,7 +39,10 @@ try {
   // -------------------------------------------------------------------------
   const ids = CAFE_INGREDIENTS.map((item) => item.id);
   check("原料 id 不重複", new Set(ids).size === ids.length);
-  check("每種原料都有中文名與用途", CAFE_INGREDIENTS.every((item) => item.name.trim().length > 0 && item.usedIn.length > 0));
+  // 「用途」不再是這裡的手寫字串:2026-08-08 移除了過期的 `usedIn`,
+  // 商品 ↔ 原料的唯一事實來源是 `CafeMenuItem.recipe`(對照由
+  // `cafe-recipe-clarity-test.ts` 逐項把關)。這裡只剩「每種原料都有中文名」。
+  check("每種原料都有中文名", CAFE_INGREDIENTS.every((item) => item.name.trim().length > 0));
   check("單價都是正整數", CAFE_INGREDIENTS.every((item) => Number.isInteger(item.unitPrice) && item.unitPrice > 0));
   check("建議常備量都是正整數", CAFE_INGREDIENTS.every((item) => Number.isInteger(item.defaultStandingOrder) && item.defaultStandingOrder > 0));
   check("生鮮與乾貨各至少一種", CAFE_INGREDIENTS.some((item) => item.perishable) && CAFE_INGREDIENTS.some((item) => !item.perishable));

@@ -233,6 +233,21 @@ export interface CafeSalesDay {
   sold: Record<string, number>;
   /** 品項 id → 當日因缺料被拒的次數 */
   missed: Record<string, number>;
+  /**
+   * 🔴 缺貨歸因(選填):**品項 id → 原料 id → 這個原料見底害該品項做不出來的份數**。
+   *
+   * `missed` 只說「這個品項做不出來 N 次」,玩家看了仍然不知道要去補什麼。
+   * 逐位結帳時 `checkoutCafeOrder()` 本來就會回一份 `missing`(當下真的不夠的原料),
+   * 這個欄位就是把那份紀錄留下來——**同一個品項在不同日子可能缺不同的料**,
+   * 靜態配方推算不出來,只有實際紀錄講得出。
+   *
+   * 一張單同時缺兩種料時兩邊各記一次(語意是「這項原料當時不夠」),
+   * 所以 Σ 值可能大於 `refused`,那是正確的:它是補貨優先序的量尺,不是人次統計。
+   *
+   * 選填 ⇒ 舊存檔沒有這欄時 `sanitizeCafeState` 補 `{}`,面板退回顯示配方,
+   * **不需要升 `SAVE_VERSION`**(慣例同 `abandoned` / `restocked`)。
+   */
+  missedBy?: Record<string, Record<string, number>>;
   /** 當日營收 = Σ 實際賣出品項的售價 */
   revenue: number;
   /** 當日耗掉的原料進貨價值(毛利用;不是當日進貨支出) */

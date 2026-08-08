@@ -14,7 +14,34 @@
 
 ---
 
-## 現在狀態(2026-08-07)
+## 現在狀態(2026-08-08)
+
+- 🆕 **咖啡廳:缺貨歸因到原料,未提交**——使用者實玩回報「原料和商品對不起來,
+  不知道那個商品缺貨要多進什麼原料」「賺不太到錢」。
+  - 🔴 **移除 `content/cafeIngredients.ts` 的 `usedIn`**:那是 P1 之前的手寫字串、早就與菜單
+    對不上(寫「美式咖啡」,菜單上是「招牌美式咖啡」;寫「拿鐵」,那是還沒解鎖的研發品)。
+    **商品 ↔ 原料的唯一事實來源改成 `CafeMenuItem.recipe`**,雙向對照由 `sim/cafe.ts` 新增的
+    `cafeRecipeLines()` / `cafeIngredientMenuUse()` 推導,資料只有一份,不可能再對不上。
+  - **歸因用實際紀錄不是配方推算**:新增選填 `CafeSalesDay.missedBy`(品項 → 原料 → 份數),
+    由 `tick.ts` 逐位結帳時把 `checkoutCafeOrder().missing` 記下來
+    (同一個品項可能缺不同的料,靜態配方分不出來)。`cafeItemShortageCauses()` /
+    `cafeIngredientShortageBlame()` 只讀它,沒紀錄就回空、**不拿配方猜**。
+  - **面板**:排行列多一行「要補 咖啡豆 · 每份 ×4,這 26 單共差 104 單位」;常備量每列多
+    「用於 招牌美式咖啡 ×4」與「⚠️ 過去 7 日害 26 單做不出來」(害過人的那列整列標紅);
+    熱銷品改讀實際銷量(以前讀 `usedIn[0]`,會顯示一個菜單上不存在的名字)。
+  - 🔴 **順手修一個真 bug**:常備量輸入的夾值上限是 **99**,但咖啡豆的建議常備量是 **130** ⇒
+    玩家一按「套用常備量」咖啡豆就被無聲砍到 99,之後天天缺貨。改成 `MAX_STANDING_ORDER = 999`
+    (防呆,不是平衡旋鈕)。實測見 `docs/待辦.md` 同名條目。
+  - 🔴 **沒有調任何平衡數值**:`cafe-opening-sim` 實測補貨精準 **+$109/日**(高於設計值 +$98),
+    補錯料才會掉到 +$8 ~ −$144/日 ⇒ 病灶是歸因不是數值。兩支 sim 重跑輸出**逐字未變**。
+  - 改動檔:`content/cafeIngredients.ts`、`sim/cafe.ts`、`sim/tick.ts`、`sim/gameState.ts`、
+    `types.ts`、`components/CafePanel.vue` + 新測試 `scripts/cafe-recipe-clarity-test.ts`(42 條)
+    + `scripts/run-all.ts` 登記 + `cafe-supply-test.ts` 一條斷言跟著改。
+    **未動 `sim/routine.ts`、`sim/persistence.ts`、`data/events.json`、`scripts/balance-snapshot.json`。**
+  - **存檔**:`missedBy` 是選填欄位 + `sanitizeCafeState` 補 `{}` ⇒ **`SAVE_VERSION` 維持 10**。
+  - **驗證(全綠)**:`npm test` **98/98**、app + worker typecheck、`npm run build` 成功、
+    balance 快照**零漂移**(未 `--update`)、`ui:shot -- rent` 18 張 0 error,
+    另用容器內 Playwright 以**真實模擬存檔**實拍缺貨面板,截圖在 `artifacts/ui-lab/rent/cafe-recipe/`。
 
 - 🆕 **月度全樓事件鏈:抽檔 + 3 → 8 條,未提交**(`docs/待辦.md` 第四節規格,使用者核可)。
   使用者反映「每月事件的文本太少」——一個月一條、只有 3 條 ⇒ 三個月就重複。
@@ -133,7 +160,7 @@
 
 ## 下一步
 
-- **提交 P4a + P4b + A 批 + B 批(店貓辣椒)+ 月度事件鏈擴充**(五批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
+- **提交 P4a + P4b + A 批 + B 批(店貓辣椒)+ 月度事件鏈擴充 + 缺貨歸因批**(六批變更都還沒進 commit)。提交後整個咖啡廳重設計結案,
   使用者的四點需求(經營感／開店關店看得到消費／會虧錢／座位)全部交付。
 - **使用者要拍板(P4a 新增)**:P4a 把開張期的產能天花板從 26 打開到 35 之後,
   §4.7 的「備太多反而虧」從 P3 的 −$35 回到 **+$74**(精準備貨 +$195,差距仍有 $121)。

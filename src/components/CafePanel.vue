@@ -10,6 +10,10 @@ import {
   cafeCapability,
   CAFE_AMBIANCE_FULL_POINTS,
   CAFE_AMBIANCE_SWING,
+  cafeIngredientMenuUse,
+  cafeIngredientShortageBlame,
+  cafeItemShortageCauses,
+  cafeRecipeLines,
   cafeResearchDaysLeft,
   cafeSalesRanking,
   cafeStaffCount,
@@ -114,13 +118,45 @@ const salesTotalMissed = computed(() => salesRanking.value.reduce((sum, row) => 
 const salesTopSold = computed(() => salesRanking.value.reduce((best, row) => Math.max(best, row.sold), 0));
 const soldBarWidth = (sold: number) => (salesTopSold.value > 0 ? Math.round((sold / salesTopSold.value) * 100) : 0);
 const cafeAverageTicket = computed(() => avgTicket(state.cafe.completed));
+/**
+ * 熱銷品 = 過去 7 日**實際賣最多**的菜單品項。
+ *
+ * 2026-08-08 之前這裡是「預估消耗最大的原料 → `usedIn[0]`」,而 `usedIn` 是
+ * P1 之前的手寫字串、早就與菜單對不上(它會顯示「美式咖啡」,菜單上叫
+ * 「招牌美式咖啡」)。`usedIn` 已整個移除,這裡改讀真的賣出份數——
+ * 面板上的每一個商品名,現在都來自菜單本身。
+ */
 const hotItem = computed(() => {
-  if (!latest.value?.guests) return "尚無資料";
-  const winner = CAFE_INGREDIENTS.reduce((best, item) =>
-    (predictedDemand.value[item.id] ?? 0) > (predictedDemand.value[best.id] ?? 0) ? item : best,
-  CAFE_INGREDIENTS[0]);
-  return winner.usedIn[0] ?? winner.name;
+  const best = salesRanking.value[0];
+  if (!best || best.sold <= 0) return "尚無資料";
+  return best.name;
 });
+
+// ---------------------------------------------------------------------------
+// 🔴 缺貨 → 原料的歸因(使用者 2026-08-08:「不知道那個商品缺貨我要多進的是什麼原料」)
+//
+// 兩張表本來各說各話:銷售排行只講「品項缺貨 N 次」,常備量只講「原料庫存幾單位」。
+// 下面三個 computed 就是那條缺掉的橋,而且**兩邊講的是同一份資料**:
+//   1. `itemShortage()`  品項 → 當時真的缺的原料 + 要補多少(讀實際 `missedBy` 紀錄)
+//   2. `itemRecipe()`    品項 → 配方(沒缺過時的說明,也是舊存檔的退路)
+//   3. `ingredientUse()` / `blame` 原料 → 餵哪些品項 + 最近害幾單做不出來
+// ---------------------------------------------------------------------------
+
+/** 過去 7 日各原料害了幾單做不出來(來自逐位結帳當下記的 `missing`)。 */
+const shortageBlame = computed(() => cafeIngredientShortageBlame(state.cafe.sales, CAFE_SALES_WINDOW_DAYS));
+/** 某品項缺貨的實際原因(缺哪個原料、那些單子共需幾單位)。 */
+const itemShortage = (itemId: string) =>
+  cafeItemShortageCauses(state.cafe.sales, itemId, cafeMenu.value, CAFE_SALES_WINDOW_DAYS);
+/** 某品項的配方明細(唯一事實來源是 `recipe`)。 */
+const itemRecipe = (itemId: string) =>
+  cafeRecipeLines(cafeMenu.value.find((item) => item.id === itemId));
+/** 某原料餵得到的菜單品項(取代已移除的 `usedIn`)。 */
+const ingredientUse = (ingredientId: string) => cafeIngredientMenuUse(ingredientId, cafeMenu.value);
+/** 全店層級:過去 7 日最該補的原料(害最多單的那些),給排行卡的總結用。 */
+const topBlamed = computed(() => CAFE_INGREDIENTS
+  .map((item) => ({ id: item.id, name: item.name, times: shortageBlame.value[item.id] ?? 0 }))
+  .filter((row) => row.times > 0)
+  .sort((a, b) => b.times - a.times));
 
 const trackLabel = { coffee: "咖啡", bakery: "烘焙", pet: "寵物餐" } as const;
 const audienceLabel: Record<string, string> = {
@@ -229,9 +265,24 @@ watch(currentDay, (day) => {
   emit("done", `🎉 「${result.completed?.name ?? "咖啡廳研發"}」完成，新品已加入菜單`);
 }, { immediate: true });
 
+/**
+ * 常備量的輸入夾值。
+ *
+ * 🔴 2026-08-08 修 bug:上限原本是 **99**,但內建建議值裡咖啡豆就是 **130**,
+ * 「依上週銷量建議」在成長期之後更會算到 140+。玩家一按「套用常備量」,
+ * 咖啡豆就被無聲砍到 99 ⇒ 每天固定撲空、面板卻只寫「招牌美式咖啡 缺貨 N」,
+ * 正是使用者回報的「原料和商品對不起來、賺不太到錢」。
+ *
+ * 實測(招牌 Lv4 + 4 位額外店員、每天照建議值套用、56 天平均):
+ * 上限 99 ⇒ 撲空 4.4/日、營收 $1,796;上限 999 ⇒ 撲空 0.5/日、營收 $1,929。
+ *
+ * 999 不是平衡旋鈕而是防呆:名店期尖峰需求約 240 單位,999 遠高於它,
+ * 又擋得住手滑連按把數字灌成天文數字(進貨錢是當場真的扣的)。
+ */
+const MAX_STANDING_ORDER = 999;
 function safeUnits(value: unknown) {
   const n = Number(value);
-  return Number.isFinite(n) ? Math.min(99, Math.max(0, Math.floor(n))) : 0;
+  return Number.isFinite(n) ? Math.min(MAX_STANDING_ORDER, Math.max(0, Math.floor(n))) : 0;
 }
 
 function resetSuggestedOrders() {
@@ -435,23 +486,45 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             </div>
             <p v-if="!salesHasData" class="empty">還沒有銷售紀錄；營業一天之後這裡會列出每個品項賣了幾杯、又有幾次做不出來。</p>
             <template v-else>
-              <p class="section-note">依賣出杯數排序。<b class="miss-word">缺貨次數</b>是有人想買、你卻做不出來的次數——那是正在流掉的錢。</p>
+              <p class="section-note">依賣出杯數排序。<b class="miss-word">缺貨次數</b>是有人想買、你卻做不出來的次數——那是正在流掉的錢。每一列都寫著它吃哪些原料。</p>
               <ol class="rank-list">
                 <li v-for="(row, i) in salesRanking" :key="row.id" class="rank-row" :class="{ quiet: row.sold === 0 }">
-                  <span class="rank-no">{{ i + 1 }}</span>
-                  <div class="rank-body">
-                    <div class="rank-line">
-                      <b>{{ row.name }}</b>
-                      <span class="rank-sold">{{ row.sold }} 杯</span>
+                  <div class="rank-main">
+                    <span class="rank-no">{{ i + 1 }}</span>
+                    <div class="rank-body">
+                      <div class="rank-line">
+                        <b>{{ row.name }}</b>
+                        <span class="rank-sold">{{ row.sold }} 杯</span>
+                      </div>
+                      <div class="rank-bar"><i :style="{ width: `${soldBarWidth(row.sold)}%` }"></i></div>
                     </div>
-                    <div class="rank-bar"><i :style="{ width: `${soldBarWidth(row.sold)}%` }"></i></div>
+                    <span v-if="row.missed > 0" class="rank-miss">缺貨 {{ row.missed }}</span>
+                    <span v-else class="rank-ok">—</span>
                   </div>
-                  <span v-if="row.missed > 0" class="rank-miss">缺貨 {{ row.missed }}</span>
-                  <span v-else class="rank-ok">—</span>
+                  <!-- 🔴 缺貨 → 原料:讀的是結帳當下真的不夠的那項原料,不是拿配方猜的 -->
+                  <p v-if="row.missed > 0 && itemShortage(row.id).length" class="rank-fix">
+                    <span class="fix-tag">要補</span>
+                    <span v-for="cause in itemShortage(row.id)" :key="cause.id" class="fix-item">
+                      <b>{{ cause.name }}</b>
+                      <small v-if="cause.units > 0">每份 ×{{ cause.units }}，這 {{ cause.times }} 單共差 {{ cause.unitsShort }} 單位</small>
+                      <small v-else>害了 {{ cause.times }} 單</small>
+                    </span>
+                  </p>
+                  <p v-else class="rank-recipe">
+                    <span class="recipe-tag">配方</span>
+                    <span v-if="itemRecipe(row.id).length">
+                      <span v-for="line in itemRecipe(row.id)" :key="line.id" class="recipe-item">{{ line.name }} ×{{ line.units }}</span>
+                    </span>
+                    <span v-else class="recipe-empty">尚未登記</span>
+                  </p>
                 </li>
               </ol>
               <p v-if="salesTotalMissed > 0" class="alert warn miss-total">
-                過去 {{ salesDays }} 日共 {{ salesTotalMissed }} 位客人空手離開。照上面的排行把常備量往熱門品調。
+                過去 {{ salesDays }} 日共 {{ salesTotalMissed }} 位客人空手離開。
+                <template v-if="topBlamed.length">
+                  <br>最該補的是<b class="blame-name" v-for="(row, i) in topBlamed" :key="row.id">{{ i > 0 ? "、" : "" }}{{ row.name }}（{{ row.times }} 單）</b>——到下面的「常備量」把它調高。
+                </template>
+                <template v-else><br>照上面每一列的配方，把對應的原料常備量調高。</template>
               </p>
               <p v-else class="miss-none">過去 {{ salesDays }} 日沒有任何一位客人撲空，備料節奏抓得剛好。</p>
             </template>
@@ -465,11 +538,25 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 <button class="ghost suggest" @click="suggestOrdersFromSales">依上週銷量建議</button>
               </div>
             </div>
-            <p class="section-note">每天<b>開店前（09:00）</b>自動補到這個數量、當場扣款；先改草稿，按下套用才會保存。</p>
+            <p class="section-note">每天<b>開店前（09:00）</b>自動補到這個數量、當場扣款；先改草稿，按下套用才會保存。
+              每一列都寫著這個原料<b>餵哪些商品</b>，以及它最近<b class="miss-word">害幾單做不出來</b>。</p>
             <div class="order-list">
-              <label v-for="item in CAFE_INGREDIENTS" :key="item.id" class="order-row">
-                <span><b>{{ item.name }}</b><small>庫存 {{ state.cafe.stock[item.id] ?? 0 }} · 單價 ${{ item.unitPrice }}</small></span>
-                <input v-model.number="orderDraft[item.id]" type="number" inputmode="numeric" min="0" max="99" :aria-label="`${item.name}常備量`">
+              <label v-for="item in CAFE_INGREDIENTS" :key="item.id" class="order-row" :class="{ blamed: (shortageBlame[item.id] ?? 0) > 0 }">
+                <span>
+                  <b>{{ item.name }}</b>
+                  <small>庫存 {{ state.cafe.stock[item.id] ?? 0 }} · 單價 ${{ item.unitPrice }}</small>
+                  <!-- 🔴 原料 → 品項:從 recipe 推導,不再讀已移除的 usedIn 字串 -->
+                  <small class="order-use">
+                    <template v-if="ingredientUse(item.id).length">
+                      用於 <em v-for="(use, i) in ingredientUse(item.id)" :key="use.id">{{ i > 0 ? "、" : "" }}{{ use.name }} ×{{ use.units }}</em>
+                    </template>
+                    <template v-else>目前菜單沒有商品用到它</template>
+                  </small>
+                  <small v-if="(shortageBlame[item.id] ?? 0) > 0" class="order-blame">
+                    ⚠️ 過去 {{ salesDays }} 日害 {{ shortageBlame[item.id] }} 單做不出來
+                  </small>
+                </span>
+                <input v-model.number="orderDraft[item.id]" type="number" inputmode="numeric" min="0" :max="MAX_STANDING_ORDER" :aria-label="`${item.name}常備量`">
               </label>
             </div>
             <button class="primary compact" @click="applyStandingOrders">套用常備量</button>
@@ -638,7 +725,18 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .window { color: var(--text-dim); font-size: 10.5px; }
 .miss-word { color: #ff9fae; }
 .rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.rank-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
+.rank-row { padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
+.rank-main { display: flex; align-items: center; gap: 8px; }
+/* 🔴 缺貨 → 原料:整列裡最該被看到的一行,所以給它邊框與紅底 */
+.rank-fix { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; margin: 6px 0 0; padding: 5px 7px; border-radius: 7px; border: 1px solid rgba(232,101,122,0.4); background: rgba(232,101,122,0.1); font-size: 10px; line-height: 1.4; }
+.fix-tag { flex: none; padding: 1px 6px; border-radius: 999px; background: rgba(232,101,122,0.3); color: #ffd7dd; font-size: 9px; font-weight: 800; }
+.fix-item b { color: #ffacb7; font-size: 11px; }
+.fix-item small { margin-left: 4px; color: var(--text-dim); font-size: 9.5px; }
+.rank-recipe { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 5px 0 0; color: var(--text-dim); font-size: 9.5px; line-height: 1.4; }
+.recipe-tag { flex: none; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.06); color: #c7bdaf; font-size: 9px; font-weight: 700; }
+.recipe-item + .recipe-item::before { content: "・"; }
+.recipe-empty { font-style: italic; }
+.blame-name { color: #ffd7a8; }
 .rank-row.quiet { opacity: 0.5; }
 .rank-no { flex: none; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: rgba(255,180,94,0.16); color: #ffd39a; font-size: 9.5px; font-weight: 800; }
 .rank-body { flex: 1; min-width: 0; }
@@ -656,6 +754,11 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .order-row > span { min-width: 0; display: flex; flex-direction: column; }
 .order-row b { font-size: 12px; }
 .order-row small { color: var(--text-dim); font-size: 9.5px; }
+/* 🔴 原料 → 品項(從 recipe 推導)與「最近害幾單做不出來」 */
+.order-row.blamed { border: 1px solid rgba(232,101,122,0.42); background: rgba(232,101,122,0.07); }
+.order-use { margin-top: 2px; line-height: 1.4; }
+.order-use em { font-style: normal; color: #d9c7a8; }
+.order-blame { margin-top: 3px; color: #ffacb7 !important; font-weight: 700; line-height: 1.4; }
 .order-row input { margin-left: auto; width: 58px; min-width: 0; padding: 6px; border-radius: 7px; border: 1px solid var(--line); background: #17151f; color: var(--text); text-align: center; font: inherit; font-size: 12px; }
 .upgrade { padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.02); }
 .upgrade.owned { border-color: rgba(83,196,126,0.4); opacity: 0.76; }

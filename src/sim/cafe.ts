@@ -1845,3 +1845,169 @@ export function suggestStandingOrdersFromSales(
   }
   return { orders, days: window.length, fallback: false };
 }
+
+// ---------------------------------------------------------------------------
+// 15. 🔴 配方 ↔ 原料的雙向對照,與「缺貨歸因到原料」
+//     (使用者 2026-08-08 實玩回報:「原料和商品對不起來,不知道缺貨要多進什麼原料」)
+//
+// ## 唯一事實來源是 `recipe`
+//
+// `content/cafeIngredients.ts` 曾有一個手寫的 `usedIn: string[]` 字串欄位,
+// 那是 P1(逐位結帳)之前的裝飾文字,P1 之後就與菜單對不上了
+// (例:寫「美式咖啡」,菜單上其實叫「招牌美式咖啡」;寫「拿鐵」,實際是研發品
+// 「經典拉花拿鐵」)。玩家照它補貨就是在照一份過期的對照表補貨。
+// ⇒ 該欄位已整個移除,本節所有對照一律從 `CafeMenuItem.recipe` 推導,
+//   資料只有一份、永遠不可能對不上。
+//
+// ## 歸因用「實際發生的缺料紀錄」,不是靜態配方推算
+//
+// 同一個品項可能缺不同的料(拉花拿鐵可能缺咖啡豆、也可能缺牛奶),
+// 所以「這杯做不出來是因為哪個原料」只能靠當下 `checkoutCafeOrder()` 回的
+// `missing` 記下來。`CafeSalesDay.missedBy`(選填)就是那份紀錄,
+// 由 `tick.ts` 逐位結帳時累加;本節只負責讀它、彙總它。
+// 靜態配方(`cafeRecipeLines()`)僅用於「這個品項要什麼料」的說明,
+// **不拿來猜是哪一項見底**。
+// ---------------------------------------------------------------------------
+
+/** 一份商品用到的一種原料(從 `recipe` 推導)。 */
+export interface CafeRecipeLine {
+  id: string;
+  name: string;
+  /** 一份要用掉幾單位。 */
+  units: number;
+  unitPrice: number;
+}
+
+/**
+ * 某品項的配方明細:**這個商品要什麼原料、一份幾單位**。
+ * 順序照 `CAFE_INGREDIENTS` 宣告序(與常備量清單同序,玩家好對照)。
+ */
+export function cafeRecipeLines(item: Pick<CafeMenuItem, "recipe"> | null | undefined): CafeRecipeLine[] {
+  const recipe = item?.recipe ?? {};
+  const lines: CafeRecipeLine[] = [];
+  for (const ingredient of CAFE_INGREDIENTS) {
+    const units = safeUnits(recipe[ingredient.id as CafeIngredientId]);
+    if (units <= 0) continue;
+    lines.push({ id: ingredient.id, name: ingredient.name, units, unitPrice: ingredient.unitPrice });
+  }
+  return lines;
+}
+
+/** 某原料餵得到的一個菜單品項。 */
+export interface CafeIngredientUse {
+  /** 菜單品項 id。 */
+  id: string;
+  name: string;
+  /** 該品項一份要用掉幾單位。 */
+  units: number;
+}
+
+/**
+ * 反向對照:**這個原料餵哪些品項**(取代已移除的 `usedIn`)。
+ *
+ * 只列目前菜單上的品項——沒研發出來的東西不該出現在常備量清單的說明裡,
+ * 那正是舊 `usedIn` 讓玩家困惑的原因(它把「拿鐵」寫給還沒解鎖拉花拿鐵的新手看)。
+ * 順序照傳入菜單的順序(`menuItems()` 是 content 宣告序,穩定)。
+ */
+export function cafeIngredientMenuUse(
+  ingredientId: string,
+  menu: readonly CafeMenuItem[] = [],
+): CafeIngredientUse[] {
+  const uses: CafeIngredientUse[] = [];
+  for (const item of Array.isArray(menu) ? menu : []) {
+    if (!item || typeof item.id !== "string") continue;
+    const units = safeUnits((item.recipe ?? {})[ingredientId as CafeIngredientId]);
+    if (units <= 0) continue;
+    uses.push({ id: item.id, name: item.name, units });
+  }
+  return uses;
+}
+
+/** 一項「害某品項做不出來」的原料。 */
+export interface CafeShortageCause {
+  /** 原料 id。 */
+  id: string;
+  name: string;
+  /** 窗口內這項原料見底、害該品項做不出來的**份數**(來自實際 `missing` 紀錄)。 */
+  times: number;
+  /** 該品項一份要用幾單位(0 = 這項原料已不在現行配方裡,例如配方調整過的舊紀錄)。 */
+  units: number;
+  /** 那些做不出來的單子原本需要的總量 = `times × units` ⇒ 面板直接告訴玩家「要補多少」。 */
+  unitsShort: number;
+  unitPrice: number;
+}
+
+/** 讀 `missedBy` 的一格;缺欄位/壞資料一律當 0(舊存檔沒有這個欄位是正常的)。 */
+function missedByOf(record: CafeSalesDay | undefined, itemId: string): Record<string, number> {
+  const table = record?.missedBy;
+  if (!table || typeof table !== "object") return {};
+  const row = table[itemId];
+  return row && typeof row === "object" ? row : {};
+}
+
+/**
+ * 🔴 **某品項缺貨,到底是缺哪個原料、要補多少。**
+ *
+ * 資料來源是逐位結帳當下記下的 `missing`(`CafeSalesDay.missedBy`),
+ * 不是拿配方去猜——同一個品項在不同日子可能缺不同的料,只有實際紀錄講得出來。
+ *
+ * 回傳依「害的份數」由多到少;份數相同時照 `CAFE_INGREDIENTS` 宣告序。
+ * **沒有紀錄就回空陣列**(舊存檔、或這個品項根本沒缺過),
+ * 呼叫端要退回「這個品項的配方」時請自己呼叫 `cafeRecipeLines()`,
+ * 本函式不混入推測值。
+ */
+export function cafeItemShortageCauses(
+  sales: readonly CafeSalesDay[] = [],
+  itemId: string,
+  menu: readonly CafeMenuItem[] = [],
+  days: number = CAFE_SALES_WINDOW_DAYS,
+): CafeShortageCause[] {
+  const window = salesWindow(sales, days);
+  const item = (Array.isArray(menu) ? menu : []).find((entry) => entry && entry.id === itemId);
+  const causes: CafeShortageCause[] = [];
+  for (const ingredient of CAFE_INGREDIENTS) {
+    let times = 0;
+    for (const record of window) times += safeUnits(missedByOf(record, itemId)[ingredient.id]);
+    if (times <= 0) continue;
+    const units = safeUnits((item?.recipe ?? {})[ingredient.id as CafeIngredientId]);
+    causes.push({
+      id: ingredient.id,
+      name: ingredient.name,
+      times,
+      units,
+      unitsShort: times * units,
+      unitPrice: ingredient.unitPrice,
+    });
+  }
+  causes.sort((a, b) => b.times - a.times);
+  return causes;
+}
+
+/**
+ * 🔴 **每個原料最近害幾單做不出來**(常備量清單用)。
+ *
+ * 一張單同時缺兩種料時**兩邊都記一次**——語意是「這項原料當時不夠」,
+ * 而兩種料當時確實都不夠。它不是人次統計,是**補貨優先序**的量尺,
+ * 所以總和大於 `refused` 是正確的。
+ *
+ * 回傳只含 `> 0` 的原料,鍵順序不保證(呼叫端一律照 `CAFE_INGREDIENTS` 取值)。
+ */
+export function cafeIngredientShortageBlame(
+  sales: readonly CafeSalesDay[] = [],
+  days: number = CAFE_SALES_WINDOW_DAYS,
+): Record<string, number> {
+  const window = salesWindow(sales, days);
+  const out: Record<string, number> = {};
+  for (const record of window) {
+    const table = record.missedBy;
+    if (!table || typeof table !== "object") continue;
+    for (const row of Object.values(table)) {
+      if (!row || typeof row !== "object") continue;
+      for (const ingredient of CAFE_INGREDIENTS) {
+        const times = safeUnits(row[ingredient.id]);
+        if (times > 0) out[ingredient.id] = (out[ingredient.id] ?? 0) + times;
+      }
+    }
+  }
+  return out;
+}

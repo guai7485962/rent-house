@@ -10,6 +10,12 @@
  * 2. **只有 `perishable: true` 會過期損耗**(設計文件 §5.2 明訂,乾貨永不損耗)。
  * 3. 三個菜單分支(沖煮 / 烘焙 / 寵物餐點)各配一乾一鮮,
  *    所以沒有任何一條研發線可以完全避開缺貨,也沒有任何一條會被損耗整批掃掉。
+ * 4. 🔴 **這裡不放「這個原料用在哪些商品」的字串。**
+ *    2026-08-08 移除了手寫的 `usedIn: string[]`——它是 P1(逐位結帳)以前的裝飾文字,
+ *    P1 之後就與菜單對不上了(寫「美式咖啡」,菜單上其實是「招牌美式咖啡」;
+ *    寫「拿鐵」,實際是研發品「經典拉花拿鐵」),玩家照它補貨等於照過期的對照表補貨。
+ *    **商品 ↔ 原料的唯一事實來源是 `CafeMenuItem.recipe`**,雙向對照一律用
+ *    `sim/cafe.ts` 的 `cafeRecipeLines()` / `cafeIngredientMenuUse()` 推導。
  */
 
 /** 原料所屬的菜單分支,對應設計文件 §5.3 研發樹的三條主幹。 */
@@ -24,8 +30,6 @@ export interface CafeIngredient {
   /** 生鮮:會過期損耗。乾貨(false)永遠不損耗。 */
   perishable: boolean;
   category: CafeIngredientCategory;
-  /** 用在哪些品項(敘事與 UI 說明用,不參與計算)。 */
-  usedIn: readonly string[];
   /**
    * 每位客人的**平均**消耗量。
    *
@@ -76,7 +80,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 4,
     perishable: false,
     category: "brew",
-    usedIn: ["美式咖啡", "拿鐵", "手沖單品", "冷萃"],
     perGuest: 1.9,
     defaultStandingOrder: 130,
   },
@@ -86,7 +89,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 3,
     perishable: true,
     category: "brew",
-    usedIn: ["拿鐵", "造型拿鐵", "司康"],
     perGuest: 0.25,
     defaultStandingOrder: 24,
   },
@@ -96,7 +98,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 3,
     perishable: false,
     category: "bake",
-    usedIn: ["每日烘焙小點", "磅蛋糕", "司康", "貓咪造型餅乾"],
     perGuest: 0.7,
     defaultStandingOrder: 52,
   },
@@ -106,7 +107,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 10,
     perishable: true,
     category: "bake",
-    usedIn: ["每日烘焙小點", "磅蛋糕", "司康", "貓咪造型餅乾"],
     perGuest: 0.3,
     defaultStandingOrder: 24,
   },
@@ -116,7 +116,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 6,
     perishable: false,
     category: "pet",
-    usedIn: ["基礎寵物小點", "基礎寵物餐", "寵物友善點心"],
     perGuest: 0.55,
     defaultStandingOrder: 56,
   },
@@ -126,7 +125,6 @@ export const CAFE_INGREDIENTS = [
     unitPrice: 5,
     perishable: true,
     category: "pet",
-    usedIn: ["基礎寵物餐", "寵物友善點心", "寵物生日蛋糕"],
     perGuest: 0.2,
     defaultStandingOrder: 24,
   },

@@ -157,6 +157,14 @@ const unreadRooms = computed<Record<string, number>>(() => {
 
 initGame();
 onMounted(() => {
+  /**
+   * 後台快轉入口。「⏩ 1 天」的按鈕在 2026-08-08 依使用者要求從介面移除,
+   * 但**能力保留** —— 在瀏覽器 console 打 `rentDebug.fastForward(24)` 即可。
+   * 掛在 window 而不是留一顆隱藏按鈕:隱藏按鈕還是會佔版面與 tab 焦點。
+   */
+  (window as unknown as { rentDebug: Record<string, unknown> }).rentDebug = {
+    fastForward: (hours: number) => startFastForward(hours),
+  };
   // 分頁重新可見時補進度(掛機回來)
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("online", onOnline);
@@ -664,10 +672,14 @@ function onChainResolve(choiceId: string) {
         🐾 寵物<span v-if="petReviewNeeded">!</span>
       </button>
       <button class="cafe-btn" @click="showCafe = true">☕ 咖啡廳</button>
+      <!--
+        「⏩ 1 天」按鈕已於 2026-08-08 依使用者要求從介面移除(五顆擠一列,
+        `家具商店` 在 390px 下會被擠成兩行)。快轉 24 小時的能力**沒有拿掉**,
+        仍可從 dev console 呼叫 `rentDebug.fastForward(24)`(見 onMounted)。
+      -->
       <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(6)">
         {{ state.ffRemaining > 0 ? "⏳ 快轉中…" : "⏩ 6 小時" }}
       </button>
-      <button class="advance" :disabled="state.ffRemaining > 0" @click="startFastForward(24)">⏩ 1 天</button>
     </div>
     <p v-if="hasAnyPending" class="pending-hint">🔴 有房間出現突發事件,點進去做決定。</p>
     <transition name="fade">
@@ -1241,17 +1253,23 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .arrow { font-size: 10px; }
 
 .floor-actions { display: flex; gap: 8px; }
-.shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 14px; font-weight: 600; border-radius: 12px; padding: 13px 0; }
+/*
+ * 2026-08-08 版面調整:移除「⏩ 1 天」後由五顆變四顆。
+ * 三顆功能鍵等寬(flex:1)、快轉鍵略寬(flex:1.15)因為它是主要動作;
+ * 全部 `white-space: nowrap` —— 先前 `家具商店` 在 390px 下被擠成兩行,
+ * 那是本次要修的觀感問題,不是靠字級硬壓。
+ */
+.shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .shop-btn:hover { background: #322c46; }
-.pet-btn { flex: 0.75; background: var(--panel-2); border: 1px solid #d69963; color: #f0bd82; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
+.pet-btn { flex: 1; background: var(--panel-2); border: 1px solid #d69963; color: #f0bd82; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .pet-btn.warn { border-color: #ff8f70; color: #ffb39c; animation: pet-pulse 1.4s ease-in-out infinite; }
 .pet-btn span { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 50%; background: #d85f54; color: white; font-size: 10px; }
-.cafe-btn { flex: 0.8; background: var(--panel-2); border: 1px solid #9b765a; color: #e9ba91; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
+.cafe-btn { flex: 1; background: var(--panel-2); border: 1px solid #9b765a; color: #e9ba91; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .cafe-btn:hover { background: #33291f; }
 @keyframes pet-pulse { 50% { box-shadow: 0 0 0 3px rgba(255, 143, 112, 0.15); } }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .rpet { font-size: 11.5px; color: #e0b078; align-self: center; }
-.advance { flex: 1; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 0; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
+.advance { flex: 1.15; background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05; font-size: 14px; font-weight: 700; border-radius: 12px; padding: 13px 4px; white-space: nowrap; box-shadow: 0 6px 20px rgba(255, 180, 94, 0.25); transition: transform 0.1s; }
 .advance:hover { transform: translateY(-1px); }
 .advance:disabled { opacity: 0.55; transform: none; cursor: wait; }
 

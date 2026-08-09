@@ -14,11 +14,11 @@
 
 ---
 
-## 現在狀態(2026-08-08)
+## 現在狀態(2026-08-09)
 
-- **與 `origin/main` 同步,無未 push 的 commit,工作樹乾淨**
-- **最新驗證(全綠)**:`npm test` **98/98**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error
+- **有 1 個未 push 的 commit**(底部版面:收支／咖啡廳合併成一顆入口、樓層切換鈕併回動作列)
+- **最新驗證(全綠)**:`npm test` **99/99**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)
 
 ## 🎉 咖啡廳經營玩法重設計 P1～P4b 全數完成並部署
@@ -38,6 +38,10 @@
 其他已完成並部署:**店貓「辣椒」**(白底虎斑,全樓溜達,不送養、不佔寄養名額)、
 **月度事件鏈 3 → 8 條**(資料已抽到 `src/content/floorChains.ts`,補文本不必動 sim)、
 姓名池 20 → 72、應徵者帶寵物率 0.22 → 0.45、排太久放棄離開。
+
+**底部版面(2026-08-09)**:咖啡廳營運面板的入口已**併進底部導覽的「💰 收支」**
+(兩者是同一顆按鈕的兩個分頁,共用 `src/components/OpsTabs.vue`;在 1F 開啟時預選咖啡廳分頁);
+空出的位置給樓層切換鈕 ⇒ 樓層頁只剩兩排按鈕(動作列四顆 + 底部導覽四顆)。
 
 ## 下一步
 

@@ -2,8 +2,9 @@
 import { computed } from "vue";
 import { state, type TxnCategory } from "../store";
 import { netWorth, monthlyFlow, monthReport, dailyFlow } from "../sim/finance";
+import OpsTabs, { type OpsTab } from "./OpsTabs.vue";
 
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; switchTab: [tab: OpsTab] }>();
 
 const CAT_LABEL: Record<TxnCategory, string> = {
   rent: "租金收入", furniture: "家具", upgrade: "房間改建", event: "事件", upkeep: "管理費", cafe: "咖啡廳", other: "其他",
@@ -64,10 +65,7 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 <template>
   <div class="overlay" @click.self="emit('close')">
     <div class="panel">
-      <header class="head">
-        <div class="ttl">💰 收支</div>
-        <button class="x" @click="emit('close')">✕</button>
-      </header>
+      <OpsTabs active="finance" @select="emit('switchTab', $event)" @close="emit('close')" />
 
       <div class="balance">
         <span class="lbl">目前餘額</span>
@@ -150,9 +148,7 @@ const money = (n: number) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocale
 .overlay { position: fixed; inset: 0; z-index: 120; background: rgba(8,7,12,0.72); backdrop-filter: blur(3px); display: flex; align-items: flex-end; justify-content: center; }
 .panel { width: 100%; max-width: 430px; max-height: 84vh; background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px 16px 0 0; display: flex; flex-direction: column; animation: up 0.25s ease-out; }
 @keyframes up { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.head { display: flex; align-items: center; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
-.ttl { font-weight: 700; font-size: 15px; }
-.x { margin-left: auto; background: none; color: var(--text-dim); font-size: 16px; }
+/* 2026-08-09:標題列換成與咖啡廳面板共用的 `OpsTabs`(兩者現在是同一顆入口的兩個分頁)。 */
 
 .balance { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 6px; }
 .balance .lbl { font-size: 12px; color: var(--text-dim); }

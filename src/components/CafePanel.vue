@@ -44,8 +44,9 @@ import { CAFE_PLACEMENT_REGIONS, cafeAmbiancePoints, cafeSeatSpots, getPlacement
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
+import OpsTabs, { type OpsTab } from "./OpsTabs.vue";
 
-const emit = defineEmits<{ close: []; done: [text: string] }>();
+const emit = defineEmits<{ close: []; done: [text: string]; switchTab: [tab: OpsTab] }>();
 
 const initialOrders = Object.keys(state.cafe.standingOrders).length
   ? state.cafe.standingOrders
@@ -368,13 +369,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 <template>
   <div class="overlay" @click.self="emit('close')">
     <section class="panel" aria-label="咖啡廳營運面板">
-      <header class="head">
-        <div>
-          <div class="eyebrow">1F PET CAFÉ</div>
-          <h2>☕ 寵物咖啡廳營運</h2>
-        </div>
-        <button class="close" aria-label="關閉咖啡廳面板" @click="emit('close')">✕</button>
-      </header>
+      <OpsTabs active="cafe" @select="emit('switchTab', $event)" @close="emit('close')" />
 
       <div class="body">
         <section v-if="!state.cafe.open" class="opening-card">
@@ -677,10 +672,8 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .overlay { position: fixed; inset: 0; z-index: 138; background: rgba(8,7,12,0.74); backdrop-filter: blur(3px); display: flex; align-items: flex-end; justify-content: center; }
 .panel { width: 100%; max-width: 430px; max-height: 88vh; background: var(--panel-2); border: 1px solid var(--line); border-radius: 18px 18px 0 0; display: flex; flex-direction: column; animation: up 0.24s ease-out; overflow: hidden; }
 @keyframes up { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.head { display: flex; align-items: center; gap: 12px; padding: 14px 16px 11px; border-bottom: 1px solid var(--line); background: linear-gradient(135deg, rgba(207,139,91,0.16), rgba(91,126,96,0.12)); }
-.head h2 { margin: 1px 0 0; font-size: 16px; }
-.eyebrow, .kicker { color: #d9a778; font-size: 9px; font-weight: 800; letter-spacing: 1.7px; }
-.close { margin-left: auto; background: none; color: var(--text-dim); font-size: 17px; padding: 8px; }
+/* 2026-08-09:標題列換成與收支面板共用的 `OpsTabs`(兩者現在是同一顆入口的兩個分頁)。 */
+.kicker { color: #d9a778; font-size: 9px; font-weight: 800; letter-spacing: 1.7px; }
 .body { overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px calc(22px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 11px; }
 .opening-card, .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 13px; }
 .opening-card { text-align: center; padding: 20px 16px 16px; background: linear-gradient(145deg, rgba(191,119,70,0.13), rgba(82,127,94,0.12)); }

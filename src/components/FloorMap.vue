@@ -1,3 +1,16 @@
+<script lang="ts">
+/**
+ * 樓層切換鈕的目的地文案。按鈕本體 2026-08-09 起住在 `App.vue` 的底部動作列,
+ * 但文案只寫在本檔 —— App 直接 import 這張表,不照抄一份三元式。
+ *
+ * `label` 是完整文案;`short` 是給那排四顆動作鍵用的短版(390px 下塞不進完整文案)。
+ */
+export const FLOOR_PAGE_NAV = {
+  "3f": { target: "1f", icon: "☕", label: "前往 1F 寵物咖啡廳", short: "1F 咖啡廳" },
+  "1f": { target: "3f", icon: "🏠", label: "返回 3F 租屋樓", short: "3F 租屋樓" },
+} as const;
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { composeFloor, drawFootprintPreview, type FloorMark } from "../floor/floorScene";
@@ -52,9 +65,7 @@ const activeFloorView = computed(() => FLOOR_VIEWS[floorView.value]);
 const canvasWidth = computed(() => activeFloorView.value.rect.width);
 const canvasHeight = computed(() => activeFloorView.value.rect.height);
 const isTenantFloor = computed(() => floorView.value === "3f");
-const floorPageNavigation = computed(() => isTenantFloor.value
-  ? { target: "1f" as const, icon: "☕", label: "前往 1F 寵物咖啡廳" }
-  : { target: "3f" as const, icon: "🏠", label: "返回 3F 租屋樓" });
+const floorPageNavigation = computed(() => FLOOR_PAGE_NAV[floorView.value]);
 
 /** 玩家看到的是兩個獨立樓層頁面；底層仍只切換共用 grid 的固定 viewport。 */
 function switchFloorPage() {
@@ -68,7 +79,8 @@ function switchFloorPage() {
  * 為什麼不是把按鈕留在本元件、只挪到地圖下方 —— 試過了,會被 `.floor-main` 的
  * `overflow: hidden` 整顆裁掉(canvas 已經吃滿高度)。與其跟 overflow 纏鬥,
  * 不如放進本來就在畫面底部、也不受該裁切影響的動作列。
- * `floorView` 仍是本元件的區域狀態,只把切換動作 expose 出去。
+ * `floorView` 仍是本元件的區域狀態,只把切換動作 expose 出去;
+ * 按鈕文案由本檔 export 的 `FLOOR_PAGE_NAV` 提供,App 不另寫一份。
  */
 defineExpose({ switchFloorPage });
 

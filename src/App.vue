@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import FloorMap from "./components/FloorMap.vue";
+import FloorMap, { FLOOR_PAGE_NAV } from "./components/FloorMap.vue";
 import PixelDollhouse from "./components/PixelDollhouse.vue";
 import LogFeed from "./components/LogFeed.vue";
 import DecisionModal from "./components/DecisionModal.vue";
@@ -18,6 +18,7 @@ import UpgradePanel from "./components/UpgradePanel.vue";
 import FeedPanel from "./components/FeedPanel.vue";
 import PetPanel from "./components/PetPanel.vue";
 import CafePanel from "./components/CafePanel.vue";
+import type { OpsTab } from "./components/OpsTabs.vue";
 import { listRelationships } from "./sim/social";
 import type { RoomInfo } from "./floor/map";
 import { roomAttributes } from "./sim/placements";
@@ -85,15 +86,29 @@ const showShop = ref(false);
 const floorView = ref<"3f" | "1f">("3f");
 /** 樓層切換鈕移到底部動作區後，由這個 ref 呼叫 FloorMap 內的 switchFloorPage()。 */
 const floorMapRef = ref<{ switchFloorPage: () => void } | null>(null);
+/** 按鈕文案讀 FloorMap export 的那張表，本檔不另寫一份。 */
+const floorNav = computed(() => FLOOR_PAGE_NAV[floorView.value]);
 const showRels = ref(false);
-const showFinance = ref(false);
 const showNotices = ref(false);
 const showSettings = ref(false);
 const showLegacy = ref(false);
 const showRent = ref(false);
 const showLivingDetails = ref(false);
 const showPets = ref(false);
-const showCafe = ref(false);
+/**
+ * 2026-08-09:「收支」與「咖啡廳營運」合併成同一顆入口(使用者要求),
+ * 用一個分頁 id 取代原本的 showFinance / showCafe 兩個 boolean
+ * ——同一時間只會有一個分頁在畫面上,不可能兩個面板疊在一起。
+ * null = 沒開。
+ */
+const opsTab = ref<OpsTab | null>(null);
+/**
+ * 從底部導覽開啟時預選哪個分頁：跟著玩家目前在看的樓層走
+ * （與家具商店的場地分頁同一套規則）——在一樓時開的就是咖啡廳，不用多按一次。
+ */
+function openOps() {
+  opsTab.value = floorView.value === "1f" ? "cafe" : "finance";
+}
 /** 開啟中的改建面板房間 id(佔用房從房間細看進、空房從招租面板進) */
 const upgradeRoom = ref<string | null>(null);
 /** 只有「承租人」能談房租(同居者不付租) */
@@ -670,22 +685,18 @@ function onChainResolve(choiceId: string) {
     </div>
 
     <!--
-      2026-08-09:樓層切換鈕從 FloorMap 的頁首搬到這裡(使用者要求放到畫面下半部)。
-      獨立一列而不是擠進下面那四顆——它是「換場景」不是「開面板」,語意不同,
-      而且四顆已經是 390px 塞得下的極限。
+      2026-08-09 二次調整:樓層切換鈕併進下面這一列(使用者反映底部變成三排按鈕)。
+      能併進來是因為「☕ 咖啡廳」同時搬去底部導覽跟「收支」共用一顆入口,空出一個位置;
+      仍然是四顆一列。文案讀 FloorMap export 的 FLOOR_PAGE_NAV 短版(390px 才塞得下)。
     -->
-    <button class="floor-switch" @click="floorMapRef?.switchFloorPage()">
-      <span class="floor-switch-icon">{{ floorView === "3f" ? "☕" : "🏠" }}</span>
-      <span>{{ floorView === "3f" ? "前往 1F 寵物咖啡廳" : "返回 3F 租屋樓" }}</span>
-      <span class="floor-switch-arrow" aria-hidden="true">›</span>
-    </button>
-
     <div class="floor-actions">
+      <button class="floor-switch" @click="floorMapRef?.switchFloorPage()">
+        {{ floorNav.icon }} {{ floorNav.short }}
+      </button>
       <button class="shop-btn" @click="showShop = true">🛒 家具商店</button>
       <button class="pet-btn" :class="{ warn: petReviewNeeded }" @click="showPets = true">
         🐾 寵物<span v-if="petReviewNeeded">!</span>
       </button>
-      <button class="cafe-btn" @click="showCafe = true">☕ 咖啡廳</button>
       <!--
         「⏩ 1 天」按鈕已於 2026-08-08 依使用者要求從介面移除(五顆擠一列,
         `家具商店` 在 390px 下會被擠成兩行)。快轉 24 小時的能力**沒有拿掉**,
@@ -976,7 +987,11 @@ function onChainResolve(choiceId: string) {
       <em v-if="pendingCount" class="nbadge red">{{ pendingCount }}</em>
       <em v-else-if="feedUnread && view !== 'feed'" class="nbadge">{{ feedUnread > 99 ? "99+" : feedUnread }}</em>
     </button>
-    <button :class="{ on: showFinance }" @click="showFinance = true">
+    <!--
+      2026-08-09:這一顆同時是「收支」與「☕ 咖啡廳營運」的入口(使用者要求合併),
+      面板裡用 OpsTabs 互切;在一樓時預選咖啡廳分頁,所以一樓仍是一鍵到營運畫面。
+    -->
+    <button :class="{ on: opsTab !== null }" @click="openOps()">
       <span class="nav-ic">💰</span><span class="nav-lb">收支</span>
     </button>
     <button :class="{ on: showRels }" @click="showRels = true">
@@ -1015,9 +1030,10 @@ function onChainResolve(choiceId: string) {
   <!-- 在 1F 開商店 → 預設咖啡廳分頁(玩家正要佈置的就是眼前這層) -->
   <FurnitureShop v-if="showShop" :initial-venue="floorView === '1f' ? 'cafe' : 'rent'" @close="showShop = false" />
   <RelationshipsPanel v-if="showRels" @close="showRels = false" />
-  <FinancePanel v-if="showFinance" @close="showFinance = false" />
+  <!-- 收支／咖啡廳營運:同一顆入口的兩個分頁,同一時間只掛一個 -->
+  <FinancePanel v-if="opsTab === 'finance'" @close="opsTab = null" @switch-tab="opsTab = $event" />
   <PetPanel v-if="showPets" @close="showPets = false" @done="toast($event, 3600)" />
-  <CafePanel v-if="showCafe" @close="showCafe = false" @done="toast($event, 3600)" />
+  <CafePanel v-if="opsTab === 'cafe'" @close="opsTab = null" @switch-tab="opsTab = $event" @done="toast($event, 3600)" />
   <CohabitModal
     v-if="state.pendingCohabit"
     :a-name="state.pendingCohabit.aName"
@@ -1266,42 +1282,25 @@ main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; flex-directi
 .summary .arc-sum { font-size: 12px; color: #a9d1ff; line-height: 1.6; }
 .arrow { font-size: 10px; }
 
-.floor-actions { display: flex; gap: 8px; }
-/* 2026-08-09:樓層切換鈕。獨立一列、撐滿寬度,字級與下面那排動作鍵同一量級。 */
-.floor-switch {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  color: #fff4df;
-  background: rgba(255, 180, 94, 0.14);
-  border: 1px solid rgba(255, 180, 94, 0.62);
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  flex-shrink: 0;
-}
+.floor-actions { display: flex; gap: 6px; }
+/*
+ * 2026-08-09:樓層切換鈕併回這一列(原本自己佔一排,底部變成三排太擠)。
+ * 給它最寬的 flex —— 文案「1F 咖啡廳」比其他三顆長,而且它是換場景、要好按。
+ */
+.floor-switch { flex: 1.3; background: rgba(255, 180, 94, 0.14); border: 1px solid rgba(255, 180, 94, 0.62); color: #fff4df; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .floor-switch:hover { background: rgba(255, 180, 94, 0.22); }
-.floor-switch-icon { font-size: 15px; }
-.floor-switch-arrow { color: var(--accent); font-size: 18px; line-height: 1; }
 
 /*
  * 2026-08-08 版面調整:移除「⏩ 1 天」後由五顆變四顆。
- * 三顆功能鍵等寬(flex:1)、快轉鍵略寬(flex:1.15)因為它是主要動作;
- * 全部 `white-space: nowrap` —— 先前 `家具商店` 在 390px 下被擠成兩行,
- * 那是本次要修的觀感問題,不是靠字級硬壓。
+ * 2026-08-09:「☕ 咖啡廳」搬去底部導覽與「收支」共用一顆入口,空出的位置給樓層切換鈕,
+ * 仍然是四顆一列。字級與 `white-space: nowrap` 沿用 —— 先前 `家具商店` 在 390px
+ * 下被擠成兩行,那是不能回頭的觀感問題。
  */
 .shop-btn { flex: 1; background: var(--panel-2); border: 1px solid var(--accent-2); color: #cdbcff; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .shop-btn:hover { background: #322c46; }
 .pet-btn { flex: 1; background: var(--panel-2); border: 1px solid #d69963; color: #f0bd82; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
 .pet-btn.warn { border-color: #ff8f70; color: #ffb39c; animation: pet-pulse 1.4s ease-in-out infinite; }
 .pet-btn span { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 3px; border-radius: 50%; background: #d85f54; color: white; font-size: 10px; }
-.cafe-btn { flex: 1; background: var(--panel-2); border: 1px solid #9b765a; color: #e9ba91; font-size: 13px; font-weight: 600; border-radius: 12px; padding: 13px 4px; white-space: nowrap; }
-.cafe-btn:hover { background: #33291f; }
 @keyframes pet-pulse { 50% { box-shadow: 0 0 0 3px rgba(255, 143, 112, 0.15); } }
 .rbond { font-size: 11.5px; color: #f0a8c6; margin-left: auto; align-self: center; }
 .rpet { font-size: 11.5px; color: #e0b078; align-self: center; }

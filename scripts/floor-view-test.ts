@@ -32,14 +32,22 @@ check(
   "FloorMap 仍是唯一決定目的地文案的地方,並把切換動作 expose 出去",
   source.includes('label: "前往 1F 寵物咖啡廳"')
     && source.includes('label: "返回 3F 租屋樓"')
+    && source.includes("export const FLOOR_PAGE_NAV")
     && source.includes("defineExpose({ switchFloorPage })"),
 );
+// 2026-08-09 二次調整:按鈕併進動作列後文案改用短版,App 從 FloorMap import `FLOOR_PAGE_NAV`
+// 而不是照抄三元式 ⇒ 這裡改驗「App 不自己寫文案」,不變式仍是「每層只有一顆目的地按鈕」。
 check(
   "3F 只有前往咖啡廳按鈕、1F 只有返回租屋樓按鈕(按鈕在 App 的底部動作區)",
-  appSource.includes('floorMapRef?.switchFloorPage()')
-    && appSource.includes('floorView === "3f" ? "前往 1F 寵物咖啡廳" : "返回 3F 租屋樓"')
-    // 兩個文案是三元的兩端 ⇒ 同一時間只會出現一顆,不可能兩顆並存
+  appSource.includes('import FloorMap, { FLOOR_PAGE_NAV } from "./components/FloorMap.vue"')
+    && appSource.includes("FLOOR_PAGE_NAV[floorView.value]")
+    && appSource.includes("{{ floorNav.icon }} {{ floorNav.short }}")
+    // 一顆按鈕、一個觸發點 ⇒ 同一時間只會出現一顆,不可能兩顆並存
     && (appSource.match(/floorMapRef\?\.switchFloorPage\(\)/g) ?? []).length === 1,
+);
+check(
+  "App 不自己寫一份目的地文案(避免與 FloorMap 走鐘)",
+  !appSource.includes("前往 1F 寵物咖啡廳") && !appSource.includes("返回 3F 租屋樓"),
 );
 check(
   "不再使用同頁雙 tab 樣式",

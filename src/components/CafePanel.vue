@@ -87,6 +87,32 @@ const eligiblePets = computed(() => permanentHousePetEntries().map(([id, pet]) =
 const vacantRooms = computed(() => Object.keys(ROOM_APPEARANCE)
   .filter((roomId) => isVacant(roomId))
   .map((roomId) => ({ id: roomId, label: `${roomId.replace(/^r/, "")} 房` })));
+/**
+ * 2026-08-09:面板有九個區塊,使用者反映要一路捲很久才找得到常備量。
+ * 改成可收合,**預設只展開「營運觀察」與「常備量」**(一個是看狀況、一個是天天要調的);
+ * 其餘點標題列展開。收起時標題列右邊那顆數字/摘要仍看得到,所以不必展開就知道要不要點。
+ *
+ * 兩張詢問卡是例外:有顧客在等回覆時預設就展開 —— 它們是**會過期的決策**,
+ * 收起來等於讓玩家漏掉。開著面板時才進來的顧客由下面的 watch 補開。
+ */
+const openSections = reactive({
+  today: true,
+  research: false,
+  menu: false,
+  sales: false,
+  stock: true,
+  staff: false,
+  invest: false,
+  adoption: adoptGuests.value.length > 0,
+  rent: rentGuests.value.length > 0,
+});
+type CafeSectionId = keyof typeof openSections;
+function toggleSection(id: CafeSectionId) {
+  openSections[id] = !openSections[id];
+}
+watch(() => adoptGuests.value.length, (n, prev) => { if (n > prev) openSections.adoption = true; });
+watch(() => rentGuests.value.length, (n, prev) => { if (n > prev) openSections.rent = true; });
+
 const predictedDemand = computed(() => dailyDemand(latest.value?.guests ?? 0));
 const predictedSupply = computed(() => consumeStock(state.cafe.stock, predictedDemand.value));
 const predictedShortages = computed(() => predictedSupply.value.shortages.map((id) =>
@@ -154,6 +180,8 @@ const itemRecipe = (itemId: string) =>
 /** 某原料餵得到的菜單品項(取代已移除的 `usedIn`)。 */
 const ingredientUse = (ingredientId: string) => cafeIngredientMenuUse(ingredientId, cafeMenu.value);
 /** 全店層級:過去 7 日最該補的原料(害最多單的那些),給排行卡的總結用。 */
+/** 收起「常備量」時,標題列要能直接看出「有沒有東西該補」。 */
+const blamedIngredients = computed(() => CAFE_INGREDIENTS.filter((item) => (shortageBlame.value[item.id] ?? 0) > 0));
 const topBlamed = computed(() => CAFE_INGREDIENTS
   .map((item) => ({ id: item.id, name: item.name, times: shortageBlame.value[item.id] ?? 0 }))
   .filter((row) => row.times > 0)
@@ -291,6 +319,15 @@ function resetSuggestedOrders() {
 }
 
 /**
+ * 常備量的 ±1／±5 快捷(使用者要求)。動的是**草稿**,語意與直接打字完全相同
+ * ——仍然要按「套用常備量」才會寫進存檔。夾在 0 ～ `MAX_STANDING_ORDER`,
+ * 草稿是空字串或 NaN 時(輸入框被清空)當 0 起算。
+ */
+function bumpOrder(id: string, delta: number) {
+  orderDraft[id] = safeUnits(safeUnits(orderDraft[id]) + delta);
+}
+
+/**
  * 拍板 Q3 的懶人路線:一鍵把常備量草稿設成「過去 7 個遊戲日的實際消耗」。
  *
  * 算式與 fallback 全部在 `suggestStandingOrdersFromSales()`(純函式、有測試);
@@ -398,10 +435,12 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
           </section>
 
           <section class="card status-card">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.today }" :aria-expanded="openSections.today" @click="toggleSection('today')">
               <div><span class="kicker">TODAY</span><h3>營運觀察</h3></div>
               <span class="capacity">產能 {{ capability.capacity }} 單</span>
-            </div>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.today">
             <div class="status-grid">
               <div><span>熱銷品</span><b>{{ hotItem }}</b></div>
               <div><span>最近營收</span><b>{{ latest ? money(latest.revenue) : "尚無資料" }}</b></div>
@@ -415,13 +454,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <p v-if="predictedShortages.length" class="alert bad">⚠️ 依最近客流預估會缺：{{ predictedShortages.join("、") }}</p>
             <p v-else-if="latest" class="alert good">✓ 目前庫存足以應付最近一次的客流。</p>
             <p v-else class="empty">完成第一次日結後，這裡會顯示熱銷品與缺貨預估。</p>
+            </template>
           </section>
 
           <section class="card research-card" aria-label="咖啡廳研發">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.research }" :aria-expanded="openSections.research" @click="toggleSection('research')">
               <div><span class="kicker">RESEARCH</span><h3>新品研發</h3></div>
               <span class="research-count">{{ completedResearchCount }} / {{ CAFE_RESEARCH.length }}</span>
-            </div>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.research">
             <p class="section-note">同時只能進行一項；倒數以遊戲日計算，完成後新品會直接加入菜單。</p>
 
             <article v-if="state.cafe.research" class="active-research">
@@ -458,13 +500,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               </article>
             </div>
             <p v-else class="research-paused">其餘研發已暫停選擇；目前項目完成後會重新開放。</p>
+            </template>
           </section>
 
           <section class="card menu-card" aria-label="咖啡廳菜單">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.menu }" :aria-expanded="openSections.menu" @click="toggleSection('menu')">
               <div><span class="kicker">MENU</span><h3>目前菜單</h3></div>
               <span class="ticket">平均客單 ${{ cafeAverageTicket }}</span>
-            </div>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.menu">
             <div class="menu-list">
               <div v-for="item in cafeMenu" :key="item.id" class="menu-item">
                 <span><b>{{ item.name }}</b><small>{{ audienceLabel[item.audience] }}</small></span>
@@ -472,13 +517,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               </div>
             </div>
             <p class="menu-note">完成 2／5 項第二層研發時，平均客單會提升到 $37／$38。</p>
+            </template>
           </section>
 
           <section class="card sales-card" aria-label="咖啡廳銷售排行">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.sales }" :aria-expanded="openSections.sales" @click="toggleSection('sales')">
               <div><span class="kicker">SALES</span><h3>銷售排行</h3></div>
-              <span class="window">過去 {{ salesDays }} 日</span>
-            </div>
+              <span class="window">過去 {{ salesDays }} 日<template v-if="salesTotalMissed > 0"> · 缺貨 {{ salesTotalMissed }}</template></span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.sales">
             <p v-if="!salesHasData" class="empty">還沒有銷售紀錄；營業一天之後這裡會列出每個品項賣了幾杯、又有幾次做不出來。</p>
             <template v-else>
               <p class="section-note">依賣出杯數排序。<b class="miss-word">缺貨次數</b>是有人想買、你卻做不出來的次數——那是正在流掉的錢。每一列都寫著它吃哪些原料。</p>
@@ -523,20 +571,28 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               </p>
               <p v-else class="miss-none">過去 {{ salesDays }} 日沒有任何一位客人撲空，備料節奏抓得剛好。</p>
             </template>
+            </template>
           </section>
 
           <section class="card">
-            <div class="section-head">
+            <!-- 「恢復建議／依上週銷量建議」不能留在標題列:那會變成 button 裡包 button。 -->
+            <button class="section-head" :class="{ collapsed: !openSections.stock }" :aria-expanded="openSections.stock" @click="toggleSection('stock')">
               <div><span class="kicker">STOCK</span><h3>常備量</h3></div>
-              <div class="order-tools">
-                <button class="ghost" @click="resetSuggestedOrders">恢復建議</button>
-                <button class="ghost suggest" @click="suggestOrdersFromSales">依上週銷量建議</button>
-              </div>
+              <span class="blamed-count" v-if="blamedIngredients.length">⚠️ {{ blamedIngredients.length }} 項該補</span>
+              <span class="window" v-else>{{ CAFE_INGREDIENTS.length }} 項原料</span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.stock">
+            <div class="order-tools">
+              <button class="ghost" @click="resetSuggestedOrders">恢復建議</button>
+              <button class="ghost suggest" @click="suggestOrdersFromSales">依上週銷量建議</button>
             </div>
             <p class="section-note">每天<b>開店前（09:00）</b>自動補到這個數量、當場扣款；先改草稿，按下套用才會保存。
               每一列都寫著這個原料<b>餵哪些商品</b>，以及它最近<b class="miss-word">害幾單做不出來</b>。</p>
             <div class="order-list">
-              <label v-for="item in CAFE_INGREDIENTS" :key="item.id" class="order-row" :class="{ blamed: (shortageBlame[item.id] ?? 0) > 0 }">
+              <!-- 2026-08-09:改 label → div。加了 ± 鈕之後,button 包在 label 裡點一下會連帶 focus 輸入框;
+                   輸入框本來就有 aria-label,不需要 label 的隱含關聯。 -->
+              <div v-for="item in CAFE_INGREDIENTS" :key="item.id" class="order-row" :class="{ blamed: (shortageBlame[item.id] ?? 0) > 0 }">
                 <span>
                   <b>{{ item.name }}</b>
                   <small>庫存 {{ state.cafe.stock[item.id] ?? 0 }} · 單價 ${{ item.unitPrice }}</small>
@@ -551,17 +607,26 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                     ⚠️ 過去 {{ salesDays }} 日害 {{ shortageBlame[item.id] }} 單做不出來
                   </small>
                 </span>
-                <input v-model.number="orderDraft[item.id]" type="number" inputmode="numeric" min="0" :max="MAX_STANDING_ORDER" :aria-label="`${item.name}常備量`">
-              </label>
+                <div class="order-stepper">
+                  <button class="step" :disabled="safeUnits(orderDraft[item.id]) <= 0" :aria-label="`${item.name}常備量減 5`" @click="bumpOrder(item.id, -5)">−5</button>
+                  <button class="step" :disabled="safeUnits(orderDraft[item.id]) <= 0" :aria-label="`${item.name}常備量減 1`" @click="bumpOrder(item.id, -1)">−1</button>
+                  <input v-model.number="orderDraft[item.id]" type="number" inputmode="numeric" min="0" :max="MAX_STANDING_ORDER" :aria-label="`${item.name}常備量`">
+                  <button class="step" :disabled="safeUnits(orderDraft[item.id]) >= MAX_STANDING_ORDER" :aria-label="`${item.name}常備量加 1`" @click="bumpOrder(item.id, 1)">+1</button>
+                  <button class="step" :disabled="safeUnits(orderDraft[item.id]) >= MAX_STANDING_ORDER" :aria-label="`${item.name}常備量加 5`" @click="bumpOrder(item.id, 5)">+5</button>
+                </div>
+              </div>
             </div>
             <button class="primary compact" @click="applyStandingOrders">套用常備量</button>
+            </template>
           </section>
 
           <section class="card staff-card" aria-label="咖啡廳人力">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.staff }" :aria-expanded="openSections.staff" @click="toggleSection('staff')">
               <div><span class="kicker">STAFF</span><h3>人力</h3></div>
-              <span class="staff-wage">日薪合計 −${{ capability.dailyWage.toLocaleString() }}</span>
-            </div>
+              <span class="staff-wage">{{ staffCount }} 人 · 日薪 −${{ capability.dailyWage.toLocaleString() }}</span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.staff">
             <div class="staff-line">
               <span class="staff-faces" aria-hidden="true">{{ "👤".repeat(Math.min(6, staffCount)) }}<b v-if="staffCount > 6">×{{ staffCount }}</b></span>
               <span class="staff-count">目前 {{ staffCount }} 人<small>（首位店員的薪水已含在每日固定開銷裡）</small></span>
@@ -589,14 +654,17 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 {{ extraStaffCount <= 0 ? "只剩首位店員" : "資遣" }}
               </button>
             </div>
+            </template>
           </section>
 
           <section class="card">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.invest }" :aria-expanded="openSections.invest" @click="toggleSection('invest')">
               <div><span class="kicker">INVEST</span><h3>永久投資</h3></div>
-              <span class="balance">${{ state.money.toLocaleString() }}</span>
-            </div>
-            <p class="section-note">一次性、不可退；購買後永久生效。</p>
+              <span class="balance">{{ state.cafe.upgrades.length }} / {{ CAFE_UPGRADES.length }} 已完成</span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.invest">
+            <p class="section-note">一次性、不可退；購買後永久生效。目前資金 <b>${{ state.money.toLocaleString() }}</b>。</p>
             <div class="upgrade-list">
               <article v-for="item in CAFE_UPGRADES" :key="item.id" class="upgrade" :class="{ owned: state.cafe.upgrades.includes(item.id) }">
                 <div class="upgrade-head">
@@ -615,13 +683,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 </button>
               </article>
             </div>
+            </template>
           </section>
 
           <section class="card adoption-card">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.adoption }" :aria-expanded="openSections.adoption" @click="toggleSection('adoption')">
               <div><span class="kicker">ADOPTION</span><h3>認養詢問</h3></div>
               <span class="count">{{ adoptGuests.length }}</span>
-            </div>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.adoption">
             <p v-if="!adoptGuests.length" class="empty">目前沒有顧客詢問認養。</p>
             <article v-for="guest in adoptGuests" :key="guest.id" class="adoption">
               <div class="guest-line"><span>💗</span><b>{{ guest.name }}</b><small>想認識一隻樓寵物</small></div>
@@ -637,13 +708,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 <button class="accept" :disabled="!eligiblePets.length" @click="onAcceptAdoption(guest)">接受認養</button>
               </div>
             </article>
+            </template>
           </section>
 
           <section class="card rent-card">
-            <div class="section-head">
+            <button class="section-head" :class="{ collapsed: !openSections.rent }" :aria-expanded="openSections.rent" @click="toggleSection('rent')">
               <div><span class="kicker">RENT</span><h3>租屋詢問</h3></div>
               <span class="count rent-count">{{ rentGuests.length }}</span>
-            </div>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.rent">
             <p v-if="!rentGuests.length" class="empty">目前沒有顧客詢問租屋。</p>
             <article v-for="guest in rentGuests" :key="guest.id" class="rent-inquiry">
               <div class="guest-line"><span>🔑</span><b>{{ guest.name }}</b><small>在打聽樓上有沒有空房</small></div>
@@ -661,6 +735,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 <button class="accept rent-accept" :disabled="!vacantRooms.length" @click="onAcceptRentInquiry(guest)">安排看房</button>
               </div>
             </article>
+            </template>
           </section>
         </template>
       </div>
@@ -694,8 +769,18 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .overview span { display: block; color: var(--text-dim); font-size: 10px; white-space: nowrap; }
 .overview strong { display: block; margin-top: 3px; color: #bdf1ca; font-size: 16px; overflow: hidden; text-overflow: ellipsis; }
 .overview strong.loss { color: #ff9aa8; }
-.section-head { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+/*
+ * 2026-08-09:標題列變成收合開關(整列可點,不是只有小箭頭)。
+ * 收起時 `margin-bottom: 0`,那張卡就只剩這一列高。
+ */
+.section-head { display: flex; align-items: center; gap: 9px; width: 100%; margin-bottom: 7px; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; }
+.section-head.collapsed { margin-bottom: 0; }
+/* 標題吃掉剩餘寬度 ⇒ 右邊的摘要與箭頭一律靠右,不管那個摘要有沒有 margin-left: auto */
+.section-head > div:first-child { flex: 1; min-width: 0; }
 .section-head h3 { margin: 1px 0 0; font-size: 14.5px; }
+.chev { color: var(--text-dim); font-size: 11px; line-height: 1; transition: transform 0.15s; }
+.section-head.collapsed .chev { transform: rotate(-90deg); }
+.blamed-count { margin-left: auto; color: #ffb0a0; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .capacity, .balance, .count, .research-count, .ticket { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .count { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: rgba(220,100,130,0.18); color: #f4b0c4; font-weight: 700; }
 .research-count { color: #b9f6ce; font-weight: 700; }
@@ -710,12 +795,12 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .alert.bad { color: #ffacb7; background: rgba(232,101,122,0.1); }
 .alert.good { color: #b9f6ce; background: rgba(83,196,126,0.09); }
 .ghost { margin-left: auto; padding: 5px 8px; color: #cdbcff; background: rgba(143,123,255,0.1); border: 1px solid rgba(143,123,255,0.4); font-size: 10.5px; }
-.order-tools { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.order-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-bottom: 7px; }
 .order-tools .ghost { margin-left: 0; }
 .ghost.suggest { color: #ffd6a3; background: rgba(255,180,94,0.12); border-color: rgba(255,180,94,0.55); font-weight: 700; }
 
 /* P3 銷售排行 —— 缺貨次數要比賣出杯數更搶眼:那是玩家在虧錢的訊號 */
-.window { color: var(--text-dim); font-size: 10.5px; }
+.window { color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
 .miss-word { color: #ff9fae; }
 .rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .rank-row { padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
@@ -752,7 +837,18 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .order-use { margin-top: 2px; line-height: 1.4; }
 .order-use em { font-style: normal; color: #d9c7a8; }
 .order-blame { margin-top: 3px; color: #ffacb7 !important; font-weight: 700; line-height: 1.4; }
-.order-row input { margin-left: auto; width: 58px; min-width: 0; padding: 6px; border-radius: 7px; border: 1px solid var(--line); background: #17151f; color: var(--text); text-align: center; font: inherit; font-size: 12px; }
+/*
+ * 2026-08-09:常備量加 ±1／±5 快捷(使用者要求)。
+ * 佔滿一整列而不是擠在原料說明右邊 —— 390px 下 4 顆鈕 + 輸入框跟左邊那三行小字搶寬度,
+ * 兩邊都會變得難點也難讀;獨立一列每顆都吃得到 34px 的觸控高度。
+ */
+.order-row { flex-wrap: wrap; }
+.order-row > span { flex: 1 1 100%; }
+.order-stepper { display: flex; align-items: center; gap: 5px; width: 100%; margin-top: 6px; }
+.order-stepper input { flex: 1; min-width: 0; padding: 6px; border-radius: 7px; border: 1px solid var(--line); background: #17151f; color: var(--text); text-align: center; font: inherit; font-size: 13px; font-weight: 700; }
+.step { flex: 0 0 46px; min-height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.step:hover { background: #322c46; }
+.step:disabled { opacity: 0.35; }
 .upgrade { padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.02); }
 .upgrade.owned { border-color: rgba(83,196,126,0.4); opacity: 0.76; }
 .upgrade-head { display: flex; align-items: baseline; gap: 8px; }

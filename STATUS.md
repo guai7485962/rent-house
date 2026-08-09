@@ -16,7 +16,9 @@
 
 ## 現在狀態(2026-08-09)
 
-- **有 1 個未 push 的 commit**(角色與敘事擴充:職業 15→24、職業目標 8→14、劇情弧本地種子 10 條)
+- **與 `origin/main` 同步(`355bae5`),已部署上線**(角色與敘事擴充:職業 15→24、職業目標 8→14、
+  劇情弧本地種子 10 條);線上 bundle `assets/index-C53JdTrW.js` 已逐項驗到 9 個新職業、
+  6 條新心願、10 條劇情弧種子的文案
 - **最新驗證(全綠)**:`npm test` **101/101**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**已 `--update` 重建**(見下方說明);本批無 `.vue` 變更,未跑 UI Lab
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)

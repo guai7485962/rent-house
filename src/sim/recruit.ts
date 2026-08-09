@@ -187,6 +187,111 @@ export const ARCHETYPES: Archetype[] = [
     preferences: { style: 5, soundproof: 6 },
     monthlyRent: 15000,
   },
+  // ── 2026-08-09 擴充:15 → 24 種(使用者要求更多職業)────────────────────────
+  // 一律 append 在最後,既有 15 筆的內容與順序一字未動。
+  // 作息只用既有的 7 把 key、核心標籤優先沿用既有 id(acoustics 的噪音權重與
+  // 自然口角、drama 的偷吃冰箱都是靠 tag id 掛勾的,自創 id 等於不進那些系統)。
+  // `後端工程師` 與 `ASMR 實況主` 早就寫在 wishes.ts 的 occupations 裡卻沒有對應原型
+  // (死引用),本批一併補上,那兩條心願從此抽得到人。
+  {
+    key: "office",
+    occupation: "後端工程師",
+    bio: "接手了一套沒人敢動的老系統,半夜被監控警報叫醒是家常便飯。",
+    coreTags: [
+      { id: "wfh", label: "[遠端待命]", behaviorHint: "多半在房裡對著三個螢幕,隨時可能被叫上線。" },
+      { id: "punctual", label: "[排程人生]", behaviorHint: "行事曆排到分鐘,交租像跑 cron job。" },
+    ],
+    preferences: { tech: 8, soundproof: 4, cozy: 3 },
+    monthlyRent: 17000,
+  },
+  {
+    key: "night_creator",
+    occupation: "ASMR 實況主",
+    bio: "深夜開台的 ASMR 實況主,房間鋪滿吸音棉,對一切雜音零容忍。",
+    coreTags: [
+      { id: "night_owl", label: "[深夜開台]", behaviorHint: "凌晨對著麥克風輕聲細語,白天補眠。" },
+      { id: "sound_sensitive", label: "[收音潔癖]", behaviorHint: "一點環境噪音就得重錄,對隔音錙銖必較。" },
+    ],
+    preferences: { soundproof: 9, tech: 6 },
+    monthlyRent: 14000,
+  },
+  {
+    key: "early_riser",
+    occupation: "獸醫助理",
+    bio: "動物醫院的助理,早班門診永遠第一個到,身上總有一點動物的味道。",
+    coreTags: [
+      { id: "caring", label: "[動物緣]", behaviorHint: "樓裡的貓狗都認得她,誰家寵物不對勁她先看出來。" },
+      { id: "early_bird", label: "[早班門診]", behaviorHint: "六點半出門,晚上十點半就撐不住了。" },
+    ],
+    preferences: { cozy: 6, storage: 4, style: 3 },
+    monthlyRent: 12000,
+  },
+  {
+    key: "early_riser",
+    occupation: "花藝師",
+    bio: "天沒亮就去花市搶貨的花藝師,房間一年四季都有當季的花。",
+    coreTags: [
+      { id: "early_bird", label: "[清晨批花]", behaviorHint: "四點多出門跑花市,回來時提著一大把花。" },
+      { id: "perfectionist", label: "[構圖偏執]", behaviorHint: "花瓶的角度會反覆調整到滿意為止。" },
+    ],
+    preferences: { style: 8, storage: 4, cozy: 3 },
+    monthlyRent: 13000,
+  },
+  {
+    key: "homebody",
+    occupation: "獨立書店店員",
+    bio: "在巷子裡的獨立書店顧店,話少但選書很準,休假日整天窩在房裡看書。",
+    coreTags: [
+      { id: "sound_sensitive", label: "[安靜成癮]", behaviorHint: "受不了持續的噪音,會默默戴上耳塞。" },
+      { id: "caring", label: "[替你選書]", behaviorHint: "會依鄰居最近的狀態,默默在門口放一本書。" },
+    ],
+    preferences: { cozy: 7, style: 5, storage: 3 },
+    monthlyRent: 10000,
+  },
+  {
+    key: "night_shift",
+    occupation: "補習班英文老師",
+    bio: "晚間班的英文老師,傍晚出門、深夜才下課,聲音是吃飯的工具。",
+    coreTags: [
+      { id: "late_return", label: "[晚間授課]", behaviorHint: "傍晚出門上課,近午夜才回家。" },
+      { id: "punctual", label: "[備課到位]", behaviorHint: "教材永遠提前備好,不打沒準備的仗。" },
+    ],
+    preferences: { soundproof: 6, storage: 4, cozy: 3 },
+    monthlyRent: 14000,
+  },
+  {
+    key: "night_shift",
+    occupation: "外送員",
+    bio: "跑到深夜才收工的外送員,對這一區的巷弄比地圖還熟。",
+    coreTags: [
+      { id: "late_return", label: "[跑單到深夜]", behaviorHint: "尖峰時段全在路上,收工常常過午夜。" },
+      { id: "fitness", label: "[體力本錢]", behaviorHint: "爬樓梯不喘,休息時會認真做伸展。" },
+    ],
+    preferences: { storage: 6, cozy: 4, soundproof: 3 },
+    monthlyRent: 10000,
+  },
+  {
+    key: "homebody",
+    occupation: "陶藝工作者",
+    bio: "在房裡拉坯的陶藝工作者,手上永遠有洗不掉的陶土,作品堆滿一整面牆。",
+    coreTags: [
+      { id: "wfh", label: "[在家拉坯]", behaviorHint: "整天待在房裡做東西,一週出門兩次。" },
+      { id: "perfectionist", label: "[手感偏執]", behaviorHint: "不滿意的成品會當場捏掉重來。" },
+    ],
+    preferences: { storage: 7, style: 5, cozy: 3 },
+    monthlyRent: 11000,
+  },
+  {
+    key: "freelancer",
+    occupation: "婚禮攝影師",
+    bio: "假日整天在婚宴現場的攝影師,回家後還要修圖到天亮。",
+    coreTags: [
+      { id: "late_return", label: "[假日全天班]", behaviorHint: "週末幾乎不在家,平日補眠與修圖。" },
+      { id: "perfectionist", label: "[修圖到天亮]", behaviorHint: "一張照片的膚色可以調兩個小時。" },
+    ],
+    preferences: { tech: 6, storage: 5, style: 4 },
+    monthlyRent: 15000,
+  },
 ];
 
 /**

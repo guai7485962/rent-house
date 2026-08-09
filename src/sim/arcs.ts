@@ -12,6 +12,7 @@
  */
 
 import { sanitizeGrowthTagId, type GrowthTagId } from "./growth";
+import { clamp, type TenantRuntime } from "./gameState";
 
 export interface StoryArc {
   id: string;
@@ -25,6 +26,14 @@ export interface StoryArc {
   /** 雙人弧:另一位主角(兩位租客各持一份同 id 的弧,推進/收束互相同步;缺省 = 單人弧) */
   partnerId?: string;
   partnerName?: string;
+  /**
+   * 2026-08-09:本地種子目錄開的弧會帶 `src/content/storyArcs.ts` 的 seed id。
+   * 缺省 = AI 開的弧,本地引擎完全不碰(見 `src/sim/localArc.ts`)。
+   * 兩個欄位都選填 ⇒ 舊存檔直接相容,`SAVE_VERSION` 不需要動。
+   */
+  seedId?: string;
+  /** 本地引擎上一次推進這條弧的遊戲日(同一天不重複推進;AI 推進過也算) */
+  localDay?: number;
 }
 
 /** 這一步對租客情緒的方向(AI 只能從 enum 選;省略/未知 = 無脈衝) */
@@ -35,6 +44,18 @@ export const ARC_TONE_PULSE: Record<"advance" | "conclude", Record<ArcTone, { mo
   advance: { up: { mood: 3 }, down: { mood: -3 }, tense: { stress: 4 } },
   conclude: { up: { mood: 8, stress: -6 }, down: { mood: -8 }, tense: { stress: -8 } }, // tense 收束 = 如釋重負
 };
+
+/**
+ * tone → 固定的小幅 mood/stress 脈衝。2026-08-09 從 `narration.ts` 搬來這裡
+ * ——AI 路徑與本地種子路徑都要用它,放在弧的模組才不會有人各寫一份。
+ */
+export function applyArcTone(rt: TenantRuntime, kind: "advance" | "conclude", tone: ArcTone | null) {
+  if (!tone) return;
+  const p = ARC_TONE_PULSE[kind][tone];
+  const s = rt.tenant.stats;
+  if (p.mood) s.mood = clamp(s.mood + p.mood, 0, 100);
+  if (p.stress) s.stress = clamp(s.stress + p.stress, 0, 100);
+}
 
 /** 消毒結果:開新弧 / 推進 / 收束;不合格回 null(整個忽略) */
 export type ArcAction =

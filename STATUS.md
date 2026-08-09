@@ -16,10 +16,9 @@
 
 ## 現在狀態(2026-08-09)
 
-- **與 `origin/main` 同步(`1348cdf`),已部署上線**(咖啡廳分頁九個區塊改可收合、常備量加 ±1／±5);
-  線上 bundle `assets/index-CfaYsZir.js` 已驗到 `aria-expanded`／`chev`／收起摘要文案／± 的 aria-label
-- **最新驗證(全綠)**:`npm test` **100/100**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
+- **有 1 個未 push 的 commit**(角色與敘事擴充:職業 15→24、職業目標 8→14、劇情弧本地種子 10 條)
+- **最新驗證(全綠)**:`npm test` **101/101**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**已 `--update` 重建**(見下方說明);本批無 `.vue` 變更,未跑 UI Lab
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)
 
 ## 🎉 咖啡廳經營玩法重設計 P1～P4b 全數完成並部署
@@ -45,6 +44,14 @@
 空出的位置給樓層切換鈕 ⇒ 樓層頁只剩兩排按鈕(動作列四顆 + 底部導覽四顆)。
 咖啡廳分頁的九個區塊改成**可收合**(預設只展開「營運觀察」與「常備量」,面板高度 4319 → 1800px),
 **常備量每列加 −5／−1／+1／+5 快捷**(動草稿,仍要按「套用常備量」才寫存檔)。
+
+**角色與敘事擴充(2026-08-09)**:職業 **15 → 24**(`sim/recruit.ts` 的 `ARCHETYPES`,一律 append)、
+職業目標 **8 → 14**(`sim/wishes.ts`;新的六條各掛**不同的玩家槓桿**:收納+品味家具／隔音家具／
+精力壓力／現金與欠租／整潔／鄰居關係)、劇情弧新增**本地種子目錄** 10 條
+(`src/content/storyArcs.ts` + `src/sim/localArc.ts`)——在此之前弧只有 AI 生得出來,
+**離線或免費額度用完就永遠沒有連載**;現在 AI 有額度時仍由 AI 主導,沒額度才由本地規則接手。
+balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 59921→59919、陳的錢包 +$2),
+**新增職業與新增心願本身零漂移**(已隔離驗證)。
 
 ## 下一步
 

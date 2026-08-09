@@ -32,7 +32,7 @@ const { moveOut, graduateFarewell, decide, farewellSendoff, moveIn } = await imp
 const { DEPOSIT_MONTHS, sellFurnitureAt, removeMemorialAt } = await import("../src/sim/economy");
 const { getPlacements } = await import("../src/sim/placements");
 const { adoptCat, adoptPet, petsPass, ensurePets, HOUSE_CAT_OWNER } = await import("../src/sim/pets");
-const { rescoreApplicants, generateApplicants } = await import("../src/sim/recruit");
+const { rescoreApplicants, generateApplicants, ARCHETYPES } = await import("../src/sim/recruit");
 const { relationships, pairKey } = await import("../src/sim/social");
 const { REP_GRADUATE, REP_SETTLE, REP_SETTLE_GRADUATE } = await import("../src/sim/reputation");
 const { hourlyTick, reconcileDueSettleDepartures } = await import("../src/sim/tick");
@@ -46,14 +46,28 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 const chen = state.runtimes["tenant_chen_engineer"]; // 後端工程師 → career_step
-const lin = state.runtimes["tenant_lin_asmr"]; // ASMR 實況主 → finish_masterwork
+const lin = state.runtimes["tenant_lin_asmr"]; // ASMR 實況主 → grow_channel(2026-08-09 前是 finish_masterwork)
 const day = () => gameDayIndex();
 const calendarDay = () => calendarGameDayIndex();
 
 // --- 1. 指派 ---
 check("種子租客開局即有心願(store 門面 ensureWishes)", !!chen.wish && !!lin.wish);
 check("後端工程師 → career_step", chen.wish!.id === "career_step");
-check("ASMR 實況主 → finish_masterwork", lin.wish!.id === "finish_masterwork");
+// 2026-08-09:ASMR 從 finish_masterwork(壓力槓桿)移到專屬的 grow_channel(隔音家具槓桿)。
+check("ASMR 實況主 → grow_channel", lin.wish!.id === "grow_channel");
+check("新職業各自對到不同槓桿的心願",
+  wishes.wishIdForOccupation("陶藝工作者") === "own_studio"
+    && wishes.wishIdForOccupation("婚禮攝影師") === "own_studio"
+    && wishes.wishIdForOccupation("獸醫助理") === "certify_pro"
+    && wishes.wishIdForOccupation("補習班英文老師") === "certify_pro"
+    && wishes.wishIdForOccupation("外送員") === "save_for_travel"
+    && wishes.wishIdForOccupation("獨立書店店員") === "keep_home_clean"
+    && wishes.wishIdForOccupation("退休教師") === "teach_someone"
+    && wishes.wishIdForOccupation("花藝師") === "open_shop"
+    && wishes.wishIdForOccupation("後端工程師") === "career_step");
+check("每個原型職業都指派得到心願,沒有人掉進 settle_life fallback(除非刻意)",
+  ARCHETYPES.every((a) => wishes.wishIdForOccupation(a.occupation) !== "settle_life"),
+  ARCHETYPES.filter((a) => wishes.wishIdForOccupation(a.occupation) === "settle_life").map((a) => a.occupation).join(" "));
 check("咖啡師 → open_shop / 未知職業 → settle_life",
   wishes.wishIdForOccupation("咖啡師") === "open_shop" && wishes.wishIdForOccupation("神秘人") === "settle_life");
 check("心願說明含手機可讀的明確達成方式與門檻",
@@ -67,7 +81,7 @@ check("ensureWishes 冪等(不重置既有進度)", chen.wish!.progress === 10);
   const backup = lin.wish!;
   lin.wish = { id: "不存在的心願" as any, progress: 55, fulfilledDay: -99, graduateDay: -99, announced: false };
   wishes.ensureWishes();
-  check("壞檔防線:未知心願 id → 重新指派", lin.wish!.id === "finish_masterwork" && lin.wish!.progress === 0);
+  check("壞檔防線:未知心願 id → 重新指派", lin.wish!.id === "grow_channel" && lin.wish!.progress === 0);
   lin.wish = backup;
 }
 
@@ -515,8 +529,9 @@ const mkRt = (id: string, name: string, occupation: string, roomNo = "304") => {
 {
   const { WISH_MILESTONES, WISH_DEFS } = wishes;
   const ids = Object.keys(WISH_DEFS) as (keyof typeof WISH_DEFS)[];
-  check("里程碑句庫涵蓋 8 條心願,每條 25/50/75 皆非空",
-    ids.length === 8 && ids.every((id) =>
+  // 2026-08-09:8 → 14 條。用下界:這條要擋的是「新心願漏寫里程碑」,不是「不准再加心願」。
+  check("里程碑句庫涵蓋每一條心願(至少 14 條),每條 25/50/75 皆非空",
+    ids.length >= 14 && ids.every((id) =>
       [25, 50, 75].every((m) => (WISH_MILESTONES[id] as any)[m]?.length > 0)));
   // 分流:不同心願的同一節點文字不同
   const at25 = ids.map((id) => (WISH_MILESTONES[id] as any)[25]);

@@ -21,6 +21,7 @@ const { ARCHETYPE_ROUTINES } = await import("../src/sim/routine");
 const { compatibility } = await import("../src/sim/social");
 const { state, moveIn, debugStepHour } = await import("../src/store");
 import type { Tenant } from "../src/types";
+import { ROOM_ATTRIBUTES } from "../src/types";
 console.warn = origWarn;
 
 let pass = 0;
@@ -31,13 +32,24 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // --- 原型庫 ---
-check("原型達 15 種", ARCHETYPES.length === 15, `實際 ${ARCHETYPES.length}`);
+// 2026-08-09:15 → 24 種。改成下界而不是等於——這條要擋的是「原型被誤刪」,
+// 不是「不准再加職業」;寫死等號的話每次擴充都只是把數字往上改一格,擋不到任何錯誤。
+check("原型至少 24 種", ARCHETYPES.length >= 24, `實際 ${ARCHETYPES.length}`);
 check("每種原型的作息 key 都存在", ARCHETYPES.every((a) => !!ARCHETYPE_ROUTINES[a.key]));
 const jobs = new Set(ARCHETYPES.map((a) => a.occupation));
 check("職業不重複", jobs.size === ARCHETYPES.length);
 check("租金都在 8000~20000", ARCHETYPES.every((a) => a.monthlyRent >= 8000 && a.monthlyRent <= 20000));
 check("每種原型有 2 個核心標籤", ARCHETYPES.every((a) => a.coreTags.length === 2));
 check("每種原型有偏好", ARCHETYPES.every((a) => Object.keys(a.preferences).length >= 2));
+check("偏好只用合法的房間屬性軸", ARCHETYPES.every((a) =>
+  Object.keys(a.preferences).every((k) => (ROOM_ATTRIBUTES as readonly string[]).includes(k))));
+// 核心標籤的 id 是 acoustics(噪音權重/自然口角)與 drama(偷吃冰箱)的掛勾點,
+// 自創 id 不會壞掉但等於這個角色不進那些系統 —— 擴充時容易漏,所以釘住。
+const KNOWN_TAG_IDS = new Set(["punctual", "early_bird", "night_owl", "gamer", "wfh", "perfectionist",
+  "noisy", "late_return", "caring", "foodie", "fitness", "busybody", "sound_sensitive"]);
+check("核心標籤都用既有的 id(才吃得到噪音/口角/偷吃等既有規則)",
+  ARCHETYPES.every((a) => a.coreTags.every((t) => KNOWN_TAG_IDS.has(t.id))),
+  ARCHETYPES.flatMap((a) => a.coreTags.filter((t) => !KNOWN_TAG_IDS.has(t.id)).map((t) => `${a.occupation}:${t.id}`)).join(" "));
 
 // --- 作息資料健全(載入零警告 = 無非法 role/state、無缺漏小時) ---
 check("作息目錄載入零警告", warns.length === 0, warns.slice(0, 3).join(" | "));

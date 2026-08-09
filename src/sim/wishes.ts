@@ -22,8 +22,11 @@ import {
   notify,
   pushMemory,
   pushSocialLog,
+  roomOfTenant,
   type TenantRuntime,
 } from "./gameState";
+import { roomAttributes } from "./placements";
+import type { RoomAttribute } from "../types";
 import { grantGrowthTag, GROWTH_TAGS, type GrowthTagId } from "./growth";
 import { relationships } from "./social";
 import { unlock } from "./legacy";
@@ -124,6 +127,16 @@ export function settleDepartDay(rt: TenantRuntime): number {
 }
 
 /** 同棟在住者中最好的關係值(把樓住成家的量尺) */
+/**
+ * 這位租客房間的家具屬性總和。2026-08-09 新增的三條心願靠它把「房東買家具」
+ * 變成推進條件——`wishes → placements` 不成環(placements 只依賴 map/catalog/upgrades)。
+ * 查不到房間(理論上不會)時回空物件,那條心願就停在 0,不會拋錯。
+ */
+function roomAttributesOf(rt: TenantRuntime): Partial<Record<RoomAttribute, number>> {
+  const roomId = roomOfTenant(rt.tenant.id);
+  return roomId ? roomAttributes(roomId) : {};
+}
+
 function bestNeighborRel(tenantId: string): number {
   let best = 0;
   for (const [key, rel] of Object.entries(relationships)) {
@@ -140,7 +153,7 @@ export const WISH_DEFS = {
     icon: "☕",
     label: "存一筆自己的小店基金",
     hint: "達成方式：避免欠租與財務困難，並讓他保留至少約八成月租的存款；符合時每天進度最快。",
-    occupations: ["咖啡師", "甜點師", "調酒師", "健身教練"],
+    occupations: ["咖啡師", "甜點師", "調酒師", "健身教練", "花藝師"],
     gain: (rt) => {
       if (inHardship(rt) || (rt.arrears ?? 0) > 0) return SETBACK;
       return (rt.wallet ?? 0) >= rt.tenant.finance.monthlyRent * 0.8 ? GAIN_GOOD : GAIN_SLOW;
@@ -154,7 +167,8 @@ export const WISH_DEFS = {
     icon: "✍️",
     label: "完成一部代表作",
     hint: "達成方式：把壓力維持在 65 以下、精力維持在 35 以上；壓力達 85 會讓進度倒退。",
-    occupations: ["漫畫家", "推理小說家", "自由接案設計師", "ASMR 實況主"],
+    // 2026-08-09:`ASMR 實況主` 移到自己的 grow_channel(它的槓桿是隔音,不是壓力)。
+    occupations: ["漫畫家", "推理小說家", "自由接案設計師"],
     gain: (rt) => {
       const s = rt.tenant.stats;
       if (s.stress >= 85) return SETBACK;
@@ -225,11 +239,109 @@ export const WISH_DEFS = {
     doneText: "正式登台了!他回家時嗓子都啞了,臉上的興奮藏都藏不住。",
     farewellText: "那晚的演出被劇團看上,簽約巡演的邀請來了——他一邊打包一邊哼著歌,整個人在發光。",
   },
+  // ── 2026-08-09 擴充:8 → 14 條(使用者要求更多職業目標)──────────────────────
+  // 每一條刻意掛在**不同的玩家槓桿**上,不然多加的目標只是換句話說:
+  //   own_studio 收納+品味家具 / grow_channel 隔音家具 / certify_pro 精力與壓力 /
+  //   save_for_travel 現金與欠租 / keep_home_clean 整潔 / teach_someone 鄰居關係。
+  // 既有八條的 id、順序與 gain 一格未動(wishIdForOccupation 是照物件順序第一個命中)。
+  own_studio: {
+    icon: "🏺",
+    label: "擁有一間自己的工作室",
+    hint: "達成方式：把房間的收納與品味加起來養到 24 以上（買收納櫃、有質感的家具）；14 以上會緩慢前進。",
+    occupations: ["陶藝工作者", "婚禮攝影師"],
+    gain: (rt) => {
+      const attrs = roomAttributesOf(rt);
+      const craft = (attrs.storage ?? 0) + (attrs.style ?? 0);
+      if (inHardship(rt)) return SETBACK;
+      return craft >= 24 ? GAIN_GOOD : craft >= 14 ? GAIN_SLOW : 0;
+    },
+    graduates: true,
+    growthTag: "decisive",
+    doneText: "工作室的鑰匙拿到手了!他把作品一件件排上新架子,退後三步看了很久。",
+    farewellText: "工作室要開張了,他把這裡的東西仔細打包——每一箱都貼著手寫標籤。",
+  },
+  grow_channel: {
+    icon: "🎧",
+    label: "養出一群固定的聽眾",
+    hint: "達成方式：把房間隔音養到 10 以上（隔音棉、厚窗簾、地毯），並把壓力壓在 70 以下；隔音 5 以上會緩慢前進。",
+    occupations: ["ASMR 實況主"],
+    gain: (rt) => {
+      const quiet = roomAttributesOf(rt).soundproof ?? 0;
+      if (rt.tenant.stats.stress >= 85) return SETBACK;
+      if (quiet >= 10) return rt.tenant.stats.stress <= 70 ? GAIN_GOOD : GAIN_SLOW;
+      if (quiet >= 5) return GAIN_SLOW;
+      // 完全沒隔音也還是每天爬一格 —— 種子租客林就是這條,不能一開局就卡死在 0。
+      return 1;
+    },
+    graduates: true,
+    growthTag: "more_confident",
+    doneText: "訂閱數過線了!她摘下耳機愣了幾秒,才敢相信那些數字是真的。",
+    farewellText: "簽了經紀約,要搬去有專業錄音間的地方——她把吸音棉一片片拆下來,動作很輕。",
+  },
+  certify_pro: {
+    icon: "📜",
+    label: "考到那張執照",
+    hint: "達成方式：把精力維持在 45 以上、壓力維持在 65 以下（好睡的床與安靜的房間）；精力低於 25 會倒退。",
+    occupations: ["獸醫助理", "補習班英文老師"],
+    gain: (rt) => {
+      const s = rt.tenant.stats;
+      if (s.energy <= 25) return SETBACK;
+      return s.energy >= 45 && s.stress <= 65 ? GAIN_GOOD : GAIN_SLOW;
+    },
+    graduates: false,
+    growthTag: "resilient",
+    doneText: "放榜了——上了!他把成績單拍下來傳給家人,手還在抖。",
+    farewellText: "",
+  },
+  save_for_travel: {
+    icon: "✈️",
+    label: "存一趟遠行的旅費",
+    hint: "達成方式：不要讓他欠租或陷入財務困難，並保留至少約半個月租的存款。",
+    occupations: ["外送員"],
+    gain: (rt) => {
+      if (inHardship(rt) || (rt.arrears ?? 0) > 0) return SETBACK;
+      return (rt.wallet ?? 0) >= rt.tenant.finance.monthlyRent * 0.5 ? GAIN_GOOD : GAIN_SLOW;
+    },
+    graduates: true,
+    growthTag: "hopeful",
+    doneText: "機票訂好了!他把行程表貼在牆上,每天下班都要看一眼。",
+    farewellText: "出發的日子近了,他把房間收得乾乾淨淨,說回來時想換個地方重新開始。",
+  },
+  keep_home_clean: {
+    icon: "🧹",
+    label: "把生活維持在乾淨的樣子",
+    hint: "達成方式：把房間整潔維持在 70 以上、滿意維持在 55 以上（及時修繕、掃地機器人）；整潔低於 35 會倒退。",
+    occupations: ["獨立書店店員"],
+    gain: (rt) => {
+      if (rt.cleanliness <= 35) return SETBACK;
+      return rt.cleanliness >= 70 && rt.satisfaction >= 55 ? GAIN_GOOD : GAIN_SLOW;
+    },
+    graduates: false,
+    growthTag: "grounded",
+    doneText: "房間終於維持成他想要的樣子了。他泡了杯茶,坐下來什麼也不做,只是看著。",
+    farewellText: "",
+  },
+  teach_someone: {
+    icon: "📖",
+    label: "把會的東西傳給一個人",
+    hint: "達成方式：安排公共空間相處，讓他與至少一位鄰居的關係達到 45，且心情維持在 50 以上；關係 25 以上也會緩慢前進。",
+    occupations: ["退休教師"],
+    gain: (rt) => {
+      const best = bestNeighborRel(rt.tenant.id);
+      if (best >= 45 && rt.tenant.stats.mood >= 50) return GAIN_GOOD;
+      return best >= 25 ? GAIN_SLOW : 0;
+    },
+    graduates: false,
+    growthTag: "patient",
+    doneText: "他看著對方獨立完成了整件事,沒有出手幫忙——只是站在旁邊,笑得很滿足。",
+    farewellText: "",
+  },
   feel_at_home: {
     icon: "🏡",
     label: "把這棟樓住成自己的家",
     hint: "達成方式：安排公共空間相處，讓他與至少一位鄰居的關係達到 50；30 以上也會緩慢前進。",
-    occupations: ["退休教師", "瑜伽老師"],
+    // 2026-08-09:`退休教師` 移到 teach_someone(那條的槓桿相同但終點不同:教會一個人)。
+    occupations: ["瑜伽老師"],
     gain: (rt) => {
       const best = bestNeighborRel(rt.tenant.id);
       return best >= 50 ? GAIN_GOOD : best >= 30 ? GAIN_SLOW : 0;
@@ -289,6 +401,36 @@ export const WISH_MILESTONES: Record<WishId, Record<Milestone, string>> = {
     25: "重新拾起樂器,把基本功一遍遍練了回來",
     50: "排練進度過半,和團員的默契一次次對上拍子",
     75: "演出曲目全都熟透,只等正式登台那一刻",
+  },
+  own_studio: {
+    25: "開始把工具與半成品分門別類,房裡漸漸有了工作區的樣子",
+    50: "架子與檯面都到位了,做起東西順手許多",
+    75: "作品排滿一整面牆,連燈光角度都調過——只差一個真正的門牌",
+  },
+  grow_channel: {
+    25: "把最吵的那面牆補上吸音材,重錄的次數少了一半",
+    50: "固定的聽眾慢慢回流,留言區開始有人喊「晚安」",
+    75: "每一集的底噪都壓得極乾淨,再來只差一次被看見",
+  },
+  certify_pro: {
+    25: "把考古題印了一疊,晚班之後也硬撐著讀完一章",
+    50: "進度過半,錯題本越寫越薄",
+    75: "模擬考穩定過線了,只剩心態要調整",
+  },
+  save_for_travel: {
+    25: "把想去的地方寫在便條紙上,開始每天存一點",
+    50: "存款過半,連轉機路線都研究得很清楚",
+    75: "旅費幾乎湊齊,護照拿去換了新的",
+  },
+  keep_home_clean: {
+    25: "開始每天固定收拾一小塊,房間不再堆著沒拆的箱子",
+    50: "整潔維持得住了,連書都照著自己的邏輯排好",
+    75: "房間穩定在讓他安心的樣子,回家會先深吸一口氣",
+  },
+  teach_someone: {
+    25: "有人來問他問題,他認真回答了很久",
+    50: "對方開始固定來請教,他也開始準備起「教材」",
+    75: "那個人已經做得有模有樣,他退到旁邊只看不出手",
   },
   feel_at_home: {
     25: "開始記得鄰居的名字,走廊上會停下來聊幾句",

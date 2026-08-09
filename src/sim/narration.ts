@@ -14,7 +14,7 @@ import {
   type NarrateResult,
 } from "./narrate";
 import { sanitizeAiEvent } from "./events";
-import { ARC_TONE_PULSE, sanitizeArcUpdate, type ArcTone } from "./arcs";
+import { applyArcTone, sanitizeArcUpdate } from "./arcs";
 import { getRel, listRelationships } from "./social";
 import { state, clamp, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
@@ -358,14 +358,6 @@ function pairArcPartner(arc: { id: string; partnerId?: string } | null): TenantR
 }
 
 /** tone 脈衝:查寫死的 ARC_TONE_PULSE 表,AI 只能選方向不能自訂數值 */
-function applyArcTone(rt: TenantRuntime, kind: "advance" | "conclude", tone: ArcTone | null) {
-  if (!tone) return;
-  const p = ARC_TONE_PULSE[kind][tone];
-  const s = rt.tenant.stats;
-  if (p.mood) s.mood = clamp(s.mood + p.mood, 0, 100);
-  if (p.stress) s.stress = clamp(s.stress + p.stress, 0, 100);
-}
-
 /** 從 runtime 組出當天的敘事 context */
 export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
   const dayAgo = state.gameMs - 24 * 3600 * 1000;

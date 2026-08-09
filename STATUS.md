@@ -16,7 +16,8 @@
 
 ## 現在狀態(2026-08-09)
 
-- **有 1 個未 push 的 commit**(底部版面:收支／咖啡廳合併成一顆入口、樓層切換鈕併回動作列)
+- **與 `origin/main` 同步(`cfebeaa`),已部署上線**(底部版面:收支／咖啡廳合併成一顆入口、
+  樓層切換鈕併回動作列);線上 bundle `assets/index-CACXEe-j.js` 已驗到新字串、舊標記已消失
 - **最新驗證(全綠)**:`npm test` **99/99**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)

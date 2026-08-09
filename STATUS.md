@@ -16,7 +16,8 @@
 
 ## 現在狀態(2026-08-09)
 
-- **有 1 個未 push 的 commit**(咖啡廳分頁九個區塊改可收合、常備量加 ±1／±5)
+- **與 `origin/main` 同步(`1348cdf`),已部署上線**(咖啡廳分頁九個區塊改可收合、常備量加 ±1／±5);
+  線上 bundle `assets/index-CfaYsZir.js` 已驗到 `aria-expanded`／`chev`／收起摘要文案／± 的 aria-label
 - **最新驗證(全綠)**:`npm test` **100/100**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)

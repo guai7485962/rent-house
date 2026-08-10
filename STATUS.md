@@ -16,11 +16,9 @@
 
 ## 現在狀態(2026-08-09)
 
-- **與 `origin/main` 同步(`355bae5`),已部署上線**(角色與敘事擴充:職業 15→24、職業目標 8→14、
-  劇情弧本地種子 10 條);線上 bundle `assets/index-C53JdTrW.js` 已逐項驗到 9 個新職業、
-  6 條新心願、10 條劇情弧種子的文案
-- **最新驗證(全綠)**:`npm test` **101/101**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**已 `--update` 重建**(見下方說明);本批無 `.vue` 變更,未跑 UI Lab
+- **有 1 個未 push 的 commit**(送養紀錄的寵物與新飼主像素合照)
+- **最新驗證(全綠)**:`npm test` **102/102**、app + worker typecheck 通過、`npm run build` 成功、
+  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)
 
 ## 🎉 咖啡廳經營玩法重設計 P1～P4b 全數完成並部署
@@ -54,6 +52,11 @@
 **離線或免費額度用完就永遠沒有連載**;現在 AI 有額度時仍由 AI 主導,沒額度才由本地規則接手。
 balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 59921→59919、陳的錢包 +$2),
 **新增職業與新增心願本身零漂移**(已隔離驗證)。
+
+**送養合照(2026-08-10)**:🐾 面板「幸福新家」每筆送養紀錄都有一張**寵物 + 新飼主的像素合照**
+(`src/floor/petPhoto.ts` + `src/components/PetPhoto.vue`)。照片**不進存檔**——每次開啟即時重畫,
+存檔只多 `adopterName?`/`adopterAppearance?` 兩個選填欄位,缺的時候依紀錄 id 決定性推導,
+所以舊紀錄打開也有照片。咖啡廳認養會留下那位顧客的真實外觀。
 
 ## 下一步
 

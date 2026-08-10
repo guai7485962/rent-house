@@ -540,6 +540,13 @@ export interface PetHomeEntry {
   daysTogether: number;
   destination: string;
   note: string;
+  /**
+   * 2026-08-10 送養合照:知道是誰領養時才記(咖啡廳顧客、前飼主接回)。
+   * 兩個都選填 —— 缺的時候由 `floor/petPhoto.ts` 依 `id` 決定性推導一位,
+   * 所以舊的送養紀錄打開也有照片。照片本身**不進存檔**(每次開啟即時重畫)。
+   */
+  adopterName?: string;
+  adopterAppearance?: Appearance;
 }
 
 // ---------------------------------------------------------------------------

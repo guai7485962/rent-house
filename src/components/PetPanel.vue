@@ -16,6 +16,7 @@ import {
   petIcon,
   isShopCat,
 } from "../store";
+import PetPhoto from "./PetPhoto.vue";
 
 const emit = defineEmits<{ close: []; done: [message: string] }>();
 const tab = ref<"current" | "homes">("current");
@@ -178,11 +179,16 @@ function fmtDay(ms: number) {
 
       <div v-else class="list">
         <p v-if="!state.petHomes.length" class="empty">還沒有送養紀錄。完成媒合後，牠們的新生活會留在這裡。</p>
+        <!-- 2026-08-10:每筆送養紀錄配一張寵物與新飼主的像素合照(即時重畫,不進存檔) -->
         <article v-for="home in state.petHomes" :key="home.id" class="home-card">
-          <div class="pet-icon">{{ home.kind === "dog" ? "🐕" : "🐈" }}</div>
-          <div>
-            <div class="pet-name">{{ home.name }} <span>相伴 {{ home.daysTogether }} 天</span></div>
+          <PetPhoto :entry="home" />
+          <div class="home-body">
+            <div class="pet-name">
+              {{ home.kind === "dog" ? "🐕" : "🐈" }} {{ home.name }}
+              <span>相伴 {{ home.daysTogether }} 天</span>
+            </div>
             <div class="home-dest">🏡 {{ home.destination }} · {{ fmtDay(home.leftMs) }}</div>
+            <div v-if="home.adopterName" class="home-adopter">📷 與新飼主 {{ home.adopterName }}</div>
             <p>{{ home.note }}</p>
           </div>
         </article>
@@ -226,8 +232,10 @@ h3 { margin: 7px 2px 1px; font-size: 12px; color: var(--text-dim); font-weight: 
 .rehome { border: 1px solid #d69963; color: #f0bd82; }
 .rehome.armed { border-color: #ff8f70; color: #ffb39c; background: rgba(255, 143, 112, 0.1); }
 .cancel { border: 1px solid var(--line); color: var(--text-dim); }
-.home-card { align-items: flex-start; }
+.home-card { align-items: flex-start; gap: 10px; }
+.home-body { min-width: 0; }
 .home-dest { margin-top: 3px; color: var(--good); font-size: 11.5px; }
+.home-adopter { margin-top: 2px; color: #e9c08a; font-size: 11.5px; }
 .home-card p { margin: 5px 0 0; color: var(--text-dim); font-size: 11.5px; line-height: 1.5; }
 .empty { padding: 22px 10px; color: var(--text-dim); text-align: center; font-size: 12.5px; }
 </style>

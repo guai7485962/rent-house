@@ -178,6 +178,9 @@ function finishRehoming(petId: string, pet: Pet) {
     daysTogether: Math.max(1, Math.floor((state.gameMs - pet.sinceMs) / DAY_MS)),
     destination,
     note,
+    // 前飼主接回 ⇒ 合照裡的人就是他;「通過審核的新家庭」沒有具體人物,
+    // 留空由 petPhoto 依 id 決定性生一位(見該檔說明)。
+    adopterName: reunion ? owner ?? undefined : undefined,
   });
   if (state.petHomes.length > PET_HOME_CAP) state.petHomes.splice(PET_HOME_CAP);
   clearPetLinks(petId);
@@ -192,7 +195,8 @@ function finishRehoming(petId: string, pet: Pet) {
  * pair/cooldown 清理、名冊 cap 與通知；不把顧客塞進 TenantRuntime，也不啟動 5～8 日媒合。
  */
 export function acceptCafeGuestAdoption(
-  guest: Pick<CafeGuest, "id" | "name" | "intent">,
+  // `appearance` 是 2026-08-10 合照才要的,設成選填 ⇒ 既有呼叫端與測試不必改。
+  guest: Pick<CafeGuest, "id" | "name" | "intent"> & Partial<Pick<CafeGuest, "appearance">>,
   petId: string,
 ): { ok: boolean; text: string } {
   if (guest.intent !== "adopt") return { ok: false, text: "這位顧客目前沒有認養意願" };
@@ -218,6 +222,9 @@ export function acceptCafeGuestAdoption(
     home.id = cafeHomeId;
     home.destination = CAFE_GUEST_ADOPTION_DESTINATION;
     home.note = `「${petName}」在一樓寵物咖啡廳與 ${guest.name} 相遇，完成審核後一起回到新家。`;
+    // 合照要畫的是玩家真的在畫面上看過的那位顧客,所以把他的外觀一起留下來。
+    home.adopterName = guest.name;
+    if (guest.appearance) home.adopterAppearance = { ...guest.appearance };
   }
   save();
   return { ok: true, text: `${petIcon(pet)} 「${petName}」由咖啡廳客人 ${guest.name} 領養，幸福新家名冊已更新` };

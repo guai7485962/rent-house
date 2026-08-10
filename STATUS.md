@@ -16,7 +16,9 @@
 
 ## 現在狀態(2026-08-09)
 
-- **有 1 個未 push 的 commit**(送養紀錄的寵物與新飼主像素合照)
+- **與 `origin/main` 同步(`2c7146e`),已部署上線**(送養紀錄的寵物與新飼主像素合照);
+  線上 bundle `assets/index-CKamBfKk.js` 已驗到合照的 aria-label、`pet-photo` 樣式與
+  `image-rendering: pixelated`,以及三花／店貓／柴犬的花色色碼
 - **最新驗證(全綠)**:`npm test` **102/102**、app + worker typecheck 通過、`npm run build` 成功、
   balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
 - **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)

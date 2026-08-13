@@ -17,7 +17,7 @@
 import { STORY_ARC_SEEDS, type StoryArcSeed } from "../content/storyArcs";
 import { applyArcTone } from "./arcs";
 import { grantGrowthTag } from "./growth";
-import { state, gameDayIndex, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
+import { state, gameDayIndex, pushArcHistory, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { boostWishFromArc } from "./wishes";
 
 /** 本地弧的 id 前綴(和 AI 的 `arc_<timestamp>` 區隔,肉眼也看得出來) */
@@ -90,6 +90,7 @@ function concludeLocalArc(rt: TenantRuntime, seed: StoryArcSeed) {
   applyArcTone(rt, "conclude", seed.conclude.tone);
   boostWishFromArc(rt, seed.conclude.tone); // 好好落幕 = 人生心願也往前一步(同 AI 路徑)
   const growth = grantGrowthTag(rt.tenant, seed.conclude.growthTag);
+  pushArcHistory(rt, seed.theme); // 本地弧也算演過(同 AI 路徑,之後餵回 prompt 避免重複)
   pushMemory(rt.tenant, `[經歷:${seed.theme}]`, "這段經歷已成為他的一部分", "ai_event");
   pushSocialLog(rt, `📕 篇章落幕:「${seed.theme}」`, "notable");
   if (growth) pushSocialLog(rt, `🌱 成長:${growth.label}——${growth.hint}`, "notable");

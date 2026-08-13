@@ -120,6 +120,12 @@ export interface TenantRuntime {
   lastCareDay?: number;
   /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
   arc: StoryArc | null;
+  /**
+   * 已完結的劇情弧主題(最舊在前,最多 ARC_HISTORY_CAP 條)。
+   * 每天餵回 AI(NarrateCtx.pastArcThemes),要求新弧不得重複演過的題材。
+   * 選填欄位 ⇒ 舊存檔缺省時視同空陣列,**不需要升 SAVE_VERSION**(慣例同 StoryArc.seedId)。
+   */
+  arcHistory?: string[];
   /** 事件連鎖伏筆旗標(事件選項留下,之後餵回 AI 回收伏筆) */
   flags: string[];
   /** 本小時是否在交誼廳(社交相遇判定用,不需存檔) */
@@ -180,6 +186,20 @@ export function addFlag(rt: TenantRuntime, flag: string) {
   if (rt.flags.includes(flag)) return;
   rt.flags.push(flag);
   if (rt.flags.length > 12) rt.flags.splice(0, rt.flags.length - 12);
+}
+
+/** 已完結弧主題的保留條數(只餵最近幾條給 AI:太長會灌爆 prompt,太短擋不住重複題材) */
+export const ARC_HISTORY_CAP = 8;
+
+/** 記一個已完結的弧主題(去重、保留最近 ARC_HISTORY_CAP 條;AI 與本地弧收束時都走這裡) */
+export function pushArcHistory(rt: TenantRuntime, theme: string) {
+  const label = (theme ?? "").trim();
+  if (!label) return;
+  const list = (rt.arcHistory ??= []);
+  const dup = list.indexOf(label);
+  if (dup >= 0) list.splice(dup, 1); // 重演過的主題移到最新,不要占兩格
+  list.push(label);
+  if (list.length > ARC_HISTORY_CAP) list.splice(0, list.length - ARC_HISTORY_CAP);
 }
 
 /** 咖啡廳日結紀錄上限(同 LOG_CAP/LEDGER_CAP 的稀疏哲學,只留最近 60 天) */

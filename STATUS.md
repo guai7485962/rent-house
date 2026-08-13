@@ -14,14 +14,18 @@
 
 ---
 
-## 現在狀態(2026-08-09)
+## 現在狀態(2026-08-13)
 
-- **與 `origin/main` 同步(`2c7146e`),已部署上線**(送養紀錄的寵物與新飼主像素合照);
-  線上 bundle `assets/index-CKamBfKk.js` 已驗到合照的 aria-label、`pet-photo` 樣式與
-  `image-rendering: pixelated`,以及三花／店貓／柴犬的花色色碼
-- **最新驗證(全綠)**:`npm test` **102/102**、app + worker typecheck 通過、`npm run build` 成功、
-  balance 快照**零漂移**(未用 `--update`)、UI Lab 18 張 0 error 0 warning
-- **存檔版本**:`SAVE_VERSION = 10`(`src/sim/persistence.ts`;改存檔結構從 `MIGRATIONS[10]` 往上加)
+- **branch `feat/arc-variety-p1`(未 push、未部署)**:劇情弧多樣性第一階段;
+  `origin/main` 仍在 `a66dc6c`(送養合照那批,已部署上線)
+- **這批做了什麼**:① 有進行中的弧時 narrate 改由 Gemini 優先(平日無弧無事件仍走免費
+  Workers AI);② Workers AI 回的 `arcUpdate` 只准推進、不准開新弧也不准發 `growthTag`;
+  ③ 新增 `TenantRuntime.arcHistory`(選填、上限 8)把演過的主題餵回 prompt 明令不得重複,
+  並補主題類型清單 12 類、把「平淡日不要硬開」改成「久未連載優先開新弧」、maxStage 統一 2~6
+- **最新驗證(全綠)**:`npm test` **103/103**(新增 `scripts/arc-variety-test.ts` 30 條)、
+  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`);
+  無 `.vue` 變更故未跑 UI Lab
+- **存檔版本**:`SAVE_VERSION = 10` 不變(`arcHistory` 是選填欄位,舊存檔載入補 `[]`)
 
 ## 🎉 咖啡廳經營玩法重設計 P1～P4b 全數完成並部署
 
@@ -62,7 +66,11 @@ balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 
 
 ## 下一步
 
-沒有進行中的工作。可選項(依 `docs/待辦.md`):
+- **`feat/arc-variety-p1` 等中控決定是否合併/部署**(本地已驗證全綠,未 push)
+- **劇情弧多樣性第二／三階段**(記憶標籤淘汰優先丟低 intensity、`[經歷:*]` 獨立額度;
+  弧 stall 逾時、主線+支線並行、本地種子擴充)—— 會漂移 balance 快照,動工前先確認
+
+其餘可選項(依 `docs/待辦.md`):
 
 - **牛奶／寵物鮮食的建議常備量**:開張期菜單根本用不到它們,建議值卻是 24 ⇒ 新手一開始
   就在買用不到的生鮮。要讓建議值跟著菜單走**會動到平衡**,未擅自動

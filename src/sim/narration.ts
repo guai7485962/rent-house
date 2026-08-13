@@ -16,7 +16,7 @@ import {
 import { sanitizeAiEvent } from "./events";
 import { applyArcTone, sanitizeArcUpdate } from "./arcs";
 import { getRel, listRelationships } from "./social";
-import { state, clamp, fmt, gameDayIndex, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
+import { state, clamp, fmt, gameDayIndex, pushArcHistory, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
 import { sanitizeSummaryText, selectDiverseNarrativeLines, selectImportantNarrativeLines } from "./narrativeQuality";
@@ -324,6 +324,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
     applyArcTone(rt, "conclude", action.tone);
     boostWishFromArc(rt, action.tone); // 篇章好好落幕 = 人生心願也往前一步(down 收場不加)
     const growth = grantGrowthTag(rt.tenant, action.growthTag);
+    pushArcHistory(rt, action.theme); // 演過的主題記下來,明天起要求 AI 換題材
     pushMemory(rt.tenant, `[經歷:${action.theme}]`, "這段經歷已成為他的一部分", "ai_event");
     pushSocialLog(rt, `📕 篇章落幕:「${action.theme}」`, "notable");
     if (growth) pushSocialLog(rt, `🌱 成長:${growth.label}——${growth.hint}`, "notable");
@@ -331,6 +332,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
     const partner = pairArcPartner(prevArc);
     if (partner) {
       partner.arc = null;
+      pushArcHistory(partner, action.theme); // 雙人弧:兩人都算演過這條主題
       pushMemory(partner.tenant, `[經歷:${action.theme}]`, "這段共同經歷已成為他的一部分", "ai_event");
       pushSocialLog(partner, `📕 篇章落幕:「${action.theme}」`, "notable");
       unlock("pair_arc"); // 成就:共同篇章(第一條雙人弧圓滿落幕)
@@ -467,6 +469,8 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     arc: rt.arc
       ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
       : null,
+    // 演過的主題:AI 開新弧時據此避開重複題材(worker 端還會再夾一次條數/長度)
+    pastArcThemes: [...(rt.arcHistory ?? [])],
     flags: [...narrativeFlags, ...(state.pets[id] ? [`養了一隻${state.pets[id].kind === "dog" ? "狗" : "貓"}「${state.pets[id].name}」`] : [])],
     eventDue: !rt.pendingEvent && gameDayIndex() - Math.max(rt.lastEventDay, 0) >= 3,
     weather: weatherLabel(todayWeather()),

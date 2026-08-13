@@ -54,6 +54,8 @@ interface NarrateCtx {
   summary?: string;
   /** 進行中的劇情弧(null = 可開新弧;with = 雙人弧的另一位主角) */
   arc?: { theme: string; stage: number; maxStage: number; summary: string; with?: string | null } | null;
+  /** 已完結的劇情弧主題(最近數條;開新弧時不得重複或近義) */
+  pastArcThemes?: string[];
   /** 事件連鎖伏筆旗標 */
   flags?: string[];
   eventDue: boolean;
@@ -92,7 +94,9 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - **記憶標籤 newMemory 要克制**:只有會延續數天以上的關係改變、固定習慣、重大心境轉折或房東抉擇後果才新增；一次性小事與普通情緒填 null。標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])，不得新增與既有記憶近義、重複或矛盾的標籤。
 
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
-  - 沒有進行中的弧:若近況適合展開一條多日故事線(藏貓危機、鄰居戀情、職涯轉折、身心低谷、神秘包裹…),回 arcUpdate {"theme":"主題(≤12字)","maxStage":3~5,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};平淡的日子就填 null,不要硬開。
+  - **主題類型清單**(開新弧時先挑一類,再想一個具體主題):職涯轉折 / 親密關係 / 健康與身心 / 金錢困境 / 家庭與過去 / 創作與嗜好 / 鄰里衝突與和解 / 秘密與謊言 / 寵物與照顧 / 搬遷與告別 / 意外訪客 / 習慣養成。
+  - 沒有進行中的弧:**只要近期沒有連載,就優先開一條新的**,回 arcUpdate {"theme":"主題(≤12字)","maxStage":2~6,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};真的完全沒有素材撐得起一條多日故事線時才填 null。
+    **不得重複已演過的主題**:context 的「已演過的主題」列出他過去演完的弧,新主題不可與其中任何一條相同或近義(同一件事換句話說也算),請盡量換一個還沒演過的類型。
     **雙人弧**:若這條故事線自然是「他與某位鄰居兩個人」的(戀情發展、共同企劃、恩怨和解…),可加 "with":"鄰居名"(必須來自同棟其他租客清單)——兩人的日記會共同推進同一條線。對方已有進行中的弧或兩人還不夠熟時,系統會自動改成他的單人弧,不必自行判斷。
   - 有進行中的弧:若「今日唯一主線」就是這條弧、或今天證據與弧直接相關，日記與摘要才推進它(stage 最多 +1、不可倒退,theme 不可更換),回更新後的 {"stage":N,"summary":"...","done":false};若更高優先的房東抉擇/重大事件與弧無關，arcUpdate 填 null、不要硬把兩件事串在一起。推進到最後一步、故事收尾時把 done 設 true(這條弧就此完結,系統會替他留下記憶)。
     若 context 顯示這是「與某位鄰居共同」的雙人弧:從**他自己的視角**寫,但劇情要與同一條線一致;收束時兩人會一起落幕。
@@ -185,7 +189,10 @@ function buildPrompt(c: NarrateCtx): string {
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
     c.arc
       ? `進行中的劇情弧(${c.focus?.kind === "major" || c.focus?.kind === "decision" ? "若與今日主線無關就維持不動" : "主線相關時推進或收束"}):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
-      : `進行中的劇情弧:無(適合的話可開新弧)`,
+      : `進行中的劇情弧:無(近期沒有連載 → 優先開一條新的,主題要避開已演過的)`,
+    ...(c.pastArcThemes?.length
+      ? [`已演過的主題(不可重複或近義,請換一個沒演過的類型):${c.pastArcThemes.join("、")}`]
+      : []),
     `未回收的伏筆旗標:${(c.flags ?? []).join("、") || "無"}`,
     `房東抉擇事件機會:${c.eventDue ? "已到(適合就產生 event)" : "冷卻中(event 必須為 null)"}`,
     `[今日唯一主線—diary 必須以此為中心] ${c.focus?.headline || derivedHeadline}`,
@@ -320,8 +327,9 @@ function clampCtx(raw: unknown): NarrateCtx {
   const arc = c.arc && typeof c.arc === "object"
     ? {
         theme: clampStr(c.arc.theme, 40),
-        stage: clampInt(c.arc.stage, 1, 9, 1),
-        maxStage: clampInt(c.arc.maxStage, 2, 9, 3),
+        // stage/maxStage 與 src/sim/arcs.ts 的 sanitizeArcUpdate 一致夾 2~6,免得 prompt 與消毒各說各話
+        stage: clampInt(c.arc.stage, 1, 6, 1),
+        maxStage: clampInt(c.arc.maxStage, 2, 6, 3),
         summary: clampStr(c.arc.summary, 200),
         with: clampStr(c.arc.with, 24) || null,
       }
@@ -362,6 +370,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     neighbors,
     summary: sanitizeSummaryText(clampStr(c.summary, 400), [name, ...neighbors]),
     arc,
+    pastArcThemes: clampArr(c.pastArcThemes, 8, 14),
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
     weather: clampStr(c.weather, 12),
@@ -374,7 +383,7 @@ function clampCtx(raw: unknown): NarrateCtx {
 // 導出給 worker-test 直接驗證(不需啟動 Cloudflare runtime)
 export const _internal = {
   sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel,
-  narrateProviderOrder, providerEvent, extractWorkersAiText, systemPrompt: SYSTEM,
+  narrateProviderOrder, providerEvent, providerArcUpdate, extractWorkersAiText, systemPrompt: SYSTEM,
 };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
@@ -419,18 +428,36 @@ function chooseGeminiModel(ctx: NarrateCtx): "gemini-3-flash-preview" | "gemini-
   return important ? "gemini-3-flash-preview" : "gemini-3.1-flash-lite";
 }
 
-/** 平日保留免費 Workers AI 主力；事件機會到期時先問 Gemini，弱模型只作無事件日記備援。 */
+/** 沒有弧、也沒有事件機會的平日 → 免費 Workers AI 主力(成本策略不變);
+ *  事件機會到期、或手上有進行中的連載 → 先問 Gemini,弱模型只作備援。
+ *  (連載品質靠強模型:弧的推進與收束若交給弱模型,劇情會迅速退化成流水帳。) */
 function narrateProviderOrder(ctx: NarrateCtx, hasWorkersAi: boolean, hasGemini: boolean): NarrateProvider[] {
   const workers: NarrateProvider[] = hasWorkersAi ? ["workers-ai-qwen", "workers-ai-llama"] : [];
   const gemini: NarrateProvider[] = hasGemini
     ? [chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite"]
     : [];
-  return ctx.eventDue ? [...gemini, ...workers] : [...workers, ...gemini];
+  const geminiFirst = ctx.eventDue || !!ctx.arc;
+  return geminiFirst ? [...gemini, ...workers] : [...workers, ...gemini];
 }
+
+const isGemini = (provider: NarrateProvider): boolean =>
+  provider === "gemini-flash" || provider === "gemini-flash-lite";
 
 /** Workers AI 可以供應日記，但不得把低可信 event 送到玩家面前。 */
 function providerEvent(provider: NarrateProvider, event: unknown): unknown {
-  return provider === "gemini-flash" || provider === "gemini-flash-lite" ? event : null;
+  return isGemini(provider) ? event : null;
+}
+
+/** 弱模型的 arcUpdate 降權(同 providerEvent 的信任分級):
+ *  - 開新弧(ctx 原本沒有弧)一律丟棄——主題由強模型定調,弱模型開的弧幾乎都是流水帳。
+ *  - growthTag(永久性格成長)一律剝除,其餘 stage/summary/tone/done 照常。
+ *  已有弧時的推進與收束仍放行,免得沒有 Gemini 額度的日子連載整條卡死。 */
+function providerArcUpdate(provider: NarrateProvider, arcUpdate: unknown, hasArc: boolean): unknown {
+  if (isGemini(provider)) return arcUpdate;
+  if (!arcUpdate || typeof arcUpdate !== "object") return null;
+  if (!hasArc) return null;
+  const { growthTag: _dropped, ...rest } = arcUpdate as Record<string, unknown>;
+  return rest;
 }
 
 async function callGemini(ctx: NarrateCtx, key: string): Promise<string> {
@@ -647,6 +674,7 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
       return Response.json({
         ...result,
         event: providerEvent(attempt.provider, result.event),
+        arcUpdate: providerArcUpdate(attempt.provider, result.arcUpdate, !!ctx.arc),
         provider: attempt.provider,
       });
     } catch (e) {

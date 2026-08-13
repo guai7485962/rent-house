@@ -15,7 +15,7 @@ import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
 import { sanitizeAppearanceInPlace } from "../pixel/parts";
-import { state, tenants, refreshAppearances, GAME_START, gameDayIndex, cohabitingPartnerId, sanitizeCafeState, type Txn } from "./gameState";
+import { state, tenants, refreshAppearances, ARC_HISTORY_CAP, GAME_START, gameDayIndex, cohabitingPartnerId, sanitizeCafeState, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { ensureWishes } from "./wishes";
@@ -169,6 +169,7 @@ export function save() {
         modelSinceCalendarDay: rt.modelSinceCalendarDay,
         lastCareDay: rt.lastCareDay,
         arc: rt.arc,
+        arcHistory: rt.arcHistory,
         flags: rt.flags,
         diaryHour: rt.diaryHour,
         lastDiaryDay: rt.lastDiaryDay,
@@ -364,6 +365,8 @@ export function load(): boolean {
           : undefined,
         lastCareDay: saved.lastCareDay ?? -99,
         arc: saved.arc ?? null,
+        // 選填欄位:舊存檔沒有 → 空陣列(不升 SAVE_VERSION)
+        arcHistory: Array.isArray(saved.arcHistory) ? saved.arcHistory.slice(-ARC_HISTORY_CAP) : [],
         flags: saved.flags ?? [],
         inLounge: false,
         visiting: null,

@@ -14,10 +14,12 @@
 
 ---
 
-## 現在狀態(2026-08-13)
+## 現在狀態(2026-08-14)
 
-- **branch `feat/arc-variety-p1`(未 push、未部署)**:劇情弧多樣性第一階段;
-  `origin/main` 仍在 `a66dc6c`(送養合照那批,已部署上線)
+- **與 `origin/main` 同步(`cdda5df`),已部署上線**(劇情弧多樣性第一階段);
+  線上 bundle `assets/index-P2IM9tDx.js` 已驗到 `pastArcThemes`、`arcHistory`(8 處)與
+  `seedId`,`/api/narrate` 回 403(同源守衛正常、worker 存活)。
+  **worker 端的 prompt 與 provider 順序無法從外部檢視**,只能靠上線後實際生成觀察
 - **這批做了什麼**:① 有進行中的弧時 narrate 改由 Gemini 優先(平日無弧無事件仍走免費
   Workers AI);② Workers AI 回的 `arcUpdate` 只准推進、不准開新弧也不准發 `growthTag`;
   ③ 新增 `TenantRuntime.arcHistory`(選填、上限 8)把演過的主題餵回 prompt 明令不得重複,
@@ -66,7 +68,8 @@ balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 
 
 ## 下一步
 
-- **`feat/arc-variety-p1` 等中控決定是否合併/部署**(本地已驗證全綠,未 push)
+- **觀察第一階段的實際效果**:改的是 prompt 與模型分工,要跑幾個遊戲日、生成幾輪才看得出
+  主題是否真的變多樣;若仍重複,再考慮把 `arcHistory` 的近義比對從 prompt 自律改成程式把關
 - **劇情弧多樣性第二／三階段**(記憶標籤淘汰優先丟低 intensity、`[經歷:*]` 獨立額度;
   弧 stall 逾時、主線+支線並行、本地種子擴充)—— 會漂移 balance 快照,動工前先確認
 

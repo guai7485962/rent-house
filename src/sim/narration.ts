@@ -304,6 +304,7 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
   const action = sanitizeArcUpdate(raw, rt.arc);
   if (!action) return;
   if (action.kind === "start") {
+    action.arc.lastProgressDay = gameDayIndex();
     const partner = resolveArcPartner(rt, action.withName);
     if (partner) {
       rt.arc = { ...action.arc, partnerId: partner.tenant.id, partnerName: partner.tenant.name };
@@ -315,10 +316,19 @@ function applyArcUpdate(rt: TenantRuntime, raw: unknown) {
       pushSocialLog(rt, `📖 新篇章開始:「${action.arc.theme}」`, "notable");
     }
   } else if (action.kind === "advance") {
+    const progressed = !!prevArc
+      && (action.arc.stage > prevArc.stage || action.arc.summary !== prevArc.summary);
+    // 模型重送原 stage/summary 是 no-op,不可藉此永遠重設 stall 時鐘。
+    if (progressed) action.arc.lastProgressDay = gameDayIndex();
     rt.arc = action.arc;
-    applyArcTone(rt, "advance", action.tone);
+    if (progressed) applyArcTone(rt, "advance", action.tone);
     const partner = pairArcPartner(action.arc);
-    if (partner) partner.arc = { ...partner.arc!, stage: action.arc.stage, summary: action.arc.summary };
+    if (partner) partner.arc = {
+      ...partner.arc!,
+      stage: action.arc.stage,
+      summary: action.arc.summary,
+      lastProgressDay: action.arc.lastProgressDay,
+    };
   } else {
     rt.arc = null;
     applyArcTone(rt, "conclude", action.tone);
@@ -416,6 +426,8 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
       ? { kind: "major", headline: focusMajor.text, reason: "這是今天最高重要性的實際事件" }
       : rt.arc
         ? { kind: "arc", headline: `${rt.arc.theme}：${rt.arc.summary}`, reason: "今天沒有更高優先事件，接續進行中的劇情弧" }
+        : rt.sideArc
+          ? { kind: "arc", headline: `${rt.sideArc.theme}：${rt.sideArc.summary}`, reason: "今天沒有更高優先事件，可自然呼應並行的本地支線" }
         : focusNotable
           ? { kind: "notable", headline: focusNotable.text, reason: "這是今天最值得發展的明顯變化" }
           : narrativeFlag
@@ -468,6 +480,9 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     summary: sanitizeSummaryText(rt.tenant.recentSummary, [rt.tenant.name]),
     arc: rt.arc
       ? { theme: rt.arc.theme, stage: rt.arc.stage, maxStage: rt.arc.maxStage, summary: rt.arc.summary, with: rt.arc.partnerName ?? null }
+      : null,
+    sideArc: rt.sideArc
+      ? { theme: rt.sideArc.theme, stage: rt.sideArc.stage, maxStage: rt.sideArc.maxStage, summary: rt.sideArc.summary }
       : null,
     // 演過的主題:AI 開新弧時據此避開重複題材(worker 端還會再夾一次條數/長度)
     pastArcThemes: [...(rt.arcHistory ?? [])],

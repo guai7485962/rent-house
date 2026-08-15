@@ -64,6 +64,8 @@ export interface NarrateCtx {
   summary: string;
   /** 進行中的劇情弧(連載骨架;null = 沒有進行中的弧,AI 可開新弧;with = 雙人弧的另一位主角) */
   arc: { theme: string; stage: number; maxStage: number; summary: string; with?: string | null } | null;
+  /** 本地規則推進的支線；只供敘事參考,AI 的 arcUpdate 不得操作它。 */
+  sideArc?: { theme: string; stage: number; maxStage: number; summary: string } | null;
   /** 已完結的劇情弧主題(最近數條;讓 AI 開新弧時避開演過的題材。舊 ctx 缺省 = 不進 prompt) */
   pastArcThemes?: string[];
   /** 事件連鎖伏筆旗標(事件選項留下的,AI 用來回收伏筆) */

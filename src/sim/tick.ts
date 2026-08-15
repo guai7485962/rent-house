@@ -1142,7 +1142,7 @@ export function hourlyTick(live = false) {
     for (const g of wishPass()) graduateFarewell(g.id, g.reason); // 人生心願每日推進;到期者圓夢離開(紅包+退押金+口碑)
     communityPass(); // 群體事件:洗衣房口角/揪團/噪音公審/頂樓乘涼(牽動 3+ 人,§C-7)
     floorChainPass(); // 月度全樓事件鏈:都更傳聞/颱風夜停電/頂樓漏水,4 話跨日連鎖(零 RNG)
-    localArcPass(); // 個人劇情弧的本地種子:AI 沒開弧時由規則開/推進/收束(零 RNG,AI 開的弧不碰)
+    localArcPass(); // 劇情弧每日維護:本地支線推進 + AI 主線 stall 收束(零 RNG,主支線互不覆寫)
     catJournalPass(); // 貓咪觀察筆記:每 7 遊戲日一篇,以貓口吻進 Feed(彩蛋)
     weeklyReportPass(); // 每 7 遊戲日彙整收支、大事與關係變化,進動態頁週報卡
   }

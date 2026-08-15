@@ -34,6 +34,18 @@ export interface StoryArc {
   seedId?: string;
   /** 本地引擎上一次推進這條弧的遊戲日(同一天不重複推進;AI 推進過也算) */
   localDay?: number;
+  /** 主線最後一次真正推進的遊戲日;缺省由載入層從當日開始計,不讓舊檔誤判逾時。 */
+  lastProgressDay?: number;
+}
+
+/** AI 主線連續這麼多個遊戲日沒有推進,就由本地規則作中性收束。 */
+export const ARC_STALL_TIMEOUT_DAYS = 5;
+
+/** 舊弧缺時鐘時以呼叫當日為起點；只有 AI 主線會套逾時規則。 */
+export function isArcStalled(arc: StoryArc, day: number): boolean {
+  return !arc.seedId
+    && Number.isFinite(arc.lastProgressDay)
+    && day - (arc.lastProgressDay as number) >= ARC_STALL_TIMEOUT_DAYS;
 }
 
 /** 這一步對租客情緒的方向(AI 只能從 enum 選;省略/未知 = 無脈衝) */

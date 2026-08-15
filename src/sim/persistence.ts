@@ -15,7 +15,7 @@ import { serializeRelationships, loadRelationships, pruneRomanceIntegrity } from
 import { registerRoutine } from "./routine";
 import { setCustomAppearance } from "../pixel/scene";
 import { sanitizeAppearanceInPlace } from "../pixel/parts";
-import { state, tenants, refreshAppearances, ARC_HISTORY_CAP, GAME_START, gameDayIndex, cohabitingPartnerId, sanitizeCafeState, type Txn } from "./gameState";
+import { state, tenants, refreshAppearances, ARC_HISTORY_CAP, GAME_START, gameDayIndex, cohabitingPartnerId, normalizeMemoryCaps, sanitizeCafeState, type Txn } from "./gameState";
 import { ensureDiaryHours } from "./narration";
 import { ensurePets } from "./pets";
 import { ensureWishes } from "./wishes";
@@ -169,6 +169,7 @@ export function save() {
         modelSinceCalendarDay: rt.modelSinceCalendarDay,
         lastCareDay: rt.lastCareDay,
         arc: rt.arc,
+        sideArc: rt.sideArc,
         arcHistory: rt.arcHistory,
         flags: rt.flags,
         diaryHour: rt.diaryHour,
@@ -318,6 +319,7 @@ export function load(): boolean {
     for (const [id, saved] of Object.entries<any>(s.runtimes)) {
       const loadedTenant = saved.tenant as Tenant;
       loadedTenant.growthTags = sanitizeGrowthTags(loadedTenant.growthTags);
+      normalizeMemoryCaps(loadedTenant);
       // AI 色碼安全化(§9-3):`0accd4b` 之前的特邀租客把未消毒的顏色寫進了存檔,
       // 這裡就地修好。消毒冪等 → 不需升 SAVE_VERSION,也不寫回存檔(下次存檔自然帶乾淨值)。
       // 同一個物件下方會傳給 setCustomAppearance,渲染層拿到的已是消毒後的顏色。
@@ -325,6 +327,13 @@ export function load(): boolean {
       const needsModelSinceDayRepair =
         saved.modelTenant === true && !Number.isFinite(saved.modelSinceCalendarDay);
       if (needsModelSinceDayRepair) repairedModelSinceDay = true;
+      const loadedDay = gameDayIndex();
+      const savedMainArc = saved.arc?.seedId ? null : saved.arc;
+      const savedSideArc = saved.sideArc ?? (saved.arc?.seedId ? saved.arc : null);
+      // sideArc 只接受本地種子形狀；缺 seedId 的壞資料否則會永久占槽、永遠不會被本地引擎推進。
+      const loadedSideArc = savedSideArc && typeof savedSideArc.seedId === "string" && savedSideArc.seedId
+        ? { ...savedSideArc, localDay: Number.isFinite(savedSideArc.localDay) ? Math.min(loadedDay, savedSideArc.localDay) : loadedDay }
+        : null;
       state.runtimes[id] = reactive({
         tenant: loadedTenant,
         roomNo: saved.roomNo,
@@ -364,7 +373,12 @@ export function load(): boolean {
           ? saved.modelSinceCalendarDay
           : undefined,
         lastCareDay: saved.lastCareDay ?? -99,
-        arc: saved.arc ?? null,
+        // 2026-08-15 前本地種子也占用 arc 主線槽；載入時搬到 sideArc,立刻釋放 AI 主線。
+        // 舊 AI 弧沒有 lastProgressDay 時從載入當日開始計 stall,不可一載入就誤收束。
+        arc: savedMainArc
+            ? { ...savedMainArc, lastProgressDay: Number.isFinite(savedMainArc.lastProgressDay) ? Math.min(loadedDay, savedMainArc.lastProgressDay) : loadedDay }
+            : null,
+        sideArc: loadedSideArc,
         // 選填欄位:舊存檔沒有 → 空陣列(不升 SAVE_VERSION)
         arcHistory: Array.isArray(saved.arcHistory) ? saved.arcHistory.slice(-ARC_HISTORY_CAP) : [],
         flags: saved.flags ?? [],

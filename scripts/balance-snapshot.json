@@ -1,35 +1,35 @@
 {
   "note": "固定種子 20260710、10 遊戲日、事件選第一項。改動手感後用 --update 重建基準。",
-  "money": 59919,
+  "money": 59921,
   "ledgerCount": 40,
   "decisions": 0,
   "tenantCount": 2,
   "tenants": {
     "tenant_chen_engineer": {
       "mood": 95,
-      "stress": 38.8,
+      "stress": 38.6,
       "energy": 82,
       "wellbeing": 72.4,
       "affinity": 55,
-      "satisfaction": 72.9,
+      "satisfaction": 73,
       "rent": 14000,
-      "wallet": 23821,
+      "wallet": 23819,
       "arrears": 0,
       "logs": 60,
       "memories": 3
     },
     "tenant_lin_asmr": {
-      "mood": 99.5,
-      "stress": 8.7,
+      "mood": 100,
+      "stress": 6.8,
       "energy": 96,
       "wellbeing": 79.6,
       "affinity": 79.6,
-      "satisfaction": 89.8,
+      "satisfaction": 90.4,
       "rent": 16500,
       "wallet": 26950,
       "arrears": 0,
       "logs": 60,
-      "memories": 2
+      "memories": 3
     }
   }
 }

@@ -5,7 +5,7 @@
  *   ① 資料健全:id 唯一、theme ≤14 字(對齊 AI 路徑的同一道上限)、stages 2~6、
  *      成長特質與 tone 都在白名單內、觸發條件只用得到的職業/標籤;
  *   ② 決定性:同輸入永遠同輸出,且**零 Math.random**(不擾動其他系統的 RNG 次序);
- *   ③ 分工:AI 開的弧(沒有 seedId)本地引擎一根寒毛都不能碰;
+  *   ③ 分工:AI 主線(arc)與本地支線(sideArc)可並行,彼此不互改;
  *   ④ 全程:開弧 → 逐階段推進 → 落幕,會留下日誌、記憶、成長特質與心願加成。
  */
 const mem: Record<string, string> = {};
@@ -75,33 +75,38 @@ check("拿得到一位種子租客當受測對象", !!rt);
   check("40 天內至少會開到一次弧", a.some((x) => x !== "-"), a.join(","));
   check("不是天天都開(要有呼吸)", a.filter((x) => x !== "-").length < 40);
 }
-check("已經有弧時不會再開一條", (() => {
+check("已有 AI 主線仍可挑本地支線,且不撞主線題材", (() => {
   const backup = rt.arc;
   rt.arc = { id: "arc_ai_1", theme: "AI 的弧", stage: 1, maxStage: 3, summary: "" };
-  const blocked = Array.from({ length: 40 }, (_, d) => localArc.pickSeedForDay(rt, d)).every((s) => s === null);
+  const picked = Array.from({ length: 40 }, (_, d) => localArc.pickSeedForDay(rt, d)).filter(Boolean);
   rt.arc = backup;
-  return blocked;
+  return picked.length > 0 && picked.every((s) => s!.theme !== "AI 的弧");
 })());
 check("每位租客都抽得到至少一條種子(沒有人永遠沒有劇情)",
   Object.values(state.runtimes).every((r) => localArc.eligibleSeeds(r).length > 0));
 
-// ── ③ AI 開的弧不碰 ─────────────────────────────────────────
+// ── ③ AI 主線不碰,但本地支線可並行 ──────────────────────────
 {
   const backup = rt.arc;
+  const sideBackup = rt.sideArc;
+  rt.sideArc = null;
   rt.arc = { id: "arc_ai_2", theme: "AI 的弧", stage: 1, maxStage: 3, summary: "AI 寫的摘要" };
   const before = JSON.stringify(rt.arc);
   for (let d = 0; d < 30; d++) localArc.localArcPass();
   check("AI 開的弧(沒有 seedId)完全不動", JSON.stringify(rt.arc) === before);
+  check("AI 主線存在時仍可並行本地支線", rt.sideArc === null || !!rt.sideArc.seedId);
   rt.arc = backup;
+  rt.sideArc = sideBackup;
 }
 
 // ── ④ 完整流程:開弧 → 推進 → 落幕 ───────────────────────────
 {
   const target = Object.values(state.runtimes)[1] ?? rt;
   target.arc = null;
+  target.sideArc = null;
   const seed = STORY_ARC_SEEDS.find((s) => !(s.occupations?.length) && !(s.tags?.length))!;
   // 直接把弧擺成「剛開好的第 1 階段」,再用 localArcPass 一天一天推,不倚賴機率何時命中
-  target.arc = {
+  target.sideArc = {
     id: `${localArc.LOCAL_ARC_ID_PREFIX}${seed.id}_0`,
     theme: seed.theme, stage: 1, maxStage: seed.stages.length,
     summary: seed.stages[0].summary, seedId: seed.id, localDay: -99,
@@ -110,14 +115,14 @@ check("每位租客都抽得到至少一條種子(沒有人永遠沒有劇情)",
   const stagesSeen: number[] = [];
   for (let i = 0; i < seed.stages.length + 3; i++) {
     localArc.localArcPass();
-    if (target.arc) { stagesSeen.push(target.arc.stage); target.arc.localDay = -99; } // 讓下一輪立刻可推進
+    if (target.sideArc) { stagesSeen.push(target.sideArc.stage); target.sideArc.localDay = -99; } // 讓下一輪立刻可推進
     else break;
   }
   check("逐階段推進到底", stagesSeen.length > 0 && stagesSeen[stagesSeen.length - 1] === seed.stages.length,
     stagesSeen.join(">"));
   check("推進不會跳階", stagesSeen.every((s, i) => i === 0 || s === stagesSeen[i - 1] + 1), stagesSeen.join(">"));
   localArc.localArcPass(); // 最後一步的下一個窗 → 落幕
-  check("走完後落幕(arc 清空)", target.arc === null);
+  check("走完後落幕(sideArc 清空)", target.sideArc === null);
   check("落幕留下記憶", (target.tenant.memoryTags ?? []).some((m) => m.label === `[經歷:${seed.theme}]`));
   check("落幕留下日誌(篇章落幕)", target.log.slice(logBefore).some((e) => e.text.startsWith("📕 篇章落幕")));
   check("每一階段的旁白都進了日誌",
@@ -130,19 +135,22 @@ check("每位租客都抽得到至少一條種子(沒有人永遠沒有劇情)",
 {
   const target = Object.values(state.runtimes)[0];
   target.arc = null;
+  target.sideArc = null;
   const seed = STORY_ARC_SEEDS.find((s) => !(s.occupations?.length) && !(s.tags?.length))!;
-  target.arc = {
+  target.sideArc = {
     id: `${localArc.LOCAL_ARC_ID_PREFIX}${seed.id}_0`,
     theme: seed.theme, stage: 1, maxStage: seed.stages.length,
     summary: seed.stages[0].summary, seedId: seed.id, localDay: 0,
   };
-  const stageBefore = target.arc.stage;
+  const stageBefore = target.sideArc.stage;
   localArc.localArcPass();
-  check("同一天不會連推兩步", target.arc?.stage === stageBefore);
+  check("同一天不會連推兩步", target.sideArc?.stage === stageBefore);
 }
 
 {
   const target = Object.values(state.runtimes)[0];
+  target.sideArc = null;
+  // 舊存檔可能仍把本地弧放在 arc；在未經 load 的情境也要能安靜收掉。
   target.arc = {
     id: `${localArc.LOCAL_ARC_ID_PREFIX}gone_0`,
     theme: "已被刪掉的種子", stage: 1, maxStage: 3, summary: "", seedId: "arc_seed_不存在", localDay: -99,

@@ -54,6 +54,8 @@ interface NarrateCtx {
   summary?: string;
   /** 進行中的劇情弧(null = 可開新弧;with = 雙人弧的另一位主角) */
   arc?: { theme: string; stage: number; maxStage: number; summary: string; with?: string | null } | null;
+  /** 本地支線只供參考；arcUpdate 永遠只操作 arc 主線。 */
+  sideArc?: { theme: string; stage: number; maxStage: number; summary: string } | null;
   /** 已完結的劇情弧主題(最近數條;開新弧時不得重複或近義) */
   pastArcThemes?: string[];
   /** 事件連鎖伏筆旗標 */
@@ -94,6 +96,7 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - **記憶標籤 newMemory 要克制**:只有會延續數天以上的關係改變、固定習慣、重大心境轉折或房東抉擇後果才新增；一次性小事與普通情緒填 null。標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])，不得新增與既有記憶近義、重複或矛盾的標籤。
 
 - **劇情弧 arcUpdate**:給劇情一條「連載」主線,跨多天推進。context 會告訴你目前是否有進行中的弧:
+  - context 可能另有「本地支線」。它是唯讀背景,不得用 arcUpdate 推進、收束或改名；arcUpdate 永遠只操作 AI 主線。沒有主線時仍可開主線,但新主題不得和支線相同或近義。
   - **主題類型清單**(開新弧時先挑一類,再想一個具體主題):職涯轉折 / 親密關係 / 健康與身心 / 金錢困境 / 家庭與過去 / 創作與嗜好 / 鄰里衝突與和解 / 秘密與謊言 / 寵物與照顧 / 搬遷與告別 / 意外訪客 / 習慣養成。
   - 沒有進行中的弧:**只要近期沒有連載,就優先開一條新的**,回 arcUpdate {"theme":"主題(≤12字)","maxStage":2~6,"stage":1,"summary":"這條線目前的進展(≤80字)","done":false};真的完全沒有素材撐得起一條多日故事線時才填 null。
     **不得重複已演過的主題**:context 的「已演過的主題」列出他過去演完的弧,新主題不可與其中任何一條相同或近義(同一件事換句話說也算),請盡量換一個還沒演過的類型。
@@ -190,6 +193,9 @@ function buildPrompt(c: NarrateCtx): string {
     c.arc
       ? `進行中的劇情弧(${c.focus?.kind === "major" || c.focus?.kind === "decision" ? "若與今日主線無關就維持不動" : "主線相關時推進或收束"}):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
       : `進行中的劇情弧:無(近期沒有連載 → 優先開一條新的,主題要避開已演過的)`,
+    ...(c.sideArc
+      ? [`並行的本地支線(唯讀,不得用 arcUpdate 操作):「${c.sideArc.theme}」第 ${c.sideArc.stage}/${c.sideArc.maxStage} 步——${c.sideArc.summary}`]
+      : []),
     ...(c.pastArcThemes?.length
       ? [`已演過的主題(不可重複或近義,請換一個沒演過的類型):${c.pastArcThemes.join("、")}`]
       : []),
@@ -334,6 +340,14 @@ function clampCtx(raw: unknown): NarrateCtx {
         with: clampStr(c.arc.with, 24) || null,
       }
     : null;
+  const sideArc = c.sideArc && typeof c.sideArc === "object"
+    ? {
+        theme: clampStr(c.sideArc.theme, 40),
+        stage: clampInt(c.sideArc.stage, 1, 6, 1),
+        maxStage: clampInt(c.sideArc.maxStage, 2, 6, 3),
+        summary: clampStr(c.sideArc.summary, 200),
+      }
+    : null;
   return {
     name,
     occupation: clampStr(c.occupation, 40),
@@ -370,6 +384,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     neighbors,
     summary: sanitizeSummaryText(clampStr(c.summary, 400), [name, ...neighbors]),
     arc,
+    sideArc,
     pastArcThemes: clampArr(c.pastArcThemes, 8, 14),
     flags: clampArr(c.flags, 16, 40),
     eventDue: c.eventDue === true,
@@ -424,7 +439,7 @@ async function geminiGenerate(
 }
 
 function chooseGeminiModel(ctx: NarrateCtx): "gemini-3-flash-preview" | "gemini-3.1-flash-lite" {
-  const important = ctx.eventDue || ctx.events.length > 0 || (ctx.flags?.length ?? 0) > 0 || !!ctx.arc;
+  const important = ctx.eventDue || ctx.events.length > 0 || (ctx.flags?.length ?? 0) > 0 || !!ctx.arc || !!ctx.sideArc;
   return important ? "gemini-3-flash-preview" : "gemini-3.1-flash-lite";
 }
 
@@ -436,7 +451,8 @@ function narrateProviderOrder(ctx: NarrateCtx, hasWorkersAi: boolean, hasGemini:
   const gemini: NarrateProvider[] = hasGemini
     ? [chooseGeminiModel(ctx) === "gemini-3-flash-preview" ? "gemini-flash" : "gemini-flash-lite"]
     : [];
-  const geminiFirst = ctx.eventDue || !!ctx.arc;
+  // 支線存在時也先給強模型機會開一條獨立主線；弱模型的新弧本來就會被信任層丟棄。
+  const geminiFirst = ctx.eventDue || !!ctx.arc || !!ctx.sideArc;
   return geminiFirst ? [...gemini, ...workers] : [...workers, ...gemini];
 }
 

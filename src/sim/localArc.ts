@@ -5,17 +5,16 @@
  * 永遠不會有連載。本檔依 `src/content/storyArcs.ts` 的種子目錄補上那條路徑。
  *
  * 與 AI 路徑的分工(關鍵不變式):
- * - **本地只碰自己開的弧**(`arc.seedId` 有值)。AI 開的弧一律不動。
- * - `rt.arc` 非空時本地不會開新弧 ⇒ AI 有額度時,主導權完全在 AI 手上。
- * - AI 仍可推進/收束本地開的弧(`sanitizeArcUpdate` 鎖住 id/theme/maxStage,
- *   spread 會保留 `seedId`/`localDay`),兩條路徑不會打架。
- * - 同一天只推進一步:`arc.localDay` 記上次推進的遊戲日。
+ * - `rt.arc` 保留給 AI 主線；本地只碰 `rt.sideArc`(`seedId` 有值),兩條可並行。
+ * - 舊存檔若仍把本地弧放在 `rt.arc`,載入層會搬槽；未經載入的舊形狀也能原位走完。
+ * - AI context 只讀支線,`arcUpdate` 永遠只操作主線,兩條路徑不會互相覆寫。
+ * - 同一天只推進一步:`sideArc.localDay` 記上次推進的遊戲日。
  *
  * 🔴 **零 `Math.random`**:挑種子與間隔都用租客 id + 遊戲日的雜湊,
  * 不消耗亂數 ⇒ 不擾動其他系統的 RNG 次序,對 balance 快照零影響。
  */
 import { STORY_ARC_SEEDS, type StoryArcSeed } from "../content/storyArcs";
-import { applyArcTone } from "./arcs";
+import { applyArcTone, isArcStalled, type StoryArc } from "./arcs";
 import { grantGrowthTag } from "./growth";
 import { state, gameDayIndex, pushArcHistory, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { boostWishFromArc } from "./wishes";
@@ -55,14 +54,23 @@ export function eligibleSeeds(rt: TenantRuntime): StoryArcSeed[] {
  * 純函式(只讀 runtime 與遊戲日),測試可以直接對打。
  */
 export function pickSeedForDay(rt: TenantRuntime, day: number): StoryArcSeed | null {
-  if (rt.arc) return null;
+  const currentSideTheme = rt.sideArc?.theme;
+  // AI 主線不阻擋本地支線；只有既有支線(或尚未經載入層搬槽的舊本地弧)才阻擋再開一條。
+  if (rt.sideArc || rt.arc?.seedId) return null;
   const pool = eligibleSeeds(rt);
   if (!pool.length) return null;
   const id = rt.tenant.id;
   if (hash(`${id}|arcstart|${day}`) % START_CHANCE_DENOM !== 0) return null;
-  // 不要一直重播同一條:最近的經歷記憶裡出現過的主題先排除,全排除掉就不開。
+  // 不要重播或撞題:歷史、經歷記憶、進行中的主線/支線都排除；全排除就不開。
   const recent = new Set((rt.tenant.memoryTags ?? []).map((m) => m.label));
-  const fresh = pool.filter((seed) => !recent.has(`[經歷:${seed.theme}]`));
+  const blockedThemes = new Set([
+    ...(rt.arcHistory ?? []),
+    ...(rt.arc?.theme ? [rt.arc.theme] : []),
+    ...(currentSideTheme ? [currentSideTheme] : []),
+  ]);
+  const fresh = pool.filter((seed) =>
+    !recent.has(`[經歷:${seed.theme}]`) && !blockedThemes.has(seed.theme),
+  );
   const usable = fresh.length ? fresh : [];
   if (!usable.length) return null;
   return usable[hash(`${id}|arcpick|${day}`) % usable.length];
@@ -70,7 +78,7 @@ export function pickSeedForDay(rt: TenantRuntime, day: number): StoryArcSeed | n
 
 function startLocalArc(rt: TenantRuntime, seed: StoryArcSeed, day: number) {
   const first = seed.stages[0];
-  rt.arc = {
+  rt.sideArc = {
     id: `${LOCAL_ARC_ID_PREFIX}${seed.id}_${day}`,
     theme: seed.theme,
     stage: 1,
@@ -84,8 +92,10 @@ function startLocalArc(rt: TenantRuntime, seed: StoryArcSeed, day: number) {
   applyArcTone(rt, "advance", first.tone);
 }
 
-function concludeLocalArc(rt: TenantRuntime, seed: StoryArcSeed) {
-  rt.arc = null;
+type LocalArcSlot = "arc" | "sideArc";
+
+function concludeLocalArc(rt: TenantRuntime, seed: StoryArcSeed, slot: LocalArcSlot) {
+  rt[slot] = null;
   pushSocialLog(rt, seed.conclude.line, "notable");
   applyArcTone(rt, "conclude", seed.conclude.tone);
   boostWishFromArc(rt, seed.conclude.tone); // 好好落幕 = 人生心願也往前一步(同 AI 路徑)
@@ -96,23 +106,50 @@ function concludeLocalArc(rt: TenantRuntime, seed: StoryArcSeed) {
   if (growth) pushSocialLog(rt, `🌱 成長:${growth.label}——${growth.hint}`, "notable");
 }
 
+/** AI 主線卡住太久時作中性收束；不發 tone/growth,但保留履歷、記憶與可見日誌。 */
+function concludeStalledMain(rt: TenantRuntime, day: number): boolean {
+  const arc = rt.arc;
+  if (!arc || !isArcStalled(arc, day)) return false;
+  const partner = arc.partnerId && state.runtimes[arc.partnerId]?.arc?.id === arc.id
+    ? state.runtimes[arc.partnerId]
+    : null;
+  rt.arc = null;
+  pushArcHistory(rt, arc.theme);
+  pushMemory(rt.tenant, `[經歷:${arc.theme}]`, "這段未完的篇章已告一段落", "ai_event");
+  pushSocialLog(rt, `📕 篇章逾時收束:「${arc.theme}」暫時告一段落。`, "notable");
+  if (partner) {
+    partner.arc = null;
+    pushArcHistory(partner, arc.theme);
+    pushMemory(partner.tenant, `[經歷:${arc.theme}]`, "這段共同篇章已告一段落", "ai_event");
+    pushSocialLog(partner, `📕 共同篇章逾時收束:「${arc.theme}」暫時告一段落。`, "notable");
+  }
+  return true;
+}
+
+/** 新版使用 sideArc；舊存檔/測試若仍把 seedId 弧放在 arc,也能原位走完。 */
+function localArcIn(rt: TenantRuntime): { slot: LocalArcSlot; arc: StoryArc | null } {
+  if (rt.sideArc?.seedId) return { slot: "sideArc", arc: rt.sideArc };
+  if (rt.arc?.seedId) return { slot: "arc", arc: rt.arc };
+  return { slot: "sideArc", arc: null };
+}
+
 /** 推進一位租客的本地弧一步(該推進時);回傳是否真的動了。 */
 function stepOne(rt: TenantRuntime, day: number): boolean {
-  const arc = rt.arc;
+  let touched = concludeStalledMain(rt, day);
+  const { slot, arc } = localArcIn(rt);
   if (!arc) {
     const seed = pickSeedForDay(rt, day);
-    if (!seed) return false;
+    if (!seed) return touched;
     startLocalArc(rt, seed, day);
     return true;
   }
-  if (!arc.seedId) return false; // AI 開的弧,不碰
   const seed = STORY_ARC_SEEDS.find((s) => s.id === arc.seedId);
-  if (!seed) { rt.arc = null; return true; } // 種子被刪過的舊存檔:安靜收掉,不留半條殭屍弧
-  if (day - (arc.localDay ?? day) < LOCAL_ARC_ADVANCE_EVERY_DAYS) return false;
+  if (!seed) { rt[slot] = null; return true; } // 種子被刪過的舊存檔:安靜收掉,不留半條殭屍弧
+  if (day - (arc.localDay ?? day) < LOCAL_ARC_ADVANCE_EVERY_DAYS) return touched;
 
   const nextStage = arc.stage + 1;
   if (nextStage > seed.stages.length) {
-    concludeLocalArc(rt, seed);
+    concludeLocalArc(rt, seed, slot);
     return true;
   }
   const step = seed.stages[nextStage - 1];

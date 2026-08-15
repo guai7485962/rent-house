@@ -125,3 +125,13 @@ prompt 使用時機指引(附在白名單清單旁):吵架/冷戰翌日 → herm
 
 三期互相獨立、可分批上線;每期照慣例:全套測試 → build → 工作日誌同 commit →
 push → PowerShell 驗證部署。
+
+## 七、劇情弧多樣性第二／三階段(2026-08-15)
+
+- `TenantRuntime.arc` 固定為 AI 主線；新增選填 `sideArc` 作本地種子支線。兩條可並行，
+  但 Worker prompt 明令支線唯讀，`arcUpdate` 的消毒與 provider 信任分級仍只操作主線。
+- 只有支線時也走 Gemini 優先，否則 Workers AI 的新主線會被既有信任層丟棄，形成實質阻塞。
+- AI 主線以 `lastProgressDay` 計時，連續 5 日 stage/summary 都無實質變化才中性收束；
+  模型重送原狀不重設時鐘、不重複發 tone，雙人主線同步兩人的時鐘。
+- 舊 AI 弧缺時鐘時從載入日開始，舊 `arc.seedId` 本地弧載入時搬到 `sideArc`；兩欄皆 additive，
+  `SAVE_VERSION = 10` 不變。種子目錄 10→16，選種排除 `arcHistory`、主線、支線與經歷記憶。

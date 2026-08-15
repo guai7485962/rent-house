@@ -33,6 +33,8 @@ export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 export const LOG_CAP = 60;
 export const LEDGER_CAP = 60;
 export const MEMORY_CAP = 8; // 記憶標籤上限,超過丟最舊(避免無限增長)
+/** `[經歷:*]` 是已完成篇章的長期履歷,不再和一般記憶爭同一組名額。 */
+export const EXPERIENCE_MEMORY_CAP = 4;
 
 // "cafe" 是 CAFE-13 追加的:一樓咖啡廳的營收/進貨/固定開銷。扁平 union,純 additive。
 export type TxnCategory = "rent" | "furniture" | "upgrade" | "event" | "upkeep" | "cafe" | "other";
@@ -118,8 +120,10 @@ export interface TenantRuntime {
   modelSinceCalendarDay?: number;
   /** 上次收到房東心意的遊戲日(每人每日一次;kindness.ts) */
   lastCareDay?: number;
-  /** 進行中的劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
+  /** 進行中的主線劇情弧(0~1 條,AI 每日推進;純敘事骨架) */
   arc: StoryArc | null;
+  /** 本地種子支線(0~1 條);與 AI 主線並行,AI 只能讀、不能更新。 */
+  sideArc?: StoryArc | null;
   /**
    * 已完結的劇情弧主題(最舊在前,最多 ARC_HISTORY_CAP 條)。
    * 每天餵回 AI(NarrateCtx.pastArcThemes),要求新弧不得重複演過的題材。
@@ -171,6 +175,7 @@ export function makeRuntime(t: Tenant, roomNo: string, cleanliness: number, prop
     rentChangeDay: -99,
     directive: null as ActiveDirective | null,
     arc: null as StoryArc | null,
+    sideArc: null as StoryArc | null,
     flags: [] as string[],
     inLounge: false,
     visiting: null as string | null,
@@ -556,11 +561,37 @@ export function refreshAppearances() {
 }
 refreshAppearances(); // 新開局也要有部件外觀(load 會再各自刷新一次)
 
-/** 新增記憶標籤:不重複、有上限(超過丟最舊);intensity=1 起跳,每日依語意衰減(memoryEffects) */
+const isExperienceMemory = (label: string) => /^\[經歷:.+\]$/u.test(label);
+
+/**
+ * 從指定類別淘汰一筆:先比 intensity(舊檔缺值視為 1),同強度再丟最舊 acquiredAt。
+ * 只在同一額度池內競爭,所以一般記憶永遠不會把 `[經歷:*]` 擠掉,反之亦然。
+ */
+function trimMemoryPool(t: Tenant, experience: boolean, cap: number) {
+  const inPool = () => t.memoryTags
+    .map((tag, index) => ({ tag, index }))
+    .filter(({ tag }) => isExperienceMemory(tag.label) === experience);
+  while (inPool().length > cap) {
+    const victim = inPool().sort((a, b) =>
+      (a.tag.intensity ?? 1) - (b.tag.intensity ?? 1)
+      || String(a.tag.acquiredAt ?? "").localeCompare(String(b.tag.acquiredAt ?? ""))
+      || a.index - b.index,
+    )[0];
+    t.memoryTags.splice(victim.index, 1);
+  }
+}
+
+/** 載入舊檔時也收斂兩個池；缺 intensity 的舊記憶視為完整強度 1。 */
+export function normalizeMemoryCaps(t: Tenant) {
+  trimMemoryPool(t, false, MEMORY_CAP);
+  trimMemoryPool(t, true, EXPERIENCE_MEMORY_CAP);
+}
+
+/** 新增記憶標籤:不重複、一般/經歷各自有上限;intensity=1 起跳,每日依語意衰減(memoryEffects) */
 export function pushMemory(t: Tenant, label: string, hint: string, source: "ai_event" | "landlord_decision") {
   if (t.memoryTags.some((m) => m.label === label)) return;
   t.memoryTags.push({ id: `ai_${Date.now()}`, label, behaviorHint: hint, acquiredAt: new Date(state.gameMs).toISOString(), source, intensity: 1 });
-  if (t.memoryTags.length > MEMORY_CAP) t.memoryTags.splice(0, t.memoryTags.length - MEMORY_CAP);
+  normalizeMemoryCaps(t);
 }
 
 /** 系統通知單一入口:彈 toast(state.notice)+ 留存歷史(即使 toast 被同刻的下一則蓋掉,歷史都在) */

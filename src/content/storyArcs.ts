@@ -5,9 +5,9 @@
  * 所以離線、免費額度用完、或走模板 fallback 的玩家**永遠不會有連載**——
  * 跟月度事件鏈當初的問題同一類。本檔讓本地規則也能開弧、推進、收束。
  *
- * 分工:AI 有額度時仍由 AI 主導(`rt.arc` 非空時本地引擎完全不動手);
- * 沒額度時由 `src/sim/localArc.ts` 依這份目錄決定性推進。挑鏈/推進/收束的邏輯一律在該檔,
- * 本檔只放文本 —— 之後補劇情 = 只改這裡,sim 測試與 balance 快照都不會被碰到。
+ * 分工:`rt.arc` 是 AI 主線、`rt.sideArc` 是本地支線,兩條可並行；AI 只讀支線、不會更新它。
+ * `src/sim/localArc.ts` 依這份目錄決定性推進。挑鏈/推進/收束的邏輯一律在該檔,
+ * 本檔只放文本；append 種子不消耗 Math.random,但會改變雜湊取模結果,因此仍須檢查 balance diff。
  *
  * 🔴 硬性約束:
  * - `id` 會進存檔(`arc.seedId`),既有種子的 id 一個字都不能改;只能 append 新的
@@ -188,5 +188,68 @@ export const STORY_ARC_SEEDS: readonly StoryArcSeed[] = [
       tone: "tense",
       growthTag: "more_confident",
     },
+  },
+  {
+    id: "arc_seed_unsent_work",
+    theme: "沒送出的作品",
+    occupations: ["漫畫家", "推理小說家", "自由接案設計師", "ASMR 實況主", "婚禮攝影師"],
+    stages: [
+      { summary: "他把完成的作品藏在資料夾深處。", line: "📖 東西其實完成了,他卻把檔案拖進一個沒人看得見的資料夾。", tone: "down" },
+      { summary: "他反覆打開作品,仍不敢送出去。", line: "📖 他又打開那個檔案,游標停在送出按鈕上很久。", tone: "tense" },
+      { summary: "他請一個信任的人先看。", line: "📖 他把作品傳給一個信任的人,只寫了「幫我看一下」。", tone: "up" },
+    ],
+    conclude: { line: "📕 回覆沒有想像中可怕。他改了最後一處,終於讓作品離開自己的房間。", tone: "up", growthTag: "more_confident" },
+  },
+  {
+    id: "arc_seed_first_refusal",
+    theme: "第一次說不",
+    stages: [
+      { summary: "一個不合理的請求又落到他身上。", line: "📖 訊息跳出來時,他下意識打了「好」,卻沒有立刻送出。", tone: "tense" },
+      { summary: "他練習把拒絕說得清楚。", line: "📖 他把拒絕的句子改了好幾遍,每一版都少一點道歉。", tone: null },
+      { summary: "他把那句拒絕送了出去。", line: "📖 訊息送出後,他把手機翻面,在房裡走了兩圈。", tone: "tense" },
+    ],
+    conclude: { line: "📕 對方沒有翻臉,事情也沒有崩壞。他第一次發現,界線說出口之後仍能好好相處。", tone: "up", growthTag: "decisive" },
+  },
+  {
+    id: "arc_seed_lost_recipe",
+    theme: "記憶裡的味道",
+    occupations: ["咖啡師", "甜點師", "調酒師", "花藝師", "獨立書店店員"],
+    stages: [
+      { summary: "他突然想起一個很久沒吃到的味道。", line: "📖 路過廚房時,一個很久以前的味道忽然回來了,卻想不起做法。", tone: null },
+      { summary: "他照零碎記憶試做,總差了一點。", line: "📖 他照記憶試了兩次,都差一點。桌上留下幾張改過的比例。", tone: "down" },
+      { summary: "一通電話補上了缺的步驟。", line: "📖 電話那頭說出一個他漏掉的小步驟。他一邊聽,一邊笑了。", tone: "up" },
+    ],
+    conclude: { line: "📕 這次味道對了。他把做法仔細寫下來,像替一段記憶找回可以回去的路。", tone: "up", growthTag: "grounded" },
+  },
+  {
+    id: "arc_seed_morning_route",
+    theme: "清晨那條路",
+    tags: ["early_bird"],
+    stages: [
+      { summary: "他開始在清晨走同一條路。", line: "📖 天還沒全亮,他第一次沿著街角慢慢走了一圈。", tone: null },
+      { summary: "清晨散步成了短暫的喘息。", line: "📖 他又走了那條路。早餐店老闆已經認得他的背影。", tone: "up" },
+      { summary: "下雨讓他中斷了幾天。", line: "📖 雨連下幾天,鞋子一直留在門邊。他看了好幾次。", tone: "down" },
+    ],
+    conclude: { line: "📕 雨停後他重新出門,沒有補走錯過的路,只從今天這一圈開始。", tone: "up", growthTag: "patient" },
+  },
+  {
+    id: "arc_seed_spare_key",
+    theme: "那把備用鑰匙",
+    stages: [
+      { summary: "一把備用鑰匙交到了他手上。", line: "📖 對方把一把備用鑰匙放進他掌心,說只是以防萬一。", tone: "tense" },
+      { summary: "他對這份信任既珍惜又不安。", line: "📖 那把鑰匙安靜躺在抽屜裡。他每次打開都會確認一次。", tone: null },
+      { summary: "一次真正的需要讓鑰匙派上用場。", line: "📖 電話來得很急。他拿起鑰匙時,沒有再猶豫。", tone: "tense" },
+    ],
+    conclude: { line: "📕 事情平安處理完了。鑰匙還回去時,對方說「交給你果然沒錯」。", tone: "up", growthTag: "more_confident" },
+  },
+  {
+    id: "arc_seed_missed_train",
+    theme: "錯過的那班車",
+    stages: [
+      { summary: "他因為遲疑錯過了一班重要的車。", line: "📖 車門在眼前關上。他站在月台上,手裡還捏著沒送出的訊息。", tone: "down" },
+      { summary: "等待下一班時,他重新想清楚目的地。", line: "📖 下一班還要很久。他坐下來,第一次問自己是不是真的想去。", tone: null },
+      { summary: "他決定換一條路抵達。", line: "📖 他離開月台,查了一條更慢、卻是自己選的路。", tone: "up" },
+    ],
+    conclude: { line: "📕 他最後還是到了,只是比原定時間晚。那次錯過沒有毀掉什麼,反而讓方向變清楚了。", tone: "up", growthTag: "decisive" },
   },
 ];

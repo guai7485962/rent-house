@@ -14,64 +14,29 @@
 
 ---
 
-## 現在狀態(2026-08-14)
+## 現在狀態(2026-08-15)
 
-- **與 `origin/main` 同步(`cdda5df`),已部署上線**(劇情弧多樣性第一階段);
-  線上 bundle `assets/index-P2IM9tDx.js` 已驗到 `pastArcThemes`、`arcHistory`(8 處)與
-  `seedId`,`/api/narrate` 回 403(同源守衛正常、worker 存活)。
-  **worker 端的 prompt 與 provider 順序無法從外部檢視**,只能靠上線後實際生成觀察
-- **這批做了什麼**:① 有進行中的弧時 narrate 改由 Gemini 優先(平日無弧無事件仍走免費
-  Workers AI);② Workers AI 回的 `arcUpdate` 只准推進、不准開新弧也不准發 `growthTag`;
-  ③ 新增 `TenantRuntime.arcHistory`(選填、上限 8)把演過的主題餵回 prompt 明令不得重複,
-  並補主題類型清單 12 類、把「平淡日不要硬開」改成「久未連載優先開新弧」、maxStage 統一 2~6
-- **最新驗證(全綠)**:`npm test` **103/103**(新增 `scripts/arc-variety-test.ts` 30 條)、
-  app + worker typecheck 通過、`npm run build` 成功、balance 快照**零漂移**(未用 `--update`);
-  無 `.vue` 變更故未跑 UI Lab
-- **存檔版本**:`SAVE_VERSION = 10` 不變(`arcHistory` 是選填欄位,舊存檔載入補 `[]`)
+- **劇情弧多樣性第二／三階段已提交，待 push/deploy**；production 仍是 `7255bae` 的第一階段版本
+- **這批做了什麼**:一般記憶維持 8 格、`[經歷:*]` 獨立 4 格,池內優先淘汰低 intensity;
+  AI 主線 5 日無實質進展會中性收束(no-op 不重設時鐘),本地種子改為 `sideArc` 與主線並行;
+  舊本地弧載入自動搬槽、舊 AI 弧從載入日開始計 stall;本地種子 **10→16**,選種排除歷史/主線/支線
+- **AI 安全**:`arcUpdate` 只操作主線;支線唯讀;只有支線時 Gemini 優先;雙人弧同步 progress clock
+- **最新驗證(全綠)**:`npm test` **104/104**(新增 `arc-variety-p23-test.ts` 36 條)、
+  app + worker typecheck、`npm run build` 通過;刻意平衡漂移已審核並用 `--update` 重建快照
+- **存檔版本**:`SAVE_VERSION = 10` 不變(`sideArc`/`lastProgressDay` additive;舊檔載入補安全值)
 
-## 🎉 咖啡廳經營玩法重設計 P1～P4b 全數完成並部署
+## 近期已部署基線
 
-設計文件:`docs/咖啡廳經營玩法-重設計.md`(含四階段成長曲線與實測回填)。
-核心主張是**畫面上發生的事就是帳本上發生的事** —— 每一筆結帳都對應一位真的走進來的顧客。
-
-| 玩家現在可以 | |
-|---|---|
-| 開張 $22,000 | 免費附贈吧台 ×1 + 桌 ×3 + 椅 ×6 |
-| 看店員在吧台結帳 | 點餐泡泡顯示商品 + 價格,`+$XX` 浮字,顧客走去坐下 |
-| 從**銷售排行**決定補什麼料 | 每列直接寫「要補 咖啡豆 · 每份 ×4,這 26 單共差 104 單位」 |
-| 靠**排隊**判斷該不該雇人 | 不用讀數字,吧台前排長龍就是產能不足 |
-| 一路長成主業 | 招牌 Lv1→Lv4、席次、員工;名店期全設備 **$1,358/日 = 淨租金 125%** |
-| 也可能虧錢 | 備太多 −$23、備錯料 −$124、放著不管 −$346、過度擴張 −$254 |
-
-其他已完成並部署:**店貓「辣椒」**(白底虎斑,全樓溜達,不送養、不佔寄養名額)、
-**月度事件鏈 3 → 8 條**(資料已抽到 `src/content/floorChains.ts`,補文本不必動 sim)、
-姓名池 20 → 72、應徵者帶寵物率 0.22 → 0.45、排太久放棄離開。
-
-**底部版面(2026-08-09)**:咖啡廳營運面板的入口已**併進底部導覽的「💰 收支」**
-(兩者是同一顆按鈕的兩個分頁,共用 `src/components/OpsTabs.vue`;在 1F 開啟時預選咖啡廳分頁);
-空出的位置給樓層切換鈕 ⇒ 樓層頁只剩兩排按鈕(動作列四顆 + 底部導覽四顆)。
-咖啡廳分頁的九個區塊改成**可收合**(預設只展開「營運觀察」與「常備量」,面板高度 4319 → 1800px),
-**常備量每列加 −5／−1／+1／+5 快捷**(動草稿,仍要按「套用常備量」才寫存檔)。
-
-**角色與敘事擴充(2026-08-09)**:職業 **15 → 24**(`sim/recruit.ts` 的 `ARCHETYPES`,一律 append)、
-職業目標 **8 → 14**(`sim/wishes.ts`;新的六條各掛**不同的玩家槓桿**:收納+品味家具／隔音家具／
-精力壓力／現金與欠租／整潔／鄰居關係)、劇情弧新增**本地種子目錄** 10 條
-(`src/content/storyArcs.ts` + `src/sim/localArc.ts`)——在此之前弧只有 AI 生得出來,
-**離線或免費額度用完就永遠沒有連載**;現在 AI 有額度時仍由 AI 主導,沒額度才由本地規則接手。
-balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 59921→59919、陳的錢包 +$2),
-**新增職業與新增心願本身零漂移**(已隔離驗證)。
-
-**送養合照(2026-08-10)**:🐾 面板「幸福新家」每筆送養紀錄都有一張**寵物 + 新飼主的像素合照**
-(`src/floor/petPhoto.ts` + `src/components/PetPhoto.vue`)。照片**不進存檔**——每次開啟即時重畫,
-存檔只多 `adopterName?`/`adopterAppearance?` 兩個選填欄位,缺的時候依紀錄 id 決定性推導,
-所以舊紀錄打開也有照片。咖啡廳認養會留下那位顧客的真實外觀。
+- **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線；
+  詳見 `docs/咖啡廳經營玩法-重設計.md`
+- **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14
+- **敘事**:本地劇情種子原 10 條，本批擴為 16 條支線並可和 AI 主線並行
+- **送養合照**:`PetPhoto.vue` 即時決定性重畫，不存圖片資料；舊紀錄也相容
 
 ## 下一步
 
-- **觀察第一階段的實際效果**:改的是 prompt 與模型分工,要跑幾個遊戲日、生成幾輪才看得出
-  主題是否真的變多樣;若仍重複,再考慮把 `arcHistory` 的近義比對從 prompt 自律改成程式把關
-- **劇情弧多樣性第二／三階段**(記憶標籤淘汰優先丟低 intensity、`[經歷:*]` 獨立額度;
-  弧 stall 逾時、主線+支線並行、本地種子擴充)—— 會漂移 balance 快照,動工前先確認
+- **實玩觀察完整多樣性改動**:跑幾個遊戲日確認 AI 主線/本地支線確實並行、5 日 stall 收束
+  不突兀、16 條種子輪替自然;若近義題材仍重複,再把 prompt 自律升為程式把關
 
 其餘可選項(依 `docs/待辦.md`):
 
@@ -126,20 +91,9 @@ balance 快照因此重建:唯一漂移是本地弧的 mood/stress 脈衝(money 
 ## 常用指令
 
 ```powershell
-$env:Path = "C:\Program Files\nodejs;$env:Path"   # PowerShell 每個 session 要先補
-cd C:\Users\User\claude_try\rent_house
-
-npm test                              # 正式回歸集 + sim-trace(需 UTC+8 / TZ=Asia/Taipei)
-npm run typecheck                     # app(vue-tsc)+ worker
-npm run build                         # vite build,產出 dist/
-npx tsx scripts/balance-test.ts       # 固定種子 10 天快照 diff
-npx tsx scripts/balance-test.ts --update   # 只在「刻意的平衡改動」時用,並在日誌說明原因
-```
-
-```powershell
-# UI 驗證(從工作區根 C:\Users\User\claude_try 執行,三種手機寬度無頭截圖)
-npm run ui:shot -- rent
-# 完成前必須檢查 artifacts/ui-lab/rent/ 內所有 PNG 與 report.json
+npm test; npm run typecheck; npm run build
+npx tsx scripts/balance-test.ts       # 刻意改平衡才審核後加 --update
+# UI 改動另從 workspace 根跑 npm run ui:shot -- rent，並檢查 PNG/report.json
 ```
 
 ---

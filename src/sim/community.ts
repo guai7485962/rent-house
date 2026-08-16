@@ -196,6 +196,17 @@ const COMMUNITY_LINES = {
     "🍿 和 {names} 為了週末電影夜各自帶了零食來,選片吵了十分鐘,看片倒是安靜得很。",
     "🎬 週末晚上和 {names} 在交誼廳連看兩部片,片尾曲放完誰也捨不得先回房。",
   ],
+  cafeAfterHours: [
+    "☕ 打烊後的一樓只剩自己人,和 {names} 佔著吧台前那幾張椅子把今天的事說完。",
+    "🌙 店門一拉下來,{names} 就把椅子搬到吧台前,說是喝一杯,結果聊到快十一點。",
+    "🍮 和 {names} 分掉今天沒賣完的那份甜點,坐在自家店裡吃反而有種偷來的快樂。",
+    "🧹 幫忙把桌子擦完之後,和 {names} 索性就地坐下,聽樓下的冰箱嗡嗡響。",
+  ],
+  cafeWeekendNight: [
+    "🎉 週末打烊後,{names} 把一樓包了場,燈開一半、音樂放小聲,像在自己家開派對。",
+    "🕯️ 週末夜的咖啡廳沒有客人,和 {names} 圍在座位區中間,誰也不急著上樓。",
+    "🥂 和 {names} 在打烊的店裡碰杯,說這間店有一半是他們幫忙撐起來的。",
+  ],
 };
 
 const LAUNDRY_UNAVAILABLE = new Set([
@@ -677,6 +688,73 @@ export const COMMUNITY_EVENTS: CommunityEvent[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// 咖啡廳打烊後的聚會(CAFE-21 的內容端;設計文件 §4.12)
+// ---------------------------------------------------------------------------
+
+/**
+ * 為什麼是「打烊後」而不是營業時間內。
+ *
+ * 1. **畫面不打架**:`groupScene.cafeTiles()` 只看 grid 與 `currentBlocked()`,
+ *    完全不知道 `guestAgents` 的座位／吧台／人龍格與 `staffAgents` 的站位在哪
+ *    ⇒ 營業時間內開場,3～4 位租客極可能站進排隊隊伍或客人座位上。
+ *    `cafeBusinessOpen()` 為 false 的時段,顧客與店員 agent 都已清空,整層地板是空的。
+ * 2. **內容不重複**:白天的一樓已經有租客了 —— CAFE-20(`routine.ts` 的 `at_cafe`)
+ *    讓租客各自下樓坐咖啡廳。缺的是**群體**的畫面,而「打烊後自己人包場」正好和
+ *    白天的散客感區隔開,是一個新畫面而不是同一個畫面加人。
+ * 3. 21:00 是 `CAFE_CLOSE_HOUR`(20,含尾)之後的第一個整點;此時七種作息原型有五種
+ *    仍在樓裡,`scheduledCommunityPass()` 本來就會把答應參加的人拉回來入鏡。
+ *
+ * 唯一閘門是 `state.cafe.open`(見 `rollCafeGathering()`):沒開張就完全不抽,
+ * 連一次 `rng()` 都不消耗 ⇒ 無頭的 balance 快照局位元級零漂移。
+ */
+/**
+ * 打烊後聚會的時段。刻意**複製** `tick.ts` 的 `CAFE_CLOSE_HOUR`(20,含尾)+1 而不 import
+ * ——與 `routine.ts` 同一個理由:`tick.ts` 已經 import 本檔,反向 import 會讓兩個模組
+ * 在求值期互等。`cafe-gathering-test.ts` 有一條斷言把兩邊釘在一起。
+ */
+export const CAFE_GATHER_HOUR = 21;
+
+/** 「當天沒別的社群事件」時,補抽咖啡廳場的機率。 */
+export const CAFE_GATHER_CHANCE = 0.3;
+
+export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
+  {
+    // 平日打烊後:自己人留在店裡收尾兼閒聊(吧台前)
+    id: "cafe_afterhours",
+    need: 3,
+    cooldownDays: 3,
+    when: () => !isWeekend(state.gameMs),
+    scene: { hour: CAFE_GATHER_HOUR, title: "打烊後的咖啡廳", venue: "cafe", layout: "table", fx: "chat" },
+    select: (present, rng) => shuffle(present, rng).slice(0, Math.min(3, present.length)),
+    fire: (parts) => {
+      bondAll(parts, 2);
+      for (const rt of parts) bumpMood(rt, 4, -5);
+      const names = parts.map((p) => p.tenant.name).join("、");
+      const line = COMMUNITY_LINES.cafeAfterHours[sceneIndex(parts, "cafe_afterhours", COMMUNITY_LINES.cafeAfterHours.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
+      notify(`☕ 打烊後的一樓:${names} 留在店裡聊天`);
+    },
+  },
+  {
+    // 週末打烊後:整層樓下樓包場(座位區中央)
+    id: "cafe_weekend_night",
+    need: 3,
+    cooldownDays: 3,
+    when: () => isWeekend(state.gameMs),
+    scene: { hour: CAFE_GATHER_HOUR, title: "週末包場的自家咖啡廳", venue: "cafe", layout: "cluster", fx: "hearts" },
+    select: (present, rng) => shuffle(present, rng).slice(0, Math.min(4, present.length)),
+    fire: (parts) => {
+      bondAll(parts, 3);
+      for (const rt of parts) bumpMood(rt, 5, -6);
+      const names = parts.map((p) => p.tenant.name).join("、");
+      const line = COMMUNITY_LINES.cafeWeekendNight[sceneIndex(parts, "cafe_weekend_night", COMMUNITY_LINES.cafeWeekendNight.length)];
+      for (const rt of parts) pushSocialLog(rt, fillCommunity(line, { names }), "notable");
+      notify(`🌙 週末打烊後,${names} 把一樓咖啡廳包了場`);
+    },
+  },
+];
+
 function onCooldown(id: string, days: number): boolean {
   const last = state.interactionCooldowns[`community|${id}`];
   return last != null && state.gameMs - last < days * 24 * 3600 * 1000;
@@ -700,6 +778,12 @@ function scheduleCommunityEvent(ev: CommunityEvent, parts: TenantRuntime[]) {
   save();
 }
 
+/** 已排程的事件可能來自任一個池;存檔裡只有 id,兩個池都要查得到(舊檔亦然)。 */
+function findScheduledEvent(eventId: string): CommunityEvent | undefined {
+  return COMMUNITY_EVENTS.find((candidate) => candidate.id === eventId)
+    ?? CAFE_COMMUNITY_EVENTS.find((candidate) => candidate.id === eventId);
+}
+
 /** 每遊戲小時呼叫：到正確時段才真正寫日誌、套效果並啟動多人舞台。 */
 export function scheduledCommunityPass(rng: Rng = Math.random): number {
   const due = state.scheduledCommunityEvents.filter((entry) => entry.dueGameMs <= state.gameMs);
@@ -708,7 +792,7 @@ export function scheduledCommunityPass(rng: Rng = Math.random): number {
   for (const entry of due) {
     const index = state.scheduledCommunityEvents.indexOf(entry);
     if (index >= 0) state.scheduledCommunityEvents.splice(index, 1);
-    const ev = COMMUNITY_EVENTS.find((candidate) => candidate.id === entry.eventId);
+    const ev = findScheduledEvent(entry.eventId);
     if (!ev?.scene) continue;
     const parts = entry.participantIds
       .map((id) => state.runtimes[id])
@@ -741,6 +825,15 @@ export function communityPass(rng: Rng = Math.random): boolean {
   if (present.length >= 3 && !state.pendingGroupEvent && rng() < 0.18) {
     if (rollGroupEvent(present, rng)) return true;
   }
+  if (rollCommunityEvent(present, rng)) return true;
+  // 當天沒有別的社群事件才補抽咖啡廳場 ⇒ 不佔既有事件的名額,lounge／rooftop 的
+  // 絕對與相對觸發率都完全不變(把咖啡廳事件併進 COMMUNITY_EVENTS 會把每件從
+  // 1/N 稀釋成 1/(N+2),那就動到平衡了)。
+  return rollCafeGathering(present, rng);
+}
+
+/** 既有的樓層社群事件抽籤(行為與抽出的 RNG 次序都與併入本函式前一致)。 */
+function rollCommunityEvent(present: TenantRuntime[], rng: Rng): boolean {
   if (rng() > 0.4) return false; // 不是每天都有事發生(稀疏、不洗版)
   const eligible = COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays) && (!e.when || e.when()));
   if (eligible.length === 0) return false;
@@ -749,6 +842,25 @@ export function communityPass(rng: Rng = Math.random): boolean {
   if (!parts || parts.length < ev.need) return false;
   if (ev.scene) scheduleCommunityEvent(ev, parts);
   else ev.fire(parts, rng);
+  state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
+  return true;
+}
+
+/**
+ * 咖啡廳打烊後的聚會抽籤。
+ *
+ * 第一行的 `state.cafe.open` 是**天然閘門**:未開張就直接 return,一次 `rng()` 都不抽
+ * ⇒ 呼叫端後續的亂數序列與未開張前位元級相同(balance 快照零漂移)。
+ */
+function rollCafeGathering(present: TenantRuntime[], rng: Rng): boolean {
+  if (!state.cafe.open) return false; // 天然閘門:沒開張的店不可能有人在裡面聚會
+  const eligible = CAFE_COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays) && (!e.when || e.when()));
+  if (eligible.length === 0) return false;
+  if (rng() > CAFE_GATHER_CHANCE) return false;
+  const ev = eligible[Math.floor(rng() * eligible.length)];
+  const parts = ev.select(present, rng);
+  if (!parts || parts.length < ev.need) return false;
+  scheduleCommunityEvent(ev, parts);
   state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
   return true;
 }

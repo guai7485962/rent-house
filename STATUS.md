@@ -16,6 +16,14 @@
 
 ## 現在狀態(2026-08-16)
 
+- **領先 `origin/main` 一個未 push 的 commit(C 批:打烊後的租客聚會,§4.12)**:CAFE-21 的 `cafe`
+  場地做好了卻**零呼叫者**,本批補內容端 —— `community.ts` 獨立池 `CAFE_COMMUNITY_EVENTS`
+  (平日 `cafe_afterhours` / 週末 `cafe_weekend_night`,**都在打烊後 21:00**,此時顧客與店員
+  agent 已清場,不會與人龍搶格;白天的散客感另有 CAFE-20 的 `at_cafe`)
+- **平衡未動**:咖啡廳事件**不進** `COMMUNITY_EVENTS`,只在「當天沒有其他社群事件」時補抽
+  (`rollCafeGathering()` 機率 0.3)⇒ lounge／rooftop 的絕對與相對機率完全不變;未開張第一行
+  就 return、一次 `rng()` 都不抽 ⇒ 快照零漂移。`npm test` **107/107**、typecheck、build 全綠,
+  `ui:shot` 18 張 0 error,另跑自訂 Playwright 確認三樓不掛橫幅／一樓有 ☕ 店裡橫幅且三人到位
 - **與 `origin/main` 同步(`05cc2ea`)**:咖啡廳 A 批(地板分區機能差異)與 B 批(常客系統)已
   push 並部署,production 回 **200**;線上 bundle 由 `index-sSFUhi4o.js` 換成 `index-CAWvNf_T.js`
   (703,605 字元,前一版 685,536),逐項驗到 `regularCandidateDays` ×7、`regularCandidates` ×7、
@@ -46,7 +54,8 @@
   開張贈品那座的檔會吃到 A 批的產能 nerf(104→78),先確認面板的「加寬吧台」提示夠明顯、玩家
   看得懂怎麼補救,而不是只覺得營收莫名變差;同一輪順著看常客升格節奏(姓名池已擴到 64,預估
   3~4 個遊戲週填滿 6 個名額),第一位是否約第 4~5 天出現、回訪不太密也不太疏、好感不亂掉;劇情
-  面則確認 AI 主線與本地支線並行、5 日 stall 收束不突兀、16 條種子輪替自然(仍重複再改程式把關)
+  面則確認 AI 主線與本地支線並行、5 日 stall 收束不突兀、16 條種子輪替自然(仍重複再改程式把關);
+  同一輪順便看 C 批的打烊後聚會頻率(估每 8~10 個遊戲日一場)是稀疏得剛好還是太少
 
 其餘可選項(依 `docs/待辦.md`):
 

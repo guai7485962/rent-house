@@ -103,6 +103,25 @@ let last = 0;
 const agentTags = ref<{ id: string; name: string; left: string; top: string; color: string }[]>([]);
 const eventScene = ref<GroupScene | null>(null);
 
+/**
+ * 現場橫幅要跟著演出所在的樓層走。
+ * `cafe` 場地的走位在一樓的 `cafe_floor`(CAFE-21 的內容端),掛在三樓會變成
+ * 「橫幅寫著現場、畫面上一個人也沒有」;`lounge` / `rooftop` 維持只在三樓顯示。
+ */
+const sceneOnThisFloor = computed(() => {
+  const venue = eventScene.value?.venue;
+  if (!venue) return false;
+  return venue === "cafe" ? !isTenantFloor.value : isTenantFloor.value;
+});
+
+/** 現場橫幅的前綴:天台是隱藏小舞台、咖啡廳在一樓、其餘都在三樓公共區。 */
+const sceneVenueLabel = computed(() => {
+  const venue = eventScene.value?.venue;
+  if (venue === "rooftop") return "🌇 頂樓";
+  if (venue === "cafe") return "☕ 店裡";
+  return "🎬 現場";
+});
+
 function actorStyle(actor: GroupScene["actors"][number]) {
   return {
     "--actor-hair": actor.hair,
@@ -321,11 +340,11 @@ function onClick(e: MouseEvent) {
       <div v-if="isTenantFloor" class="lounge-tag">交誼廳</div>
       <div v-if="isTenantFloor" class="entrance-tag">🚪 大門</div>
       <div
-        v-if="eventScene && isTenantFloor"
+        v-if="eventScene && sceneOnThisFloor"
         class="event-scene"
         :class="[eventScene.venue, eventScene.layout, { cinematic: eventScene.venue === 'rooftop' || eventScene.layout === 'farewell' }]"
       >
-        <div class="event-scene-title">{{ eventScene.venue === "rooftop" ? "🌇 頂樓" : "🎬 現場" }} · {{ eventScene.title }}</div>
+        <div class="event-scene-title">{{ sceneVenueLabel }} · {{ eventScene.title }}</div>
         <div v-if="eventScene.venue === 'rooftop' || eventScene.layout === 'farewell'" class="event-actors">
           <div v-for="actor in eventScene.actors" :key="actor.tenantId" class="event-actor">
             <span class="pixel-person" :style="actorStyle(actor)">
@@ -449,6 +468,12 @@ function onClick(e: MouseEvent) {
 .event-scene.rooftop {
   border-color: rgba(247, 176, 94, 0.8);
   background: linear-gradient(#584f85 0%, #c47a66 58%, #20233c 59%, #141522 100%);
+}
+/* 一樓聚會:走位落在 41～44 列(1F viewport 的中段),橫幅壓在最上緣才不會蓋住演出 */
+.event-scene.cafe {
+  top: 4%;
+  border-color: rgba(214, 160, 96, 0.85);
+  background: linear-gradient(180deg, rgba(58, 38, 26, 0.94), rgba(24, 18, 14, 0.94));
 }
 .event-scene.farewell {
   top: 29%;

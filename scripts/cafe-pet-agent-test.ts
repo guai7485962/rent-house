@@ -12,8 +12,15 @@ const { state } = await import("../src/store");
 const { buildGrid } = await import("../src/floor/map");
 const {
   CAFE_PET_VISIT_END_HOUR,
+  CAFE_PET_VISIT_END_HOUR_MAX,
   CAFE_PET_VISIT_PERCENT,
+  CAFE_PET_VISIT_PERCENT_MAX,
   CAFE_PET_VISIT_START_HOUR,
+  SHOP_CAT_CAFE_PERCENT,
+  SHOP_CAT_CAFE_PERCENT_MAX,
+  cafePetVisitEndHour,
+  cafePetVisitPercent,
+  shopCatCafePercent,
   createPetAgents,
   petAgentRegion,
   tickPetAgents,
@@ -55,6 +62,20 @@ const fosterId = "cafe22_foster_pet";
 const pet = permanentPet("小栗");
 const cafeHour = firstCafeHour(petId, pet);
 check("下樓規則使用 10–16 點白天、35% 穩定時段", CAFE_PET_VISIT_START_HOUR === 10 && CAFE_PET_VISIT_END_HOUR === 16 && CAFE_PET_VISIT_PERCENT === 35);
+// 🔴 A 批(地板分區):三個旋鈕改成吃「寵物區舒適度」的函式。
+// comfort = 0 必須**逐字等於**上面那三個常數,否則既有存檔的演出會無聲改變。
+check("寵物區舒適 0 時三個旋鈕逐字等於原常數(回歸釘子)",
+  cafePetVisitPercent(0) === CAFE_PET_VISIT_PERCENT
+  && cafePetVisitEndHour(0) === CAFE_PET_VISIT_END_HOUR
+  && shopCatCafePercent(0) === SHOP_CAT_CAFE_PERCENT);
+check("舒適度推高停留比例與窗口,但都夾在上限內",
+  cafePetVisitPercent(5) === 45 && cafePetVisitEndHour(8) === 18
+  && cafePetVisitPercent(999) === CAFE_PET_VISIT_PERCENT_MAX
+  && cafePetVisitEndHour(999) === CAFE_PET_VISIT_END_HOUR_MAX
+  && shopCatCafePercent(999) === SHOP_CAT_CAFE_PERCENT_MAX);
+check("壞掉的舒適度不產生 NaN 或倒退",
+  cafePetVisitPercent(Number.NaN) === CAFE_PET_VISIT_PERCENT
+  && cafePetVisitEndHour(-9) === CAFE_PET_VISIT_END_HOUR);
 check("永久樓寵物在兩週樣本內有可預期的 cafe_pet 時段", cafeHour !== null);
 if (cafeHour == null) throw new Error("fixture 找不到咖啡廳時段");
 

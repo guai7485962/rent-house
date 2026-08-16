@@ -8,6 +8,8 @@ import { TILE, GRID_W, GRID_H, buildGrid, type Region } from "./map";
 import { currentBlocked, findPath, type Tile } from "./pathfind";
 import { state } from "../store";
 import { cafeGuestHash } from "../sim/cafeGuests";
+import { cafePetComfort } from "../sim/cafe";
+import { cafePetComfortPoints } from "../sim/placements";
 import { isShopCat } from "../sim/pets";
 import type { Pet, PetKind } from "../types";
 
@@ -40,6 +42,40 @@ export const CAFE_PET_VISIT_END_HOUR = 16;
 export const CAFE_PET_VISIT_PERCENT = 35;
 
 /**
+ * 🔴 A 批(地板分區):寵物區(`cafe_pet`)擺的貓跳台／軟墊 + 投資項「貓跳台與軟墊」
+ * 讓寵物**在一樓待得更久**。三個旋鈕都寫成「基準值 + 上限內的加成」,
+ * **`petComfort === 0` 時逐字等於 A 批之前的常數** ⇒ 既有斷言一條都不用改。
+ *
+ * 起始小時(10 / 08)刻意不動:上限保留「牠也會上樓」的空間,寵物不會變成擺設。
+ */
+export const CAFE_PET_VISIT_PERCENT_MAX = 65;
+export const CAFE_PET_VISIT_END_HOUR_MAX = 19;
+export const SHOP_CAT_CAFE_PERCENT_MAX = 75;
+
+/** 一樓寵物區的舒適度(家具 + 投資項);渲染層每次判定即時讀,搬家具立刻生效。 */
+export function cafePetComfortNow(): number {
+  return cafePetComfort(cafePetComfortPoints(), state.cafe.upgrades);
+}
+
+/** 訪客型樓寵物下樓的機率(%)。 */
+export function cafePetVisitPercent(petComfort: number): number {
+  const comfort = Math.max(0, Math.trunc(Number.isFinite(petComfort) ? petComfort : 0));
+  return Math.min(CAFE_PET_VISIT_PERCENT_MAX, CAFE_PET_VISIT_PERCENT + comfort * 2);
+}
+
+/** 訪客型樓寵物的下樓窗口結束時刻。 */
+export function cafePetVisitEndHour(petComfort: number): number {
+  const comfort = Math.max(0, Math.trunc(Number.isFinite(petComfort) ? petComfort : 0));
+  return Math.min(CAFE_PET_VISIT_END_HOUR_MAX, CAFE_PET_VISIT_END_HOUR + Math.floor(comfort / 4));
+}
+
+/** 店貓待在一樓的機率(%)。 */
+export function shopCatCafePercent(petComfort: number): number {
+  const comfort = Math.max(0, Math.trunc(Number.isFinite(petComfort) ? petComfort : 0));
+  return Math.min(SHOP_CAT_CAFE_PERCENT_MAX, SHOP_CAT_CAFE_PERCENT + comfort * 2);
+}
+
+/**
  * 店貓「辣椒」的一樓時段：她是店裡的員工，白天大半時間都該在店裡，
  * 所以窗口比訪客型樓寵物寬（08–21）、比例也高（55%）。
  * 剩下的時間她在三樓 `pet.hangout`（套房／交誼廳／浴室／洗衣間）——
@@ -61,6 +97,7 @@ export function petAgentRegion(
   pet: Pet,
   gameMs = state.gameMs,
   cafeOpen = state.cafe.open,
+  petComfort = cafePetComfortNow(),
 ): string {
   const permanentHousePet = pet.ownerId === "landlord"
     && (pet.housePlacement ?? "permanent") === "permanent";
@@ -71,15 +108,15 @@ export function petAgentRegion(
   const hourKey = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}-${hour}`;
   if (isShopCat(pet)) {
     if (hour < SHOP_CAT_CAFE_START_HOUR || hour >= SHOP_CAT_CAFE_END_HOUR) return pet.hangout;
-    return cafeGuestHash(`${petId}|${hourKey}|shop_cat`) % 100 < SHOP_CAT_CAFE_PERCENT
+    return cafeGuestHash(`${petId}|${hourKey}|shop_cat`) % 100 < shopCatCafePercent(petComfort)
       ? "cafe_pet"
       : pet.hangout;
   }
   if (!permanentHousePet
-    || hour < CAFE_PET_VISIT_START_HOUR || hour >= CAFE_PET_VISIT_END_HOUR) {
+    || hour < CAFE_PET_VISIT_START_HOUR || hour >= cafePetVisitEndHour(petComfort)) {
     return pet.hangout;
   }
-  return cafeGuestHash(`${petId}|${hourKey}|cafe_pet`) % 100 < CAFE_PET_VISIT_PERCENT
+  return cafeGuestHash(`${petId}|${hourKey}|cafe_pet`) % 100 < cafePetVisitPercent(petComfort)
     ? "cafe_pet"
     : pet.hangout;
 }

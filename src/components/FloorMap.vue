@@ -28,7 +28,7 @@ import {
   type GuestAgent,
 } from "../floor/guestAgents";
 import { staffAgentSignature, syncStaffAgents, tickStaffAgents, type StaffAgent } from "../floor/staffAgents";
-import { cafeStaffCount } from "../sim/cafe";
+import { cafeServiceStaff, cafeStaffCount } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
 import type { CafeGuest } from "../types";
 import { layoutFloorTags } from "../floor/tagLayout";
@@ -36,7 +36,7 @@ import { groupSceneView, type GroupScene } from "../floor/groupScene";
 import { renderFloorViewport, viewportRect } from "../floor/viewport";
 import { getTheme } from "../pixel/scene";
 import { state } from "../store";
-import { furnitureAt, roomRect } from "../sim/placements";
+import { cafeServiceStations, furnitureAt, roomRect } from "../sim/placements";
 import { cafeBusinessOpen } from "../sim/tick";
 import type { FurnitureRotation } from "../furniture/rotation";
 
@@ -149,13 +149,16 @@ function loop(t: number) {
     // 「關店」而讓 agent 清空 —— 空店裡不會有人在結帳。
     const cafeHour = new Date(state.gameMs).getHours();
     const cafeOpenNow = cafeBusinessOpen(state.cafe.open, cafeHour);
-    const staffCount = cafeStaffCount(state.cafe.extraStaff);
+    // 🔴 A 批(地板分區):畫面上站得出來的店員 = `min(員工數, 吧台服務位)`。
+    // 與 `cafeHourlyPass()` 夾產能用的是同一個 `cafeServiceStations()` ⇒
+    // 沒有吧台位置的店員不會憑空站在牆邊,畫面與帳本說的是同一件事。
+    const staffCount = cafeServiceStaff(cafeStaffCount(state.cafe.extraStaff), cafeServiceStations());
     const nextStaffSignature = staffAgentSignature(staffCount, cafeOpenNow);
     if (nextStaffSignature !== staffSignature) {
       staffAgents = syncStaffAgents(staffAgents, staffCount, cafeOpenNow);
       staffSignature = nextStaffSignature;
     }
-    // 同時能結帳的人數 = 員工數 ⇒ 顧客多過人手就會在吧台前排隊(純表現層)。
+    // 同時能結帳的人數 = 站得上吧台的員工數 ⇒ 顧客多過人手就會在吧台前排隊(純表現層)。
     tickGuestAgents(guestAgents, dt, state.gameMs, vacuumBlocked, undefined, staffCount);
     tickStaffAgents(staffAgents, dt, orderingGuestViews(guestAgents), queuedGuestCount(guestAgents));
     const departed = departedGuestIds(guestAgents);

@@ -16,16 +16,22 @@
 
 ## 現在狀態(2026-08-16)
 
-- **與 `origin/main` 同步(`def991b`),劇情弧多樣性第二／三階段已部署上線**;
-  線上 bundle 由第一階段的 `index-P2IM9tDx.js` 換成 `index-sSFUhi4o.js`(685,536 字元),
-  下載後驗到只屬本批的 `sideArc` ×21、`lastProgressDay` ×9,另有 `arcHistory` ×9、`seedId` ×10
-- **這批做了什麼**:一般記憶維持 8 格、`[經歷:*]` 獨立 4 格,池內優先淘汰低 intensity;
-  AI 主線 5 日無實質進展會中性收束(no-op 不重設時鐘),本地種子改為 `sideArc` 與主線並行;
-  舊本地弧載入自動搬槽、舊 AI 弧從載入日開始計 stall;本地種子 **10→16**,選種排除歷史/主線/支線
-- **AI 安全**:`arcUpdate` 只操作主線;支線唯讀;只有支線時 Gemini 優先;雙人弧同步 progress clock
-- **最新驗證(全綠)**:`npm test` **104/104**(新增 `arc-variety-p23-test.ts` 36 條)、
-  app + worker typecheck、`npm run build` 通過;刻意平衡漂移已審核並用 `--update` 重建快照
-- **存檔版本**:`SAVE_VERSION = 10` 不變(`sideArc`/`lastProgressDay` additive;舊檔載入補安全值)
+- **本地領先 `origin/main` 一個 commit(咖啡廳地板分區 A 批),尚未 push、尚未部署**;
+  線上仍是劇情弧多樣性第二／三階段的 `def991b`(bundle `index-sSFUhi4o.js`)
+- **這批做了什麼(A 批:地板分區產生機能差異)**:一條規則「家具擺在對的區才有機能效果,
+  擺錯區只剩氛圍」。後場 `cafe_back` 的 storage → 庫存容量上限(`360 + 點數×40`,上限 4000);
+  寵物區 `cafe_pet` 的 ambiance cozy → 寵物停留更久 + 認養詢問更容易出現;
+  吧台區 `cafe_counter` 的吧台連通塊寬度與 tech → 同時服務人數(`1 + 寬度 + floor(tech/3)`)。
+  一併兌現了招牌的「租屋詢問更容易出現」。設計與推導寫在
+  `docs/咖啡廳經營玩法-重設計.md` §4.10
+- **⚠️ 唯一會咬既有存檔的改動**(使用者已核可):雇 4 人以上、吧台仍是開張贈品那座的存檔,
+  產能 `4×26=104 → 3×26=78`。面板已加「服務位 N / 店員 M —— 有 K 位沒有吧台位置」提示
+- **界線未破**:`cafeAmbiancePoints()` 一行未改(客流乘數零漂移);`cafe.ts` 仍不 import
+  `placements`,幾何數字一律由 `tick.ts` / `CafePanel.vue` 當參數餵進去
+- **最新驗證(全綠)**:`npm test` **105/105**(新增 `cafe-zones-test.ts` 50 條)、
+  app + worker typecheck、`npm run build` 通過、`balance-test` **零漂移**(未 `--update`);
+  `npm run ui:shot -- rent` 18 張截圖 0 error / 0 warning
+- **存檔版本**:`SAVE_VERSION = 10` 不變(本批只加算式與 UI,不動任何存檔欄位)
 
 ## 近期已部署基線
 
@@ -37,6 +43,9 @@
 
 ## 下一步
 
+- **中控驗收 A 批的 diff 後再決定 push 與部署時機**(本地已 commit,未 push)
+- **批次 B:常客系統**(設計已核可,A 批合併後才開始):姓名當身分鍵、3 次來訪升格、
+  每小時 18% 抽籤回訪、老樣子/小費/帶朋友三個機能效果、姓名池 32→64
 - **實玩觀察完整多樣性改動**:跑幾個遊戲日確認 AI 主線/本地支線確實並行、5 日 stall 收束
   不突兀、16 條種子輪替自然;若近義題材仍重複,再把 prompt 自律升為程式把關
 

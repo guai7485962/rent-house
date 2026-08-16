@@ -11,6 +11,9 @@ import {
   CAFE_AMBIANCE_FULL_POINTS,
   CAFE_AMBIANCE_SWING,
   cafeIngredientMenuUse,
+  cafeIntentWeights,
+  cafePetComfort,
+  cafeStorageCapacity,
   cafeIngredientShortageBlame,
   cafeItemShortageCauses,
   cafeRecipeLines,
@@ -40,7 +43,17 @@ import { removeCafeGuest } from "../sim/cafeGuests";
 import { isVacant, ROOM_APPEARANCE } from "../sim/gameState";
 import { acceptCafeGuestAdoption } from "../sim/pets";
 import { save } from "../sim/persistence";
-import { CAFE_PLACEMENT_REGIONS, cafeAmbiancePoints, cafeSeatSpots, getPlacements, placeCafeStarterSet } from "../sim/placements";
+import {
+  CAFE_PLACEMENT_REGIONS,
+  cafeAmbiancePoints,
+  cafeBackStoragePoints,
+  cafePetComfortPoints,
+  cafeSeatSpots,
+  cafeServiceStations,
+  getPlacements,
+  placeCafeStarterSet,
+} from "../sim/placements";
+import { cafePetVisitEndHour } from "../floor/petAgents";
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest } from "../types";
@@ -67,10 +80,28 @@ const latest = computed(() => state.cafe.history.at(-1) ?? null);
  * `placements` 是 reactive ⇒ 玩家搬椅子,這個數字立刻跟著動。
  */
 const seatCount = computed(() => cafeSeatSpots().length);
+/**
+ * 🔴 A 批:`stations` 也必須跟著餵 —— 少餵一個輸入,面板的產能就會再一次與
+ * `cafeHourlyPass()` 對不上(那正是 P4b 修過的 bug)。三個輸入與 tick 完全相同。
+ */
+const serviceStations = computed(() => cafeServiceStations());
 const capability = computed(() => cafeCapability(state.cafe.upgrades, {
   seats: seatCount.value,
   extraStaff: state.cafe.extraStaff,
+  stations: serviceStations.value,
 }));
+// A 批:後場容量與寵物區舒適 —— 兩者都是 placements(reactive),搬家具立刻反映。
+const backStoragePoints = computed(() => cafeBackStoragePoints());
+const storageCapacity = computed(() => cafeStorageCapacity(backStoragePoints.value));
+const storedUnits = computed(() =>
+  CAFE_INGREDIENTS.reduce((sum, item) => sum + Math.max(0, Math.trunc(state.cafe.stock[item.id] ?? 0)), 0));
+const storageOver = computed(() => storedUnits.value > storageCapacity.value);
+const storagePercent = computed(() => (storageCapacity.value > 0
+  ? Math.min(100, Math.round((storedUnits.value / storageCapacity.value) * 100))
+  : 0));
+const petComfort = computed(() => cafePetComfort(cafePetComfortPoints(), state.cafe.upgrades));
+const petIntentWeights = computed(() => cafeIntentWeights(petComfort.value, capability.value.signLevel));
+const petStayEndHour = computed(() => cafePetVisitEndHour(petComfort.value));
 // P4b 人力區塊:人數含開張費已付的首位店員,日薪只算第二位起(§4.9)。
 const staffCount = computed(() => cafeStaffCount(state.cafe.extraStaff));
 const extraStaffCount = computed(() => staffCount.value - 1);
@@ -450,6 +481,12 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <p class="alert" :class="ambiancePoints > 0 ? 'good' : 'warn'">
               🪑 氛圍 {{ ambiancePoints }} / {{ CAFE_AMBIANCE_FULL_POINTS }} 點（一樓家具的舒適＋風格總和，滿點客流 +{{ Math.round(CAFE_AMBIANCE_SWING * 100) }}%）。
             </p>
+            <!-- 🔴 A 批:地板分區的第二條機能。擺對區(寵物區)的貓跳台／軟墊才算進來。 -->
+            <p class="alert" :class="petComfort > 0 ? 'good' : 'warn'">
+              🐈 寵物區舒適 {{ petComfort }} 點<template v-if="petComfort > 0">
+                → 認養詢問 {{ petIntentWeights.adopt }}%、寵物在一樓待到 {{ petStayEndHour }}:00</template><template v-else>
+                （把貓跳台或軟墊擺進<b>寵物區</b>才算數，擺主廳只有氛圍分）</template>。
+            </p>
             <p v-if="latest && latest.guests >= capability.capacity" class="alert warn">⚙️ 最近一次已滿載，可考慮增加設備。</p>
             <p v-if="predictedShortages.length" class="alert bad">⚠️ 依最近客流預估會缺：{{ predictedShortages.join("、") }}</p>
             <p v-else-if="latest" class="alert good">✓ 目前庫存足以應付最近一次的客流。</p>
@@ -579,10 +616,20 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <button class="section-head" :class="{ collapsed: !openSections.stock }" :aria-expanded="openSections.stock" @click="toggleSection('stock')">
               <div><span class="kicker">STOCK</span><h3>常備量</h3></div>
               <span class="blamed-count" v-if="blamedIngredients.length">⚠️ {{ blamedIngredients.length }} 項該補</span>
-              <span class="window" v-else>{{ CAFE_INGREDIENTS.length }} 項原料</span>
+              <!-- 🔴 A 批:後場(灰色地板)擺的貨架/木箱/冷藏決定放得下多少 -->
+              <span class="storage-badge" :class="{ over: storageOver }">後場 {{ storedUnits }} / {{ storageCapacity }}</span>
               <span class="chev" aria-hidden="true">▾</span>
             </button>
             <template v-if="openSections.stock">
+            <div class="storage-meter">
+              <div class="progress load" :class="{ full: storageOver }" role="progressbar" :aria-valuenow="storagePercent" aria-valuemin="0" aria-valuemax="100">
+                <i :style="{ width: `${storagePercent}%` }"></i>
+              </div>
+              <small>後場容量 {{ storageCapacity }} 單位（{{ backStoragePoints }} 點收納）· 目前放著 {{ storedUnits }} 單位</small>
+            </div>
+            <p v-if="storageOver" class="alert bad">
+              📦 後場放不下了：到<b>後場（最下面那條灰色地板）</b>擺後場備品貨架或進貨木箱，容量才會變大。放不下的部分今天補不進來（既有庫存不會被丟掉）。
+            </p>
             <div class="order-tools">
               <button class="ghost" @click="resetSuggestedOrders">恢復建議</button>
               <button class="ghost suggest" @click="suggestOrdersFromSales">依上週銷量建議</button>
@@ -639,11 +686,19 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               <div class="progress load" :class="{ full: loadFull }" role="progressbar" :aria-valuenow="loadPercent" aria-valuemin="0" aria-valuemax="100">
                 <i :style="{ width: `${loadPercent}%` }"></i>
               </div>
-              <small>產能 = min(席次 {{ seatCount }} 張換算的內用量, {{ staffCount }} 人 × {{ capability.cupsPerStaff }} 杯)</small>
+              <small>產能 = min(席次 {{ seatCount }} 張換算的內用量, 可用店員 {{ capability.activeStaff }} 人 × {{ capability.cupsPerStaff }} 杯)</small>
             </div>
+            <!-- 🔴 A 批:吧台寬度 = 同時服務人數。沒有吧台位置的店員薪水照付卻做不出杯子。 -->
+            <p class="alert" :class="capability.idleStaff > 0 ? 'warn' : 'good'">
+              🧑‍🍳 服務位 {{ serviceStations }} / 店員 {{ staffCount }} 人<template v-if="capability.idleStaff > 0">
+                —— 有 {{ capability.idleStaff }} 位沒有吧台位置。<b>加寬吧台</b>（在吧台區再擺一座點餐吧台，或把濃縮咖啡機也放進吧台區）才能讓他們上工。</template><template v-else>
+                —— 每位店員都站得上吧台。</template>
+            </p>
             <p class="alert" :class="loadFull ? 'warn' : 'good'">
               {{ loadFull
-                ? "🧍 今天已經做到產能上限——想再多賣就得補人或加席次,否則吧台前只會越排越長。"
+                ? (capability.idleStaff > 0
+                  ? "🧍 今天已經做到產能上限——先加寬吧台讓閒著的店員上工，那比再雇人有效。"
+                  : "🧍 今天已經做到產能上限——想再多賣就得加席次、加寬吧台或補人,否則吧台前只會越排越長。")
                 : "產能還有餘裕。真正該雇人的訊號在畫面上：吧台前排起隊、店員忙個不停。" }}
             </p>
             <div class="staff-actions">
@@ -781,6 +836,12 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .chev { color: var(--text-dim); font-size: 11px; line-height: 1; transition: transform 0.15s; }
 .section-head.collapsed .chev { transform: rotate(-90deg); }
 .blamed-count { margin-left: auto; color: #ffb0a0; font-size: 11px; font-weight: 700; white-space: nowrap; }
+/* 🔴 A 批:後場容量徽章。滿出來時轉紅,不必展開就看得到。 */
+.storage-badge { margin-left: auto; color: var(--text-dim); font-size: 10.5px; white-space: nowrap; }
+.blamed-count + .storage-badge { margin-left: 6px; }
+.storage-badge.over { color: #ff9f6b; font-weight: 700; }
+.storage-meter { display: grid; gap: 4px; margin: 6px 0 2px; }
+.storage-meter small { color: var(--text-dim); font-size: 10.5px; }
 .capacity, .balance, .count, .research-count, .ticket { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .count { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: rgba(220,100,130,0.18); color: #f4b0c4; font-weight: 700; }
 .research-count { color: #b9f6ce; font-weight: 700; }

@@ -32,9 +32,11 @@ import {
 } from "../src/floor/staffAgents";
 import {
   addPlacement,
+  cafeCounterSpan,
   cafeCounterSpots,
   cafeQueueTiles,
   cafeSeatSpots,
+  cafeServiceStations,
   cafeStaffSpots,
   placeCafeStarterSet,
   removePlacementAt,
@@ -134,6 +136,26 @@ try {
   removePlacementAt(10, 44);
   addPlacement({ defId: "cafe_counter", room: "cafe_counter", c: 3, r: 38, rotation: 0 });
   check("吧台還原後點餐位回到 (row 39)", cafeCounterSpots().every((tile) => tile.r === 39));
+
+  // 🔴 A 批(地板分區):吧台加寬 ⇒ 員工站位、點餐位、排隊格全部自動變寬,
+  // 靠的是同一組 lane 展開序改讀「整個連通塊」,沒有第二套幾何。
+  const narrowStaffSpots = cafeStaffSpots().length;
+  const narrowCounterSpots = cafeCounterSpots().length;
+  addPlacement({ defId: "cafe_counter", room: "cafe_counter", c: 5, r: 38, rotation: 0 });
+  check("加寬吧台後員工站位變多(2×span+1 的 lane 展開)",
+    cafeStaffSpots().length > narrowStaffSpots,
+    `${narrowStaffSpots} → ${cafeStaffSpots().length}`);
+  check("加寬吧台後點餐位也一起變寬(排隊與站位共用同一組 lane)",
+    cafeCounterSpots().length > narrowCounterSpots,
+    `${narrowCounterSpots} → ${cafeCounterSpots().length}`);
+  check("兩座相連的吧台 ⇒ 服務位 5(1 收銀口 + 4 格寬)",
+    cafeCounterSpan() === 4 && cafeServiceStations() === 5,
+    `span=${cafeCounterSpan()} stations=${cafeServiceStations()}`);
+  check("加寬後所有員工站位仍在吧台後方那一排",
+    cafeStaffSpots().every((tile) => tile.r === 37));
+  // 還原成開張贈品的擺法,後面的排隊測試才跑在預設場景上
+  removePlacementAt(5, 38);
+  check("拆掉第二座吧台後服務位退回 3", cafeServiceStations() === 3);
 
   // -------------------------------------------------------------------------
   // B. 🔴 排隊 = 產能不足的視覺信號

@@ -426,11 +426,67 @@ function counterAxis(counter: Placement): CounterAxis {
   return { vertical: false, frontLine: front.c, backLine: counter.c - 1, step: 1 };
 }
 
-/** 沿吧台長邊展開的固定序:互動格所在的那一道 → 右 → 左 → 更右 → 更左。 */
+/** 一件吧台展開後佔住的格(給連通塊用)。 */
+function counterCellsOf(p: Placement): SeatTile[] {
+  const fp = placementFootprint(p);
+  const cells: SeatTile[] = [];
+  for (let dr = 0; dr < fp.h; dr++) for (let dc = 0; dc < fp.w; dc++) cells.push({ c: p.c + dc, r: p.r + dr });
+  return cells;
+}
+
+/**
+ * 從 `seeds` 這批吧台格出發,取出含 `(c0,r0)` 的 **4-鄰接連通塊**。
+ *
+ * 「兩座吧台併在一起就是一條長吧台」這件事只能由連通性判斷:玩家可以把第二座
+ * 轉 90° 接在旁邊,靠單一 placement 的 footprint 永遠看不出來。
+ */
+function counterBlockFrom(seeds: readonly SeatTile[], c0: number, r0: number): SeatTile[] {
+  const pool = new Map<string, SeatTile>();
+  for (const cell of seeds) pool.set(`${cell.c},${cell.r}`, cell);
+  const start = `${c0},${r0}`;
+  if (!pool.has(start)) return [];
+  const out: SeatTile[] = [];
+  const queue: SeatTile[] = [pool.get(start)!];
+  pool.delete(start);
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    out.push(cur);
+    for (const [dc, dr] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const key = `${cur.c + dc},${cur.r + dr}`;
+      const next = pool.get(key);
+      if (!next) continue;
+      pool.delete(key);
+      queue.push(next);
+    }
+  }
+  return out;
+}
+
+/** 一樓咖啡廳四區裡所有吧台展開後的格(幾何用;機能加成另有區域限制)。 */
+function cafeCounterCells(): SeatTile[] {
+  const cells: SeatTile[] = [];
+  for (const p of placements.list) {
+    if (!CAFE_PLACEMENT_REGION_SET.has(p.room) || p.defId !== "cafe_counter") continue;
+    cells.push(...counterCellsOf(p));
+  }
+  return cells;
+}
+
+/**
+ * 沿吧台長邊展開的固定序:互動格所在的那一道 → 右 → 左 → 更右 → 更左。
+ *
+ * 🔴 A 批(地板分區):`span` 改讀**整個連通塊**沿該軸的格數,而不是單一 placement 的
+ * footprint。玩家把第二座吧台接在旁邊之後,`cafeStaffSpots()` / `cafeCounterSpots()` /
+ * `cafeQueueTiles()` 會自動跟著變寬 —— 排隊與員工站位共用同一組 lane,不需要第二套幾何。
+ */
 function counterLanes(counter: Placement, axis: CounterAxis): number[] {
   const fp = placementFootprint(counter);
   const front = placementInteract(counter);
-  const span = axis.vertical ? fp.w : fp.h;
+  const block = counterBlockFrom(cafeCounterCells(), counter.c, counter.r);
+  const along = (tile: SeatTile) => (axis.vertical ? tile.c : tile.r);
+  const span = block.length > 0
+    ? Math.max(...block.map(along)) - Math.min(...block.map(along)) + 1
+    : (axis.vertical ? fp.w : fp.h);
   const origin = axis.vertical ? front.c : front.r;
   const lanes = [origin];
   for (let d = 1; d <= span; d++) { lanes.push(origin + d); lanes.push(origin - d); }
@@ -506,6 +562,106 @@ export function cafeAmbiancePoints(): number {
     points += Math.max(0, attrs.cozy ?? 0) + Math.max(0, attrs.style ?? 0);
   }
   return points;
+}
+
+// ===========================================================================
+// 🔴 A 批:地板分區產生機能差異(設計文件「咖啡廳經營玩法-重設計」§4.10)
+//
+//   **家具擺在對的區才有機能效果;擺錯區只剩氛圍(`cozy + style`)。**
+//
+// 上面的 `cafeAmbiancePoints()` 一行不改 —— 氛圍仍然是「一樓四區的家具總和」,
+// 玩家怎麼擺都算。本節的四個查詢**額外**加上 `p.room` 的區域限制,所以同一件家具
+// 擺對區會多出一份機能效果,擺錯區也不會倒扣、不會變成失敗狀態。
+//
+// 這些函式只讀 `placements.list` + `getDef()`,**不讀 `upgrades`**:
+// 投資項的加成一律由 caller(`tick.ts` / `CafePanel.vue`)自己疊上去,
+// 與 `cafeAmbiancePoints()` 維持同一條界線。
+// ===========================================================================
+
+/** 吧台區每累積這麼多 tech 點,多開一個服務位(濃縮咖啡機 tech 3 = 剛好一個)。 */
+export const CAFE_COUNTER_TECH_PER_STATION = 3;
+
+/**
+ * 後場(`cafe_back`)的 storage 總點數 —— 庫存容量上限的唯一輸入。
+ *
+ * 冷藏櫃/貨架擺在主廳只有風格分,擺進後場才真的放得下東西。
+ */
+export function cafeBackStoragePoints(): number {
+  let points = 0;
+  for (const p of placements.list) {
+    if (p.room !== "cafe_back") continue;
+    points += Math.max(0, getDef(p.defId).attributes.storage ?? 0);
+  }
+  return Math.max(0, points);
+}
+
+/**
+ * 寵物區(`cafe_pet`)的舒適點數。
+ *
+ * 判準是 `category === "ambiance"` 而不是白名單:一樓符合的恰好只有貓跳台(cozy 5)
+ * 與寵物區軟墊(cozy 4)。桌椅是 `seating` ⇒ 玩家不能把桌椅塞進寵物區刷分。
+ *
+ * ⚠️ **刻意不看 `venue`**:`venue` 是商店分頁的分類,`shop-venue-test.ts` 有一條
+ * 硬性斷言「模擬層完全不讀 venue(讀了就是把 UI 分類偷渡成規則)」。真的有人把
+ * 三樓的擺飾搬進寵物區也無妨 —— 舒適度的三個出口(停留比例/窗口/認養加成)
+ * 各自都有上限,不會因此失控。
+ */
+export function cafePetComfortPoints(): number {
+  let points = 0;
+  for (const p of placements.list) {
+    if (p.room !== "cafe_pet") continue;
+    const def = getDef(p.defId);
+    if (def.category !== "ambiance") continue;
+    points += Math.max(0, def.attributes.cozy ?? 0);
+  }
+  return Math.max(0, points);
+}
+
+/**
+ * 吧台區(`cafe_counter`)裡**最大一塊相連吧台**的格數。
+ *
+ * 必須區域受限:否則玩家可以在主廳拉一條 14 格的吧台。分離的兩座只算較大的那一塊
+ * —— 「同時服務幾個人」講的是一條連續的吧台,不是兩張擺在不同角落的桌子。
+ */
+export function cafeCounterSpan(): number {
+  const cells: SeatTile[] = [];
+  for (const p of placements.list) {
+    if (p.room !== "cafe_counter" || p.defId !== "cafe_counter") continue;
+    cells.push(...counterCellsOf(p));
+  }
+  let best = 0;
+  const seen = new Set<string>();
+  for (const cell of cells) {
+    const key = `${cell.c},${cell.r}`;
+    if (seen.has(key)) continue;
+    const block = counterBlockFrom(cells, cell.c, cell.r);
+    for (const tile of block) seen.add(`${tile.c},${tile.r}`);
+    best = Math.max(best, block.length);
+  }
+  return best;
+}
+
+/**
+ * 吧台區的 tech 總點數。**這一項兌現了濃縮咖啡機的 tech 3**;
+ * 冷藏櫃的 tech 2 擺在後場不會生效 —— 那正是分區規則本身。
+ */
+export function cafeCounterTechPoints(): number {
+  let points = 0;
+  for (const p of placements.list) {
+    if (p.room !== "cafe_counter") continue;
+    points += Math.max(0, getDef(p.defId).attributes.tech ?? 0);
+  }
+  return Math.max(0, points);
+}
+
+/**
+ * 同時服務得了幾位顧客 = `1 + 吧台寬度 + floor(吧台區 tech / 3)`。
+ *
+ * **那個「+1」是刻意的**:吧台後方的收銀／出餐口一定存在,所以「把吧台拆光」
+ * 退化成 1 而不是 0(同 `CAFE_TAKEAWAY_CAPACITY` 的哲學:有代價,但不是失敗狀態)。
+ */
+export function cafeServiceStations(): number {
+  return 1 + cafeCounterSpan() + Math.floor(cafeCounterTechPoints() / CAFE_COUNTER_TECH_PER_STATION);
 }
 
 function fits(c: number, r: number, w: number, h: number, roomId: string, grid: string[][], occ: Set<string>) {

@@ -59,6 +59,7 @@ import {
   type CafeResearchTrack,
 } from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
+import { CAFE_INTENT_BASE, type CafeIntentWeights } from "./cafeGuests";
 import type { CafeSalesDay, CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
@@ -184,6 +185,46 @@ export interface RestockLine {
   cost: number;
 }
 
+/**
+ * 🔴 A 批(地板分區):**後場放不下就補不進來**。
+ *
+ * ### 為什麼是「容量上限」而不是「降低損耗」
+ *
+ * 降損耗會直接撞上既有投資項「大型冷藏」(`CAFE_COLD_STORAGE_*`),而且
+ * `SPOILAGE_FREE_UNITS = 23` / `SPOILAGE_RATE = 0.9` 是不等式 `(24 − F) × R < 1`
+ * 的**唯一解**(推導見該常數註解)。任何額外的免損耗來源都會把設計文件 §4.7 的
+ * 「備太多反而虧」推回正值。所以後場給的是**容量**,損耗旋鈕一格不動。
+ *
+ * ### `BASE = 360` 的推導:開張期玩家永遠碰不到上限
+ *
+ * `CAFE_INGREDIENTS` 的建議常備量總和 = 130 + 24 + 52 + 24 + 56 + 24 = **310**。
+ * 360 給 16% 的餘裕 ⇒ 照建議值玩、什麼都不擺,補貨行為**逐字等於本批之前**。
+ *
+ * ### `PER_POINT = 40` 的推導:名店期需要一次有意義的投資
+ *
+ * 名店期常備量約 900 ⇒ 需要 storage 14 點。標準解 = 後場備品貨架 ×2(storage 6,$6,200)
+ * + 進貨木箱 ×1(storage 2,$1,200)= $13,600 換 +560 → 920。後場 14×3 = 42 格,空間充裕。
+ */
+export const CAFE_STORAGE_BASE = 360;
+export const CAFE_STORAGE_PER_POINT = 40;
+/** 防呆上限(手改存檔/塞滿後場也不會變成天文數字)。 */
+export const CAFE_STORAGE_MAX = 4000;
+
+/** 後場 storage 點數 → 庫存容量上限。壞資料一律夾成「只有底量」。 */
+export function cafeStorageCapacity(points: unknown): number {
+  const safe = Math.max(0, Math.trunc(finiteOr(points, 0)));
+  return Math.min(CAFE_STORAGE_MAX, CAFE_STORAGE_BASE + safe * CAFE_STORAGE_PER_POINT);
+}
+
+export interface RestockOptions {
+  /**
+   * 後場放得下的總單位數。**省略 = 無上限**(既有呼叫端零變化,回歸釘子看得到)。
+   * 由 caller 從 `placements.ts` 的 `cafeStorageCapacity(cafeBackStoragePoints())` 取得
+   * —— 本檔不 import placements。
+   */
+  capacity?: number;
+}
+
 export interface RestockPlan {
   /** 只列 `want > 0` 的原料,順序照 `CAFE_INGREDIENTS` 宣告序。 */
   lines: RestockLine[];
@@ -199,6 +240,14 @@ export interface RestockPlan {
   fulfillment: number;
   /** `money − totalCost`,方便 CAFE-13 對帳;**保證非負**。 */
   moneyAfter: number;
+  /** 後場容量上限;`null` = caller 沒告訴我們(舊呼叫端)⇒ 這一輪不夾。 */
+  capacity: number | null;
+  /** 進場時後場已經放著多少單位(只數 `CAFE_INGREDIENTS` 內的 id)。 */
+  stored: number;
+  /** 因為放不下而少買的單位總數。 */
+  cappedUnits: number;
+  /** 有沒有被容量夾到(給面板/日誌判斷要不要提示「後場放不下了」)。 */
+  capped: boolean;
 }
 
 /**
@@ -215,50 +264,82 @@ export interface RestockPlan {
  * ⇒ 總花費永遠 `<= money`,庫存永遠不會變負,`moneyAfter` 永遠 `>= 0`。
  * 玩家帳上 0 元也只是「今天沒進貨」,不會欠債。
  *
+ * 🔴 A 批:`options.capacity` 再多夾一層「後場放得下多少」。**兩輪配額結構完全不變**
+ * ⇒ 容量不足時缺的仍然是「廣度」而不是「深度」,與上面那條哲學同一套。
+ * **絕不丟棄既有庫存**:玩家事後拆掉貨架讓 `stored > capacity` 時只是 `room = 0`
+ * (今天補不進東西),不會倒扣他已經買好的料。
+ *
  * @param standingOrders 原料 id → 每日補到的常備量。空物件(玩家還沒設)完全合法。
  * @param stock          現有庫存。
  * @param money          目前持有金錢。
+ * @param options        選填;`capacity` 省略 = 無上限(既有呼叫端逐欄不變)。
  */
 export function restockPlan(
   standingOrders: Readonly<Record<string, number>>,
   stock: Readonly<Record<string, number>>,
   money: number,
+  options: RestockOptions = {},
 ): RestockPlan {
   const nextStock: Record<string, number> = {};
   for (const [id, units] of Object.entries(stock ?? {})) nextStock[id] = safeUnits(units);
 
-  interface Draft { item: CafeIngredient; want: number; bought: number }
-  const drafts: Draft[] = [];
-  for (const item of CAFE_INGREDIENTS) {
-    // 未知 id(手改存檔、被移除的原料)沒有單價可用,直接不參與補貨。
-    const target = safeUnits((standingOrders ?? {})[item.id]);
-    const have = nextStock[item.id] ?? 0;
-    const want = Math.max(0, target - have);
-    if (want > 0) drafts.push({ item, want, bought: 0 });
-  }
+  // 後場已經放著多少:只數登記在案的原料(未知 id 本來就不參與補貨,也不該佔容量)。
+  const storedBefore = CAFE_INGREDIENTS.reduce((sum, item) => sum + (nextStock[item.id] ?? 0), 0);
+  const capacity = options.capacity === undefined || options.capacity === null
+    ? null
+    : Math.max(0, Math.trunc(finiteOr(options.capacity, 0)));
 
   // 預算取整數:單價都是整數,買不到「半個單位」,也避免浮點餘額累積。
   const startMoney = typeof money === "number" && Number.isFinite(money) ? Math.max(0, money) : 0;
-  let budget = Math.floor(startMoney);
-  const buy = (draft: Draft, upTo: number) => {
-    const remaining = Math.min(upTo, draft.want - draft.bought);
-    if (remaining <= 0) return;
-    const affordable = Math.floor(budget / draft.item.unitPrice);
-    const units = Math.max(0, Math.min(remaining, affordable));
-    if (units <= 0) return;
-    draft.bought += units;
-    budget -= units * draft.item.unitPrice;
+
+  interface Draft { item: CafeIngredient; want: number; bought: number }
+  /**
+   * 兩段式配額。`roomLimit = Infinity` 時**逐字等於 A 批之前的演算法**,
+   * 所以省略 `capacity` 的呼叫端拿到的每一欄都不會變。
+   */
+  const allocate = (roomLimit: number): Draft[] => {
+    const drafts: Draft[] = [];
+    for (const item of CAFE_INGREDIENTS) {
+      // 未知 id(手改存檔、被移除的原料)沒有單價可用,直接不參與補貨。
+      const target = safeUnits((standingOrders ?? {})[item.id]);
+      const have = nextStock[item.id] ?? 0;
+      const want = Math.max(0, target - have);
+      if (want > 0) drafts.push({ item, want, bought: 0 });
+    }
+    let budget = Math.floor(startMoney);
+    let room = roomLimit;
+    const buy = (draft: Draft, upTo: number) => {
+      const remaining = Math.min(upTo, draft.want - draft.bought);
+      if (remaining <= 0) return;
+      const affordable = Math.floor(budget / draft.item.unitPrice);
+      const units = Math.max(0, Math.min(remaining, affordable, room));
+      if (units <= 0) return;
+      draft.bought += units;
+      budget -= units * draft.item.unitPrice;
+      room -= units;
+    };
+    // 第一輪:保底水位(已高於保底水位的原料,這一輪買 0)
+    for (const draft of drafts) {
+      const target = safeUnits((standingOrders ?? {})[draft.item.id]);
+      const have = nextStock[draft.item.id] ?? 0;
+      const reserve = Math.ceil(target * RESTOCK_RESERVE_RATIO);
+      buy(draft, Math.max(0, reserve - have));
+    }
+    // 第二輪:補滿
+    for (const draft of drafts) buy(draft, draft.want);
+    return drafts;
   };
 
-  // 第一輪:保底水位(已高於保底水位的原料,這一輪買 0)
-  for (const draft of drafts) {
-    const target = safeUnits((standingOrders ?? {})[draft.item.id]);
-    const have = nextStock[draft.item.id] ?? 0;
-    const reserve = Math.ceil(target * RESTOCK_RESERVE_RATIO);
-    buy(draft, Math.max(0, reserve - have));
-  }
-  // 第二輪:補滿
-  for (const draft of drafts) buy(draft, draft.want);
+  const roomLimit = capacity === null
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, capacity - storedBefore); // 拆貨架讓 stored > capacity ⇒ room 0,**不倒扣既有庫存**
+  const drafts = allocate(roomLimit);
+  const boughtUnitsTotal = drafts.reduce((sum, draft) => sum + draft.bought, 0);
+  // 對照組:只有「錢」這一條腿夾住時買得到多少。兩者相減 = 純粹因為放不下而少買的量,
+  // 所以 `underfunded` 的語意不被容量污染(它從第一天起就只指「錢不夠」)。
+  const affordableUnits = Number.isFinite(roomLimit)
+    ? allocate(Number.POSITIVE_INFINITY).reduce((sum, draft) => sum + draft.bought, 0)
+    : boughtUnitsTotal;
 
   const lines: RestockLine[] = drafts.map((draft) => ({
     id: draft.item.id,
@@ -274,14 +355,19 @@ export function restockPlan(
   const wantUnits = lines.reduce((sum, line) => sum + line.want, 0);
   const boughtUnits = lines.reduce((sum, line) => sum + line.bought, 0);
   const missingUnits = wantUnits - boughtUnits;
+  const cappedUnits = Math.max(0, affordableUnits - boughtUnits);
   return {
     lines,
     totalCost,
     stock: nextStock,
     missingUnits,
-    underfunded: missingUnits > 0,
+    underfunded: affordableUnits < wantUnits,
     fulfillment: wantUnits === 0 ? 1 : boughtUnits / wantUnits,
     moneyAfter: startMoney - totalCost,
+    capacity,
+    stored: storedBefore,
+    cappedUnits,
+    capped: cappedUnits > 0,
   };
 }
 
@@ -578,6 +664,15 @@ export interface CafeCapability {
   outdoorSeats: boolean;
   /** 直接餵給 `applySpoilage()` 的損耗參數。 */
   spoilage: SpoilageOptions;
+  /**
+   * 🔴 A 批:吧台的服務位數。`null` = caller 沒告訴我們(舊呼叫端)⇒ 這一輪不夾人力。
+   * 與 `seatCapacity` 同一套慣例:省略不等於 0。
+   */
+  stations: number | null;
+  /** 真的站得上吧台、做得了生意的人數 = `min(staffCount, stations)`。 */
+  activeStaff: number;
+  /** 領了薪水卻沒有吧台位置的人數;`> 0` 時面板會提示玩家加寬吧台。 */
+  idleStaff: number;
 }
 
 export interface CafeCapabilityContext {
@@ -590,6 +685,23 @@ export interface CafeCapabilityContext {
   seats?: number;
   /** 額外雇用的員工數(不含首位店員),來自 `state.cafe.extraStaff`。 */
   extraStaff?: number;
+  /**
+   * 🔴 A 批:吧台同時服務得了幾個人,由 caller 從 `placements.ts` 的
+   * `cafeServiceStations()` 取得。**省略 = 不知道**(不是 0)⇒ 不夾人力,
+   * `cafeDailyPass()` 那類不需要幾何的呼叫端行為完全不變。
+   */
+  stations?: number;
+}
+
+/**
+ * 真的站得上吧台的人數。沒有吧台位置的店員薪水照付、但做不出杯子 ——
+ * 這就是「地板分區」在人力上的代價,而且**永遠至少 1**(收銀口一定存在,
+ * 拆光吧台不會變成失敗狀態)。`stations` 省略/`null` = 不夾。
+ */
+export function cafeServiceStaff(staffCount: number, stations?: number | null): number {
+  const staff = Math.max(0, Math.trunc(finiteOr(staffCount, 0)));
+  if (stations === undefined || stations === null) return staff;
+  return Math.min(staff, Math.max(1, Math.trunc(finiteOr(stations, 1))));
 }
 
 /** 總員工數 = 開張費已含的首位店員 + 額外雇用;壞資料一律夾成 `1 ~ 1 + 上限`。 */
@@ -631,7 +743,11 @@ export function cafeCapability(
   const staffCount = cafeStaffCount(context.extraStaff);
   const cupsPerStaff = CAFE_STAFF_CUPS_PER_DAY
     + (owned.has(CAFE_UPGRADE_IDS.secondMachine) ? CAFE_MACHINE_CUPS_BONUS : 0);
-  const staffCapacity = staffCount * cupsPerStaff;
+  const stations = context.stations === undefined || context.stations === null
+    ? null
+    : Math.max(1, Math.trunc(finiteOr(context.stations, 1)));
+  const activeStaff = cafeServiceStaff(staffCount, stations);
+  const staffCapacity = activeStaff * cupsPerStaff;
   const seatCapacity = context.seats === undefined || context.seats === null
     ? null
     : cafeSeatCapacity(context.seats);
@@ -647,6 +763,59 @@ export function cafeCapability(
     spoilage: cold
       ? { freeUnits: SPOILAGE_FREE_UNITS * CAFE_COLD_STORAGE_FREE_MULT, rate: SPOILAGE_RATE * CAFE_COLD_STORAGE_RATE_MULT }
       : {},
+    stations,
+    activeStaff,
+    idleStaff: staffCount - activeStaff,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 4b. 🔴 A 批:寵物區舒適度(地板分區的第二條機能)
+//
+// 寵物區的 cozy 同時進「氛圍」與「寵物舒適」是**刻意的雙重計價**:兩者語意不同
+// (一個是顧客覺得店好看、一個是貓待得住),而且氛圍另有 60 點的硬上限
+// (`CAFE_AMBIANCE_FULL_POINTS`),不會因此失控。
+// ---------------------------------------------------------------------------
+
+/** 投資項「貓跳台與軟墊」($12,000)折算的舒適點 ≈ 家具貓跳台(5) + 軟墊(4) 的量級。 */
+export const CAFE_PET_TOWER_UPGRADE_COMFORT = 8;
+
+/**
+ * 寵物區總舒適 = 擺在 `cafe_pet` 的 ambiance 家具 cozy(由 caller 從 `placements.ts`
+ * 的 `cafePetComfortPoints()` 餵進來)+ 投資項加成。**本檔仍然不 import placements。**
+ */
+export function cafePetComfort(points: unknown, upgrades: readonly string[] = []): number {
+  const base = Math.max(0, Math.trunc(finiteOr(points, 0)));
+  const owned = Array.isArray(upgrades) ? upgrades : [];
+  return base + (owned.includes(CAFE_UPGRADE_IDS.petTower) ? CAFE_PET_TOWER_UPGRADE_COMFORT : 0);
+}
+
+/** 每 1 點寵物舒適,認養詢問 +1.5%。 */
+export const CAFE_ADOPT_PER_COMFORT = 1.5;
+/** 認養加成的上限:20% → 最高 35%。 */
+export const CAFE_ADOPT_MAX_BONUS = 15;
+/** 每一級招牌(Lv1 = 0 級加成),租屋詢問 +3%。 */
+export const CAFE_RENT_PER_SIGN = 3;
+
+/**
+ * 顧客意圖的權重。**營收零影響**:`intent` 完全不參與結帳
+ * (`tick.ts` 的 `cafeHourlyPass()` 不看它),它只改變面板上會出現哪一種詢問卡。
+ *
+ * | 情境 | comfort | signLevel | coffee/adopt/rent |
+ * |---|---|---|---|
+ * | 開張贈品無投資(**A 批之前**) | 0 | 1 | 70/20/10 |
+ * | 一座貓跳台 | 5 | 1 | 62/28/10 |
+ * | 跳台+軟墊+投資項 | 17 | 1 | 55/35/10 |
+ * | 同上 + 招牌 Lv4 | 17 | 4 | 46/35/19 |
+ */
+export function cafeIntentWeights(petComfort: unknown, signLevel: unknown): CafeIntentWeights {
+  const comfort = Math.max(0, Math.trunc(finiteOr(petComfort, 0)));
+  const level = Math.max(1, Math.min(CAFE_MAX_SIGN_LEVEL, Math.trunc(finiteOr(signLevel, 1))));
+  const adoptBonus = Math.min(CAFE_ADOPT_MAX_BONUS, Math.floor(quantize(comfort * CAFE_ADOPT_PER_COMFORT)));
+  const rentBonus = (level - 1) * CAFE_RENT_PER_SIGN;
+  return {
+    adopt: CAFE_INTENT_BASE.adopt + adoptBonus,
+    rent: CAFE_INTENT_BASE.rent + rentBonus,
   };
 }
 
@@ -1291,7 +1460,7 @@ export function nextCafePopularity(
  */
 export const CAFE_LOG_PREFIX = "🥐";
 
-export type CafeDailyLineKind = "shortage" | "underfunded" | "spoilage";
+export type CafeDailyLineKind = "shortage" | "underfunded" | "spoilage" | "storage";
 
 export interface CafeDailyLineInput {
   kind: CafeDailyLineKind;
@@ -1338,13 +1507,27 @@ const SPOILAGE_LINES = [
 ];
 
 /**
- * 把日結的三個旗標組成一句敘事(**含前綴**)。純函式:同樣的 `day` + `kind` + `subject`
+ * 🔴 A 批:後場放不下。**不扣聲譽**——缺貨那條路已經在罰了,這裡只負責讓玩家
+ * 知道「今天補不滿不是因為沒錢」,並指向解法(到後場擺貨架或木箱)。
+ */
+const STORAGE_LINES = [
+  (s: string) => `送貨的推車卡在後場門口:${s}的箱子沒地方落腳,只好請人先載回去一部分。`,
+  (s: string) => `後場的架子早就滿了,${s}疊到走道上,店員側著身子才過得去——今天只能先收這些。`,
+  (s: string) => `盤點時發現${s}根本擺不下,供應商聳聳肩:「要不你先加個架子?」`,
+  (s: string) => `${s}的紙箱在後場堆成一座小山,再進就要壓到門了,今天的量只好先砍一半。`,
+];
+
+/**
+ * 把日結的旗標組成一句敘事(**含前綴**)。純函式:同樣的 `day` + `kind` + `subject`
  * 永遠得到同一句,選句用 `lineHash()` 而非 `Math.random()`。
  */
 export function cafeDailyLine(input: CafeDailyLineInput): string {
   const subject = typeof input.subject === "string" && input.subject.trim() ? input.subject.trim() : "備料";
   const day = Math.trunc(finiteOr(input.day, 0));
-  const pool = input.kind === "shortage" ? SHORTAGE_LINES : input.kind === "underfunded" ? UNDERFUNDED_LINES : SPOILAGE_LINES;
+  const pool = input.kind === "shortage" ? SHORTAGE_LINES
+    : input.kind === "underfunded" ? UNDERFUNDED_LINES
+      : input.kind === "storage" ? STORAGE_LINES
+        : SPOILAGE_LINES;
   const index = lineHash(`cafe|${input.kind}|${day}|${subject}`) % pool.length;
   if (input.kind === "underfunded") {
     // 0 成與 10 成都不成句(真的補到 10 成就不會走到這條路徑),夾在 1~9。

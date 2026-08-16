@@ -51,10 +51,24 @@ const setCafe = (patch: Partial<typeof state.cafe>) => Object.assign(state.cafe,
 
 const CAFE_REGIONS = new Set(["cafe_floor", "cafe_counter", "cafe_pet", "cafe_back"]);
 
-/** 把內用席次調整到 `target` 張(先擺開張贈品,再補/拆椅子)。回傳實際席次。 */
+/**
+ * 把內用席次調整到 `target` 張(先擺開張贈品,再補/拆椅子)。回傳實際席次。
+ *
+ * 🔴 A 批(地板分區):贈品吧台只有 2 格寬 ⇒ 服務位 3 位,雇到第 4 位以上就白雇。
+ * 本測試量的是**成長曲線**而不是「玩家忘了加吧台」,所以固定補上第二座吧台
+ * (c5,r38 與贈品的 c3–c4 相連 ⇒ 連通塊 4 格 ⇒ 服務位 5,足夠名店期的 5 位店員)。
+ * 這也正是設計要玩家做的事:多雇一個人之前,先把吧台加寬。
+ */
 function setSeats(target: number): number {
   placements.list.splice(0, placements.list.length);
   placeCafeStarterSet();
+  addPlacement({ defId: "cafe_counter", room: "cafe_counter", c: 5, r: 38, rotation: 0 });
+  // 同理:後場容量底量 360 單位只夠開張期。成長/名店期的常備量會被 `suggestStandingOrdersFromSales`
+  // 推到 500~900,所以固定補上「貨架 ×2 + 木箱 ×1」(storage 14 ⇒ 920 單位),
+  // 讓本測試量到的仍然是成長曲線本身,而不是「玩家忘了在後場擺貨架」。
+  addPlacement({ defId: "cafe_stock_shelf", room: "cafe_back", c: 1, r: 48, rotation: 0 });
+  addPlacement({ defId: "cafe_stock_shelf", room: "cafe_back", c: 4, r: 48, rotation: 0 });
+  addPlacement({ defId: "cafe_crate", room: "cafe_back", c: 10, r: 48, rotation: 0 });
   const grid = buildGrid();
   for (let r = 36; r <= 50 && cafeSeatSpots().length < target; r++) {
     for (let c = 1; c <= 14 && cafeSeatSpots().length < target; c++) {

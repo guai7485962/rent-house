@@ -41,9 +41,12 @@ import {
   cafeDailyLine,
   cafeHourlyGuestCount,
   cafeAbandonCount,
+  cafeIntentWeights,
   cafeOrderLine,
+  cafePetComfort,
   cafeServicePopularity,
   cafeStaffWage,
+  cafeStorageCapacity,
   checkoutCafeOrder,
   chooseCafeMenuItem,
   clampCafePopularity,
@@ -66,7 +69,10 @@ import { floorChainPass } from "./floorChain";
 import { localArcPass } from "./localArc";
 import { dreamPass } from "./dreams";
 import { outingEncounterPass, outingSpot } from "./outing";
-import { CAFE_DINE_IN_CAP, CAFE_GUEST_CAP, generateCafeGuest, removeDepartedCafeGuests } from "./cafeGuests";
+import {
+  CAFE_DINE_IN_CAP, CAFE_GUEST_CAP, generateCafeGuest, removeDepartedCafeGuests,
+  type CafeIntentWeights,
+} from "./cafeGuests";
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
@@ -74,7 +80,15 @@ import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
-import { cafeAmbiancePoints, cafeSeatSpots, placementFootprint, placementRotation } from "./placements";
+import {
+  cafeAmbiancePoints,
+  cafeBackStoragePoints,
+  cafePetComfortPoints,
+  cafeSeatSpots,
+  cafeServiceStations,
+  placementFootprint,
+  placementRotation,
+} from "./placements";
 import { roomComfort, comfortBaselineDelta, cleanlinessBaseline, communalQuality, communalBaselineDelta } from "./comfort";
 import { satisfactionTarget } from "./satisfaction";
 import type { Placement } from "../floor/map";
@@ -677,6 +691,7 @@ function spawnCafeGuestForOrder(
   index: number,
   order: CafeGuestOrder,
   seatTile: { c: number; r: number } | null,
+  intentWeights?: CafeIntentWeights,
 ) {
   const cafe = state.cafe;
   if (cafe.guests.length >= CAFE_GUEST_CAP) return;
@@ -688,6 +703,7 @@ function spawnCafeGuestForOrder(
     seatTile,
     takeaway: seatTile === null, // 外帶與撲空都只停留 0.25 遊戲小時
     order,
+    intentWeights,
   });
   if (cafe.guests.some((entry) => entry.id === guest.id)) return;
   cafe.guests.push(guest);
@@ -761,7 +777,19 @@ export function cafeHourlyPass(hour: number) {
   // 🔴 P4a:席次與員工同時進產能公式。兩者都是 state(placements / cafe.extraStaff),
   // 所以在這裡取,`cafe.ts` 仍然只吃參數。
   const seats = cafeSeatSpots();
-  const cap = cafeCapability(cafe.upgrades, { seats: seats.length, extraStaff: cafe.extraStaff });
+  // 🔴 A 批:吧台寬度 = 同時服務得了幾個人。沒有吧台位置的店員薪水照付但做不出杯子,
+  // 面板會用 `idleStaff` 提示玩家「加寬吧台」。同樣是 placements 的狀態,所以在這裡取。
+  const cap = cafeCapability(cafe.upgrades, {
+    seats: seats.length,
+    extraStaff: cafe.extraStaff,
+    stations: cafeServiceStations(),
+  });
+  // 🔴 A 批:寵物區舒適與招牌等級推高認養／租屋詢問的出現率。
+  // 每小時只算一次(不進逐位顧客的迴圈),`intent` 不參與結帳 ⇒ 營收零影響。
+  const intentWeights = cafeIntentWeights(
+    cafePetComfort(cafePetComfortPoints(), cafe.upgrades),
+    cap.signLevel,
+  );
   const crowd = cafeCrowd({
     weather,
     weekday: weekdayOf(state.gameMs),
@@ -853,7 +881,7 @@ export function cafeHourlyPass(hour: number) {
       }
     }
     // 🔴 這一行就是合流:每一筆結帳都生出一位帶著這份訂單、走得進畫面的顧客。
-    spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null);
+    spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null, intentWeights);
   }
 
   // 🔴 A 批:被產能夾掉的那幾位——他們真的走進店裡、站進人龍,然後放棄離開。
@@ -873,7 +901,7 @@ export function cafeHourlyPass(hour: number) {
       missing: "",
       takeaway: true, // 不佔席、停留 0.25 遊戲小時(足夠演完「排到放棄」再走出門)
       abandoned: true,
-    }, null);
+    }, null, intentWeights);
   }
 
   record.revenue += revenue;
@@ -935,7 +963,11 @@ export function cafeRestockPass(hour: number) {
   record.restocked = true;
 
   const moneyBefore = state.money;
-  const plan = restockPlan(cafe.standingOrders, cafe.stock, state.money);
+  // 🔴 A 批:後場(`cafe_back`)擺的貨架/木箱/冷藏決定放得下多少。讀 placements 是 state,
+  // 所以在這裡取,`cafe.ts` 仍然只吃參數。
+  const plan = restockPlan(cafe.standingOrders, cafe.stock, state.money, {
+    capacity: cafeStorageCapacity(cafeBackStoragePoints()),
+  });
   if (plan.totalCost > 0) addMoney(-plan.totalCost, "咖啡廳進貨", "cafe");
   cafe.stock = plan.stock;
   // 記「實際扣掉的錢」而非帳面應付:日結寫 history 時要與 money/ledger 三方對得起來。
@@ -949,6 +981,11 @@ export function cafeRestockPass(hour: number) {
     if (missingLine) {
       pushCafeLog(cafeDailyLine({ kind: "underfunded", day, subject: missingLine.name, fulfillment: plan.fulfillment }));
     }
+  } else if (plan.capped) {
+    // 放不下是**空間問題不是錢的問題**:一天最多一則、與「錢不夠」二選一(錢不夠優先講),
+    // 而且**不扣聲譽** —— 真的因此缺貨的話,缺貨那條路已經在罰了。
+    const cappedLine = plan.lines.find((line) => line.bought < line.want) ?? plan.lines[0];
+    if (cappedLine) pushCafeLog(cafeDailyLine({ kind: "storage", day, subject: cappedLine.name }));
   }
 }
 

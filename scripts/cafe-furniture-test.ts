@@ -33,6 +33,8 @@ const {
   CAFE_PLACEMENT_REGIONS,
   CAFE_STARTER_PLACEMENTS,
   cafeAmbiancePoints,
+  cafeCounterSpan,
+  cafeServiceStations,
   canPlaceFree,
   getPlacements,
   placeCafeStarterSet,
@@ -117,6 +119,14 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
     return (c === 7 || c === 8) && r >= 32;
   });
   check("不擋樓梯↔店門的中央走道 c7/c8", corridor.length === 0, corridor.join(" "));
+
+  // 🔴 A 批(地板分區):贈品吧台必須落在**吧台區**,否則它一點服務位都提供不了。
+  const starterCounter = starter.find((p) => p.defId === "cafe_counter");
+  check("贈品吧台落在 cafe_counter 區(擺錯區就只剩風格分)", starterCounter?.room === "cafe_counter",
+    `${starterCounter?.room}@${starterCounter?.c},${starterCounter?.r}`);
+  check("贈品吧台提供 3 個服務位(1 個收銀口 + 2 格吧台寬)",
+    cafeCounterSpan() === 2 && cafeServiceStations() === 3,
+    `span=${cafeCounterSpan()} stations=${cafeServiceStations()}`);
 
   // P2:席次不再是硬編座位表,而是「贈品裡那幾張 seat 家具本身」。
   // 舊斷言(贈品不可以佔到六格偏好座位)已隨 CAFE_GUEST_PREFERRED_SEATS 一起廢除。

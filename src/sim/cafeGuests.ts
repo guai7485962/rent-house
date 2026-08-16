@@ -50,8 +50,10 @@ export interface GenerateCafeGuestInput {
   seed: string | number;
   arrivedMs: number;
   sequence?: number;
-  /** 後續事件可指定意圖；未指定時按 coffee 70% / adopt 20% / rent 10% 決定。 */
+  /** 後續事件可指定意圖；未指定時按 `intentWeights`(預設 coffee 70% / adopt 20% / rent 10%)決定。 */
   intent?: CafeGuestIntent;
+  /** A 批:寵物區舒適與招牌等級推出來的意圖權重。**省略 = 今日行為**。 */
+  intentWeights?: CafeIntentWeights;
   seatTile?: CafeGuest["seatTile"];
   /** 生成同批顧客時排除已使用姓名；全池皆排除時才允許循環。 */
   excludeNames?: readonly string[];
@@ -119,10 +121,32 @@ export function cafeGuestGender(name: string): Gender {
   return CAFE_GUEST_GENDERS[name] ?? (indexFor(`${name}|gender`, 2) === 0 ? "male" : "female");
 }
 
-function intentFor(key: string): CafeGuestIntent {
+/**
+ * 三種意圖的百分比權重(coffee 是餘數,不另外列)。
+ *
+ * 🔴 A 批:寵物區舒適度會推高 `adopt`、招牌等級會推高 `rent` ——
+ * 這是在兌現「貓跳台與軟墊:認養詢問更容易出現」與「店面招牌:租屋詢問更容易出現」
+ * 這兩句一直沒接線的投資項說明(`content/cafeUpgrades.ts`)。
+ * 權重由 `cafe.ts` 的 `cafeIntentWeights()` 算,本檔只吃參數。
+ */
+export interface CafeIntentWeights {
+  adopt: number;
+  rent: number;
+}
+
+/** 未帶權重時的預設 = A 批之前的逐字行為(coffee 70 / adopt 20 / rent 10)。 */
+export const CAFE_INTENT_BASE: CafeIntentWeights = { adopt: 20, rent: 10 };
+
+/**
+ * `roll` 只依賴 `key`,權重只改變切點 ⇒ 同一位顧客在同一組權重下永遠同一個意圖,
+ * 決定性與離線一致性完全不變。
+ */
+function intentFor(key: string, weights: CafeIntentWeights = CAFE_INTENT_BASE): CafeGuestIntent {
   const roll = indexFor(`${key}|intent`, 100);
-  if (roll < 70) return "coffee";
-  if (roll < 90) return "adopt";
+  const adopt = Math.max(0, weights?.adopt ?? 0);
+  const rent = Math.max(0, weights?.rent ?? 0);
+  if (roll < 100 - adopt - rent) return "coffee";
+  if (roll < 100 - rent) return "adopt";
   return "rent";
 }
 
@@ -135,7 +159,7 @@ export function generateCafeGuest(input: GenerateCafeGuestInput): CafeGuest {
     id: `cafe_guest_${cafeGuestHash(key).toString(36)}_${sequence}`,
     name: nameFor(key, new Set(input.excludeNames ?? [])),
     appearance: appearanceFor(key),
-    intent: input.intent ?? intentFor(key),
+    intent: input.intent ?? intentFor(key, input.intentWeights ?? CAFE_INTENT_BASE),
     arrivedMs: input.arrivedMs,
     leavesMs: input.arrivedMs + Math.round(stayHours * MS_PER_GAME_HOUR),
     seatTile: input.seatTile ? { ...input.seatTile } : null,

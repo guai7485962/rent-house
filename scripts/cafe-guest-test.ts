@@ -16,6 +16,7 @@ import {
   appendCafeGuest,
   CAFE_DINE_IN_CAP,
   CAFE_GUEST_CAP,
+  CAFE_INTENT_BASE,
   cafeGuestHash,
   generateCafeGuest,
   removeCafeGuest,
@@ -55,6 +56,30 @@ try {
   check("不同 sequence 的 id 不重複", new Set(generated.map((guest) => guest.id)).size === generated.length);
   check("決定性預設生成能涵蓋三種意圖", new Set(generated.map((guest) => guest.intent)).size === 3);
   check("呼叫端可指定認養意圖", generateCafeGuest({ seed: 7, arrivedMs: 0, intent: "adopt" }).intent === "adopt");
+  // 🔴 A 批:意圖權重變成參數。**省略 = 今日行為**,否則舊存檔的顧客會換一種意圖。
+  check("預設權重 = 70/20/10(A 批之前的逐字行為)",
+    CAFE_INTENT_BASE.adopt === 20 && CAFE_INTENT_BASE.rent === 10);
+  check("省略 intentWeights 與明寫預設值,結果逐位元相同(回歸釘子)", (() => {
+    for (let i = 0; i < 200; i++) {
+      const bare = generateCafeGuest({ seed: "weights", arrivedMs: 0, sequence: i });
+      const explicit = generateCafeGuest({
+        seed: "weights", arrivedMs: 0, sequence: i, intentWeights: CAFE_INTENT_BASE,
+      });
+      if (bare.intent !== explicit.intent) return false;
+    }
+    return true;
+  })());
+  check("加大權重只會把 coffee 換成 adopt/rent,不會反向", (() => {
+    let base = 0;
+    let boosted = 0;
+    for (let i = 0; i < 300; i++) {
+      if (generateCafeGuest({ seed: "w2", arrivedMs: 0, sequence: i }).intent === "coffee") base++;
+      if (generateCafeGuest({
+        seed: "w2", arrivedMs: 0, sequence: i, intentWeights: { adopt: 35, rent: 19 },
+      }).intent === "coffee") boosted++;
+    }
+    return boosted < base;
+  })());
   const excluded = cafeGuestNames.slice(0, cafeGuestNames.length - 1);
   check("生成時會避開同批已使用姓名", generateCafeGuest({ seed: 9, arrivedMs: 0, excludeNames: excluded }).name === cafeGuestNames.at(-1));
   check("hash 對相同輸入穩定且為 unsigned 32-bit", cafeGuestHash("咖啡廳") === cafeGuestHash("咖啡廳") && cafeGuestHash("咖啡廳") >= 0);

@@ -15,6 +15,10 @@ import {
   CROWD_PENALTY_PER_SHORTAGE,
   dailyDemand,
   getCafeIngredient,
+  cafeStorageCapacity,
+  CAFE_STORAGE_BASE,
+  CAFE_STORAGE_MAX,
+  CAFE_STORAGE_PER_POINT,
   restockPlan,
   RESTOCK_RESERVE_RATIO,
   SPOILAGE_FREE_UNITS,
@@ -162,6 +166,41 @@ try {
   const srcStock = { milk: 2 };
   restockPlan(srcOrders, srcStock, 5000);
   check("補貨不修改輸入物件", srcOrders.milk === 10 && srcStock.milk === 2);
+
+  // -------------------------------------------------------------------------
+  // 五之二、🔴 A 批:後場容量上限(`options.capacity`)
+  // -------------------------------------------------------------------------
+  const richMoney = 1_000_000;
+  const uncapped = restockPlan(orders, {}, richMoney);
+  check("省略 capacity = 無上限:每一欄都與 A 批之前逐字相同(回歸釘子)",
+    uncapped.capacity === null && uncapped.capped === false && uncapped.cappedUnits === 0
+    && uncapped.stored === 0);
+  const wantTotal = uncapped.lines.reduce((sum, line) => sum + line.want, 0);
+
+  const tight = restockPlan(orders, {}, richMoney, { capacity: 100 });
+  const boughtTight = tight.lines.reduce((sum, line) => sum + line.bought, 0);
+  check("容量夾住時只買得到容量那麼多", boughtTight === 100 && tight.capped === true
+    && tight.cappedUnits === wantTotal - 100, `bought=${boughtTight}`);
+  check("被容量夾住不算 underfunded(那一欄仍然只指錢不夠)",
+    tight.underfunded === false && tight.totalCost <= richMoney);
+  check("容量剛好放得下建議常備量時完全不夾(預設值 310 < 底量 360)",
+    restockPlan(orders, {}, richMoney, { capacity: 360 }).capped === false);
+
+  const overStocked = restockPlan(orders, { milk: 500 }, richMoney, { capacity: 100 });
+  check("stored > capacity 時只是補不進來,**絕不倒扣既有庫存**",
+    overStocked.stock.milk === 500 && overStocked.stored >= 500
+    && overStocked.lines.every((line) => line.bought === 0));
+  check("容量 0 也不會產生負庫存或負花費",
+    restockPlan(orders, {}, richMoney, { capacity: 0 }).totalCost === 0);
+  check("壞掉的 capacity 一律夾成非負整數",
+    restockPlan(orders, {}, richMoney, { capacity: Number.NaN }).capacity === 0
+    && restockPlan(orders, {}, richMoney, { capacity: -50 }).capacity === 0);
+  check("容量與金錢同時吃緊時,總花費仍不超支",
+    restockPlan(orders, {}, 300, { capacity: 50 }).totalCost <= 300);
+  check("後場容量公式:0 點 = 底量、每點 +40、有硬上限",
+    cafeStorageCapacity(0) === CAFE_STORAGE_BASE
+    && cafeStorageCapacity(14) === CAFE_STORAGE_BASE + 14 * CAFE_STORAGE_PER_POINT
+    && cafeStorageCapacity(99999) === CAFE_STORAGE_MAX);
 
   // -------------------------------------------------------------------------
   // 六、消耗與缺貨

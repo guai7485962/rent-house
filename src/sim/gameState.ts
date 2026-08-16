@@ -331,6 +331,33 @@ function sanitizeCafeGuestOrder(raw: unknown): CafeGuestOrder | null {
 const CAFE_REGULAR_TASTES: readonly CafeRegular["taste"][] = ["coffee", "bakery", "pet"];
 
 /**
+ * 🔴 D 批:常客姓名的長度上限。
+ *
+ * 姓名是玩家可改存檔的自由字串,而 `cafeRegularLine()` 會把它拼進咖啡廳日誌 →
+ * `rt.log` → `todayLog` → `/api/narrate` 的 prompt。收緊之前這裡只檢查「非空」,
+ * 既無長度也無字元集 ⇒ 帶換行的姓名足以在 prompt 裡偽造一整行假指令。
+ */
+export const CAFE_REGULAR_NAME_MAX = 12;
+
+/** 姓名字元白名單:CJK(含擴充 A 與相容表意文字)、英數、間隔號與空白;其餘一律剔除。 */
+const CAFE_REGULAR_NAME_ALLOWED = /[^㐀-鿿豈-﫿 A-Za-z0-9·・]/g;
+
+/**
+ * 常客姓名消毒:`NFKC` → 字元白名單 → `trim()` → 夾 `CAFE_REGULAR_NAME_MAX` 字。
+ * 清乾淨後為空 ⇒ 回空字串,呼叫端把**整筆**丟掉(維持既有「壞的整筆丟」語意)。
+ */
+export function sanitizeCafeRegularName(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw
+    .normalize("NFKC")
+    .replace(CAFE_REGULAR_NAME_ALLOWED, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, CAFE_REGULAR_NAME_MAX)
+    .trim();
+}
+
+/**
  * 🔴 B 批:存檔裡的常客同樣逐欄檢查,壞的整筆丟掉。
  *
  * 手改存檔的四種攻擊面都在這裡夾住:負好感 → 0、未知 `taste` → 白名單退回 `coffee`、
@@ -338,11 +365,16 @@ const CAFE_REGULAR_TASTES: readonly CafeRegular["taste"][] = ["coffee", "bakery"
  * 走 `sanitizeAppearanceInPlace()`(與租客外觀、`sanitizeCafeGuest` 同一道關卡),
  * 髮型/配件不在白名單就整筆丟掉。常客不進 runtimes、不建關係,所以這裡不需要
  * 任何年齡或戀愛相關的判定 —— 那些欄位根本不存在。
+ *
+ * 🔴 D 批補上第五種攻擊面:**姓名**。它是唯一會被拼進 AI prompt 的自由字串,
+ * 收緊成 `sanitizeCafeRegularName()`(NFKC + 字元白名單 + 夾 12 字);清乾淨後
+ * 為空 ⇒ 整筆丟掉。這是既有漏洞的收緊,不是新功能。
  */
 function sanitizeCafeRegular(raw: unknown): CafeRegular | null {
   if (!isPlainObject(raw)) return null;
   const { name, appearance, taste, visits, sinceDay, lastVisitDay, affection, itemCounts } = raw;
-  if (typeof name !== "string" || !name.trim()) return null;
+  const safeName = sanitizeCafeRegularName(name);
+  if (!safeName) return null;
   if (!isPlainObject(appearance)) return null;
   if (typeof appearance.hairStyle !== "string" || !(ALL_HAIR_STYLES as readonly string[]).includes(appearance.hairStyle)) return null;
   if (typeof appearance.accessory !== "string" || !(ALL_ACCESSORIES as readonly string[]).includes(appearance.accessory)) return null;
@@ -361,7 +393,7 @@ function sanitizeCafeRegular(raw: unknown): CafeRegular | null {
   }
   const since = Math.trunc(finiteOr(sinceDay, 0));
   return {
-    name: name.trim(),
+    name: safeName,
     appearance: safeAppearance,
     taste: CAFE_REGULAR_TASTES.includes(taste as CafeRegular["taste"]) ? (taste as CafeRegular["taste"]) : "coffee",
     visits: Math.max(0, Math.trunc(finiteOr(visits, 0))),

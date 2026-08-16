@@ -9,7 +9,7 @@
  * 免得公開端點被裸 POST 刷掉大家共用的免費額度。
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { sanitizeDiaryText, sanitizeSummaryText, selectDiverseNarrativeLines } from "../src/sim/narrativeQuality";
+import { sanitizeContextLine, sanitizeDiaryText, sanitizeSummaryText, selectDiverseNarrativeLines } from "../src/sim/narrativeQuality";
 import { GROWTH_TAGS } from "../src/sim/growth";
 
 export interface Env {
@@ -69,6 +69,20 @@ interface NarrateCtx {
   finance?: string;
   /** 人生心願一句話(長期目標與進度;缺省 = 不提;進度由前端本地決定) */
   wish?: string;
+  /**
+   * 樓下寵物咖啡廳的當日背景(唯讀;缺省 = 不提)。
+   *
+   * 前端 `NarrateCafeCtx` 的本地鏡像 —— 本檔刻意不 import app 端型別(維持既有慣例),
+   * 但**消毒實作共用同一份** `sanitizeContextLine()`,見 `clampCafeCtx()`。
+   * 這裡刻意沒有年齡/性別/取向欄位:熟客不是租客,不參與任何戀愛線判定。
+   */
+  cafe?: {
+    brief: string;
+    trend: "up" | "flat" | "down";
+    regulars: string[];
+    ops?: string;
+    pets?: string;
+  };
 }
 
 type NarrateProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama";
@@ -92,6 +106,8 @@ const SYSTEM = `你是一款手機遊戲《房東監視中》的 AI 敘事引擎
 - **參考「此前的劇情摘要」維持連續性**:只延續與今日主線相關的伏筆、情緒或習慣；若舊摘要與今天的重大事實競爭，以今天的重大事實為準。
 - 扣住今天實際發生的事(日誌、關係變化、房東抉擇),不要無中生有重大事件。
 - **尊重房間聲學狀態**:若 context 顯示「室內噪音抗議已阻隔」,不得生成鄰居抗議該租客房內噪音的日記、記憶或事件；可以描寫隔音有效。外部施工等與房內隔音無關的噪音，只有今天日誌已實際提到時才可延續。
+- **樓下的咖啡廳只是背景**:context 若提到一樓寵物咖啡廳,那是**房東的生意**,是租客住處樓下的環境,不是他今天的行程。只有今天的觀察片段真的提到咖啡廳時,才可以把它寫進 diary 且仍要服務今日主線;沒提到時最多當成生活背景的一筆氣味、聲音或路過的印象(**一個短句為限**),**不得**憑空編造租客進店消費、與店員或客人交談等具體事件。**也不得開一條以咖啡廳經營為主題的新劇情弧**——那是房東的生意,不是租客的故事線。
+- **「熟客」是店裡的客人,不是租客**:context 的「店裡的熟客」指樓下咖啡廳的顧客,他們**不住這棟樓、不是鄰居、不是可發展關係的對象**。他們的名字**不得**填進 arcUpdate 的 "with"、event 的 "with"、observation 的 "rel.name"(那三個欄位只能填「同棟其他租客」清單裡的名字),也不得寫他們與租客的戀愛、告白、同居或深交發展。
 - **summaryUpdate(必填)**:輸出 2 個完整句子、60~120 字的更新摘要:以舊摘要為底,只保留仍然重要的事實、未回收伏筆與今天真正的新變化；同一事實只寫一次。這段會在明天餵回給你，是劇情連續性的摘要載體之一。
 - **記憶標籤 newMemory 要克制**:只有會延續數天以上的關係改變、固定習慣、重大心境轉折或房東抉擇後果才新增；一次性小事與普通情緒填 null。標籤要具體(例:[熬夜成癮]、[暗戀林小婕]、[開始晨跑]、[對房東起疑])，不得新增與既有記憶近義、重複或矛盾的標籤。
 
@@ -189,6 +205,19 @@ function buildPrompt(c: NarrateCtx): string {
     `[背景資料—只供理解,除非今天片段有新進展,不可直接寫成今日事件]`,
     `感情/鄰居關係:${c.relationships.join("、") || "無特別往來"}`,
     `同棟其他租客(可點名製造互動):${c.neighbors.join("、") || "無"}`,
+    // 🔴 D 批:咖啡廳背景。刻意放在 `[背景資料]` 區塊內 —— 那個標頭本身就寫著
+    // 「除非今天片段有新進展,不可直接寫成今日事件」,等於繼承一條已經在運作的守則
+    // (relationships / neighbors 就靠它沒有蓋台)。只推真的存在的行。
+    ...(c.cafe
+      ? [
+          `樓下的寵物咖啡廳(房東經營,租客住它樓上):${c.cafe.brief};最近生意${c.cafe.trend === "up" ? "回升" : c.cafe.trend === "down" ? "下滑" : "大致持平"}`,
+          ...(c.cafe.regulars.length
+            ? [`店裡的熟客(**顧客,不是租客、不住這棟樓**):${c.cafe.regulars.join(";")}`]
+            : []),
+          ...(c.cafe.ops ? [`店務近況:${c.cafe.ops}`] : []),
+          ...(c.cafe.pets ? [`店裡的寵物:${c.cafe.pets}`] : []),
+        ]
+      : []),
     `此前的劇情摘要(必須接續):${c.summary || "(剛入住,還沒有摘要)"}`,
     c.arc
       ? `進行中的劇情弧(${c.focus?.kind === "major" || c.focus?.kind === "decision" ? "若與今日主線無關就維持不動" : "主線相關時推進或收束"}):「${c.arc.theme}」${c.arc.with ? `(與 ${c.arc.with} 共同的雙人篇章)` : ""}第 ${c.arc.stage}/${c.arc.maxStage} 步——${c.arc.summary}`
@@ -322,6 +351,41 @@ function clampHighlights(value: unknown, fallback: string[]): NonNullable<Narrat
   });
 }
 
+const CAFE_TRENDS: readonly NonNullable<NarrateCtx["cafe"]>["trend"][] = ["up", "flat", "down"];
+
+/**
+ * 🔴 咖啡廳 context 的 server 端消毒。**不可省略**,理由具體:
+ * `state.pendingDiaries[].ctx` 是整份存進 localStorage 的 ctx,`persistence.ts` 載入時
+ * 完全不消毒,`resumeDeferredDiaries()` 之後原封 POST 過來 —— 「不信任前端」在這裡
+ * 有一條真實存在的繞道。
+ *
+ * 與 app 端共用同一份 `sanitizeContextLine()`(NFKC → 去控制字元 → **去換行** →
+ * 去 prompt 結構字元 `[ ] 【 】` → 夾長):既有的 `clampStr()` 只做 `.slice()`,
+ * 一個帶換行的字串就能在 `\n` 串起來的 prompt 裡偽造一整行假指令。
+ *
+ * `brief` 消毒後為空 ⇒ 整個 cafe 回 `undefined`(prompt 少幾行,不會壞)。
+ */
+function clampCafeCtx(raw: unknown): NarrateCtx["cafe"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const c = raw as Record<string, unknown>;
+  const brief = sanitizeContextLine(c.brief, 48);
+  if (!brief) return undefined;
+  const ops = sanitizeContextLine(c.ops, 28);
+  const pets = sanitizeContextLine(c.pets, 28);
+  return {
+    brief,
+    trend: CAFE_TRENDS.includes(c.trend as NonNullable<NarrateCtx["cafe"]>["trend"])
+      ? (c.trend as NonNullable<NarrateCtx["cafe"]>["trend"])
+      : "flat",
+    regulars: (Array.isArray(c.regulars) ? c.regulars : [])
+      .slice(0, 2)
+      .map((line) => sanitizeContextLine(line, 28))
+      .filter(Boolean),
+    ...(ops ? { ops } : {}),
+    ...(pets ? { pets } : {}),
+  };
+}
+
 /** server 端把使用者送來的 context 夾到合理上限:防惡意 payload 灌爆 prompt(= 灌爆 token 成本) */
 function clampCtx(raw: unknown): NarrateCtx {
   const c = (raw ?? {}) as Record<string, any>;
@@ -392,6 +456,7 @@ function clampCtx(raw: unknown): NarrateCtx {
     weekday: clampStr(c.weekday, 8),
     finance: clampStr(c.finance, 40),
     wish: clampStr(c.wish, 48),
+    cafe: clampCafeCtx(c.cafe),
   };
 }
 

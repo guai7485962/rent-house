@@ -10,16 +10,27 @@ import {
   templateDiary,
   type AiFallbackReason,
   type NarrativeFocus,
+  type NarrateCafeCtx,
   type NarrateCtx,
   type NarrateResult,
 } from "./narrate";
+import {
+  cafeNarrativeBrief,
+  cafeOpsNarrativeLine,
+  cafePopularityTrend,
+  cafeRegularNarrativeLines,
+  cafeStorageCapacity,
+  menuItems,
+} from "./cafe";
+import { CAFE_GUEST_ADOPTION_DESTINATION } from "./pets";
+import { cafeBackStoragePoints, cafeServiceStations } from "./placements";
 import { sanitizeAiEvent } from "./events";
 import { applyArcTone, sanitizeArcUpdate } from "./arcs";
 import { getRel, listRelationships } from "./social";
 import { state, clamp, fmt, gameDayIndex, pushArcHistory, pushMemory, pushSocialLog, notify, LOG_CAP, type TenantRuntime } from "./gameState";
 import { save } from "./persistence";
 import { noiseComplaintEligible, roomAcousticsForTenant } from "./acoustics";
-import { sanitizeSummaryText, selectDiverseNarrativeLines, selectImportantNarrativeLines } from "./narrativeQuality";
+import { sanitizeContextLine, sanitizeSummaryText, selectDiverseNarrativeLines, selectImportantNarrativeLines } from "./narrativeQuality";
 import { applyObservation, sanitizeObservation } from "./observationEffects";
 import { todayWeather, weatherLabel } from "./weather";
 import { weekdayLabel } from "./week";
@@ -369,6 +380,97 @@ function pairArcPartner(arc: { id: string; partnerId?: string } | null): TenantR
   return partner?.arc?.id === arc.id ? partner : null;
 }
 
+// ---------------------------------------------------------------------------
+// 🔴 D 批:樓下咖啡廳的唯讀背景(設計文件 §4.13)
+// ---------------------------------------------------------------------------
+
+/** 咖啡廳 context 各欄位的字數上限(worker 端 `clampCafeCtx()` 用同一組數字再夾一次)。 */
+const CAFE_CTX_BRIEF_MAX = 48;
+const CAFE_CTX_LINE_MAX = 28;
+/** 送養新聞的保鮮期(遊戲日):再舊就不是新聞了。 */
+const CAFE_CTX_ADOPTION_FRESH_DAYS = 3;
+const CAFE_CTX_DAY_MS = 24 * 3600 * 1000;
+/** 寵物名只取前幾字(存檔可改的自由字串)。 */
+const CAFE_CTX_PET_NAME_MAX = 8;
+
+/**
+ * 組出當天的咖啡廳背景。**全體在住租客共用同一份**(咖啡廳在所有人樓下,是共享環境)。
+ *
+ * 🔴 三件事這裡不做,而且刻意不做:
+ * - **不寫 `state.cafe`** —— 本函式只讀。AI 這條路本批新增**零個寫入面**。
+ * - **不參與 `focus` 計算** —— 咖啡廳只有在 `CAFE_LOG_PREFIX` 日誌真的落進那位租客的 `todayLog`
+ *   時才可能成為主線,與本批之前完全相同。
+ * - **不送好感數字、不送熟客的原始品項 key**。
+ *
+ * `brief` 消毒後為空 ⇒ 回 `null`(整個 `cafe` 不進 ctx)。
+ */
+export function buildCafeNarrateCtx(): NarrateCafeCtx | null {
+  const cafe = state.cafe;
+  if (!cafe?.open) return null; // 未開張 = 零漂移的天然閘門
+  const day = gameDayIndex();
+  const sales = cafe.sales ?? [];
+  const todaySales = sales[sales.length - 1];
+  const recent = sales.slice(-8, -1);
+  const avgServed = recent.length
+    ? recent.reduce((sum, row) => sum + Math.max(0, row?.served ?? 0), 0) / recent.length
+    : 0;
+  const brief = sanitizeContextLine(
+    cafeNarrativeBrief({
+      day,
+      served: todaySales?.served ?? 0,
+      refused: todaySales?.refused ?? 0,
+      abandoned: todaySales?.abandoned ?? 0,
+      revenue: todaySales?.revenue ?? 0,
+      avgServed,
+    }),
+    CAFE_CTX_BRIEF_MAX,
+  );
+  if (!brief) return null;
+  // 🔴 硬不變式:熟客名字 ∩ 租客名字 = ∅。現任租客的名字一律從熟客素材裡濾掉,
+  // 這樣 `applyRelNudge` 的「名字出現在 todayLog」條件永遠無法被 ctx.cafe 這條路滿足。
+  const tenantNames = Object.values(state.runtimes).map((rt) => rt.tenant.name);
+  const menuNameById: Record<string, string> = {};
+  for (const item of menuItems(cafe.completed)) menuNameById[item.id] = item.name;
+  const regulars = cafeRegularNarrativeLines({
+    regulars: cafe.regulars ?? [],
+    day,
+    menuNameById,
+    excludeNames: tenantNames,
+    max: 2,
+  })
+    .map((line) => sanitizeContextLine(line, CAFE_CTX_LINE_MAX))
+    .filter(Boolean);
+  const ops = sanitizeContextLine(
+    cafeOpsNarrativeLine({
+      cafe,
+      day,
+      // placements 的量在這裡取,`cafe.ts` 仍然只吃參數(同 tick.ts:cafeHourlyPass 的既有做法)。
+      storageCapacity: cafeStorageCapacity(cafeBackStoragePoints()),
+      stations: cafeServiceStations(),
+    }) ?? "",
+    CAFE_CTX_LINE_MAX,
+  );
+  // 寵物線:最近幾天有沒有客人把樓寵物帶回家。`petHomes` 是 unshift(最新在最前)。
+  // 🔴 只用寵物名(夾 8 字並過同一道消毒);**不用 `adopterName`** —— 那是存檔可改的
+  // 自由字串,而且領養人不是這棟樓的人。店貓辣椒是常設狀態不是新聞,不進 context。
+  const adoption = state.petHomes.find(
+    (entry) => entry.destination === CAFE_GUEST_ADOPTION_DESTINATION
+      && state.gameMs - entry.leftMs <= CAFE_CTX_ADOPTION_FRESH_DAYS * CAFE_CTX_DAY_MS
+      && state.gameMs >= entry.leftMs,
+  );
+  const petName = adoption ? sanitizeContextLine(adoption.name, CAFE_CTX_PET_NAME_MAX) : "";
+  const pets = petName
+    ? sanitizeContextLine(`前幾天有位客人把「${petName}」帶回家了`, CAFE_CTX_LINE_MAX)
+    : "";
+  return {
+    brief,
+    trend: cafePopularityTrend(cafe.history ?? []),
+    regulars,
+    ...(ops ? { ops } : {}),
+    ...(pets ? { pets } : {}),
+  };
+}
+
 /** tone 脈衝:查寫死的 ARC_TONE_PULSE 表,AI 只能選方向不能自訂數值 */
 /** 從 runtime 組出當天的敘事 context */
 export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
@@ -492,5 +594,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     weekday: weekdayLabel(state.gameMs),
     finance: tenantFinanceBrief(rt) ?? undefined,
     wish: currentWish,
+    // 🔴 D 批:咖啡廳背景(全體在住租客共用同一份;未開張 ⇒ undefined ⇒ prompt 少幾行)
+    cafe: buildCafeNarrateCtx() ?? undefined,
   };
 }

@@ -205,6 +205,36 @@ export function sanitizeNarrativeText(text: string, maxSentences: number, maxCha
   return withinLimit.join("");
 }
 
+/**
+ * 🔴 context 單行消毒(**app 端與 worker 端共用同一份實作**)。
+ *
+ * `buildPrompt()` 用 `\n` 串行、`[...]`／`【...】` 當區塊標記、行首 `  - ` 當條列符,
+ * 所以**去換行是本函式最重要的一項**:一個帶換行的玩家可控字串(例如手改存檔的
+ * 咖啡廳熟客姓名)足以偽造出 `[今日唯一主線—...]` 這種假指令行。worker 既有的
+ * `clampStr()` 只做 `.slice()`,擋不住這條路,因此新欄位一律走這裡。
+ *
+ * 順序:NFKC → 去控制字元 → 空白(含換行/定位)壓成單一空格 → 去掉 prompt 結構字元
+ * `[ ] 【 】` → 去掉行首的 `- # >` 條列/標題符 → `trim()` → 夾長。
+ *
+ * 刻意**不**沿用 `sanitizeReasonText()`:它會做逗號子句語意去重,對單句是破壞性的。
+ * 本函式維持 DOM-free / Node-free,worker 端可直接 import。
+ */
+export function sanitizeContextLine(text: unknown, maxChars: number): string {
+  if (typeof text !== "string") return "";
+  const limit = Number.isFinite(maxChars) ? Math.max(0, Math.trunc(maxChars as number)) : 0;
+  if (limit <= 0) return "";
+  return text
+    .normalize("NFKC")
+    // \p{C} = Unicode「Other」類(Cc 控制字元 + Cf 格式字元,含零寬與 BOM):
+    // 先變成空白,下一步連同換行/定位一起壓成單一空格。
+    .replace(/\p{C}/gu, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[[\]【】]/g, "")
+    .replace(/^[-#>*+\s]+/, "")
+    .trim()
+    .slice(0, limit);
+}
+
 export const sanitizeDiaryText = (text: string, expectedNames: string[] = []): string => sanitizeNarrativeText(text, 4, 320, expectedNames);
 export const sanitizeSummaryText = (text: string, expectedNames: string[] = []): string => sanitizeNarrativeText(text, 2, 220, expectedNames);
 

@@ -5,6 +5,7 @@
  */
 
 import {
+  DAILY_CAFE_TEMPLATES,
   DAILY_HAPPY_TEMPLATES,
   DAILY_LOW_MOOD_TEMPLATES,
   DAILY_SOCIAL_TEMPLATES,
@@ -35,6 +36,30 @@ export interface NarrativeFocus {
   headline: string;
   /** 說明為何這條線優先，讓模型不要自行改選次要素材。 */
   reason: string;
+}
+
+/**
+ * 🔴 D 批:樓下寵物咖啡廳的當日背景。**唯讀** —— AI 不得回寫任何咖啡廳狀態。
+ *
+ * 全部欄位在 app 端(`narration.ts` 的 `buildCafeNarrateCtx()`)已消毒 + 夾長,
+ * worker 端 `clampCafeCtx()` 會再夾一次(**不信任前端**:`state.pendingDiaries[].ctx`
+ * 是整份存進 localStorage 的 ctx,載入時完全不消毒就原封 POST,那是真實存在的繞道)。
+ *
+ * ⚠️ 這個型別**刻意沒有** `age` / `isAdult` / `gender` / `attractedTo` 任何一欄:
+ * `CafeRegular` 本來就沒有年齡與取向欄位,這裡也不新增 ⇒ 既有「未成年排除戀愛線」
+ * 規則無從被咖啡廳這條路繞過。`cafe-narrate-ctx-test.ts` 有原始碼掃描斷言釘住。
+ */
+export interface NarrateCafeCtx {
+  /** 一句話營運概況,≤48 字,無換行。空字串 = 整個 cafe 不送。 */
+  brief: string;
+  /** 聲譽走向。 */
+  trend: "up" | "flat" | "down";
+  /** 熟客素材,≤2 條、每條 ≤28 字。**已排除與現任租客同名者**。 */
+  regulars: string[];
+  /** 經營痕跡,≤28 字。 */
+  ops?: string;
+  /** 寵物線,≤28 字。 */
+  pets?: string;
 }
 
 export interface NarrateCtx {
@@ -80,6 +105,8 @@ export interface NarrateCtx {
   finance?: string;
   /** 人生心願一句話(長期目標與進度;缺省 = 不進 prompt;進度由本地決定,AI 只能當動機素材) */
   wish?: string;
+  /** 樓下咖啡廳的當日背景(唯讀;舊 ctx 缺省 = 不進 prompt,同 weather/wish 慣例) */
+  cafe?: NarrateCafeCtx;
 }
 
 export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";
@@ -170,6 +197,10 @@ export function templateDiary(ctx: NarrateCtx): string {
   if (ctx.relationships.length) pool.push(...DAILY_SOCIAL_TEMPLATES);
   // 週末情境句:週六/週日混入(平日與缺省不混;放在天氣句前,維持天氣句在池尾的既有測試假設)
   if (ctx.weekday === "週六" || ctx.weekday === "週日") pool.push(...DAILY_WEEKEND_TEMPLATES);
+  // 🔴 D 批:咖啡廳情境句。**只有真的有話可說時才混入**(有熟客素材、或聲譽走向不是持平)。
+  // 這裡改變 pool.length 就會改變唯一那次抽樣的結果 —— 但 balance 快照局永遠不開張、
+  // `ctx.cafe` 全程 undefined ⇒ pool 不變 ⇒ 抽樣序列位元相同(有測試明文斷言)。
+  if (ctx.cafe && ((ctx.cafe.regulars?.length ?? 0) > 0 || ctx.cafe.trend !== "flat")) pool.push(...DAILY_CAFE_TEMPLATES);
   // 天氣情境句:依 ctx.weather 的 label 對回句池(缺省不混入)
   if (ctx.weather) {
     if (ctx.weather.includes("雨")) pool.push(...DAILY_WEATHER_TEMPLATES.rainy);

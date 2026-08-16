@@ -438,6 +438,21 @@ export const DAILY_WEATHER_TEMPLATES: Record<"sunny" | "cloudy" | "rainy" | "swe
   ],
 };
 
+/**
+ * 🔴 D 批:樓下咖啡廳的情境句(離線 fallback 用)。
+ *
+ * 只在 `ctx.cafe` 存在**且**真的有話可說(有熟客素材或聲譽走向不是持平)時混入候選池,
+ * 位置在天氣句之前 —— 維持 `narrate.ts` 註解所述「天氣句在池尾」的既有測試假設。
+ * 咖啡廳在租客樓下,所以這裡寫的一律是**背景印象**(氣味、聲音、路過),
+ * 不寫租客進店消費或與店員交談,與 SYSTEM 給 AI 的守則同一條線。
+ */
+export const DAILY_CAFE_TEMPLATES: string[] = [
+  "樓下咖啡廳的烘豆味整個下午都飄上來,{name}把窗戶開了一條縫。",
+  "傍晚經過一樓時,{name}往咖啡廳裡看了一眼,又把腳步收了回去。",
+  "咖啡廳打烊的鐵門聲響起時,{name}才想起今天過得有多快。",
+  "樓下今天的人聲比平常清楚一些,{name}倒是聽著聽著就睡著了。",
+];
+
 /** 每日總結的週末情境句(週六/週日混入候選池;templateDiary 仍只抽一次亂數) */
 export const DAILY_WEEKEND_TEMPLATES: string[] = [
   "週末的樓裡少了趕早出門的腳步聲,{name}的一天過得比平常鬆一些。",

@@ -60,7 +60,7 @@ import {
 } from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
 import { CAFE_INTENT_BASE, type CafeIntentWeights } from "./cafeGuests";
-import type { Appearance, CafeRegular, CafeSalesDay, CafeState } from "../types";
+import type { Appearance, CafeDayRecord, CafeRegular, CafeSalesDay, CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
 export {
@@ -2675,4 +2675,225 @@ export function cafeRegularMaxAwayDays(regulars: readonly CafeRegular[], day: nu
     if (away > worst) worst = away;
   }
   return Math.max(0, worst);
+}
+
+// ===========================================================================
+// 17. 🔴 D 批:給敘事 AI 的咖啡廳背景素材(設計文件 §4.13)
+//
+// 這一節把咖啡廳的當日狀況壓成**幾句唯讀短句**,由 `narration.ts` 組成
+// `NarrateCafeCtx` 送進 prompt。四條硬界線:
+//
+// 1. **零新狀態、零亂數** —— 全部從既有欄位算,選句一律走 `lineHash()`
+//    (刻意不在本節寫出 RNG 的函式名,`cafe-regular-test.ts` 的掃碼斷言以此為錨)。
+// 2. **本檔仍不 import `placements`** —— 需要擺設的量(後場容量、吧台服務位)
+//    一律由 caller 傳參數進來,同 `RestockOptions.capacity` 的既有做法。
+// 3. **只輸出已組好的短句** —— worker 端的消毒面因此收斂成「夾長 + 去換行 +
+//    enum 白名單」,不需要理解咖啡廳語意。
+// 4. 🔴 **`itemCounts` 的原始 key 永不回顯** —— 那是玩家可改存檔的自由字串,
+//    只當 id 拿去反查 caller 傳進來的菜單名;查不到就整句改用不提品項的版本。
+//    同理**不送 `affection` 數字**:好感是玩家的儀表板數字,送進去只會讓 AI
+//    寫出「好感度上升」這種遊戲化語言。
+// ===========================================================================
+
+/** 計數欄位的防禦上限(存檔可改,一律夾)。 */
+const CAFE_NARRATIVE_COUNT_MAX = 999;
+/** 金額欄位的防禦上限。 */
+const CAFE_NARRATIVE_REVENUE_MAX = 999999;
+
+const narrativeCount = (value: unknown, max = CAFE_NARRATIVE_COUNT_MAX): number =>
+  Math.min(max, Math.max(0, Math.trunc(finiteOr(value, 0))));
+
+export interface CafeNarrativeBriefInput {
+  /** 遊戲日序號(決定性選句用)。 */
+  day: number;
+  /** 當日成功結帳人次。 */
+  served: number;
+  /** 當日缺料撲空人次。 */
+  refused: number;
+  /** 當日排到放棄的人次。 */
+  abandoned: number;
+  /** 當日營收。 */
+  revenue: number;
+  /** 前 7 日的平均成功服務人次(不含今天);省略或 <=0 = 沒有基準,不判定「特別忙」。 */
+  avgServed?: number;
+}
+
+/** 沒客人:空店的一天。 */
+const CAFE_BRIEF_EMPTY_LINES = [
+  () => "一整天沒有人推開那扇門,咖啡涼了又熱",
+  () => "今天店裡空著,只有貓在窗邊換了三次姿勢",
+  () => "一份都沒賣出去,打烊時椅子還是早上擺的樣子",
+  () => "門鈴一次都沒響,今天的營業額是零",
+];
+
+/** 有人空手離開:缺料或等太久。 */
+const CAFE_BRIEF_REFUSED_LINES = [
+  (lost: number) => `今天有 ${lost} 位客人空手離開,不是缺料就是等太久`,
+  (lost: number) => `${lost} 個人排到一半就走了,櫃檯一直在說抱歉`,
+  (lost: number) => `做不出來的單子加上等不下去的人,今天走了 ${lost} 位`,
+  (lost: number) => `今天有 ${lost} 位沒點到想要的東西,店裡氣氛有點僵`,
+];
+
+/** 明顯比平常忙。 */
+const CAFE_BRIEF_BUSY_LINES = [
+  (served: number, revenue: number) => `今天特別忙,${served} 份出餐,$${revenue} 進帳`,
+  (served: number) => `客人比平常多,${served} 份餐點一路做到打烊`,
+  (served: number, revenue: number) => `難得的忙碌日,服務了 ${served} 位客人,收了 $${revenue}`,
+  (served: number) => `店裡從中午就沒空過,${served} 位客人前後坐滿了位子`,
+];
+
+/** 一般營業日。 */
+const CAFE_BRIEF_STEADY_LINES = [
+  (served: number, revenue: number) => `今天服務了 ${served} 位客人,營收 $${revenue}`,
+  (served: number, revenue: number) => `${served} 位客人、$${revenue} —— 平常的一天`,
+  (served: number, revenue: number) => `賣出 ${served} 份,$${revenue} 進帳,節奏跟昨天差不多`,
+  (served: number) => `今天 ${served} 位客人上門,店裡安安穩穩`,
+];
+
+/**
+ * 一句話營運概況(**不含 `CAFE_LOG_PREFIX` 前綴**,這是 context 素材不是日誌)。
+ *
+ * 分支優先序:① 有人空手離開(`refused + abandoned >= 4`)② 有生意 ③ 沒客人。
+ * 純函式:同樣的輸入永遠得到同一句,選句用 `lineHash()`。
+ */
+export function cafeNarrativeBrief(input: CafeNarrativeBriefInput): string {
+  const day = Math.trunc(finiteOr(input?.day, 0));
+  const served = narrativeCount(input?.served);
+  const refused = narrativeCount(input?.refused);
+  const abandoned = narrativeCount(input?.abandoned);
+  const revenue = narrativeCount(input?.revenue, CAFE_NARRATIVE_REVENUE_MAX);
+  const lost = Math.min(CAFE_NARRATIVE_COUNT_MAX, refused + abandoned);
+  const avg = Math.max(0, finiteOr(input?.avgServed, 0));
+  const kind = lost >= 4 ? "refused" : served > 0 ? (avg > 0 && served >= avg * 1.2 ? "busy" : "steady") : "empty";
+  const pool = kind === "refused" ? CAFE_BRIEF_REFUSED_LINES
+    : kind === "busy" ? CAFE_BRIEF_BUSY_LINES
+      : kind === "steady" ? CAFE_BRIEF_STEADY_LINES
+        : CAFE_BRIEF_EMPTY_LINES;
+  const index = lineHash(`cafe-brief|${kind}|${day}|${served}|${lost}`) % pool.length;
+  if (kind === "refused") return CAFE_BRIEF_REFUSED_LINES[index](lost);
+  if (kind === "empty") return CAFE_BRIEF_EMPTY_LINES[index]();
+  return (pool as typeof CAFE_BRIEF_STEADY_LINES)[index](served, revenue);
+}
+
+/**
+ * 聲譽走向:最後一筆 `guests` 對「其前三筆平均」的比值。
+ * `>= ×1.15 → up`、`<= ×0.85 → down`、其餘 `flat`;不足 4 筆一律 `flat`。純算術,零選句。
+ */
+export function cafePopularityTrend(history: readonly CafeDayRecord[]): "up" | "flat" | "down" {
+  const rows = Array.isArray(history) ? history : [];
+  if (rows.length < 4) return "flat";
+  const last = Math.max(0, finiteOr(rows[rows.length - 1]?.guests, 0));
+  const prev = rows.slice(-4, -1).map((row) => Math.max(0, finiteOr(row?.guests, 0)));
+  const base = (prev[0] + prev[1] + prev[2]) / 3;
+  if (base <= 0) return last > 0 ? "up" : "flat";
+  if (last >= base * 1.15) return "up";
+  if (last <= base * 0.85) return "down";
+  return "flat";
+}
+
+export interface CafeRegularNarrativeInput {
+  regulars: readonly CafeRegular[];
+  /** 遊戲日序號。 */
+  day: number;
+  /** 品項 id → 中文菜單名;由 caller 從 `menuItems(cafe.completed)` 建好餵進來。 */
+  menuNameById?: Readonly<Record<string, string>>;
+  /**
+   * 🔴 要排除的姓名 —— **現任租客**。
+   *
+   * 「熟客名字 ∩ 租客名字 = ∅」是本批新增的硬不變式:常客可以循
+   * `intent === "rent"` 真的搬進來變成租客,`/api/invite` 的特邀租客也可能與
+   * 常客池撞名。名字一旦重疊,`observationEffects` 的「名字出現在 todayLog」
+   * 那道守門就可能被 `ctx.cafe` 這條路滿足。從源頭濾掉最省事也最徹底。
+   */
+  excludeNames?: readonly string[];
+  /** 最多幾條(預設 2)。 */
+  max?: number;
+}
+
+/**
+ * 熟客素材(≤2 條,**不含前綴**)。優先序:
+ * ① 今天來過的(`lastVisitDay === day`)中 `visits` 最高者;
+ * ② 快失聯的(`day - lastVisitDay >= CAFE_REGULAR_GRACE_DAYS`)中最久者;
+ * ③ 都沒有 → `[]`。
+ *
+ * 排序基底是 `sortedCafeRegulars()`(唯一權威排序)⇒ 與陣列插入序無關。
+ */
+export function cafeRegularNarrativeLines(input: CafeRegularNarrativeInput): string[] {
+  const day = Math.trunc(finiteOr(input?.day, 0));
+  const max = Math.max(0, Math.min(2, Math.trunc(finiteOr(input?.max, 2))));
+  if (max === 0) return [];
+  const menu = input?.menuNameById ?? {};
+  const excluded = new Set(
+    (Array.isArray(input?.excludeNames) ? input.excludeNames : [])
+      .map((name) => (typeof name === "string" ? name.trim() : ""))
+      .filter(Boolean),
+  );
+  const roster = sortedCafeRegulars(input?.regulars ?? [])
+    .filter((entry) => typeof entry?.name === "string" && entry.name.trim() && !excluded.has(entry.name.trim()));
+  const today = roster
+    .filter((entry) => Math.trunc(finiteOr(entry.lastVisitDay, 0)) === day)
+    .sort((a, b) => narrativeCount(b.visits) - narrativeCount(a.visits));
+  const away = roster
+    .filter((entry) => day - Math.trunc(finiteOr(entry.lastVisitDay, day)) >= CAFE_REGULAR_GRACE_DAYS)
+    .sort((a, b) => (day - Math.trunc(finiteOr(b.lastVisitDay, day))) - (day - Math.trunc(finiteOr(a.lastVisitDay, day))));
+  const lines: string[] = [];
+  for (const entry of today) {
+    if (lines.length >= max) break;
+    const name = entry.name.trim();
+    const itemId = cafeRegularUsualItem(entry);
+    // 🔴 反查不到就整句改用不提品項的版本 —— 絕不回顯 itemCounts 的原始 key。
+    const item = itemId && typeof menu[itemId] === "string" ? menu[itemId].trim() : "";
+    const visits = narrativeCount(entry.visits);
+    lines.push(item ? `${name}今天第 ${visits} 次來,還是${item}` : `${name}今天第 ${visits} 次來`);
+  }
+  for (const entry of away) {
+    if (lines.length >= max) break;
+    const name = entry.name.trim();
+    if (lines.some((line) => line.startsWith(name))) continue;
+    lines.push(`${name}已經 ${narrativeCount(day - Math.trunc(finiteOr(entry.lastVisitDay, day)))} 天沒出現了`);
+  }
+  return lines;
+}
+
+export interface CafeOpsNarrativeInput {
+  cafe: Pick<CafeState, "research" | "stock" | "upgrades" | "extraStaff">;
+  /** 遊戲日序號。 */
+  day: number;
+  /** 後場容量;由 caller 從 `cafeStorageCapacity(cafeBackStoragePoints())` 算好傳入(本檔不 import placements)。 */
+  storageCapacity?: number | null;
+  /** 吧台服務位數;由 caller 從 `cafeServiceStations()` 傳入。省略/null = 不判定閒置店員。 */
+  stations?: number | null;
+}
+
+/**
+ * 經營痕跡(≤1 條,**不含前綴**),第一個成立者勝:
+ * ① 研發中 → 研發品名 + 還要幾天;② 後場塞滿;③ 有店員站著沒事做。都不成立回 `null`。
+ */
+export function cafeOpsNarrativeLine(input: CafeOpsNarrativeInput): string | null {
+  const cafe = input?.cafe;
+  if (!cafe || typeof cafe !== "object") return null;
+  const day = Math.trunc(finiteOr(input?.day, 0));
+  const research = cafe.research;
+  if (research) {
+    const left = cafeResearchDaysLeft({ research }, day);
+    const label = CAFE_RESEARCH.find((def) => def.id === research.id)?.name ?? "新品項";
+    if (left !== null) return left > 0 ? `研發中:${label},還要 ${left} 天` : `研發中:${label},今天就能完成`;
+  }
+  const capacity = Math.max(0, Math.trunc(finiteOr(input?.storageCapacity, 0)));
+  if (capacity > 0) {
+    let total = 0;
+    const stock = cafe.stock;
+    if (stock && typeof stock === "object") {
+      for (const key of Object.keys(stock)) total += Math.max(0, finiteOr(stock[key], 0));
+    }
+    if (total >= capacity) return "後場的架子已經堆滿了,再進貨就沒地方放";
+  }
+  const stations = input?.stations === undefined || input?.stations === null
+    ? null
+    : Math.max(1, Math.trunc(finiteOr(input.stations, 1)));
+  if (stations !== null) {
+    const cap = cafeCapability(cafe.upgrades ?? [], { extraStaff: cafe.extraStaff, stations });
+    if (cap.idleStaff > 0) return "吧台太窄,有店員站著沒事做";
+  }
+  return null;
 }

@@ -3,7 +3,7 @@
  * 作息+偏離 → 定位/日誌/數值、張力事件、交誼廳社交、換日(收租+AI 日記),
  * 以及補進度(syncToNow)與快轉(同步版給測試、分批版給 UI)。
  */
-import type { CafeGuestOrder, CafeSalesDay, StatDeltas, TenantVisualState, RoomPropState } from "../types";
+import type { CafeGuest, CafeGuestOrder, CafeSalesDay, StatDeltas, TenantVisualState, RoomPropState } from "../types";
 import { MAX_CATCHUP_HOURS, MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR, currentGameMs } from "./clock";
 import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot, resolveTarget, type Role } from "./routine";
 import { rollEvent } from "./events";
@@ -44,14 +44,27 @@ import {
   cafeIntentWeights,
   cafeOrderLine,
   cafePetComfort,
+  cafeRegularBringsFriend,
+  cafeRegularForHour,
+  cafeRegularFriendLine,
+  cafeRegularLine,
+  cafeRegularUsualItem,
   cafeServicePopularity,
   cafeStaffWage,
   cafeStorageCapacity,
   checkoutCafeOrder,
   chooseCafeMenuItem,
   clampCafePopularity,
+  decayCafeRegularCandidates,
+  decayCafeRegulars,
+  refuseCafeRegular,
+  touchCafeRegular,
+  CAFE_BUSINESS_HOURS,
   CAFE_FIXED_COST,
   CAFE_POPULARITY_SOFT_LOSS,
+  CAFE_REGULAR_CANDIDATE_DECAY_DAYS,
+  CAFE_REGULAR_TIP,
+  CAFE_REGULAR_TIP_AFFECTION,
   getCafeIngredient,
   menuItems,
   restockPlan,
@@ -676,6 +689,24 @@ const CAFE_SALE_LOG_EVERY_DAYS = 7;
 const CAFE_SHORTAGE_SUMMARY_MIN = 4;
 
 /**
+ * 🔴 B 批:「老樣子」日誌的節流 —— `day % 7 === 3`。
+ *
+ * 刻意與賣出日誌的 `day % 7 === 0`(`CAFE_SALE_LOG_EVERY_DAYS`)**錯開**:
+ * 兩者都掛在同一位租客的 `rt.log`(cap 60,也是 AI 敘事的素材來源),
+ * 撞在同一天等於一天吃掉兩格。錯開之後咖啡廳每週固定佔兩格、分散在兩天。
+ */
+const CAFE_REGULAR_USUAL_LOG_DAY_MOD = 7;
+const CAFE_REGULAR_USUAL_LOG_DAY = 3;
+
+/**
+ * 🔴 B 批:常客撲空的日誌只在好感**由上往下跨過**這條線時推一次。
+ *
+ * 每次撲空都推會變成天天在罵玩家(缺貨那條路已經在扣聲譽了);
+ * 只在「這段關係真的開始壞掉」的那一刻講一次,才是玩家需要的信號。
+ */
+const CAFE_REGULAR_REFUSED_LOG_AFFECTION = 40;
+
+/**
  * 把一筆結帳變成一位站得上畫面的顧客(重設計 P2)。
  *
  * seed / sequence 沿用 P1 之前 `cafeGuestPass()` 的 `cafe|日|時` + 逐位 index,
@@ -692,9 +723,10 @@ function spawnCafeGuestForOrder(
   order: CafeGuestOrder,
   seatTile: { c: number; r: number } | null,
   intentWeights?: CafeIntentWeights,
-) {
+  forceName?: string,
+): CafeGuest | null {
   const cafe = state.cafe;
-  if (cafe.guests.length >= CAFE_GUEST_CAP) return;
+  if (cafe.guests.length >= CAFE_GUEST_CAP) return null;
   const guest = generateCafeGuest({
     seed: `cafe|${day}|${hour}`,
     arrivedMs: state.gameMs,
@@ -704,9 +736,12 @@ function spawnCafeGuestForOrder(
     takeaway: seatTile === null, // 外帶與撲空都只停留 0.25 遊戲小時
     order,
     intentWeights,
+    // 🔴 B 批:今天輪到哪位常客回訪就指定誰(省略 = 今日行為)。
+    forceName,
   });
-  if (cafe.guests.some((entry) => entry.id === guest.id)) return;
+  if (cafe.guests.some((entry) => entry.id === guest.id)) return null;
   cafe.guests.push(guest);
+  return guest;
 }
 
 /**
@@ -801,9 +836,20 @@ export function cafeHourlyPass(hour: number) {
     // 讀 placements 是 state,所以留在這裡而不是 cafe.ts。
     ambiancePoints: cafeAmbiancePoints(),
   });
-  const count = cafeHourlyGuestCount(crowd.guests, hour - CAFE_OPEN_HOUR);
+  const hourIndex = hour - CAFE_OPEN_HOUR;
+  const count = cafeHourlyGuestCount(crowd.guests, hourIndex);
   // 🔴 A 批:被產能夾掉的那些人(`base − guests`)這小時有幾位會排到放棄。
-  const abandonCount = cafeAbandonCount(crowd.base, crowd.guests, hour - CAFE_OPEN_HOUR);
+  let abandonCount = cafeAbandonCount(crowd.base, crowd.guests, hourIndex);
+
+  // 🔴 B 批:這小時輪到哪位常客回訪(純函式,只依賴 day / hourIndex / 排序後的名冊
+  // ⇒ 線上逐時 = 離線一次補)。他會佔掉本小時的**第 0 位**顧客。
+  const regularName = cafeRegularForHour(cafe.regulars, day, hourIndex);
+  const arriving = regularName ? cafe.regulars.find((entry) => entry.name === regularName) ?? null : null;
+  // 🔴 B 批「帶朋友」:**把本來會排到放棄的一位救回來**,而不是多生一位顧客
+  // (後者會突破 `crowd.guests = min(base, capacity)`,打掉 P4a 的產能上限語意)。
+  const bringsFriend = abandonCount > 0 && cafeRegularBringsFriend(arriving, day, hourIndex);
+  if (bringsFriend) abandonCount -= 1;
+
   if (count <= 0 && abandonCount <= 0) return;
 
   const menu = menuItems(cafe.completed);
@@ -817,6 +863,18 @@ export function cafeHourlyPass(hour: number) {
   let abandoned = 0;
   let saleLine = "";
   let refusedLine = "";
+  // B 批的敘事一樣走稀疏路線,四則全部一天最多一則(節流條件見各自的判斷式)。
+  let regularUsualLine = "";
+  let regularRefusedLine = "";
+  const regularPromoteLines: string[] = [];
+  /**
+   * 「老樣子」那一則的**一天一則**閘門:只在「今天第一個會有常客上門的小時」推。
+   * `cafeRegularForHour()` 是純函式 ⇒ 這個小時序在線上與離線兩條路徑上完全相同。
+   */
+  const firstRegularHour = (() => {
+    for (let h = 0; h < CAFE_BUSINESS_HOURS; h++) if (cafeRegularForHour(cafe.regulars, day, h)) return h;
+    return -1;
+  })();
 
   // 🔴 合流的席次來源:玩家實際擺的椅子(上面算產能時已經取過同一份 `seats`)。
   // 拆光 ⇒ seats 為空 ⇒ 全部外帶,且產能掉到 `CAFE_TAKEAWAY_CAPACITY`。
@@ -838,7 +896,15 @@ export function cafeHourlyPass(hour: number) {
   };
 
   for (let index = 0; index < count; index++) {
-    const item = chooseCafeMenuItem({ menu, day, hour, index, weather });
+    // 🔴 B 批:常客佔本小時的第 0 位。他點的是「老樣子」(`itemCounts` 最高那項),
+    // 沒有紀錄時退回加權抽選、但客群修正改吃他自己的 `taste`(綁姓名不綁日期)。
+    const forcedName = index === 0 && regularName ? regularName : undefined;
+    const usualItemId = forcedName ? cafeRegularUsualItem(arriving) ?? undefined : undefined;
+    const item = chooseCafeMenuItem({
+      menu, day, hour, index, weather,
+      preferTrack: forcedName ? arriving?.taste : undefined,
+      forceItemId: usualItemId,
+    });
     if (!item) break; // 菜單掛了(不該發生);不收錢也不罰聲譽
     const till = checkoutCafeOrder(cafe.stock, item);
     // 撲空的顧客不佔席(他轉頭就走);服務到的才去搶一張真的椅子。
@@ -858,6 +924,9 @@ export function cafeHourlyPass(hour: number) {
     if (till.ok) {
       cafe.stock = till.stock;
       revenue += till.revenue;
+      // 🔴 B 批②:好感夠高的常客留下的小費。2 位/日 × $3 = +$6/日,
+      // 不開新的金流管道(仍是同一筆咖啡廳營收),也不動任何一項的售價。
+      if (forcedName && arriving && arriving.affection >= CAFE_REGULAR_TIP_AFFECTION) revenue += CAFE_REGULAR_TIP;
       record.ingredientCost += till.cost;
       record.sold[item.id] = (record.sold[item.id] ?? 0) + 1;
       served += 1;
@@ -881,7 +950,36 @@ export function cafeHourlyPass(hour: number) {
       }
     }
     // 🔴 這一行就是合流:每一筆結帳都生出一位帶著這份訂單、走得進畫面的顧客。
-    spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null, intentWeights);
+    const guest = spawnCafeGuestForOrder(day, hour, index, order, spot?.seat ?? null, intentWeights, forcedName);
+    if (!guest) continue; // 顧客上限的保險絲踩到了 ⇒ 這位沒有站上畫面,也就不算一次來訪
+
+    // 🔴 B 批:常客記帳。身分鍵是**姓名**,所以一定要在顧客生成之後才知道是誰。
+    if (till.ok) {
+      const touched = touchCafeRegular(cafe.regulars, cafe.regularCandidates, cafe.regularCandidateDays, {
+        name: guest.name, day, itemId: item.id, appearance: guest.appearance,
+      });
+      cafe.regulars = touched.regulars;
+      cafe.regularCandidates = touched.candidates;
+      cafe.regularCandidateDays = touched.candidateDays;
+      if (touched.promoted) {
+        regularPromoteLines.push(cafeRegularLine({ kind: "promote", day, name: touched.promoted.name }));
+      }
+      // 「老樣子」:與賣出日誌的 `day % 7 === 0` 錯開,並且一天最多一則。
+      if (!regularUsualLine && forcedName && usualItemId && hourIndex === firstRegularHour
+        && day % CAFE_REGULAR_USUAL_LOG_DAY_MOD === CAFE_REGULAR_USUAL_LOG_DAY) {
+        regularUsualLine = cafeRegularLine({ kind: "usual", day, name: guest.name, itemName: item.name });
+      }
+    } else {
+      // 讓熟客白跑一趟:好感 −6。只在好感由上往下跨過 40 時才推一則(不然天天在罵玩家)。
+      const hurt = refuseCafeRegular(cafe.regulars, guest.name);
+      if (hurt.before !== null) {
+        cafe.regulars = hurt.regulars;
+        if (!regularRefusedLine && hurt.before >= CAFE_REGULAR_REFUSED_LOG_AFFECTION
+          && (hurt.after ?? 0) < CAFE_REGULAR_REFUSED_LOG_AFFECTION) {
+          regularRefusedLine = cafeRegularLine({ kind: "refused", day, name: guest.name });
+        }
+      }
+    }
   }
 
   // 🔴 A 批:被產能夾掉的那幾位——他們真的走進店裡、站進人龍,然後放棄離開。
@@ -917,6 +1015,14 @@ export function cafeHourlyPass(hour: number) {
   if (refusedLine) pushCafeLog(refusedLine);
   if (abandoned > 0 && abandonedBefore === 0) {
     pushCafeLog(cafeOrderLine({ kind: "abandoned", day, hour, itemName: "", abandoned }));
+  }
+  // 🔴 B 批的四則。升格是一生一次的里程碑,不節流;其餘三則各自一天最多一則。
+  for (const line of regularPromoteLines) pushCafeLog(line);
+  if (regularUsualLine) pushCafeLog(regularUsualLine);
+  if (regularRefusedLine) pushCafeLog(regularRefusedLine);
+  // 帶朋友:綁在「今天第一個有人放棄的小時」⇒ 一天最多一則,而且必定伴隨看得見的人龍。
+  if (bringsFriend && regularName && abandonedBefore === 0) {
+    pushCafeLog(cafeRegularFriendLine(day, regularName));
   }
 }
 
@@ -1062,6 +1168,20 @@ export function cafeDailyPass() {
     pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: cafeTopShortageName(trading.day) }));
   } else if (rot.totalSpoiled > 0) {
     pushCafeLog(cafeDailyLine({ kind: "spoilage", day, subject: rot.lines[0].name }));
+  }
+
+  // 6) 🔴 B 批:常客的好感衰退與流失。
+  //    衰退只在超過 `CAFE_REGULAR_GRACE_DAYS` 之後才動,而正常回訪節奏(約 3 天一次)
+  //    剛好落在寬限內 ⇒ **好好開店的人不會掉好感**,怠慢(關店、天天缺貨)才會。
+  //    流失要「好感歸零 **且** 14 天沒來」兩個條件同時成立,一次缺貨不會走人。
+  const fade = decayCafeRegulars(cafe.regulars, day);
+  cafe.regulars = fade.regulars;
+  for (const gone of fade.lapsed) pushCafeLog(cafeRegularLine({ kind: "lapse", day, name: gone.name }));
+  // 候選人名冊每 7 個遊戲日全體 −1:3 次必須在滾動窗內累積,不留殭屍候選人。
+  if (day % CAFE_REGULAR_CANDIDATE_DECAY_DAYS === 0) {
+    const trimmed = decayCafeRegularCandidates(cafe.regularCandidates, cafe.regularCandidateDays);
+    cafe.regularCandidates = trimmed.candidates;
+    cafe.regularCandidateDays = trimmed.candidateDays;
   }
 }
 

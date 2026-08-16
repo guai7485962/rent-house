@@ -57,6 +57,16 @@ export interface GenerateCafeGuestInput {
   seatTile?: CafeGuest["seatTile"];
   /** 生成同批顧客時排除已使用姓名；全池皆排除時才允許循環。 */
   excludeNames?: readonly string[];
+  /**
+   * 🔴 B 批(常客系統):指定這位顧客是誰。
+   *
+   * 常客的身分鍵就是姓名(`CafeGuest.id` 由 `seed|sequence|arrivedMs` 雜湊,天生每次不同),
+   * 所以「今天輪到方雨晴回訪」只能靠指定姓名來表達。**優先於 `nameFor()` 與 `excludeNames`**
+   * ——回訪的是誰就是誰,不會因為店裡剛好有同名的人而被換掉。
+   * 外觀/意圖/停留時數仍照 `key` 決定 ⇒ 決定性與離線一致性不變。
+   * **省略 = 今日行為。**
+   */
+  forceName?: string;
   /** P2:這位顧客實際點的東西(合流的核心)。 */
   order?: CafeGuestOrder | null;
   /** P2:true = 沒空席,點完就走 ⇒ 停留時間縮成 `CAFE_TAKEAWAY_STAY_HOURS`。 */
@@ -114,6 +124,15 @@ const CAFE_GUEST_GENDERS: Record<string, Gender> = {
   高詠晴: "female", 梁子謙: "male", 莊可欣: "female", 陸承澤: "male",
   傅宜蓁: "female", 彭凱文: "male", 游舒涵: "female", 程皓然: "male",
   葉采薇: "female", 廖沛辰: "male", 趙家妤: "female", 劉祐廷: "male",
+  // --- 2026-08-16 B 批 append:姓名池 32 → 64(男 16 / 女 16)---
+  丁彥宏: "male", 尤心妍: "female", 孔立軒: "male", 毛可柔: "female",
+  田睿廷: "male", 任語安: "female", 伍柏勳: "male", 余思妤: "female",
+  辛宥辰: "male", 古若甯: "female", 史沛恩: "male", 狄羽彤: "female",
+  汪竣熙: "male", 沙曼寧: "female", 金浩軒: "male", 侯品瑄: "female",
+  姚承翰: "male", 柳依萱: "female", 秋子恆: "male", 韋亭誼: "female",
+  倪允碩: "male", 時映真: "female", 殷仲賢: "male", 袁筱嵐: "female",
+  馬翊安: "male", 崔宛蓁: "female", 常泰維: "male", 梅昕妤: "female",
+  章昀傑: "male", 連雅涵: "female", 郝紹謙: "male", 陶婕瑜: "female",
 };
 
 /** 顧客姓名 → 固定性別;表外姓名(舊存檔或未來新增)以姓名雜湊決定,同名永遠同性別。 */
@@ -157,7 +176,9 @@ export function generateCafeGuest(input: GenerateCafeGuestInput): CafeGuest {
   const stayHours = input.takeaway === true ? CAFE_TAKEAWAY_STAY_HOURS : 1 + indexFor(`${key}|stay`, 3);
   return {
     id: `cafe_guest_${cafeGuestHash(key).toString(36)}_${sequence}`,
-    name: nameFor(key, new Set(input.excludeNames ?? [])),
+    name: typeof input.forceName === "string" && input.forceName.trim()
+      ? input.forceName.trim()
+      : nameFor(key, new Set(input.excludeNames ?? [])),
     appearance: appearanceFor(key),
     intent: input.intent ?? intentFor(key, input.intentWeights ?? CAFE_INTENT_BASE),
     arrivedMs: input.arrivedMs,

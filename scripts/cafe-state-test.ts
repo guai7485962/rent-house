@@ -33,7 +33,9 @@ function countRandom(fn: () => void): number {
 }
 
 // "sales" 是重設計 P1 新增的逐品項銷售紀錄(同批升 SAVE_VERSION 8 → 9)。
-const CAFE_KEYS = ["open", "standingOrders", "stock", "research", "completed", "upgrades", "extraStaff", "guests", "popularity", "history", "sales"];
+// B 批 append 三個常客欄位(additive,`SAVE_VERSION` 仍是 10);
+// `regularCandidateDays` 是「一天最多算一次」那道閘門的存放處,見 types.ts 的註解。
+const CAFE_KEYS = ["open", "standingOrders", "stock", "research", "completed", "upgrades", "extraStaff", "guests", "popularity", "history", "sales", "regulars", "regularCandidates", "regularCandidateDays"];
 const runtimeIds = () => Object.keys(state.runtimes).sort().join("|");
 const cafeJson = () => JSON.stringify(state.cafe);
 const setCafe = (patch: Partial<typeof state.cafe>) => Object.assign(state.cafe, defaultCafe(), patch);

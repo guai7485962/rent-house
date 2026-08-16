@@ -7,7 +7,7 @@
  * 對外(元件/測試腳本)一律經 src/store.ts re-export,拆分不影響呼叫點。
  */
 import { computed, reactive } from "vue";
-import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeGuestOrder, CafeResearch, CafeSalesDay, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
+import type { AlumniEntry, CafeDayRecord, CafeGuest, CafeGuestIntent, CafeGuestOrder, CafeRegular, CafeResearch, CafeSalesDay, CafeState, ChainEvent, FloorChainState, GroupEvent, Pet, PetHomeEntry, RoomPropState, ScheduledCommunityEvent, Tenant, TenantVisualState } from "../types";
 import tenantsJson from "../../data/tenants.json";
 import type { EventDef } from "./events";
 import type { ActiveDirective } from "./directives";
@@ -27,7 +27,14 @@ import { save } from "./persistence";
 import { weekdayShort } from "./week";
 import { CAFE_GUEST_CAP, removeDepartedCafeGuests } from "./cafeGuests";
 // 純資料常數(`sim/cafe.ts` 不 import 本檔,不會有循環相依);人力上限只有一個來源。
-import { CAFE_MAX_EXTRA_STAFF } from "./cafe";
+import {
+  CAFE_MAX_EXTRA_STAFF,
+  CAFE_REGULAR_CANDIDATE_CAP,
+  CAFE_REGULAR_CANDIDATE_MAX,
+  CAFE_REGULAR_CAP,
+  CAFE_REGULAR_ITEM_CAP,
+  clampCafeAffection,
+} from "./cafe";
 
 export const GAME_START = new Date("2026-07-05T22:00:00+08:00");
 export const LOG_CAP = 60;
@@ -240,6 +247,11 @@ export function defaultCafe(): CafeState {
     popularity: 0,
     history: [],
     sales: [],
+    // B 批:常客名冊與候選人。**刻意不回填舊存檔**(理由同 MIGRATIONS[8]):
+    // 回填假資料只會讓面板顯示玩家從未發生過的事,約 4~5 個遊戲日就會出現第一位常客。
+    regulars: [],
+    regularCandidates: {},
+    regularCandidateDays: {},
   };
 }
 
@@ -316,6 +328,50 @@ function sanitizeCafeGuestOrder(raw: unknown): CafeGuestOrder | null {
   };
 }
 
+const CAFE_REGULAR_TASTES: readonly CafeRegular["taste"][] = ["coffee", "bakery", "pet"];
+
+/**
+ * 🔴 B 批:存檔裡的常客同樣逐欄檢查,壞的整筆丟掉。
+ *
+ * 手改存檔的四種攻擊面都在這裡夾住:負好感 → 0、未知 `taste` → 白名單退回 `coffee`、
+ * 超長 `itemCounts` → 只留最高 `CAFE_REGULAR_ITEM_CAP` 項、壞 `appearance` →
+ * 走 `sanitizeAppearanceInPlace()`(與租客外觀、`sanitizeCafeGuest` 同一道關卡),
+ * 髮型/配件不在白名單就整筆丟掉。常客不進 runtimes、不建關係,所以這裡不需要
+ * 任何年齡或戀愛相關的判定 —— 那些欄位根本不存在。
+ */
+function sanitizeCafeRegular(raw: unknown): CafeRegular | null {
+  if (!isPlainObject(raw)) return null;
+  const { name, appearance, taste, visits, sinceDay, lastVisitDay, affection, itemCounts } = raw;
+  if (typeof name !== "string" || !name.trim()) return null;
+  if (!isPlainObject(appearance)) return null;
+  if (typeof appearance.hairStyle !== "string" || !(ALL_HAIR_STYLES as readonly string[]).includes(appearance.hairStyle)) return null;
+  if (typeof appearance.accessory !== "string" || !(ALL_ACCESSORIES as readonly string[]).includes(appearance.accessory)) return null;
+  const safeAppearance = { ...appearance } as unknown as Appearance;
+  sanitizeAppearanceInPlace(safeAppearance);
+  // 「老樣子」只留最高幾項;同票取品項 id 字典序(與 `cafeRegularUsualItem()` 同一套序)。
+  const counts = numberRecord(itemCounts);
+  const trimmed: Record<string, number> = {};
+  for (const id of Object.keys(counts)
+    .map((id) => ({ id, times: Math.max(0, Math.trunc(counts[id])) }))
+    .filter((row) => row.times > 0)
+    .sort((a, b) => (b.times - a.times) || a.id.localeCompare(b.id))
+    .slice(0, CAFE_REGULAR_ITEM_CAP)
+    .map((row) => row.id)) {
+    trimmed[id] = Math.max(0, Math.trunc(counts[id]));
+  }
+  const since = Math.trunc(finiteOr(sinceDay, 0));
+  return {
+    name: name.trim(),
+    appearance: safeAppearance,
+    taste: CAFE_REGULAR_TASTES.includes(taste as CafeRegular["taste"]) ? (taste as CafeRegular["taste"]) : "coffee",
+    visits: Math.max(0, Math.trunc(finiteOr(visits, 0))),
+    sinceDay: since,
+    lastVisitDay: Math.trunc(finiteOr(lastVisitDay, since)),
+    affection: clampCafeAffection(affection),
+    itemCounts: trimmed,
+  };
+}
+
 /**
  * 把存檔裡的 cafe 欄位正規化成合法的 CafeState(比照 sanitizeGrowthTags 在 load 時的角色)。
  *
@@ -370,6 +426,30 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
     .map(sanitizeCafeGuest)
     .filter((guest): guest is CafeGuest => guest !== null);
   const unique = guests.filter((guest, i) => guests.findIndex((other) => other.id === guest.id) === i);
+  // 🔴 B 批:常客名冊。姓名是身分鍵 ⇒ **先去重再切 cap**,否則手改存檔塞兩筆同名
+  // 會讓 `touchCafeRegular()` 只更新到第一筆,面板卻顯示兩個人。
+  const regularList = (Array.isArray(raw.regulars) ? raw.regulars : [])
+    .map(sanitizeCafeRegular)
+    .filter((entry): entry is CafeRegular => entry !== null);
+  const regulars = regularList
+    .filter((entry, i) => regularList.findIndex((other) => other.name === entry.name) === i)
+    .slice(0, CAFE_REGULAR_CAP);
+  // 候選人:值夾在 1~CAFE_REGULAR_CANDIDATE_MAX、已經是常客的姓名剔除(名冊才是權威),
+  // 再依「累計高 → 姓名字典序」取前 CAFE_REGULAR_CANDIDATE_CAP 名 ⇒ 消毒本身也是決定性的。
+  const rawCandidates = numberRecord(raw.regularCandidates);
+  const rawCandidateDays = numberRecord(raw.regularCandidateDays);
+  const regularCandidates: Record<string, number> = {};
+  const regularCandidateDays: Record<string, number> = {};
+  for (const key of Object.keys(rawCandidates)
+    .filter((key) => key.trim() !== "" && !regulars.some((entry) => entry.name === key))
+    .map((key) => ({ key, times: Math.min(CAFE_REGULAR_CANDIDATE_MAX, Math.trunc(rawCandidates[key])) }))
+    .filter((row) => row.times > 0)
+    .sort((a, b) => (b.times - a.times) || a.key.localeCompare(b.key))
+    .slice(0, CAFE_REGULAR_CANDIDATE_CAP)
+    .map((row) => row.key)) {
+    regularCandidates[key] = Math.min(CAFE_REGULAR_CANDIDATE_MAX, Math.trunc(rawCandidates[key]));
+    if (rawCandidateDays[key] !== undefined) regularCandidateDays[key] = Math.trunc(rawCandidateDays[key]);
+  }
   return {
     open: raw.open === true,
     standingOrders: numberRecord(raw.standingOrders),
@@ -384,6 +464,9 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
     popularity: finiteOr(raw.popularity, 0),
     history: history.slice(-CAFE_HISTORY_CAP),
     sales: sales.slice(-CAFE_SALES_CAP),
+    regulars,
+    regularCandidates,
+    regularCandidateDays,
   };
 }
 

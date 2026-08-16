@@ -60,7 +60,7 @@ import {
 } from "../content/cafeResearch";
 // 型別匯入(編譯後完全抹除),本檔仍然沒有任何 runtime 相依。
 import { CAFE_INTENT_BASE, type CafeIntentWeights } from "./cafeGuests";
-import type { CafeSalesDay, CafeState } from "../types";
+import type { Appearance, CafeRegular, CafeSalesDay, CafeState } from "../types";
 import type { WeatherId } from "./weather";
 
 export {
@@ -1676,6 +1676,17 @@ export interface CafeOrderInput {
   /** 這位顧客是本小時的第幾位(0 起算)。 */
   index: number;
   weather: WeatherId;
+  /**
+   * 🔴 B 批:指定客群修正偏好哪條 track(常客的 `taste`)。
+   * **省略 = 今日行為**(由 `雜湊(key|taste)` 決定)⇒ 既有呼叫端與測試一位元不變。
+   */
+  preferTrack?: CafeResearchTrack;
+  /**
+   * 🔴 B 批:「老樣子」——指定這位顧客直接點某一項。
+   * 該 id 不在菜單上、或 `baseWeight <= 0` 時**自動退回加權抽選**(不會讓常客點到空氣)。
+   * **省略 = 今日行為。**
+   */
+  forceItemId?: string;
 }
 
 /**
@@ -1691,8 +1702,17 @@ export interface CafeOrderInput {
 export function chooseCafeMenuItem(input: CafeOrderInput): CafeMenuItem | null {
   const menu = (input.menu ?? []).filter((item) => item && finiteOr(item.baseWeight, 0) > 0);
   if (menu.length === 0) return null;
+  // 🔴 B 批「老樣子」:常客點的那一項還在菜單上就直接給他,不再抽。
+  // 對不上就靜靜退回加權抽選(舊存檔可能存著已改掉的品項 id,不能讓常客點到空氣)。
+  if (typeof input.forceItemId === "string" && input.forceItemId) {
+    const usual = menu.find((item) => item.id === input.forceItemId);
+    if (usual) return usual;
+  }
   const key = `cafe-order|${Math.trunc(finiteOr(input.day, 0))}|${Math.trunc(finiteOr(input.hour, 0))}|${Math.trunc(finiteOr(input.index, 0))}`;
-  const prefer = CAFE_TASTE_TRACKS[lineHash(`${key}|taste`) % CAFE_TASTE_TRACKS.length];
+  // 🔴 B 批:常客帶著自己的 `taste` 來,其他人照舊由雜湊決定(省略 = 逐位元同今日)。
+  const prefer = CAFE_TASTE_TRACKS.includes(input.preferTrack as CafeResearchTrack)
+    ? (input.preferTrack as CafeResearchTrack)
+    : CAFE_TASTE_TRACKS[lineHash(`${key}|taste`) % CAFE_TASTE_TRACKS.length];
   const weights = menu.map((item) => Math.max(0, quantize(
     finiteOr(item.baseWeight, 0)
     * (item.track === prefer ? CAFE_TASTE_BOOST : 1)
@@ -2193,4 +2213,466 @@ export function cafeIngredientShortageBlame(
     }
   }
   return out;
+}
+
+// ===========================================================================
+// 16. 🔴 B 批:常客系統(設計文件 §4.11)
+//
+// 「有人記得你,也有人被你記得。」咖啡廳原本每一位顧客都是一小時的臨時體
+// (`CafeGuest.id` 由 `seed|sequence|arrivedMs` 雜湊,天生每次不同),
+// 本節讓其中 6 位變成**跨日認得出來的人**。
+//
+// ## 🔴 安全底線(這一節唯一不可退讓的事)
+//
+// 常客**不進 `state.runtimes`**、**不建 `relationships`**、**不參與戀愛線／同居／
+// 未成年判定**。他們只是 `state.cafe` 底下的一筆觀察資料:有姓名、有外觀快照、
+// 有口味與好感,如此而已。整個社交/戀愛子系統的入口是 `runtimes` 與 `relationships`,
+// 常客一個都碰不到 ⇒ 既有的「未成年排除戀愛線」等硬規則不需要、也無從被繞過。
+// 常客要走進租客的人生只有一條既有的路:他以 `intent === "rent"` 的顧客身分
+// 被玩家帶看、通過 `recruit.ts` 成為應徵者、再入住 —— 那條路上的所有把關一行未改。
+//
+// ## 純函式界線
+//
+// 與本檔其餘部分同一條界線:不 import `state`、不 import `placements`、不推日誌、
+// 不扣款。全部輸入由 caller(`tick.ts` / `CafePanel.vue`)餵進來,輸出一律是新物件。
+//
+// ## 零 RNG 與離線一致性
+//
+// 回訪節奏刻意**不乘客流**(否則名店期 130 客/日 會讓常客一天來 15 次),
+// 改成「每個營業小時 `CAFE_REGULAR_HOUR_PERCENT`% 抽一次」的決定性雜湊,
+// 只依賴 `(day, hourIndex, 排序後的 regulars)` ⇒ 線上逐時跑 11 小時
+// 與離線 `syncToNow()` 一次補 11 小時逐欄相同(同 `cafeHourlyGuestCount()` 的論證)。
+// ===========================================================================
+
+/** 常客名額。姓名池 64 人的 ~10%:再多就變成「每天都是同一批人」。 */
+export const CAFE_REGULAR_CAP = 6;
+/** 候選人名冊上限;滿了才新增時淘汰累計最低者(同分取姓名字典序最小,決定性)。 */
+export const CAFE_REGULAR_CANDIDATE_CAP = 16;
+/** 累積幾個「來訪日」升格成常客。 */
+export const CAFE_REGULAR_PROMOTE_VISITS = 3;
+/** 每個來訪日的好感。0 → 100 要 25 個來訪日 ≈ 十幾個遊戲週,是長線關係。 */
+export const CAFE_REGULAR_AFFECTION_PER_VISIT = 4;
+/** 常客撲空(缺料做不出來)扣的好感。比 +4 重,但一次撲空救得回來。 */
+export const CAFE_REGULAR_AFFECTION_REFUSED = 6;
+/** 超過寬限期後每個遊戲日掉的好感。 */
+export const CAFE_REGULAR_AFFECTION_DECAY = 1;
+/** 幾天沒來才開始掉好感。與 18% × 11 小時 ≈ 2 位/日 的回訪節奏對齊:正常回訪不掉。 */
+export const CAFE_REGULAR_GRACE_DAYS = 3;
+/** 好感歸零**且**幾天沒來才真的流失(兩個條件都要,避免一次撲空就走人)。 */
+export const CAFE_REGULAR_LAPSE_DAYS = 14;
+/** 每個營業小時有多少百分比機率「有一位常客上門」。11 小時 ⇒ 約 2.0 位/日。 */
+export const CAFE_REGULAR_HOUR_PERCENT = 18;
+/** 好感夠高的常客結帳時多留的小費。2 位/日 × $3 = +$6/日(開張期淨利的 5.5%)。 */
+export const CAFE_REGULAR_TIP = 3;
+/** 開始給小費的好感門檻。 */
+export const CAFE_REGULAR_TIP_AFFECTION = 60;
+/** 開始「帶朋友來」的好感門檻。 */
+export const CAFE_REGULAR_FRIEND_AFFECTION = 80;
+/** 到店的高好感常客有多少百分比機率帶朋友。約 0.7 次/日。 */
+export const CAFE_REGULAR_FRIEND_PERCENT = 35;
+/** 每位常客的「老樣子」候選只留最高幾項(存檔大小的保險絲)。 */
+export const CAFE_REGULAR_ITEM_CAP = 4;
+/** 好感上限。 */
+export const CAFE_REGULAR_AFFECTION_MAX = 100;
+/** 候選人累計值的上限(手改存檔的天文數字一律夾住)。 */
+export const CAFE_REGULAR_CANDIDATE_MAX = 99;
+/** 候選人名冊每幾個遊戲日全體 −1。 */
+export const CAFE_REGULAR_CANDIDATE_DECAY_DAYS = 7;
+
+/** 好感一律夾在 0~100 的整數;壞資料回退成 0(不產生 NaN)。 */
+export function clampCafeAffection(value: unknown): number {
+  return Math.min(CAFE_REGULAR_AFFECTION_MAX, Math.max(0, Math.round(finiteOr(value, 0))));
+}
+
+/**
+ * 常客的口味**綁姓名不綁日期** ⇒ 同一個人在任何存檔、任何一天都同一個口味。
+ *
+ * 這順手解掉舊設計的一個彆扭:`chooseCafeMenuItem()` 的口味偏好是
+ * 「每一位顧客當場雜湊出來的」,不存在任何人身上,所以玩家永遠感覺不到
+ * 「她就是喜歡甜的」。常客有了固定 `taste` 之後,備料才有對象可言。
+ */
+export function cafeRegularTaste(name: string): CafeResearchTrack {
+  const key = typeof name === "string" ? name : "";
+  return CAFE_TASTE_TRACKS[lineHash(`cafe-regular-taste|${key}`) % CAFE_TASTE_TRACKS.length];
+}
+
+/**
+ * 這位常客的「老樣子」= `itemCounts` 最高的那一項;同票取品項 id 字典序最小
+ * (**決定性**,不吃 `Object.keys()` 的插入序)。沒有紀錄回 `null`。
+ */
+export function cafeRegularUsualItem(
+  regular: Pick<CafeRegular, "itemCounts"> | null | undefined,
+): string | null {
+  const counts = regular?.itemCounts;
+  if (!counts || typeof counts !== "object") return null;
+  let bestId: string | null = null;
+  let bestCount = 0;
+  for (const id of Object.keys(counts).sort()) {
+    const times = safeUnits(counts[id]);
+    if (times > bestCount) { bestId = id; bestCount = times; }
+  }
+  return bestCount > 0 ? bestId : null;
+}
+
+/** 只留最高 `CAFE_REGULAR_ITEM_CAP` 項(同票取 id 字典序);鍵一律排序後寫入。 */
+function trimItemCounts(counts: Readonly<Record<string, number>>): Record<string, number> {
+  const rows = Object.keys(counts ?? {})
+    .map((id) => ({ id, times: safeUnits(counts[id]) }))
+    .filter((row) => row.times > 0);
+  rows.sort((a, b) => (b.times - a.times) || a.id.localeCompare(b.id));
+  const out: Record<string, number> = {};
+  for (const row of rows.slice(0, CAFE_REGULAR_ITEM_CAP)) out[row.id] = row.times;
+  return out;
+}
+
+/**
+ * 常客名冊的**唯一排序**:`(sinceDay, name)`。
+ *
+ * 回訪抽籤與面板都吃這一份順序,所以結果與「陣列插入序」無關 ——
+ * 存檔往返、升格順序、面板重畫都不會改變今天輪到誰。
+ */
+export function sortedCafeRegulars(regulars: readonly CafeRegular[]): CafeRegular[] {
+  return [...(Array.isArray(regulars) ? regulars : [])]
+    .sort((a, b) => (a.sinceDay - b.sinceDay) || a.name.localeCompare(b.name));
+}
+
+export interface CafeRegularTouchInput {
+  /** 這位顧客的姓名(身分鍵)。 */
+  name: string;
+  /** 遊戲日序號。 */
+  day: number;
+  /** 他今天點到的品項 id(缺料撲空時不要呼叫本函式)。 */
+  itemId?: string;
+  /** 升格當下要存起來的外觀快照。 */
+  appearance: Appearance;
+}
+
+export interface CafeRegularTouchResult {
+  regulars: CafeRegular[];
+  candidates: Record<string, number>;
+  candidateDays: Record<string, number>;
+  /** 這次呼叫剛升格的常客;沒有就是 `null`(caller 據此推一則升格日誌)。 */
+  promoted: CafeRegular | null;
+  /** true = 這次真的算了一筆(今天第一次遇到這個人)。 */
+  counted: boolean;
+}
+
+/**
+ * 一位顧客**成功被服務**之後的常客記帳(純函式,回傳新物件)。
+ *
+ * ```
+ * 已是常客 → visits++、lastVisitDay = day、itemCounts[itemId]++、好感 +4
+ * 還不是   → candidates[name]++;累到 3 且名額未滿 → 升格
+ * ```
+ *
+ * ## 🔴 一個遊戲日最多算一次
+ *
+ * 常客靠自己的 `lastVisitDay` 擋;候選人靠 `candidateDays[name]` 擋
+ * (**存進存檔**的理由見 `types.ts` 該欄位的註解:模組層暫存會讓
+ * 「線上逐時 vs 離線一次補」分岔)。沒有這道閘門的話,名店期一天 130 位客人
+ * 會讓同一個姓名一天累積好幾次,3 次的門檻等於形同虛設。
+ *
+ * ## 候選人淘汰是決定性的
+ *
+ * 名冊滿了才需要淘汰,規則是「累計最低 → 同分取姓名字典序最小」,
+ * 與 `tick.ts` 既有的固定迭代次序規則同一套 ⇒ 同一存檔在不同 session 淘汰同一個人。
+ */
+export function touchCafeRegular(
+  regulars: readonly CafeRegular[],
+  candidates: Readonly<Record<string, number>>,
+  candidateDays: Readonly<Record<string, number>>,
+  input: CafeRegularTouchInput,
+): CafeRegularTouchResult {
+  const nextRegulars = (Array.isArray(regulars) ? regulars : []).map((entry) => ({
+    ...entry,
+    itemCounts: { ...entry.itemCounts },
+  }));
+  const nextCandidates: Record<string, number> = { ...(candidates ?? {}) };
+  const nextDays: Record<string, number> = { ...(candidateDays ?? {}) };
+  const name = typeof input?.name === "string" ? input.name.trim() : "";
+  const day = Math.trunc(finiteOr(input?.day, 0));
+  const idle: CafeRegularTouchResult = {
+    regulars: nextRegulars, candidates: nextCandidates, candidateDays: nextDays,
+    promoted: null, counted: false,
+  };
+  if (!name) return idle;
+
+  const existing = nextRegulars.find((entry) => entry.name === name);
+  if (existing) {
+    if (existing.lastVisitDay === day) return idle; // 今天已經算過這個人了
+    existing.visits += 1;
+    existing.lastVisitDay = day;
+    existing.affection = clampCafeAffection(existing.affection + CAFE_REGULAR_AFFECTION_PER_VISIT);
+    if (typeof input.itemId === "string" && input.itemId) {
+      existing.itemCounts[input.itemId] = safeUnits(existing.itemCounts[input.itemId]) + 1;
+      existing.itemCounts = trimItemCounts(existing.itemCounts);
+    }
+    return { ...idle, counted: true };
+  }
+
+  // 候選人的「一天一次」閘門。`candidateDays` 是唯一的日期來源。
+  if (nextCandidates[name] !== undefined && nextDays[name] === day) return idle;
+  const before = safeUnits(nextCandidates[name]);
+  const visits = Math.min(CAFE_REGULAR_CANDIDATE_MAX, before + 1);
+
+  // 升格:名額還有就直接進名冊,候選人那一筆隨之退場。
+  if (visits >= CAFE_REGULAR_PROMOTE_VISITS && nextRegulars.length < CAFE_REGULAR_CAP) {
+    delete nextCandidates[name];
+    delete nextDays[name];
+    const promoted: CafeRegular = {
+      name,
+      appearance: { ...(input.appearance as Appearance) },
+      taste: cafeRegularTaste(name),
+      visits,
+      sinceDay: day,
+      lastVisitDay: day,
+      affection: clampCafeAffection(visits * CAFE_REGULAR_AFFECTION_PER_VISIT),
+      itemCounts: typeof input.itemId === "string" && input.itemId ? { [input.itemId]: 1 } : {},
+    };
+    nextRegulars.push(promoted);
+    return { ...idle, promoted, counted: true };
+  }
+
+  // 名冊滿了才淘汰,而且只在「這是一位全新的候選人」時才需要騰位子。
+  if (before === 0 && Object.keys(nextCandidates).length >= CAFE_REGULAR_CANDIDATE_CAP) {
+    const weakest = Object.keys(nextCandidates)
+      .sort((a, b) => (safeUnits(nextCandidates[a]) - safeUnits(nextCandidates[b])) || a.localeCompare(b))[0];
+    if (weakest !== undefined) { delete nextCandidates[weakest]; delete nextDays[weakest]; }
+  }
+  nextCandidates[name] = visits;
+  nextDays[name] = day;
+  return { ...idle, counted: true };
+}
+
+export interface CafeRegularRefuseResult {
+  regulars: CafeRegular[];
+  /** 扣分前的好感;不是常客時為 `null`。 */
+  before: number | null;
+  /** 扣分後的好感;不是常客時為 `null`。 */
+  after: number | null;
+}
+
+/**
+ * 常客撲空(點的東西缺料做不出來):好感 −`CAFE_REGULAR_AFFECTION_REFUSED`。
+ *
+ * **刻意不動 `lastVisitDay`**:撲空不是來訪日,不該把好感衰退的計時往後推,
+ * 也不該算進 `visits`(他什麼都沒買到)。
+ */
+export function refuseCafeRegular(
+  regulars: readonly CafeRegular[],
+  name: string,
+): CafeRegularRefuseResult {
+  const next = (Array.isArray(regulars) ? regulars : [])
+    .map((entry) => ({ ...entry, itemCounts: { ...entry.itemCounts } }));
+  const target = next.find((entry) => entry.name === name);
+  if (!target) return { regulars: next, before: null, after: null };
+  const before = clampCafeAffection(target.affection);
+  const after = clampCafeAffection(before - CAFE_REGULAR_AFFECTION_REFUSED);
+  target.affection = after;
+  return { regulars: next, before, after };
+}
+
+/**
+ * 今天這個營業小時有沒有常客上門、是哪一位。
+ *
+ * ```
+ * 1) 雜湊(cafe-regular|day|hourIndex) % 100 >= 18 → 這小時沒有常客
+ * 2) 從 雜湊(cafe-regular-pick|day|hourIndex) % 人數 起環掃,跳過今天已經來過的人
+ * ```
+ *
+ * **不乘客流**是刻意的:百分比乘客流會讓名店期(130 客/日)的常客一天來 15 次,
+ * 常客從「熟面孔」變成「背景板」。與客流脫鉤之後開張期與名店期都是約 2.0 位/日,
+ * 6 位常客各約 3 天來一次 —— 剛好與 `CAFE_REGULAR_GRACE_DAYS = 3` 對齊:
+ * **正常回訪不會掉好感,怠慢(店關著、天天缺貨)才會。**
+ *
+ * 只依賴 `(day, hourIndex, 排序後的 regulars)` ⇒ 線上逐時 = 離線一次補。
+ */
+export function cafeRegularForHour(
+  regulars: readonly CafeRegular[],
+  day: number,
+  hourIndex: number,
+): string | null {
+  const roster = sortedCafeRegulars(regulars);
+  if (roster.length === 0) return null;
+  const index = Math.trunc(finiteOr(hourIndex, -1));
+  if (index < 0 || index >= CAFE_BUSINESS_HOURS) return null;
+  const d = Math.trunc(finiteOr(day, 0));
+  if (lineHash(`cafe-regular|${d}|${index}`) % 100 >= CAFE_REGULAR_HOUR_PERCENT) return null;
+  const start = lineHash(`cafe-regular-pick|${d}|${index}`) % roster.length;
+  for (let offset = 0; offset < roster.length; offset++) {
+    const entry = roster[(start + offset) % roster.length];
+    if (Math.trunc(finiteOr(entry.lastVisitDay, -1)) !== d) return entry.name;
+  }
+  return null; // 今天全員都來過了
+}
+
+/**
+ * 這位常客這小時有沒有帶朋友來。
+ *
+ * 🔴 **「帶朋友」= 把本來會排到放棄的一位救回來**(`abandonCount −= 1`),
+ * 不是憑空多生一位顧客。理由是不變式:`crowd.guests = min(base, capacity)` 與
+ * 「當日營收 = Σ 賣出」兩條在 P4a 之後互相咬合,多生一位客人會同時打破兩條
+ * (產能上限被突破、營收多出一個沒有產能支撐的來源)。改成救回一位放棄客之後:
+ * 零產能突破、零新金流管道,而且玩家在畫面上看得到 —— 人龍少了一個轉身離開的人。
+ */
+export function cafeRegularBringsFriend(
+  regular: Pick<CafeRegular, "affection"> | null | undefined,
+  day: number,
+  hourIndex: number,
+): boolean {
+  if (!regular) return false;
+  if (clampCafeAffection(regular.affection) < CAFE_REGULAR_FRIEND_AFFECTION) return false;
+  const d = Math.trunc(finiteOr(day, 0));
+  const index = Math.trunc(finiteOr(hourIndex, 0));
+  return lineHash(`cafe-regular-friend|${d}|${index}`) % 100 < CAFE_REGULAR_FRIEND_PERCENT;
+}
+
+export interface CafeRegularDecayResult {
+  regulars: CafeRegular[];
+  /** 這次日結真的流失掉的常客(caller 據此推告別日誌)。 */
+  lapsed: CafeRegular[];
+}
+
+/**
+ * 日結:好感衰退與流失。
+ *
+ * - **衰退**:`day − lastVisitDay > CAFE_REGULAR_GRACE_DAYS` 才每日 −1。
+ *   寬限 3 日與 2.0 位/日 的回訪節奏對齊,正常經營不會掉。
+ * - **流失**:`affection <= 0` **且** `day − lastVisitDay >= 14` 才移除。
+ *   **刻意不因「撲空太多次」直接流失** —— 那會把一次缺貨變成永久損失,
+ *   也就是設計文件一直避免的失敗狀態;缺貨的懲罰留在聲譽那條路。
+ */
+export function decayCafeRegulars(regulars: readonly CafeRegular[], day: number): CafeRegularDecayResult {
+  const d = Math.trunc(finiteOr(day, 0));
+  const next = (Array.isArray(regulars) ? regulars : [])
+    .map((entry) => ({ ...entry, itemCounts: { ...entry.itemCounts } }));
+  const lapsed: CafeRegular[] = [];
+  const kept: CafeRegular[] = [];
+  for (const entry of next) {
+    const away = d - Math.trunc(finiteOr(entry.lastVisitDay, d));
+    if (away > CAFE_REGULAR_GRACE_DAYS) {
+      entry.affection = clampCafeAffection(entry.affection - CAFE_REGULAR_AFFECTION_DECAY);
+    }
+    if (entry.affection <= 0 && away >= CAFE_REGULAR_LAPSE_DAYS) lapsed.push(entry);
+    else kept.push(entry);
+  }
+  return { regulars: kept, lapsed };
+}
+
+export interface CafeRegularCandidateDecayResult {
+  candidates: Record<string, number>;
+  candidateDays: Record<string, number>;
+}
+
+/**
+ * 候選人名冊每 `CAFE_REGULAR_CANDIDATE_DECAY_DAYS` 個遊戲日全體 −1、歸零者移除。
+ *
+ * ⇒ 3 次必須在**滾動窗**內累積,不會出現「兩個月前來過一次」的殭屍候選人,
+ * 常客因此永遠代表「最近真的常來」。由 caller 用 `day % 7 === 0` 觸發 ⇒ 決定性,
+ * 離線補進度逐日跑過同一段程式碼,不會多扣或少扣。
+ */
+export function decayCafeRegularCandidates(
+  candidates: Readonly<Record<string, number>>,
+  candidateDays: Readonly<Record<string, number>>,
+): CafeRegularCandidateDecayResult {
+  const nextCandidates: Record<string, number> = {};
+  const nextDays: Record<string, number> = {};
+  for (const name of Object.keys(candidates ?? {}).sort()) {
+    const left = safeUnits(candidates[name]) - 1;
+    if (left <= 0) continue;
+    nextCandidates[name] = left;
+    const seen = (candidateDays ?? {})[name];
+    if (typeof seen === "number" && Number.isFinite(seen)) nextDays[name] = Math.trunc(seen);
+  }
+  return { candidates: nextCandidates, candidateDays: nextDays };
+}
+
+/** 常客敘事的四種場合。 */
+export type CafeRegularLineKind = "promote" | "usual" | "refused" | "lapse";
+
+export interface CafeRegularLineInput {
+  kind: CafeRegularLineKind;
+  /** 決定性選句用。 */
+  day: number;
+  name: string;
+  /** kind = "usual" 時他點的那一項。 */
+  itemName?: string;
+}
+
+/** 升格:玩家要看得到「這個人開始固定來了」。 */
+const REGULAR_PROMOTE_LINES = [
+  (n: string) => `${n}這陣子幾乎天天報到,今天店員已經先把她慣坐的位子擦好了。`,
+  (n: string) => `結帳時${n}說「下次還來」,說完自己笑了 —— 這句話這個月已經第三次。`,
+  (n: string) => `${n}走進來不再看菜單,直接抬頭問「今天有嗎?」——這就算是熟客了吧。`,
+  (n: string) => `店員終於記住了${n}的名字,連貓都懶得為這個腳步聲抬頭。`,
+];
+
+/** 老樣子:熟客的體感就是「不用開口也知道要什麼」。 */
+const REGULAR_USUAL_LINES = [
+  (n: string, item: string) => `${n}進門只點了點頭,${item}就開始做了 —— 老樣子。`,
+  (n: string, item: string) => `「一樣的。」${n}把零錢放在檯面上,${item}的香氣先一步端了過去。`,
+  (n: string, item: string) => `${n}今天還是${item},第幾杯已經沒人在數了。`,
+  (n: string, item: string) => `${item}被端到窗邊那張桌子 —— 那是${n}的位子,大家都心照不宣。`,
+];
+
+/** 撲空:讓熟客白跑一趟,是這間店最尷尬的一種失敗。 */
+const REGULAR_REFUSED_LINES = [
+  (n: string) => `${n}特地繞過來,結果想點的東西沒了;說是沒關係,卻也沒有再多待。`,
+  (n: string) => `跟${n}說了聲抱歉 —— 愣了一下,把外套重新拉上就走了。`,
+  (n: string) => `${n}站在櫃檯前等了一會兒,聽完「今天做不出來」,只是輕輕「喔」了一聲。`,
+  (n: string) => `熟客${n}今天空手離開。這種時候連貓都知道不要湊過去。`,
+];
+
+/** 流失:告別不責備,只留一個空位。 */
+const REGULAR_LAPSE_LINES = [
+  (n: string) => `很久沒看到${n}了。那張慣坐的桌子,現在誰坐都不奇怪。`,
+  (n: string) => `整理杯墊時想起${n}——上次來是什麼時候?已經想不起來了。`,
+  (n: string) => `${n}大概是換了上班的路線吧。店裡少一個人,其實聽得出來。`,
+  (n: string) => `${n}的名字還記在心裡,人卻已經很久沒推開這扇門了。`,
+];
+
+/**
+ * 常客敘事(**含前綴**)。純函式 + `lineHash()` 選句,零 RNG。
+ * 真正推進 `rt.log` 的是 `tick.ts`,因此它自動成為 AI 素材,不需要改 `narration.ts`。
+ */
+export function cafeRegularLine(input: CafeRegularLineInput): string {
+  const name = typeof input?.name === "string" && input.name.trim() ? input.name.trim() : "一位熟客";
+  const day = Math.trunc(finiteOr(input?.day, 0));
+  const pool = input.kind === "promote" ? REGULAR_PROMOTE_LINES
+    : input.kind === "refused" ? REGULAR_REFUSED_LINES
+      : input.kind === "lapse" ? REGULAR_LAPSE_LINES
+        : REGULAR_USUAL_LINES;
+  const index = lineHash(`cafe-regular-line|${input.kind}|${day}|${name}`) % pool.length;
+  if (input.kind === "usual") {
+    const item = typeof input.itemName === "string" && input.itemName.trim() ? input.itemName.trim() : "老樣子那一杯";
+    return `${CAFE_LOG_PREFIX} ${REGULAR_USUAL_LINES[index](name, item)}`;
+  }
+  return `${CAFE_LOG_PREFIX} ${(pool as typeof REGULAR_PROMOTE_LINES)[index](name)}`;
+}
+
+/** 帶朋友來:講的不是常客本人,而是**人龍裡那個本來要走的人被留下來了**。 */
+const REGULAR_FRIEND_LINES = [
+  (n: string) => `${n}帶了朋友來,兩個人在人龍裡有說有笑 —— 本來要放棄排隊的那位也就跟著多站了一會兒。`,
+  (n: string) => `${n}拉著同事一起進門,「這家值得等」;前面那個正要走的人聽見了,又把腳步收了回來。`,
+  (n: string) => `${n}今天不是一個人來的。隊伍長歸長,氣氛卻鬆了下來,少了一個轉身離開的背影。`,
+  (n: string) => `${n}邊排隊邊跟朋友介紹菜單,連旁邊的陌生人都被說服了 —— 今天少走了一位客人。`,
+];
+
+/** 「帶朋友」的敘事(**含前綴**)。同樣是純函式 + `lineHash()` 選句。 */
+export function cafeRegularFriendLine(day: number, name: string): string {
+  const who = typeof name === "string" && name.trim() ? name.trim() : "一位熟客";
+  const d = Math.trunc(finiteOr(day, 0));
+  const index = lineHash(`cafe-regular-friend-line|${d}|${who}`) % REGULAR_FRIEND_LINES.length;
+  return `${CAFE_LOG_PREFIX} ${REGULAR_FRIEND_LINES[index](who)}`;
+}
+
+/** 面板摘要:名冊裡最久幾天沒來(名冊為空回 0)。 */
+export function cafeRegularMaxAwayDays(regulars: readonly CafeRegular[], day: number): number {
+  const d = Math.trunc(finiteOr(day, 0));
+  let worst = 0;
+  for (const entry of Array.isArray(regulars) ? regulars : []) {
+    const away = d - Math.trunc(finiteOr(entry.lastVisitDay, d));
+    if (away > worst) worst = away;
+  }
+  return Math.max(0, worst);
 }

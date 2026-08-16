@@ -17,9 +17,15 @@ import {
   cafeIngredientShortageBlame,
   cafeItemShortageCauses,
   cafeRecipeLines,
+  cafeRegularMaxAwayDays,
+  cafeRegularUsualItem,
   cafeResearchDaysLeft,
   cafeSalesRanking,
   cafeStaffCount,
+  sortedCafeRegulars,
+  CAFE_REGULAR_CAP,
+  CAFE_REGULAR_FRIEND_AFFECTION,
+  CAFE_REGULAR_LAPSE_DAYS,
   CAFE_MAX_EXTRA_STAFF,
   CAFE_STAFF_WAGE,
   CAFE_RESEARCH,
@@ -56,7 +62,7 @@ import {
 import { cafePetVisitEndHour } from "../floor/petAgents";
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
-import type { CafeGuest } from "../types";
+import type { CafeGuest, CafeRegular } from "../types";
 import OpsTabs, { type OpsTab } from "./OpsTabs.vue";
 
 const emit = defineEmits<{ close: []; done: [text: string]; switchTab: [tab: OpsTab] }>();
@@ -114,6 +120,24 @@ const loadPercent = computed(() => (capability.value.capacity > 0
 const loadFull = computed(() => loadPercent.value >= 90);
 const adoptGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "adopt"));
 const rentGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "rent"));
+/**
+ * 🔴 B 批:常客名冊。**觀察物,不是決策卡** —— 沒有按鈕、不會過期,
+ * 玩家看的是「這幾個人記得你」,而不是又一張要處理的待辦。
+ * 順序與 `cafeRegularForHour()` 的抽籤同一份 `(sinceDay, name)` 排序。
+ */
+const regulars = computed(() => sortedCafeRegulars(state.cafe.regulars));
+const regularMaxAway = computed(() => cafeRegularMaxAwayDays(regulars.value, currentDay.value));
+const regularAway = (regular: CafeRegular) => Math.max(0, currentDay.value - regular.lastVisitDay);
+const regularTasteLabel = (taste: CafeRegular["taste"]) =>
+  (taste === "coffee" ? "咖啡" : taste === "bakery" ? "烘焙" : "寵物餐");
+/** 「老樣子」的中文品名;品項已不在菜單(或還沒點過)時退回口味。 */
+const regularUsualName = (regular: CafeRegular) => {
+  const id = cafeRegularUsualItem(regular);
+  const item = id ? cafeMenu.value.find((entry) => entry.id === id) : undefined;
+  return item?.name ?? "";
+};
+/** 認養卡／租屋卡的補充說明:這位顧客是不是常客。 */
+const regularOf = (name: string) => state.cafe.regulars.find((entry) => entry.name === name) ?? null;
 const eligiblePets = computed(() => permanentHousePetEntries().map(([id, pet]) => ({ id, pet })));
 const vacantRooms = computed(() => Object.keys(ROOM_APPEARANCE)
   .filter((roomId) => isVacant(roomId))
@@ -134,6 +158,7 @@ const openSections = reactive({
   stock: true,
   staff: false,
   invest: false,
+  regulars: false,
   adoption: adoptGuests.value.length > 0,
   rent: rentGuests.value.length > 0,
 });
@@ -741,6 +766,35 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             </template>
           </section>
 
+          <section class="card">
+            <button class="section-head" :class="{ collapsed: !openSections.regulars }" :aria-expanded="openSections.regulars" @click="toggleSection('regulars')">
+              <div><span class="kicker">REGULARS</span><h3>常客</h3></div>
+              <span class="regular-summary">{{ regulars.length }} / {{ CAFE_REGULAR_CAP }} 位<template v-if="regulars.length">・最久 {{ regularMaxAway }} 天沒來</template></span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.regulars">
+            <p v-if="!regulars.length" class="empty">還沒有人固定來。同一位客人累積 3 個來訪日就會成為常客——大約四、五個遊戲日之後見。</p>
+            <p v-else class="section-note">常客會自己回來、點「老樣子」，好感夠高還會留小費或帶朋友來。<b>這裡沒有按鈕</b>：他們是你經營出來的結果，不是待辦事項。</p>
+            <div v-for="regular in regulars" :key="regular.name" class="regular-row">
+              <div class="regular-line">
+                <span>{{ regular.affection >= CAFE_REGULAR_FRIEND_AFFECTION ? "🌟" : "☕" }}</span>
+                <b>{{ regular.name }}</b>
+                <small>來訪 {{ regular.visits }} 次・{{ regularTasteLabel(regular.taste) }}客</small>
+              </div>
+              <div class="affection-meter">
+                <div class="bar"><i :style="{ width: `${regular.affection}%` }" /></div>
+                <small>好感 {{ regular.affection }}</small>
+              </div>
+              <small class="regular-note">
+                <template v-if="regularUsualName(regular)">老樣子「{{ regularUsualName(regular) }}」・</template>
+                <template v-if="regularAway(regular) <= 0">今天來過</template>
+                <template v-else>{{ regularAway(regular) }} 天前來過</template>
+                <template v-if="regularAway(regular) >= CAFE_REGULAR_LAPSE_DAYS"><b class="lapsing">・快要失聯了</b></template>
+              </small>
+            </div>
+            </template>
+          </section>
+
           <section class="card adoption-card">
             <button class="section-head" :class="{ collapsed: !openSections.adoption }" :aria-expanded="openSections.adoption" @click="toggleSection('adoption')">
               <div><span class="kicker">ADOPTION</span><h3>認養詢問</h3></div>
@@ -750,7 +804,10 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <template v-if="openSections.adoption">
             <p v-if="!adoptGuests.length" class="empty">目前沒有顧客詢問認養。</p>
             <article v-for="guest in adoptGuests" :key="guest.id" class="adoption">
-              <div class="guest-line"><span>💗</span><b>{{ guest.name }}</b><small>想認識一隻樓寵物</small></div>
+              <div class="guest-line">
+                <span>💗</span><b>{{ guest.name }}</b>
+                <small>想認識一隻樓寵物<template v-if="regularOf(guest.name)">（常客・來訪 {{ regularOf(guest.name)!.visits }} 次）</template></small>
+              </div>
               <select v-if="eligiblePets.length" v-model="selectedPet[guest.id]" :aria-label="`${guest.name}的認養對象`">
                 <option value="">選擇認養對象</option>
                 <option v-for="entry in eligiblePets" :key="entry.id" :value="entry.id">
@@ -775,7 +832,10 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             <template v-if="openSections.rent">
             <p v-if="!rentGuests.length" class="empty">目前沒有顧客詢問租屋。</p>
             <article v-for="guest in rentGuests" :key="guest.id" class="rent-inquiry">
-              <div class="guest-line"><span>🔑</span><b>{{ guest.name }}</b><small>在打聽樓上有沒有空房</small></div>
+              <div class="guest-line">
+                <span>🔑</span><b>{{ guest.name }}</b>
+                <small>在打聽樓上有沒有空房<template v-if="regularOf(guest.name)">（常客・來訪 {{ regularOf(guest.name)!.visits }} 次）</template></small>
+              </div>
               <select
                 v-if="vacantRooms.length"
                 :value="selectedRoom[guest.id] || vacantRooms[0].id"
@@ -842,7 +902,19 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .storage-badge.over { color: #ff9f6b; font-weight: 700; }
 .storage-meter { display: grid; gap: 4px; margin: 6px 0 2px; }
 .storage-meter small { color: var(--text-dim); font-size: 10.5px; }
-.capacity, .balance, .count, .research-count, .ticket { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.capacity, .balance, .count, .research-count, .ticket, .regular-summary { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+/* 🔴 B 批:常客列。純文字 + emoji(同認養卡/租屋卡),不做頭像元件。 */
+.regular-row { padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(217,167,120,0.28); background: rgba(217,167,120,0.06); }
+.regular-row + .regular-row { margin-top: 7px; }
+.regular-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.regular-line b { font-size: 13px; }
+.regular-line small { flex: 1; min-width: 0; color: var(--text-dim); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.affection-meter { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+.affection-meter .bar { flex: 1; height: 5px; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.affection-meter .bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #d9a778, #ffb98a); }
+.affection-meter small { color: var(--text-dim); font-size: 10px; white-space: nowrap; }
+.regular-note { display: block; margin-top: 5px; color: var(--text-dim); font-size: 10.5px; line-height: 1.5; }
+.regular-note .lapsing { color: #ffacb7; }
 .count { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: rgba(220,100,130,0.18); color: #f4b0c4; font-weight: 700; }
 .research-count { color: #b9f6ce; font-weight: 700; }
 .ticket { color: #ffd39a; font-weight: 700; }

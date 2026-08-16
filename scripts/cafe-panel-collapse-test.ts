@@ -4,7 +4,7 @@
  * 這兩項都住在 `CafePanel.vue` 的樣板與區域狀態裡(夾值用的 `MAX_STANDING_ORDER`
  * 依 `cafe-recipe-clarity-test.ts` 的斷言必須留在本元件),沒有可以在無頭環境跑的
  * 模擬邏輯,所以照 `ops-panel-test.ts` 的做法掃原始碼釘住不變式:
- *   ① 九個區塊都可收合,預設只展開「營運觀察」與「常備量」;
+ *   ① 十個區塊都可收合,預設只展開「營運觀察」與「常備量」;
  *   ② 收起時仍看得到摘要,而且有顧客在等的詢問卡不會被收起來害玩家漏掉;
  *   ③ ± 快捷動的是草稿、經過夾值,寫入存檔的路徑仍只有「套用常備量」。
  */
@@ -21,12 +21,12 @@ const check = (name: string, ok: boolean) => {
 };
 const count = (re: RegExp) => (panel.match(re) ?? []).length;
 
-const SECTIONS = ["today", "research", "menu", "sales", "stock", "staff", "invest", "adoption", "rent"] as const;
+const SECTIONS = ["today", "research", "menu", "sales", "stock", "staff", "invest", "regulars", "adoption", "rent"] as const;
 /** 每個標題列按鈕的內容(到第一個 </button> 為止)。 */
 const heads = [...panel.matchAll(/<button class="section-head"[\s\S]*?<\/button>/g)].map((m) => m[0]);
 
 // ── ① 收合 ────────────────────────────────────────────────
-check("九個區塊的標題列都是收合開關", heads.length === SECTIONS.length);
+check("十個區塊的標題列都是收合開關", heads.length === SECTIONS.length);
 check("沒有殘留不可收合的標題列", !panel.includes('<div class="section-head">'));
 check(
   "每個區塊都有 toggle、v-if 與收起狀態的 class",
@@ -43,7 +43,7 @@ check(
   "預設只展開「營運觀察」與「常備量」",
   /openSections = reactive\(\{[\s\S]*?\}\)/.test(panel)
     && /today: true/.test(panel) && /stock: true/.test(panel)
-    && ["research", "menu", "sales", "staff", "invest"].every((id) => new RegExp(`${id}: false`).test(panel)),
+    && ["research", "menu", "sales", "staff", "invest", "regulars"].every((id) => new RegExp(`${id}: false`).test(panel)),
 );
 check(
   "有顧客在等回覆的詢問卡預設展開,開著面板時進來的也會補開",
@@ -63,7 +63,7 @@ check(
 );
 check(
   "收起也看得出要不要點開:每個標題列都帶一個摘要 + 箭頭",
-  heads.every((head) => /<span class="(capacity|research-count|ticket|window|blamed-count|count|staff-wage|balance)/.test(head)
+  heads.every((head) => /<span class="(capacity|research-count|ticket|window|blamed-count|count|staff-wage|balance|regular-summary)/.test(head)
     && head.includes('<span class="chev"')),
 );
 

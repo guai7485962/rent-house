@@ -313,6 +313,54 @@ export interface CafeState {
   history: CafeDayRecord[];
   /** 逐日逐品項銷售紀錄,最新在後,cap CAFE_SALES_CAP(重設計 P1;P3 的銷售排行讀這裡) */
   sales: CafeSalesDay[];
+  /**
+   * 🔴 B 批:常客名冊,cap `CAFE_REGULAR_CAP`。
+   *
+   * 舊存檔沒有這個欄位 ⇒ `sanitizeCafeState` 給 `[]`(**刻意不回填**:
+   * 回填假資料只會讓面板顯示玩家從未發生過的事,理由同 `MIGRATIONS[8]`)。
+   * 新欄位是 additive ⇒ **`SAVE_VERSION` 維持 10**。
+   */
+  regulars: CafeRegular[];
+  /**
+   * 常客候選人:姓名 → 累計「來訪日數」(一天最多加一次),cap `CAFE_REGULAR_CANDIDATE_CAP`。
+   * 累到 `CAFE_REGULAR_PROMOTE_VISITS` 就升格成常客;每 7 個遊戲日全體 −1,
+   * 歸零者移除 ⇒ 必須在滾動窗內累積,不會留下殭屍候選人。
+   */
+  regularCandidates: Record<string, number>;
+  /**
+   * 候選人各自「上一次被計數的遊戲日」,鍵與 `regularCandidates` 同步。
+   *
+   * 🔴 這是「一天最多算一次」那道閘門的**唯一**存放處。常客本人靠 `lastVisitDay` 擋,
+   * 候選人沒有那個欄位,若改用模組層的暫存 Set 就會在「線上逐時 vs 離線一次補」
+   * 之間分岔(暫存不進存檔、也不會在兩條路徑之間重置)——那正是本專案最在意的
+   * 離線一致性破口。放進存檔後兩條路徑吃的是同一份資料,逐欄相同。
+   */
+  regularCandidateDays: Record<string, number>;
+}
+
+/**
+ * 🔴 B 批:咖啡廳常客(設計文件 §4.11)。
+ *
+ * **安全底線**:常客只是一筆咖啡廳的觀察資料 —— 不進 `state.runtimes`、不建
+ * `relationships`、不參與戀愛線／同居／未成年判定。詳見 `sim/cafe.ts` 常客那節的檔頭註解。
+ */
+export interface CafeRegular {
+  /** 身分鍵。`CafeGuest.id` 每次不同,唯一穩定的身分是姓名池裡的姓名。 */
+  name: string;
+  /** 升格當下的外觀快照;**不存圖**,UI 需要時即時重畫(同送養合照的作法)。 */
+  appearance: Appearance;
+  /** 綁姓名的固定口味(同一個人跨存檔永遠同口味)。 */
+  taste: "coffee" | "bakery" | "pet";
+  /** 累計成功服務次數(含升格前的 `CAFE_REGULAR_PROMOTE_VISITS` 次)。 */
+  visits: number;
+  /** 升格那天的遊戲日序號。 */
+  sinceDay: number;
+  /** 最後一次成功被服務的遊戲日序號(好感衰退與流失都看它)。 */
+  lastVisitDay: number;
+  /** 好感 0~100。 */
+  affection: number;
+  /** 品項 id → 點過幾次;只留最高 `CAFE_REGULAR_ITEM_CAP` 項(「老樣子」讀這裡)。 */
+  itemCounts: Record<string, number>;
 }
 
 export interface Tenant {

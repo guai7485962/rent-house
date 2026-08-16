@@ -25,6 +25,7 @@ import {
   applySocialEffect,
   roomOfTenant,
   canStartCohabit,
+  sanitizeCafeRegularName,
   LOG_CAP,
   CAFE_HISTORY_CAP,
   CAFE_SALES_CAP,
@@ -954,9 +955,16 @@ export function cafeHourlyPass(hour: number) {
     if (!guest) continue; // 顧客上限的保險絲踩到了 ⇒ 這位沒有站上畫面,也就不算一次來訪
 
     // 🔴 B 批:常客記帳。身分鍵是**姓名**,所以一定要在顧客生成之後才知道是誰。
+    //
+    // 🔴 E 批:姓名在**進入常客系統之前**先消毒。載入時的消毒只跑一次,執行期升格是另一條路
+    //(候選人鍵 → `CafeRegular.name` → 咖啡廳日誌 → prompt)。消毒放在 caller 而不是 `cafe.ts`:
+    // `cafe.ts` 是純函式檔且 `gameState.ts` 已經 import 它,反向 import 會成環又會把
+    // reactive state 拉進純函式層(`cafe-supply-test.ts` / `cafe-regular-test.ts` 有界線掃描)。
+    // 清乾淨後為空 ⇒ `touchCafeRegular()` 本來就回 idle,壞名字連候選人都當不成。
+    const guestRegularName = sanitizeCafeRegularName(guest.name);
     if (till.ok) {
       const touched = touchCafeRegular(cafe.regulars, cafe.regularCandidates, cafe.regularCandidateDays, {
-        name: guest.name, day, itemId: item.id, appearance: guest.appearance,
+        name: guestRegularName, day, itemId: item.id, appearance: guest.appearance,
       });
       cafe.regulars = touched.regulars;
       cafe.regularCandidates = touched.candidates;
@@ -967,16 +975,16 @@ export function cafeHourlyPass(hour: number) {
       // 「老樣子」:與賣出日誌的 `day % 7 === 0` 錯開,並且一天最多一則。
       if (!regularUsualLine && forcedName && usualItemId && hourIndex === firstRegularHour
         && day % CAFE_REGULAR_USUAL_LOG_DAY_MOD === CAFE_REGULAR_USUAL_LOG_DAY) {
-        regularUsualLine = cafeRegularLine({ kind: "usual", day, name: guest.name, itemName: item.name });
+        regularUsualLine = cafeRegularLine({ kind: "usual", day, name: guestRegularName, itemName: item.name });
       }
     } else {
       // 讓熟客白跑一趟:好感 −6。只在好感由上往下跨過 40 時才推一則(不然天天在罵玩家)。
-      const hurt = refuseCafeRegular(cafe.regulars, guest.name);
+      const hurt = refuseCafeRegular(cafe.regulars, guestRegularName);
       if (hurt.before !== null) {
         cafe.regulars = hurt.regulars;
         if (!regularRefusedLine && hurt.before >= CAFE_REGULAR_REFUSED_LOG_AFFECTION
           && (hurt.after ?? 0) < CAFE_REGULAR_REFUSED_LOG_AFFECTION) {
-          regularRefusedLine = cafeRegularLine({ kind: "refused", day, name: guest.name });
+          regularRefusedLine = cafeRegularLine({ kind: "refused", day, name: guestRegularName });
         }
       }
     }

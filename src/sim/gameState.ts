@@ -468,19 +468,41 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
     .slice(0, CAFE_REGULAR_CAP);
   // 候選人:值夾在 1~CAFE_REGULAR_CANDIDATE_MAX、已經是常客的姓名剔除(名冊才是權威),
   // 再依「累計高 → 姓名字典序」取前 CAFE_REGULAR_CANDIDATE_CAP 名 ⇒ 消毒本身也是決定性的。
+  //
+  // 🔴 E 批:候選人的**鍵**也要過 `sanitizeCafeRegularName()`。D 批只清了 `regulars[].name`,
+  // 但候選人是「還沒升格的常客」,`touchCafeRegular()` 會把這個鍵原封搬進 `CafeRegular.name`,
+  // 而常客姓名會被 `cafeRegularLine()` 拼進 咖啡廳日誌 → `rt.log` → `todayLog` → prompt。
+  // 收緊之前這裡只有 `key.trim() !== ""`:**沒有字元集、沒有長度上限**。
+  //
+  // 消毒後兩個不同的髒鍵可能撞成同一個名字(例:`"方雨晴\n"` 與 `"方雨晴["`)。
+  // 合併規則是 **max**:累計取較大者、日期取較大者。`Math.max` 可交換 ⇒ 與鍵的迭代序無關,
+  // 結果只由「輸入的鍵值集合」決定,消毒因此仍然是決定性的。
   const rawCandidates = numberRecord(raw.regularCandidates);
   const rawCandidateDays = numberRecord(raw.regularCandidateDays);
+  // 日期先各自消毒併攏,升格後的常客姓名才查得到自己那一筆(髒的 days 鍵不會變孤兒)。
+  const cleanCandidateDays: Record<string, number> = {};
+  for (const rawKey of Object.keys(rawCandidateDays)) {
+    const key = sanitizeCafeRegularName(rawKey);
+    if (!key) continue;
+    const day = Math.trunc(rawCandidateDays[rawKey]);
+    cleanCandidateDays[key] = key in cleanCandidateDays ? Math.max(cleanCandidateDays[key], day) : day;
+  }
+  const cleanCandidates: Record<string, number> = {};
+  for (const rawKey of Object.keys(rawCandidates)) {
+    const key = sanitizeCafeRegularName(rawKey);
+    if (!key) continue; // 清乾淨後為空 ⇒ 整筆丟掉(維持既有「壞的整筆丟」語意)
+    const times = Math.min(CAFE_REGULAR_CANDIDATE_MAX, Math.trunc(rawCandidates[rawKey]));
+    if (times <= 0) continue;
+    cleanCandidates[key] = Math.max(cleanCandidates[key] ?? 0, times);
+  }
   const regularCandidates: Record<string, number> = {};
   const regularCandidateDays: Record<string, number> = {};
-  for (const key of Object.keys(rawCandidates)
-    .filter((key) => key.trim() !== "" && !regulars.some((entry) => entry.name === key))
-    .map((key) => ({ key, times: Math.min(CAFE_REGULAR_CANDIDATE_MAX, Math.trunc(rawCandidates[key])) }))
-    .filter((row) => row.times > 0)
-    .sort((a, b) => (b.times - a.times) || a.key.localeCompare(b.key))
-    .slice(0, CAFE_REGULAR_CANDIDATE_CAP)
-    .map((row) => row.key)) {
-    regularCandidates[key] = Math.min(CAFE_REGULAR_CANDIDATE_MAX, Math.trunc(rawCandidates[key]));
-    if (rawCandidateDays[key] !== undefined) regularCandidateDays[key] = Math.trunc(rawCandidateDays[key]);
+  for (const key of Object.keys(cleanCandidates)
+    .filter((key) => !regulars.some((entry) => entry.name === key))
+    .sort((a, b) => (cleanCandidates[b] - cleanCandidates[a]) || a.localeCompare(b))
+    .slice(0, CAFE_REGULAR_CANDIDATE_CAP)) {
+    regularCandidates[key] = cleanCandidates[key];
+    if (cleanCandidateDays[key] !== undefined) regularCandidateDays[key] = cleanCandidateDays[key];
   }
   return {
     open: raw.open === true,

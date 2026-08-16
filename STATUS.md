@@ -16,7 +16,15 @@
 
 ## 現在狀態(2026-08-16)
 
-- **領先 `origin/main` 兩個未 push 的 commit(C 批 §4.12、D 批 §4.13)**
+- **領先 `origin/main` 三個未 push 的 commit(C 批 §4.12、D 批 §4.13、E 批 候選人鍵消毒)**
+- **E 批:補完常客姓名消毒的最後一個入口(安全,小修)**。D 批清了 `regulars[].name`,
+  但**候選人的「鍵」**只有 `key.trim() !== ""`(無字元集、無長度上限)⇒ 手改存檔可塞
+  帶中括號、300 字的鍵。現在 `sanitizeCafeState()` 的 `regularCandidates` /
+  `regularCandidateDays` 鍵都先過 `sanitizeCafeRegularName()`,清空的整筆丟掉,
+  **撞鍵以 max 合併**(累計與日期都取大者,`Math.max` 可交換 ⇒ 與迭代序無關)。
+  執行期升格是另一條路 ⇒ `tick.ts` 在進 `touchCafeRegular()` 前先消毒(消毒**不放
+  `cafe.ts`**:`gameState.ts` 已 import 它,反向 import 會成環兼破純函式界線)。
+  `cafe-regular-test.ts` 110→123 項(不新增測試檔);`SAVE_VERSION` 仍 10
 - **D 批:讓 AI 看見咖啡廳(§4.13,安全敏感)**。`NarrateCtx` 新增唯讀 `cafe?:`
   (`brief` / `trend` / `regulars` ≤2 / `ops` / `pets`),送給**全體在住租客**;素材由 `cafe.ts`
   §17 四支新純函式算出(零新狀態、零亂數、仍不 import `placements`)。**新增零個寫入面**:
@@ -29,9 +37,9 @@
   ⇒ `applyRelNudge` 的「名字出現在 todayLog」永遠無法被 `ctx.cafe` 滿足。`clampStr` 不去換行
   是**全域既有缺口**,已另立 `docs/待辦.md` 一條(未擴及既有欄位,避免改動既有 prompt 內容)
 - **平衡未動**:快照局永遠不開張 ⇒ `ctx.cafe` 全程 `undefined` ⇒ `templateDiary()` 的 pool
-  長度不變、抽樣序列位元相同(有明文測試)。`npm test` **108/108**(新增
-  `cafe-narrate-ctx-test.ts` 60 項)、typecheck、build、`balance-test` **零漂移**(未 `--update`);
-  本批不動 `.vue` ⇒ 未跑 UI Lab。`SAVE_VERSION` 仍 10(姓名消毒是收緊,載入時冪等,不需 migration)
+  長度不變、抽樣序列位元相同(有明文測試)。`npm test` **108/108**、typecheck、build、
+  `balance-test` **零漂移**(未 `--update`,E 批同樣零漂移:姓名池 64 個名字本來就通得過消毒);
+  D／E 批都不動 `.vue` ⇒ 未跑 UI Lab。`SAVE_VERSION` 仍 10(姓名消毒是收緊,載入時冪等,不需 migration)
 - **C 批(§4.12)**:CAFE-21 的 `cafe` 場地做好了卻**零呼叫者**,補了內容端 —— `community.ts`
   獨立池 `CAFE_COMMUNITY_EVENTS`(平日 `cafe_afterhours` / 週末 `cafe_weekend_night`,
   **都在打烊後 21:00**,此時顧客與店員 agent 已清場,不會與人龍搶格);咖啡廳事件**不進**

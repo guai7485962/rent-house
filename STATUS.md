@@ -16,79 +16,48 @@
 
 ## 現在狀態(2026-08-16)
 
-- **領先 `origin/main` 三個未 push 的 commit(C 批 §4.12、D 批 §4.13、E 批 候選人鍵消毒)**
-- **E 批:補完常客姓名消毒的最後一個入口(安全,小修)**。D 批清了 `regulars[].name`,
-  但**候選人的「鍵」**只有 `key.trim() !== ""`(無字元集、無長度上限)⇒ 手改存檔可塞
-  帶中括號、300 字的鍵。現在 `sanitizeCafeState()` 的 `regularCandidates` /
-  `regularCandidateDays` 鍵都先過 `sanitizeCafeRegularName()`,清空的整筆丟掉,
-  **撞鍵以 max 合併**(累計與日期都取大者,`Math.max` 可交換 ⇒ 與迭代序無關)。
-  執行期升格是另一條路 ⇒ `tick.ts` 在進 `touchCafeRegular()` 前先消毒(消毒**不放
-  `cafe.ts`**:`gameState.ts` 已 import 它,反向 import 會成環兼破純函式界線)。
-  `cafe-regular-test.ts` 110→123 項(不新增測試檔);`SAVE_VERSION` 仍 10
-- **D 批:讓 AI 看見咖啡廳(§4.13,安全敏感)**。`NarrateCtx` 新增唯讀 `cafe?:`
-  (`brief` / `trend` / `regulars` ≤2 / `ops` / `pets`),送給**全體在住租客**;素材由 `cafe.ts`
-  §17 四支新純函式算出(零新狀態、零亂數、仍不 import `placements`)。**新增零個寫入面**:
-  `NarrateResult` 不動、`applyDiaryEffects()` 一行未改、AI 輸出 schema 不新增 key,四項都有
-  原始碼掃描斷言。順手補掉一條**既有注入路徑**:`cafe.regulars[].name` 原本只檢查非空,
-  現收緊成 NFKC + 字元白名單 + 夾 12 字(`CAFE_REGULAR_NAME_MAX`)
-- **消毒三層 + 一條硬不變式**:新的 `sanitizeContextLine()`(`narrativeQuality.ts`,**app 與
-  worker 共用同一份**)去換行、去 `[ ] 【 】`;worker 端 `clampCafeCtx()` 再夾一次(理由具體:
-  `pendingDiaries[].ctx` 載入時不消毒就原封 POST)。新不變式「**熟客名字 ∩ 租客名字 = ∅**」
-  ⇒ `applyRelNudge` 的「名字出現在 todayLog」永遠無法被 `ctx.cafe` 滿足。`clampStr` 不去換行
-  是**全域既有缺口**,已另立 `docs/待辦.md` 一條(未擴及既有欄位,避免改動既有 prompt 內容)
-- **平衡未動**:快照局永遠不開張 ⇒ `ctx.cafe` 全程 `undefined` ⇒ `templateDiary()` 的 pool
-  長度不變、抽樣序列位元相同(有明文測試)。`npm test` **108/108**、typecheck、build、
-  `balance-test` **零漂移**(未 `--update`,E 批同樣零漂移:姓名池 64 個名字本來就通得過消毒);
-  D／E 批都不動 `.vue` ⇒ 未跑 UI Lab。`SAVE_VERSION` 仍 10(姓名消毒是收緊,載入時冪等,不需 migration)
-- **C 批(§4.12)**:CAFE-21 的 `cafe` 場地做好了卻**零呼叫者**,補了內容端 —— `community.ts`
-  獨立池 `CAFE_COMMUNITY_EVENTS`(平日 `cafe_afterhours` / 週末 `cafe_weekend_night`,
-  **都在打烊後 21:00**,此時顧客與店員 agent 已清場,不會與人龍搶格);咖啡廳事件**不進**
-  `COMMUNITY_EVENTS`,只在「當天沒有其他社群事件」時補抽(`rollCafeGathering()` 機率 0.3)
-  ⇒ lounge／rooftop 的絕對與相對機率完全不變
-- **與 `origin/main` 同步(`05cc2ea`)**:咖啡廳 A 批(地板分區機能差異)與 B 批(常客系統)已
-  push 並部署,production 回 **200**;線上 bundle 由 `index-sSFUhi4o.js` 換成 `index-CAWvNf_T.js`
-  (703,605 字元,前一版 685,536),逐項驗到 `regularCandidateDays` ×7、`regularCandidates` ×7、
-  `regulars` ×27、`cafe_back` ×7、`cafe_counter` ×15,`sideArc` ×21 不變(劇情弧改動未被波及)
-- **A 批(§4.10)**:家具擺對區才有機能效果(後場→庫存容量、寵物區→停留與認養、吧台區→同時
-  服務人數),擺錯區只剩氛圍。**⚠️ 唯一會咬既有存檔的改動**(已核可):雇 4 人以上且吧台仍是
-  贈品那座 ⇒ 產能 104→78,面板提示「加寬吧台」
-- **B 批(§4.11)**:6 位顧客變成跨日認得出來的人,**身分鍵是姓名**、3 個來訪日升格、每營業小時
-  18% 抽籤回訪(**不乘客流** ⇒ 開張期與名店期都約 2 位/日);效果為老樣子、好感 ≥60 留 $3 小費、
-  好感 ≥80 帶朋友(該小時 `abandonCount −1`,不多生客人)。姓名池 32→64(append-only)
-- **界線未破**:`cafeAmbiancePoints()` 一行未改(客流乘數零漂移)、`cafe.ts` 仍不 import
-  `placements`;常客不進 `runtimes`/`relationships`、不參與戀愛線(`cafe-regular-test.ts` 有掃碼斷言)
-- **本機驗證(全綠)**:`npm test` **106/106**、typecheck、build、`balance-test` **零漂移**(未
-  `--update`)、`ui:shot -- rent` 18 張 0 error;`SAVE_VERSION` 仍 10,B 批三欄位 additive、舊檔補空值
+- **與 `origin/main` 同步(`04f65fe`),C／D／E 三批已部署上線**:`git push origin main` 走 `32ee1b1..04f65fe`,production 回 **200**,
+  線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BGI7KZTp.js`**(**711,650 bytes**);ASCII 標記 `cafe_afterhours` ×2、
+  `cafe_weekend_night` ×2、`regularCandidateDays` ×7、`regulars` ×32,CJK 標記(下載位元組再 UTF8 解碼 grep)`DAILY_CAFE_TEMPLATES` 三句各 ×1。
+  ⚠️ **D 批的 worker 端(SYSTEM 兩條新規則、`clampCafeCtx()`)不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
+- **C 批(§4.12)打烊後的租客聚會**:`community.ts` 獨立池 `CAFE_COMMUNITY_EVENTS`(平日 `cafe_afterhours`／
+  週末 `cafe_weekend_night`,**都在打烊後 21:00**,顧客與店員已清場)**不進** `COMMUNITY_EVENTS`,只在當天
+  沒別的社群事件時以 `CAFE_GATHER_CHANCE`(0.3)補抽 ⇒ lounge／rooftop 機率不變;CAFE-21 的場地終於有人用
+- **D 批(§4.13,安全敏感)讓 AI 看見咖啡廳**:`NarrateCtx` 新增唯讀 `cafe?:`,素材由 `cafe.ts` §17 四支純函式算出(零新狀態、零亂數、
+  仍不 import `placements`)。**新增零個寫入面**(`NarrateResult`、`applyDiaryEffects()`、AI 輸出 schema 皆一行未動,四項有掃碼斷言);
+  消毒三層(app／worker 共用 `sanitizeContextLine()` + worker `clampCafeCtx()`),硬不變式「**熟客名字 ∩ 租客名字 = ∅**」
+- **E 批(安全小修)**:`sanitizeCafeState()` 讓 `regularCandidates`／`regularCandidateDays` 的**鍵**也過
+  `sanitizeCafeRegularName()`(D 批只清了 `regulars[].name`),清空的整筆丟掉、撞鍵以 max 合併(`Math.max`
+  可交換 ⇒ 與迭代序無關);`tick.ts` 進 `touchCafeRegular()` 前先消毒
+- **平衡未動、驗證全綠**:三批 `npm test` **108/108**、app + worker typecheck、build 皆過;`balance-test`
+  **零漂移**(全程未 `--update`,`balance-snapshot.json` 三批未被觸碰——快照局永遠不開張 ⇒ `ctx.cafe` 全程
+  `undefined`);C 批另跑 `ui:shot -- rent` 18 張 0 error。`SAVE_VERSION` 仍 10(收緊、冪等,不需 migration)
 
 ## 近期已部署基線
 
-- **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)已上線
-- **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線；
-  詳見 `docs/咖啡廳經營玩法-重設計.md`
+- **咖啡廳聚會／AI context／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`):§4.12 + §4.13 + 安全小修
+- **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
+- **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線
 - **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14
-- **敘事**:本地劇情種子原 10 條，本批擴為 16 條支線並可和 AI 主線並行
-- **送養合照**:`PetPhoto.vue` 即時決定性重畫，不存圖片資料；舊紀錄也相容
+- **敘事**:本地劇情種子 10→16 條支線,可和 AI 主線並行;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
 
 ## 下一步
 
-- **實玩觀察(三件事併成同一輪,跑十幾個遊戲日)**:拿一份**舊存檔**開局——雇 4 人以上且吧台仍是
-  開張贈品那座的檔會吃到 A 批的產能 nerf(104→78),先確認面板的「加寬吧台」提示夠明顯、玩家
-  看得懂怎麼補救,而不是只覺得營收莫名變差;同一輪順著看常客升格節奏(姓名池已擴到 64,預估
-  3~4 個遊戲週填滿 6 個名額),第一位是否約第 4~5 天出現、回訪不太密也不太疏、好感不亂掉;劇情
-  面則確認 AI 主線與本地支線並行、5 日 stall 收束不突兀、16 條種子輪替自然(仍重複再改程式把關);
-  同一輪順便看 C 批的打烊後聚會頻率(估每 8~10 個遊戲日一場)是稀疏得剛好還是太少,
-  以及 **D 批會不會蓋台**——四位租客都拿到咖啡廳背景,若 AI 天天寫它,降級開關是
-  改成 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,本批刻意未做)
+- **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:拿一份**舊存檔**開局——雇 4 人以上且吧台仍是開張贈品那座
+  的檔會吃到 A 批的產能 nerf(104→78),先確認「加寬吧台」提示夠明顯、玩家看得懂怎麼補救,而不是只覺得
+  營收莫名變差;同一輪看常客升格節奏(姓名池 64,估 3~4 個遊戲週填滿 6 名額,第一位是否約第 4~5 天出現、
+  回訪不太密也不太疏)與劇情弧多樣性(AI 主線與本地支線並行、5 日 stall 收束不突兀、16 條種子輪替自然);
+  再看 C 批聚會頻率(估每 8~10 個遊戲日一場,`CAFE_GATHER_CHANCE` 是單一常數好調);最後是本批新增的重點——**D 批會不會「蓋台」**:
+  四位租客都拿到同一份咖啡廳背景,若 AI 天天寫它,降級開關是改成 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,已知但本批未做)
 
 其餘可選項(依 `docs/待辦.md`):
 
-- **牛奶／寵物鮮食的建議常備量**:開張期菜單根本用不到它們,建議值卻是 24 ⇒ 新手一開始
-  就在買用不到的生鮮。要讓建議值跟著菜單走**會動到平衡**,未擅自動
-- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價最高才 $42 ⇒
-  餘裕沒被用掉,名店期客單價停在 ~$37。補高價品項才吃得到(純內容工作)
-- **認養卡下拉的空白列**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`,
-  一旦有可認養寵物就會顯示空白列(租屋卡已修,做法見 `796643f`)
-- 其餘見 `docs/待辦.md`;🔴 項目一律先問使用者
+- **牛奶／寵物鮮食的建議常備量**:開張期菜單根本用不到,建議值卻是 24 ⇒ 新手一開始就在買用不到的生鮮;
+  要讓建議值跟著菜單走**會動到平衡**,未擅自動
+- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價最高才 $42 ⇒ 餘裕沒被用掉,
+  名店期客單價停在 ~$37,補高價品項才吃得到(純內容工作)
+- **認養卡下拉的空白列**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`,一旦有可認養寵物就會顯示
+  空白列(租屋卡已修,做法見 `796643f`);其餘見 `docs/待辦.md`,🔴 項目一律先問使用者
 
 ## 待使用者決策(不要自行動工)
 

@@ -266,6 +266,55 @@ check("不相干的兩人照常演出(守衛只認打架當事人)", sessionFor(
 clearPairSessions();
 
 // ---------------------------------------------------------------------------
+// 6b. F-3「就地開打」:錨點挑選(`scuffleTiles`)
+//
+// 實測 53 場打架有 13 場兩人沒站到一起,全部是同一個成因:錨點寫死成
+// `A.targetTile`,而交誼廳沙發的互動格藏在一格寬的凹角裡 ⇒ 第三人被擠進 B 的格、
+// 或整條隊伍互相禮讓到 session 過期。`scuffleTiles()` 改成挑一組
+// 「離兩人都近、又離別人的目標格夠遠」的相鄰兩格。並肩率 39/53 → 48/53。
+// ---------------------------------------------------------------------------
+
+const { scuffleTiles } = await import("../src/floor/pairSession");
+const { LOUNGE_HALL_RECT } = await import("../src/floor/map");
+
+const sofaNook = { c: 2, r: 10 }; // 交誼廳沙發互動格(只有一個可走鄰格的凹角)
+const blockedNow = currentBlocked();
+const walkableTile = (t: { c: number; r: number }) => blockedNow[t.r]?.[t.c] === false;
+const adjacent = (p: { a: { c: number; r: number }; b: { c: number; r: number } }) =>
+  Math.abs(p.a.c - p.b.c) + Math.abs(p.a.r - p.b.r) === 1;
+const inRect = (t: { c: number; r: number }, rc: typeof LOUNGE_HALL_RECT) =>
+  t.c >= rc.c0 && t.c <= rc.c1 && t.r >= rc.r0 && t.r <= rc.r1;
+
+const crowded = scuffleTiles({ a: sofaNook, b: sofaNook }, [sofaNook], LOUNGE_HALL_RECT);
+check("scuffleTiles 回傳一組真的相鄰、且兩格都可走的位置",
+  !!crowded && adjacent(crowded) && walkableTile(crowded.a) && walkableTile(crowded.b),
+  JSON.stringify(crowded));
+check("錨點被限制在交誼廳大廳內(打架不會跑到走廊或別人房間)",
+  !!crowded && inRect(crowded.a, LOUNGE_HALL_RECT) && inRect(crowded.b, LOUNGE_HALL_RECT));
+check("交誼廳擠滿人時,錨點會讓開沙發凹角(那裡只有一個鄰格,必被第三人佔走)",
+  !!crowded && !(crowded.a.c === sofaNook.c && crowded.a.r === sofaNook.r)
+  && !(crowded.b.c === sofaNook.c && crowded.b.r === sofaNook.r));
+check("錨點選擇是決定性的(同樣輸入永遠同一組格 ⇒ 離線補算與線上逐時一致)",
+  JSON.stringify(scuffleTiles({ a: sofaNook, b: sofaNook }, [sofaNook], LOUNGE_HALL_RECT)) === JSON.stringify(crowded));
+check("沒有別人卡位時,錨點就落在兩人自己的目標格附近(不會沒事跑到房間另一頭)",
+  (() => {
+    const quiet = scuffleTiles({ a: sofaNook, b: sofaNook }, [], LOUNGE_HALL_RECT);
+    return !!quiet && Math.abs(quiet.a.c - sofaNook.c) + Math.abs(quiet.a.r - sofaNook.r) <= 2;
+  })());
+check("兩人分處大廳兩端時,錨點落在兩人之間(不是把某一方拖到對面)",
+  (() => {
+    const far = scuffleTiles({ a: { c: 2, r: 10 }, b: { c: 13, r: 14 } }, [], LOUNGE_HALL_RECT);
+    return !!far && adjacent(far) && far.a.c > 2 && far.a.c < 13;
+  })());
+check("完全沒有可走格的範圍 → 回傳 null,呼叫端退回舊錨點(不會丟例外)",
+  scuffleTiles({ a: sofaNook, b: sofaNook }, [], { c0: 0, r0: 0, c1: 0, r1: 0 }) === null);
+check("pairSession.ts 的**程式碼**不含任何 Math.random(錨點不得影響擲骰序列)",
+  !/Math\.random/.test(src("floor/pairSession.ts").replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, "")));
+check("conflicts.ts 真的把挑好的兩格傳進 startPairSession(而不是只換錨點)",
+  /scuffleTiles\(/.test(src("sim/conflicts.ts"))
+  && /startPairSession\([^;]*"scuffle"[^;]*pair \?\? undefined\)/.test(src("sim/conflicts.ts")));
+
+// ---------------------------------------------------------------------------
 // 7. 非血腥硬規則:掃碼把關
 // ---------------------------------------------------------------------------
 

@@ -16,14 +16,16 @@
 
 ## 現在狀態(2026-08-17)
 
-- **F 批「打架看得見、門檻可達」已 commit 未 push**(四個 commit,細節見工作日誌 08-17)。
+- **F 批「打架看得見、門檻可達」已 commit 未 push**(五個 commit,細節見工作日誌 08-17)。
   門檻 `FIGHT_STRESS_SUM = 50` / `FIGHT_STRESS_EACH = 22`(中控依逐值實跑拍板);演出
   `pose: "hidden"` → `scuffle`(側面 sprite 面對面 + ±1px 推擠,零新美術、**非血腥**);
   60 遊戲日實跑 normal **9 場**／stressed 21／extreme 23,同一對最短間隔 3 遊戲日、違規 0 次,
   口角 108→82(共用每日 2 場額度)。擲骰次數／順序全程一位元未動
-- **F-2:打架演出不再被搶走**(`pairSession.ts` 的 `scuffleHolds()`)——`socialPass` 後續配對的
-  `stand_face` 蓋掉 scuffle 的情況實測 **10 → 0**。但並肩率只從 69.8% 升到 **39/53(73.6%)**:
-  那 10 場裡有 8 場**同時**也沒走到錨點 ⇒ 天花板現在**完全**由 pathfinding／擁擠決定(🟠 待辦)
+- **打架時兩人的並肩率 69.8% → 90.6%(48/53),🟠 待辦已結**。F-2 的 `scuffleHolds()` 擋掉
+  「演出被一般相遇搶走」(10→0);F-3 的 `scuffleTiles()` 改掉錨點——舊版寫死 `A.targetTile`,
+  而沙發互動格 (2,10) 是一格寬的凹角,第三人會被擠進 B 的格、整排人再互相禮讓到 session 過期。
+  現在改挑「離兩人近、離別人目標格夠遠」的相鄰兩格,**共用走位/擁擠邏輯一個字都沒動**,
+  純幾何零 RNG;連旁觀者被打架卡住的比例都從 28/80 降到 17/80。殘留 5 場見 `docs/待辦.md`
 - `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**(全程未 `--update`);`SAVE_VERSION` 仍 10
 - **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**(咖啡廳打烊聚會、讓 AI 看見咖啡廳、
   常客鍵消毒):production 回 **200**,線上 bundle `index-BGI7KZTp.js`(711,650 bytes),ASCII 與 CJK 標記均已驗。
@@ -39,10 +41,8 @@
 
 ## 下一步
 
-- **打架演出的並肩率剩 pathfinding 那半**(🟠):14 場沒對上都是「session 還在、15 秒內沒走到錨點」
-  (交誼廳擁擠時 `claimCrowdTarget` 會位移、兩人互相禮讓);演出層已無可修,**要動走位層**。
-  更長線:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
-  要先把 `baselines()` 抽出共用模組解掉循環 import
+- **F 批可結案,等中控 push／部署**。長線的衝突項只剩:壓力門檻改成相對各自基準線
+  (`stress >= baselines(rt).stress - 10`),要先把 `baselines()` 抽出共用模組解掉循環 import
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒
   會吃到 A 批的產能 nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、
   C 批聚會頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份

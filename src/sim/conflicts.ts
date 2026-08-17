@@ -13,9 +13,10 @@ import { pairKey, getRel, adjustRelationship, adjustTension, compatibility } fro
 import { state, clamp, notify, pushMemory, pushSocialLog, roomOfTenant, type TenantRuntime } from "./gameState";
 import { triggerBreakdown } from "./maintenance";
 import { spawnFx } from "../floor/fx";
-import { startPairSession, startSeparationSession } from "../floor/pairSession";
+import { startPairSession, startSeparationSession, scuffleTiles } from "../floor/pairSession";
 import { currentBlocked } from "../floor/pathfind";
 import type { Tile } from "../floor/pathfind";
+import { LOUNGE_HALL_RECT } from "../floor/map";
 import { roomRect } from "./placements";
 import { MS_PER_GAME_HOUR } from "./clock";
 import { unlock } from "./legacy";
@@ -216,6 +217,18 @@ function fightDecision(a: Tenant, b: Tenant): EventDef {
 export const FIGHT_STRESS_SUM = 50;
 export const FIGHT_STRESS_EACH = 22;
 
+/** 其他在場租客這一小時的目標格 —— 打架錨點要閃開它們(以及它們的擁擠溢出環)。 */
+function othersTargets(exclude: readonly string[]): Tile[] {
+  const skip = new Set(exclude);
+  const out: Tile[] = [];
+  for (const rt of Object.values(state.runtimes)) {
+    if (skip.has(rt.tenant.id) || rt.tenant.visualState === "away") continue;
+    const t = rt.activityTile ?? rt.targetTile;
+    if (t) out.push(t);
+  }
+  return out;
+}
+
 /**
  * 嘗試觸發打架(socialPass 相遇前呼叫)。條件全中才擲骰:
  * 關係 <20 + 積怨 ≥70 + 相容度 ≤ -3 + 壓力(各 ≥22 且合計 ≥50)+ 非冷戰中。
@@ -257,10 +270,19 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
   // 🚫 **維持非血腥**:scuffle 只是兩人面對面、左右交替 ±1px 的拉扯位移,
   //    沿用既有的側面 sprite 與既有的 fight fx(雲 + 星星),
   //    **不畫傷口、不畫血、不新增任何暴力細節**,也不得在後續批次升級成血腥描寫。
-  const at = A.targetTile ?? B.targetTile;
+  //
+  // F-3「就地開打」:錨點不再直接拿 `A.targetTile`(交誼廳沙發那個一格寬的死巷),
+  // 改用 `scuffleTiles()` 在兩人現有目標格附近挑一組相鄰兩格,並避開其他租客的
+  // 目標格與擁擠溢出環 ⇒ 兩人少走路、也不會被第三人堵在半路。挑不到就退回舊路徑。
+  const nearA = A.activityTile ?? A.targetTile;
+  const nearB = B.activityTile ?? B.targetTile;
+  const pair = nearA && nearB
+    ? scuffleTiles({ a: nearA, b: nearB }, othersTargets([A.tenant.id, B.tenant.id]), LOUNGE_HALL_RECT)
+    : null;
+  const at = pair?.a ?? A.targetTile ?? B.targetTile;
   if (at) {
     spawnFx("fight", at.c, at.r, 15000);
-    startPairSession(A.tenant.id, B.tenant.id, at, "scuffle", state.gameMs, 15000);
+    startPairSession(A.tenant.id, B.tenant.id, at, "scuffle", state.gameMs, 15000, pair ?? undefined);
   }
 
   // 家具遭殃(接 §7-1):混戰波及其中一人的房間設備,房東要花錢修

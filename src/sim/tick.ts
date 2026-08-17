@@ -1442,7 +1442,9 @@ export function socialPass(skip: Set<string> = new Set()) {
         else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
         else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
         else spawnFx("chat", at.c, at.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
-        // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉
+        // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉。
+        // 本小時稍早打過架的人此時仍在 scuffle 演出中 ⇒ `startPairSession` 會擋掉這次覆蓋
+        // (守衛在 pairSession.ts;相遇的數值後果照舊,只是不另外掛走位)。
         startPairSession(A.tenant.id, B.tenant.id, at, "stand_face", state.gameMs);
       }
       // 每日上限只管自然口角／打架；分手、群體事件等劇情衝突不占額度，也不由此升級冷戰。

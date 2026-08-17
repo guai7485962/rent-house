@@ -16,27 +16,18 @@
 
 ## 現在狀態(2026-08-17)
 
-- **F 批「打架看得見、門檻可達」已 commit 未 push**(三個 commit)。步驟 1 先補量測:
-  `scripts/conflict-freq-sim.ts`(分析腳本,**不列入 `run-all.ts`**)跑 60 遊戲日 × 4 人高摩擦滿房 ×
-  三種壓力基準,舊門檻下 **打架 0 場**,漏斗 873→535(rel)→198(tension)→198(comp)→**0**(雙方 stress≥80)
-  ⇒ 瓶頸 100% 在壓力門檻(壓力平衡點恆落在基準下方約 20 點,`baselines()` 上界 90,
-  且 ≥90 會被 `isDeviation` 趕回房間 ⇒ [80,90) 窗口實質為零)
-- **步驟 2／3**:門檻改成 `FIGHT_STRESS_SUM = 50` + `FIGHT_STRESS_EACH = 22`(中控依**逐值實跑**對照表
-  拍板,其餘門檻與擲骰次數／順序一位元未動);演出 `pose: "hidden"` → 新的 `scuffle`(側面 sprite
-  面對面 + 既有 500ms frame 做交替 ±1px 推擠,沿用既有 fight fx,**零新美術、非血腥**,三處註解 + 掃碼測試)。
-  `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**(未 `--update`);`SAVE_VERSION` 仍 10
-- **50/22 的實跑(60 遊戲日)**:normal **9 場**／stressed 21／extreme 23,分散在 9／19／19 個不同遊戲日,
-  **同一對最短間隔 3 遊戲日、違規 0 次**(自我抑制有效);口角 108→82 ⇒ 總衝突量沒暴增(共用每日 2 場額度)。
-  相容的一對仍是結構性 0(前三道門檻未動)
-- ⚠️ **打架時兩人並肩率 37/53(69.8%)**:沒對上的 16 場中,**10 場是 `socialPass` 在打架成立後繼續跑配對、
-  被 `stand_face` 蓋掉 session**(演出層小修,已記待辦),6 場是走位沒到位(pathfinding,不在本批)
-- **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**:`git push origin main` 走 `32ee1b1..04f65fe`,production 回 **200**,
-  線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BGI7KZTp.js`**(**711,650 bytes**);ASCII 標記 `cafe_afterhours` ×2、
-  `cafe_weekend_night` ×2、`regularCandidateDays` ×7、`regulars` ×32,CJK 標記(下載位元組再 UTF8 解碼 grep)`DAILY_CAFE_TEMPLATES` 三句各 ×1。
+- **F 批「打架看得見、門檻可達」已 commit 未 push**(四個 commit,細節見工作日誌 08-17)。
+  門檻 `FIGHT_STRESS_SUM = 50` / `FIGHT_STRESS_EACH = 22`(中控依逐值實跑拍板);演出
+  `pose: "hidden"` → `scuffle`(側面 sprite 面對面 + ±1px 推擠,零新美術、**非血腥**);
+  60 遊戲日實跑 normal **9 場**／stressed 21／extreme 23,同一對最短間隔 3 遊戲日、違規 0 次,
+  口角 108→82(共用每日 2 場額度)。擲骰次數／順序全程一位元未動
+- **F-2:打架演出不再被搶走**(`pairSession.ts` 的 `scuffleHolds()`)——`socialPass` 後續配對的
+  `stand_face` 蓋掉 scuffle 的情況實測 **10 → 0**。但並肩率只從 69.8% 升到 **39/53(73.6%)**:
+  那 10 場裡有 8 場**同時**也沒走到錨點 ⇒ 天花板現在**完全**由 pathfinding／擁擠決定(🟠 待辦)
+- `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**(全程未 `--update`);`SAVE_VERSION` 仍 10
+- **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**(咖啡廳打烊聚會、讓 AI 看見咖啡廳、
+  常客鍵消毒):production 回 **200**,線上 bundle `index-BGI7KZTp.js`(711,650 bytes),ASCII 與 CJK 標記均已驗。
   ⚠️ **D 批的 worker 端(SYSTEM 兩條新規則、`clampCafeCtx()`)不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
-- **C／D／E 三批(已部署)**:打烊後的租客聚會(獨立池 `CAFE_COMMUNITY_EVENTS`,不動 lounge／rooftop 機率)、
-  讓 AI 看見咖啡廳(唯讀 `NarrateCtx.cafe`、**新增零個寫入面**、消毒三層、硬不變式「熟客名字 ∩ 租客名字 = ∅」)、
-  常客候選人的鍵也消毒。三批 `npm test` 108/108、typecheck、build 全綠,`balance-test` 零漂移
 
 ## 近期已部署基線
 
@@ -48,8 +39,8 @@
 
 ## 下一步
 
-- **打架演出的並肩率**(🟠):把 `socialPass` 改成「該人已在 `scuffle` 演出中就不掛新 session」,
-  可以收掉 16 場沒對上裡的 10 場(純演出層、零 RNG)。剩下 6 場屬 pathfinding／擁擠處理。
+- **打架演出的並肩率剩 pathfinding 那半**(🟠):14 場沒對上都是「session 還在、15 秒內沒走到錨點」
+  (交誼廳擁擠時 `claimCrowdTarget` 會位移、兩人互相禮讓);演出層已無可修,**要動走位層**。
   更長線:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
   要先把 `baselines()` 抽出共用模組解掉循環 import
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒

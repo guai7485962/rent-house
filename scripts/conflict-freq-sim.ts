@@ -261,6 +261,9 @@ let adjacencyOk = 0;
 let adjacencyBad = 0;
 let adjacencyEver = 0;
 let sessionStomped = 0;
+/** 被蓋掉的細分:另一方已經在**下一場打架**裡(同小時第二場;每日上限是 2)。
+ *  這一種不是「一般相遇搶走演出」,擋不掉——兩場打架搶同一個人,總有一場演不成。 */
+let stompedByFight = 0;
 let pathfindMiss = 0;
 const adjacencyMisses: string[] = [];
 const satisfactionSeries = new Map<string, number[]>(ROOMS.map((room) => [room, []]));
@@ -324,6 +327,9 @@ function settleAgents(watches: { aId: string; bId: string }[] = []): Set<string>
  *   (a) session 還在(pose 仍是 scuffle)但人沒走到 → 走位/擁擠(pathfind 的範圍)
  *   (b) session 已經被別的系統蓋掉(pose 變成 apart/其他,或整個消失)
  *       → 同一小時內 `socialPass` 後面的流程搶走了演出,與走位無關
+ *
+ * 2026-08-17:(b) 的一般相遇那半已由 `startPairSession()` 的 scuffle 守衛擋掉(實測歸零);
+ * 只剩「同小時第二場打架接手」擋不掉(兩場打架搶同一個人),另計 `stompedByFight`。
  */
 function checkAdjacency(aTenantId: string, bTenantId: string, day: number, hour: number, everAdjacent: boolean) {
   if (everAdjacent) adjacencyEver += 1;
@@ -344,7 +350,8 @@ function checkAdjacency(aTenantId: string, bTenantId: string, day: number, hour:
   }
   adjacencyBad += 1;
   const stomped = sa?.pose !== "scuffle" || sb?.pose !== "scuffle";
-  if (stomped) sessionStomped += 1; else pathfindMiss += 1;
+  const byFight = stomped && (sa?.pose === "scuffle" || sb?.pose === "scuffle");
+  if (stomped) { sessionStomped += 1; if (byFight) stompedByFight += 1; } else pathfindMiss += 1;
   adjacencyMisses.push(
     `第 ${day} 日 ${hour} 點:距離 ${dist} A(${ga.c},${ga.r}) B(${gb.c},${gb.r})`
     + `;錨點 A(${sa?.tile.c},${sa?.tile.r}) B(${sb?.tile.c},${sb?.tile.r});${poses}`
@@ -542,7 +549,8 @@ const adjTotal = adjacencyOk + adjacencyBad;
 console.log(`\n--- 1c) 演出層:打架當下兩人 sprite 是否 4-鄰接 ---`);
 console.log(`  相鄰 ${adjacencyOk} / ${adjTotal}`
   + `${adjTotal > 0 ? `(${(adjacencyOk / adjTotal * 100).toFixed(1)}%)` : ""};沒對上 ${adjacencyBad}`
-  + `(其中 session 被別的系統蓋掉 ${sessionStomped}、session 還在但走位沒到位 ${pathfindMiss})`);
+  + `(其中 session 被別的系統蓋掉 ${sessionStomped}[同小時第二場打架接手 ${stompedByFight}]`
+  + `、session 還在但走位沒到位 ${pathfindMiss})`);
 console.log(`  演出期間(15 現實秒)**曾經**相鄰過:${adjacencyEver} / ${adjTotal}` + (adjTotal > 0 ? `(${(adjacencyEver / adjTotal * 100).toFixed(1)}%)` : ""));
 for (const line of adjacencyMisses.slice(0, 10)) console.log(`      ⚠ ${line}`);
 

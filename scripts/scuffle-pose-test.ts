@@ -26,7 +26,7 @@ const mem: Record<string, string> = {};
 
 const { composeFloor, agentView, clearFacingMemory, scufflePushOffset, FLOOR_W, FLOOR_H } = await import("../src/floor/floorScene");
 const { createAgents, tickAgents } = await import("../src/floor/agents");
-const { startPairSession, sessionFor, clearPairSessions } = await import("../src/floor/pairSession");
+const { startPairSession, startSeparationSession, sessionFor, clearPairSessions } = await import("../src/floor/pairSession");
 const { clearFx } = await import("../src/floor/fx");
 const { TILE } = await import("../src/floor/map");
 const { state } = await import("../src/store");
@@ -229,7 +229,44 @@ check("scuffle 畫面比 hidden 多出人的像素(這就是「看得見」)",
   bandMass(ctx0) > bandMass(hiddenCtx), `${bandMass(ctx0)} vs ${bandMass(hiddenCtx)}`);
 
 // ---------------------------------------------------------------------------
-// 6. 非血腥硬規則:掃碼把關
+// 6. 演出優先權:進行中的 scuffle 不被別的 session 搶走
+//    (socialPass 在打架成立後仍會繼續配對,那些相遇的 stand_face 曾把打架演出蓋掉
+//     ⇒ 雲留在中間、兩人卻走開;實測 53 場裡佔 10 場)
+// ---------------------------------------------------------------------------
+
+const CID = "scuffle_guard_third";
+const stillScuffling = () => sessionFor(aId, state.gameMs)?.pose === "scuffle" && sessionFor(bId, state.gameMs)?.pose === "scuffle";
+
+clearPairSessions();
+startPairSession(aId, bId, anchor, "scuffle", state.gameMs, 15000, { a: anchor, b: { c: anchor.c + 1, r: anchor.r } });
+startPairSession(aId, CID, anchor, "stand_face", state.gameMs);
+check("打架中和第三人相遇 → stand_face 蓋不掉 scuffle", stillScuffling());
+check("被擋掉的那場相遇不會留下半場 session", sessionFor(CID, state.gameMs) === null);
+startSeparationSession(bId, CID, { c: 1, r: 1 }, { c: 14, r: 22 }, state.gameMs);
+check("打架中的冷戰退場(apart)也蓋不掉 scuffle", stillScuffling());
+startPairSession(aId, bId, anchor, "hidden", state.gameMs);
+check("同一對改掛別的姿勢一樣擋住(演出以打架優先)", stillScuffling());
+
+// 例外一:再打一場仍然可以接手(打架換對手還是打架)
+startPairSession(aId, CID, anchor, "scuffle", state.gameMs, 15000, { a: anchor, b: { c: anchor.c + 1, r: anchor.r } });
+check("新的一場 scuffle 可以接手", sessionFor(aId, state.gameMs)?.pose === "scuffle" && sessionFor(CID, state.gameMs)?.pose === "scuffle" && sessionFor(bId, state.gameMs) === null);
+
+// 例外二:演出過期後不再擋人(守衛只在 15 秒的窗口內生效)
+check("scuffle 過期後恢復正常覆蓋", (() => {
+  startPairSession(aId, CID, anchor, "scuffle", state.gameMs, 0);
+  startPairSession(aId, bId, anchor, "stand_face", state.gameMs);
+  return sessionFor(aId, state.gameMs)?.pose === "stand_face";
+})());
+
+// 沒有牽涉打架者的第三對照常登記
+clearPairSessions();
+startPairSession(aId, bId, anchor, "scuffle", state.gameMs, 15000, { a: anchor, b: { c: anchor.c + 1, r: anchor.r } });
+startPairSession("guard_x", "guard_y", anchor, "stand_face", state.gameMs);
+check("不相干的兩人照常演出(守衛只認打架當事人)", sessionFor("guard_x", state.gameMs)?.pose === "stand_face" && stillScuffling());
+clearPairSessions();
+
+// ---------------------------------------------------------------------------
+// 7. 非血腥硬規則:掃碼把關
 // ---------------------------------------------------------------------------
 
 const conflictsSrc = src("sim/conflicts.ts");

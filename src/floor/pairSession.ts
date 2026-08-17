@@ -41,10 +41,33 @@ function prune(gameNow: number) {
   }
 }
 
+/**
+ * 進行中的 `scuffle` 有沒有牽涉到這兩人之中的任一位。
+ *
+ * 打架的推擠只活 15 現實秒,但 `socialPass` 在 `tryFight()` 成立後**只跳過那一對**,
+ * 迴圈仍繼續:同一位打架者接著和第三人相遇時,那場相遇的 `stand_face` 會把
+ * 打架 session 蓋掉 ⇒ 打鬥雲留在原地、兩人卻各自走開(實測 53 場裡佔 10 場)。
+ * 因此把「演出優先權」訂在這裡:**scuffle 期間不接受別的姿勢覆蓋**。
+ */
+function scuffleHolds(aId: string, bId: string, gameNow: number): boolean {
+  prune(gameNow);
+  for (const s of sessions) {
+    if (s.pose !== "scuffle") continue;
+    if (s.aId === aId || s.bId === aId || s.aId === bId || s.bId === bId) return true;
+  }
+  return false;
+}
+
 /** 登記一場雙人互動:A 站錨點,B 站錨點旁第一個可走的相鄰格(找不到就同格疊站)。
  *  tiles = 明確指定兩人的格(§10-6 家具座位錨點:沙發並肩兩格、雙人床左右兩側——可為家具佔用格,
- *  agent 層會走到旁邊再「跨上去」)。 */
+ *  agent 層會走到旁邊再「跨上去」)。
+ *
+ *  ⚠️ 唯一的例外是進行中的 `scuffle`:任一方還在打架推擠時,**別的姿勢一律登記不進來**
+ *  (新的一場 `scuffle` 仍可接手,打架換對手還是打架)。純演出層的先後順序,不擲骰、
+ *  不改任何數值後果——被擋掉的那場相遇照樣算數,只是不另外掛走位演出。
+ *  多人事件要接管參與者時走 `clearPairSessionsFor()`,那條路不受此守衛影響。 */
 export function startPairSession(aId: string, bId: string, anchor: Tile, pose: PairPose, gameNow: number, durationMs = REAL_MS_PER_GAME_HOUR, tiles?: { a: Tile; b: Tile }) {
+  if (pose !== "scuffle" && scuffleHolds(aId, bId, gameNow)) return;
   // 一人同時只演一場:清掉牽涉任一方的舊 session
   for (let i = sessions.length - 1; i >= 0; i--) {
     const s = sessions[i];

@@ -16,23 +16,22 @@
 
 ## 現在狀態(2026-08-17)
 
-- **F 批「打架看得見、門檻可達」已 commit 未 push**(五個 commit,細節見工作日誌 08-17)。
-  門檻 `FIGHT_STRESS_SUM = 50` / `FIGHT_STRESS_EACH = 22`(中控依逐值實跑拍板);演出
-  `pose: "hidden"` → `scuffle`(側面 sprite 面對面 + ±1px 推擠,零新美術、**非血腥**);
-  60 遊戲日實跑 normal **9 場**／stressed 21／extreme 23,同一對最短間隔 3 遊戲日、違規 0 次,
-  口角 108→82(共用每日 2 場額度)。擲骰次數／順序全程一位元未動
-- **打架時兩人的並肩率 69.8% → 90.6%(48/53),🟠 待辦已結**。F-2 的 `scuffleHolds()` 擋掉
-  「演出被一般相遇搶走」(10→0);F-3 的 `scuffleTiles()` 改掉錨點——舊版寫死 `A.targetTile`,
-  而沙發互動格 (2,10) 是一格寬的凹角,第三人會被擠進 B 的格、整排人再互相禮讓到 session 過期。
-  現在改挑「離兩人近、離別人目標格夠遠」的相鄰兩格,**共用走位/擁擠邏輯一個字都沒動**,
-  純幾何零 RNG;連旁觀者被打架卡住的比例都從 28/80 降到 17/80。殘留 5 場見 `docs/待辦.md`
-- `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**(全程未 `--update`);`SAVE_VERSION` 仍 10
-- **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**(咖啡廳打烊聚會、讓 AI 看見咖啡廳、
-  常客鍵消毒):production 回 **200**,線上 bundle `index-BGI7KZTp.js`(711,650 bytes),ASCII 與 CJK 標記均已驗。
-  ⚠️ **D 批的 worker 端(SYSTEM 兩條新規則、`clampCafeCtx()`)不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
+- **與 `origin/main` 同步(`bdc6c8e`),F 批「打架看得見、門檻可達」已部署上線**(五個 commit
+  `c90f3ff`／`b23802c`／`ba0e20b`／`b4b61f6`／`bdc6c8e`,細節見工作日誌 08-17):門檻
+  `FIGHT_STRESS_SUM = 50`／`FIGHT_STRESS_EACH = 22`,演出 `hidden` → `scuffle`(側面 sprite
+  面對面 + ±1px 推擠,零新美術、**非血腥**);60 遊戲日 normal **9 場**／stressed 21／extreme 23,
+  同一對最短間隔 3 日、違規 0 次;**並肩率 69.8% → 90.6%(48/53)**,🟠 待辦已結(殘留 5 場見
+  `docs/待辦.md`)。擲骰次數／順序全程一位元未動,`src/floor/pathfind.ts`／`agents.ts` 一字未動
+- **部署驗證**:production 回 **200**,線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BY_iC_DS.js`**
+  (713,998 bytes,前版 711,650),標記 `scuffle` 命中 ×6。⚠️ `scufflePushOffset`／`FIGHT_STRESS_SUM`
+  命中 **0 是預期的**(函式名／常數名最小化會被改名)⇒ **不宣稱「全部標記都驗到」**
+- `npm test` **109/109**、app + worker typecheck、build 全綠、`balance-test` **零漂移**
+  (`scripts/balance-snapshot.json` 跨全部五個 commit 未被觸碰);`SAVE_VERSION` 仍 10。
+  ⚠️ **D 批的 worker 端不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
 
 ## 近期已部署基線
 
+- **打架看得見**(F 批,`c90f3ff`～`bdc6c8e`):門檻 50/22 + `scuffle` 演出 + 並肩走位
 - **咖啡廳聚會／AI context／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`):§4.12 + §4.13 + 安全小修
 - **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
 - **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線
@@ -41,12 +40,14 @@
 
 ## 下一步
 
-- **F 批可結案,等中控 push／部署**。長線的衝突項只剩:壓力門檻改成相對各自基準線
-  (`stress >= baselines(rt).stress - 10`),要先把 `baselines()` 抽出共用模組解掉循環 import
-- **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒
-  會吃到 A 批的產能 nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、
-  C 批聚會頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份
+- **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**的實際觀感(門檻 50/22、
+  並肩率 90.6%);用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒ 會吃到 A 批的產能
+  nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會
+  頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份
   咖啡廳背景,若 AI 天天寫它,降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
+- **G 批(互動擴充)已開工**:互動 18 → 28 種,四個批次序列執行;批次 1 是不稀釋的抽籤 + 條件閘
+- 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
+  要先把 `baselines()` 抽出共用模組解掉循環 import
 
 其餘可選項(依 `docs/待辦.md`):
 

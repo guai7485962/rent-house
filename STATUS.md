@@ -14,24 +14,25 @@
 
 ---
 
-## 現在狀態(2026-08-16)
+## 現在狀態(2026-08-17)
 
-- **與 `origin/main` 同步(`04f65fe`),C／D／E 三批已部署上線**:`git push origin main` 走 `32ee1b1..04f65fe`,production 回 **200**,
+- **F 批步驟 1 已 commit 未 push**:新增 `scripts/conflict-freq-sim.ts`(分析腳本,**不列入 `run-all.ts`**)。
+  60 遊戲日 × 4 人高摩擦滿房 × 三種壓力基準(38/58/78),實測 **打架 0 場**、口角 108 次、冷戰 18 次;
+  漏斗 873→535(rel<20)→198(tension≥70)→198(comp≤−3)→**0**(雙方 stress≥80)⇒ **瓶頸 100% 在壓力門檻**。
+  單人 stress 恆低於基準(最高 39.6/59.5/79.5),`baselines()` 上界 90 + `isDeviation` 在 90/95 趕人回房
+  ⇒ [80,90) 窗口實質為零。結論寫在 `docs/設計檢討與優化.md` 的 2026-08-17 附錄。
+  **未動任何遊戲程式碼**;`npm test` 108/108、typecheck 全綠、`balance-test` 零漂移(未 `--update`)
+- **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**:`git push origin main` 走 `32ee1b1..04f65fe`,production 回 **200**,
   線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BGI7KZTp.js`**(**711,650 bytes**);ASCII 標記 `cafe_afterhours` ×2、
   `cafe_weekend_night` ×2、`regularCandidateDays` ×7、`regulars` ×32,CJK 標記(下載位元組再 UTF8 解碼 grep)`DAILY_CAFE_TEMPLATES` 三句各 ×1。
   ⚠️ **D 批的 worker 端(SYSTEM 兩條新規則、`clampCafeCtx()`)不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
-- **C 批(§4.12)打烊後的租客聚會**:`community.ts` 獨立池 `CAFE_COMMUNITY_EVENTS`(平日 `cafe_afterhours`／
-  週末 `cafe_weekend_night`,**都在打烊後 21:00**,顧客與店員已清場)**不進** `COMMUNITY_EVENTS`,只在當天
-  沒別的社群事件時以 `CAFE_GATHER_CHANCE`(0.3)補抽 ⇒ lounge／rooftop 機率不變;CAFE-21 的場地終於有人用
-- **D 批(§4.13,安全敏感)讓 AI 看見咖啡廳**:`NarrateCtx` 新增唯讀 `cafe?:`,素材由 `cafe.ts` §17 四支純函式算出(零新狀態、零亂數、
-  仍不 import `placements`)。**新增零個寫入面**(`NarrateResult`、`applyDiaryEffects()`、AI 輸出 schema 皆一行未動,四項有掃碼斷言);
-  消毒三層(app／worker 共用 `sanitizeContextLine()` + worker `clampCafeCtx()`),硬不變式「**熟客名字 ∩ 租客名字 = ∅**」
-- **E 批(安全小修)**:`sanitizeCafeState()` 讓 `regularCandidates`／`regularCandidateDays` 的**鍵**也過
-  `sanitizeCafeRegularName()`(D 批只清了 `regulars[].name`),清空的整筆丟掉、撞鍵以 max 合併(`Math.max`
-  可交換 ⇒ 與迭代序無關);`tick.ts` 進 `touchCafeRegular()` 前先消毒
-- **平衡未動、驗證全綠**:三批 `npm test` **108/108**、app + worker typecheck、build 皆過;`balance-test`
-  **零漂移**(全程未 `--update`,`balance-snapshot.json` 三批未被觸碰——快照局永遠不開張 ⇒ `ctx.cafe` 全程
-  `undefined`);C 批另跑 `ui:shot -- rent` 18 張 0 error。`SAVE_VERSION` 仍 10(收緊、冪等,不需 migration)
+- **C 批(§4.12)打烊後的租客聚會**:`community.ts` 獨立池 `CAFE_COMMUNITY_EVENTS`(平日／週末兩則,都在打烊後 21:00)
+  **不進** `COMMUNITY_EVENTS`,只在當天沒別的社群事件時以 `CAFE_GATHER_CHANCE`(0.3)補抽 ⇒ lounge／rooftop 機率不變
+- **D 批(§4.13,安全敏感)讓 AI 看見咖啡廳**:`NarrateCtx` 新增唯讀 `cafe?:`,素材由 `cafe.ts` §17 四支純函式算出。
+  **新增零個寫入面**(四項有掃碼斷言);消毒三層(`sanitizeContextLine()` + worker `clampCafeCtx()`),
+  硬不變式「**熟客名字 ∩ 租客名字 = ∅**」。**E 批**再讓 `regularCandidates` 的**鍵**也過消毒、撞鍵以 max 合併
+- **平衡未動、驗證全綠**:三批 `npm test` **108/108**、typecheck、build 皆過;`balance-test` **零漂移**
+  (全程未 `--update`);C 批另跑 `ui:shot -- rent` 18 張 0 error。`SAVE_VERSION` 仍 10
 
 ## 近期已部署基線
 
@@ -43,6 +44,10 @@
 
 ## 下一步
 
+- **F 批步驟 2／3(等拍板)**:步驟 2 依實測改 `conflicts.ts` 的打架壓力門檻——實測顯示
+  **任何仍以 80 為基準的變體(含「合計 ≥110 且各 ≥45」)在 normal／stressed 兩個情境仍是 0 場**,
+  配對合計壓力 p90 只有 61.6／95.2 ⇒ 門檻要落進實測分布(候選表見 `conflict-freq-sim.ts` 輸出)。
+  步驟 3 把 `conflicts.ts:216` 的 `pose: "hidden"` 換成非血腥的卡通推擠 `scuffle` pose(打架才看得見)
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:拿一份**舊存檔**開局——雇 4 人以上且吧台仍是開張贈品那座
   的檔會吃到 A 批的產能 nerf(104→78),先確認「加寬吧台」提示夠明顯、玩家看得懂怎麼補救,而不是只覺得
   營收莫名變差;同一輪看常客升格節奏(姓名池 64,估 3~4 個遊戲週填滿 6 名額,第一位是否約第 4~5 天出現、

@@ -16,34 +16,34 @@
 
 ## 現在狀態(2026-08-18)
 
-- **G 批(互動擴充)批次 1「不稀釋的抽籤 + 條件閘」已 commit 未 push**:`interactions.ts` 抽籤
-  改成**主池/次池**(`pickInteraction()`)。主池非空時與擴充前**逐位元相同**(同骰、同分母、同順序、
-  同 `<=`);主池落空時把已花掉的 `chanceRoll` 換算成 `u = (chanceRoll−c)/(1−c)` 抽次池,**零新
-  `Math.random()`** ⇒ 既有 18 種觸發率變化 **0.000%**。另加 `gateOk()`(劇情前提閘,刻意不併進
-  `canInteract()`)、`lend`(只動 `rt.wallet`)、`needyBonus`。**本批零新 def**,設計見 §10-1a
-- `npm test` **110/110**(新增 `interaction-pool-test.ts` 46 項)、app + worker typecheck、build
-  全綠、`balance-test` **零漂移**(`scripts/balance-snapshot.json` 已跨七個 commit 未被觸碰);
-  `SAVE_VERSION` 仍 10
-- **F 批「打架看得見」已部署上線**(`c90f3ff`～`bdc6c8e`,細節見工作日誌 08-17):門檻 50/22、
-  `hidden` → `scuffle`(非血腥),60 遊戲日 normal 9 場／stressed 21／extreme 23,**並肩率
-  69.8% → 90.6%**,🟠 待辦已結。production 回 **200**,bundle `index-CAWvNf_T.js` → **`index-BY_iC_DS.js`**
-  (713,998 bytes)、標記 `scuffle` ×6。⚠️ `scufflePushOffset`／`FIGHT_STRESS_SUM` 命中 **0 是預期的**
-  (識別字被最小化改名)⇒ **不宣稱「全部標記都驗到」**;D 批 worker 端同樣不可外部檢視(同源守衛)
+- **G 批批次 1 + 2 已 commit 未 push,兩批都零新 def**。批次 1「不稀釋的抽籤」:`interactions.ts`
+  改成**主池/次池**(`pickInteraction()`),主池非空時與擴充前**逐位元相同**;主池落空才把已花掉的
+  `chanceRoll` 換算成 `u=(chanceRoll−c)/(1−c)` 抽次池,**零新 `Math.random()`** ⇒ 既有 18 種
+  觸發率變化 **0.000%**。另有 `gateOk()`(劇情前提閘,刻意不併進 `canInteract()`)、`lend`、`needyBonus`
+- **批次 2「看得見的雙人動作」(純渲染,零模擬改動)**:租客補上寵物早就有的雙人繪製管線
+  (`activeTenantPairs`／`drawTenantPairGround`／`drawTenantPairAction`;leader 用 tenantId 字典序,
+  租客沒有 `pairLeader` 欄位)。新 pose `game_pair`／`kiss`／`confess`／`cheers` + 新 fx
+  `cash`／`care`／`confetti`;`game_night`／`room_coop_game` 改 `game_pair`,**`became_couple`
+  里程碑 = `confess` + 彩紙(「告白」終於看得見)**、`broke_up` = `apart`。設計見 §10-6b
+- `npm test` **111/111**(新增 `pair-pose-test.ts` 60 項,含 FakeCtx 像素 diff:`game_pair`
+  相鄰兩拍差 118 px、對照組 `sit` 差 **0**)、typecheck／build 全綠、`balance-test` **零漂移**
+  (`scripts/balance-snapshot.json` 已跨 **16 個 commit** 未被觸碰);`SAVE_VERSION` 仍 10
+- **F 批「打架看得見」已部署上線**(`c90f3ff`～`bdc6c8e`):門檻 50/22、`hidden`→`scuffle`(非血腥),
+  並肩率 69.8% → 90.6%,🟠 待辦已結,production 回 **200**。⚠️ `scufflePushOffset` 等識別字在
+  bundle 中被最小化改名 ⇒ 掃碼命中 **0 是預期的**,**不宣稱「全部標記都驗到」**
 
 ## 近期已部署基線
 
-- **打架看得見**(F 批,`c90f3ff`～`bdc6c8e`):門檻 50/22 + `scuffle` 演出 + 並肩走位
 - **咖啡廳聚會／AI context／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`):§4.12 + §4.13 + 安全小修
 - **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
 - **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線
-- **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14;本地劇情種子
-  10→16 條支線可和 AI 主線並行;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
+- **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14、本地劇情種子 10→16;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
 
 ## 下一步
 
-- **G 批批次 2:看得見的雙人動作**(純渲染、零模擬改動):`game_pair`／`kiss`／`confess`／
-  `cheers` 四個 pose + `cash`／`care`／`confetti` 三個 fx,並把 `became_couple` 里程碑改成
-  「告白」演出。批次 3/4 才加新 def(屆時快照**會漂**,逐欄審核清單見中控規格)
+- **G 批批次 3:新互動目錄 A(日常／友誼 6 種)**,全部 `pool:"extra"`／`tier:"close"` 以上,吃
+  批次 1 的 `gate`／`lend` 與批次 2 的 `game_pair`／`cheers`／`cash`／`care`。這是 G 批**第一次
+  真的加 def** ⇒ 快照**會漂**(次池命中多花一顆選句骰),逐欄審核清單見中控規格;批次 4 是戀愛線 4 種
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**的實際觀感(門檻 50/22、
   並肩率 90.6%);用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒ 會吃到 A 批的產能
   nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會

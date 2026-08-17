@@ -17,8 +17,14 @@ import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "../sim/clock";
  *
  * 🚫 `scuffle` 與 `hidden` 是**兩件事**:hidden 是 🔞 成人內容的遮蔽式演出(永遠不畫);
  * scuffle 是打架**要看得見**,但只到卡通推擠為止——不畫傷口、不畫血。
+ *
+ * G-2 追加的四個**雙人動作**(同樣「看得見」,由 floorScene 的雙人繪製層補畫共享圖層):
+ * game_pair = 並肩坐著打電動(螢幕閃光打在兩人臉上);kiss = 側面相對的一吻;
+ * confess = 面對面告白(一方遞出、一方微退,中間爆開彩紙);cheers = 側面相對舉杯。
  */
-export type PairPose = "pair" | "stand_face" | "cook_pair" | "sit" | "lie" | "hidden" | "apart" | "scuffle";
+export type PairPose =
+  | "pair" | "stand_face" | "cook_pair" | "sit" | "lie" | "hidden" | "apart" | "scuffle"
+  | "game_pair" | "kiss" | "confess" | "cheers";
 
 export interface PairSession {
   aId: string;
@@ -232,19 +238,20 @@ export function scuffleTiles(
   return best;
 }
 
-/** 此人進行中的 session 走位(agent 層以此覆寫 targetTile);沒有則 null */
-export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pose: PairPose; facing: -1 | 0 | 1 } | null {
+/** 此人進行中的 session 走位(agent 層以此覆寫 targetTile);沒有則 null。
+ *  `partnerId` 讓渲染層找得到對手,雙人共享圖層(親吻的愛心、告白的彩紙…)才畫得出來。 */
+export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pose: PairPose; facing: -1 | 0 | 1; partnerId: string } | null {
   prune(gameNow);
   for (const s of sessions) {
-    if (s.aId === tenantId) return { tile: s.tileA, pose: s.pose, facing: facingToward(s.pose, s.tileA, s.tileB) };
-    if (s.bId === tenantId) return { tile: s.tileB, pose: s.pose, facing: facingToward(s.pose, s.tileB, s.tileA) };
+    if (s.aId === tenantId) return { tile: s.tileA, pose: s.pose, facing: facingToward(s.pose, s.tileA, s.tileB), partnerId: s.bId };
+    if (s.bId === tenantId) return { tile: s.tileB, pose: s.pose, facing: facingToward(s.pose, s.tileB, s.tileA), partnerId: s.aId };
   }
   return null;
 }
 
-/** 面對面的姿勢(聊天 stand_face / 打架 scuffle)只在水平相鄰時畫側向提示；
+/** 面對面的姿勢(聊天 stand_face / 打架 scuffle / 親吻 / 告白 / 舉杯)只在水平相鄰時畫側向提示；
  *  垂直排列維持正面，避免假裝看向錯誤方向。 */
-const FACING_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["stand_face", "scuffle"]);
+const FACING_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["stand_face", "scuffle", "kiss", "confess", "cheers"]);
 function facingToward(pose: PairPose, mine: Tile, other: Tile): -1 | 0 | 1 {
   if (!FACING_POSES.has(pose) || mine.r !== other.r || mine.c === other.c) return 0;
   return other.c > mine.c ? 1 : -1;

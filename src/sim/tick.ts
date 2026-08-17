@@ -90,7 +90,7 @@ import {
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
-import { startPairSession } from "../floor/pairSession";
+import { startPairSession, type PairPose } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
@@ -1437,7 +1437,9 @@ export function socialPass(skip: Set<string> = new Set()) {
       const at = A.targetTile ?? B.targetTile;
       if (at) {
         // 里程碑/衝突是「一瞬間」的演出 → 短;聊天泡泡是「進行中」→ 持續到下一個動作
-        if (res.milestone === "became_couple") spawnFx("hearts", at.c, at.r, 15000);
+        // G-2:「在一起了」不再只是一行通知 —— 掛 confess 姿勢 + 彩紙,玩家真的看到告白那一幕。
+        // 「在一起」本身仍由 `encounter()` 判定(social.ts),這裡只換演出:零 RNG、零關係邏輯改動。
+        if (res.milestone === "became_couple") spawnFx("confetti", at.c, at.r, 15000);
         else if (res.milestone === "broke_up") spawnFx("heartbreak", at.c, at.r, 15000);
         else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
         else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
@@ -1445,7 +1447,11 @@ export function socialPass(skip: Set<string> = new Set()) {
         // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉。
         // 本小時稍早打過架的人此時仍在 scuffle 演出中 ⇒ `startPairSession` 會擋掉這次覆蓋
         // (守衛在 pairSession.ts;相遇的數值後果照舊,只是不另外掛走位)。
-        startPairSession(A.tenant.id, B.tenant.id, at, "stand_face", state.gameMs);
+        const milestonePose: PairPose =
+          res.milestone === "became_couple" ? "confess"
+            : res.milestone === "broke_up" ? "apart"
+              : "stand_face";
+        startPairSession(A.tenant.id, B.tenant.id, at, milestonePose, state.gameMs);
       }
       // 每日上限只管自然口角／打架；分手、群體事件等劇情衝突不占額度，也不由此升級冷戰。
       if (res.naturalConflict) maybeFeudAfterConflict(A, B);

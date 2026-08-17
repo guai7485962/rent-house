@@ -31,6 +31,10 @@ export interface Agent {
   pose: PairPose | null;
   /** stand_face 的水平朝向:-1 左、1 右;其他姿勢為 0 */
   facing: -1 | 0 | 1;
+  /** 進行中雙人 session 的對手 tenantId(null = 無)。
+   *  純渲染層用途:雙人共享圖層(螢幕閃光、脈動愛心、彩紙)要靠它把兩人配成一組。
+   *  **不入存檔**,每幀由 `tickAgents` 重寫。 */
+  pairWith: string | null;
   /** 單人日常姿勢的家具方向；雙人 session 維持 0。 */
   poseRotation: FurnitureRotation;
   /** 家具姿勢的繪製位移；行走仍以可尋路的整數格為準，抵達後才置中到家具。 */
@@ -70,6 +74,7 @@ export function createAgents(): Agent[] {
       vs: rt.tenant.visualState,
       pose: null,
       facing: 0,
+      pairWith: null,
       poseRotation: 0,
       poseOffsetX: 0,
       poseOffsetY: 0,
@@ -101,6 +106,7 @@ export function tickAgents(agents: Agent[], dt: number, blockedCells: ReadonlySe
     a.hidden = !rt || group?.hidden === true || (!group && rt.tenant.visualState === "away") || !desired || ses?.pose === "hidden";
     a.pose = group?.pose ?? ses?.pose ?? rt?.activityPose ?? null;
     a.facing = ses?.facing ?? 0;
+    a.pairWith = ses?.partnerId ?? null; // 渲染層的雙人共享圖層靠這個配對(群體演出不走這條)
     a.poseRotation = group || ses ? 0 : rt?.activityRotation ?? 0;
     a.poseOffsetX = 0;
     a.poseOffsetY = 0;

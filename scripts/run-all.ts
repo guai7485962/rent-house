@@ -33,7 +33,7 @@ const REGRESSION = [
   "daynight-test.ts", "debug-export-test.ts", "diary-queue-test.ts", "diary-stagger-test.ts", "diary-upgrade-test.ts", "directive-test.ts",
   "distinct-test.ts", "drama-test.ts", "dream-test.ts", "eviction-test.ts", "feed-test.ts", "finance-test.ts", "fixes-test.ts", "floor-chain-data-test.ts", "floor-chain-test.ts", "floor-view-test.ts", "fx-test.ts", "gender-rel-test.ts",
   "furniture-art-test.ts", "furniture-tier-test.ts", "group-scene-test.ts", "interaction-pool-test.ts", "interactions-test.ts", "invite-test.ts", "kindness-test.ts", "kitchen-life-test.ts", "legacy-test.ts", "limezu-art-test.ts", "living-experience-test.ts", "local-arc-test.ts", "maintenance-test.ts", "memory-lifecycle-test.ts", "relationship-tension-test.ts",
-  "move-test.ts", "name-pet-rate-test.ts", "narrative-quality-test.ts", "observation-test.ts", "ops-panel-test.ts", "outing-test.ts", "pair-session-test.ts", "pet-photo-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts", "romance-integrity-test.ts",
+  "move-test.ts", "name-pet-rate-test.ts", "narrative-quality-test.ts", "observation-test.ts", "ops-panel-test.ts", "outing-test.ts", "pair-pose-test.ts", "pair-session-test.ts", "pet-photo-test.ts", "pet-test.ts", "qol-test.ts", "relist-test.ts", "romance-integrity-test.ts",
   "rent-test.ts", "roomcam-test.ts", "rotation-pose-test.ts", "scuffle-pose-test.ts", "shop-cat-test.ts", "shop-venue-test.ts", "stats-model-test.ts", "summary-test.ts", "vacuum-test.ts", "wallet-test.ts", "weather-test.ts", "week-test.ts", "weekly-report-test.ts", "wish-test.ts", "worker-test.ts",
 ];
 

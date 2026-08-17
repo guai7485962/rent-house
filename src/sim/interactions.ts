@@ -321,7 +321,7 @@ export const INTERACTIONS: InteractionDef[] = [
     id: "game_night",
     tier: "close",
     location: "lounge",
-    pose: "sit",
+    pose: "game_pair", // 並肩坐 + 手把 + 螢幕閃光(G-2:純渲染,座位/擲骰一位元未動)
     seatOn: ["shared_sofa"],
     timeWindow: [19, 23],
     requiresFurniture: ["lounge_console", "lounge_tv"],
@@ -418,7 +418,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "room",
     requiresFurniture: ["tv_console"],
-    pose: "sit",
+    pose: "game_pair", // 同上:房內雙人連線也看得到手把與螢幕光
     timeWindow: [18, 23],
     weight: 2,
     cooldownHours: 12,

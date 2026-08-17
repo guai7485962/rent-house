@@ -24,6 +24,12 @@ import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 
 export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
 
+/**
+ * 劇情前提閘(零 RNG)。刻意**不放進 `canInteract()`**——那個函式是「安全硬規則的唯一入口」
+ * (分級/成年/私密),gate 只是劇情前提;混進去會稀釋語意,也會逼簽章從 Tenant 改成 TenantRuntime。
+ */
+export type InteractionGate = "one_broke" | "one_unwell" | "both_adult" | "deep_couple";
+
 export interface InteractionDef {
   id: string;
   /** 關係門檻:close=好友以上(50+)、crush=曖昧(75+ 且互有好感)、couple=情侶、cohabit=同居中的情侶 */
@@ -55,6 +61,18 @@ export interface InteractionDef {
   standAt?: string[];
   /** 演出改在指定共用設施發生(如一起洗澡在「bathroom」淋浴間,而不是在自己房間) */
   venue?: string;
+  /**
+   * 抽籤池(見 pickInteraction):省略/"core" = 既有主池,抽法逐位元照舊;
+   * "extra" = 次池,只在主池落空後用「重算的條件亂數」抽,**對主池零稀釋**。
+   * 次池的 def 一律 tier "close" 以上(見 pickInteraction 的擲骰次數說明)。
+   */
+  pool?: "core" | "extra";
+  /** 劇情前提閘(零 RNG);與 canInteract() 的安全硬規則分開,見 gateOk() */
+  gate?: InteractionGate;
+  /** 借錢:錢多的一方轉這個金額給錢少的一方。只動 rt.wallet,不動 state.money(房東帳) */
+  lend?: number;
+  /** 對 wellbeing 較低的一方額外加的數值(零 RNG) */
+  needyBonus?: Partial<Tenant["stats"]>;
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
 }
 
@@ -510,6 +528,114 @@ export function canInteract(def: InteractionDef, a: Tenant, b: Tenant, ctx: Inte
   return true;
 }
 
+/**
+ * 劇情前提閘(純函式、零 RNG、不看時間)。與 `canInteract()` 分開:那裡是安全硬規則的唯一入口,
+ * 這裡只回答「這段劇情此刻說得通嗎」。gate 只會讓 def **更難**觸發,不會放寬任何安全條件。
+ */
+export function gateOk(gate: InteractionGate | undefined, A: TenantRuntime, B: TenantRuntime): boolean {
+  if (!gate) return true;
+  switch (gate) {
+    case "one_broke": {
+      const wa = A.wallet ?? 0;
+      const wb = B.wallet ?? 0;
+      return Math.min(wa, wb) < 3000 && Math.max(wa, wb) >= 8000;
+    }
+    case "one_unwell":
+      return Math.min(A.tenant.stats.wellbeing, B.tenant.stats.wellbeing) < 40;
+    case "both_adult":
+      return (A.tenant.isAdult ?? true) && (B.tenant.isAdult ?? true);
+    case "deep_couple": {
+      const rel = getRel(A.tenant.id, B.tenant.id);
+      return !!rel?.romantic && (rel.value >= 95 || rel.cohabitOffered);
+    }
+  }
+}
+
+/** 依 `pool` 欄位把候選拆成主池/次池;filter 保序 ⇒ 無 extra 時 core 與原 eligible 逐位元相同。 */
+export function splitPools(eligible: InteractionDef[]): { core: InteractionDef[]; extra: InteractionDef[] } {
+  const core: InteractionDef[] = [];
+  const extra: InteractionDef[] = [];
+  for (const d of eligible) ((d.pool ?? "core") === "core" ? core : extra).push(d);
+  return { core, extra };
+}
+
+/**
+ * 兩階段抽籤:**主池零稀釋**地擴充互動目錄。
+ *
+ * 直接把新 def 丟進同一個 weight 抽籤會稀釋既有內容(實測 game_night 12.5% → 3.1%)。
+ * 這裡改成:
+ *   1. 主池(core)非空 ⇒ 與擴充前**逐位元相同**:同一顆 weight 骰、同一個分母、同一個累減順序,
+ *      再擲同一顆 chanceRoll,命中語意仍是 `<=`。
+ *   2. 主池落空(chanceRoll > def.chance)時**不再擲骰**,而是把已經花掉的 chanceRoll 換算成
+ *      `u = (chanceRoll − c) / (1 − c)` 去抽次池。合法性:在「chanceRoll > c」的條件下
+ *      chanceRoll 在 [c,1) 均勻,故 u 在 [0,1) 均勻。**零新 Math.random()**。
+ *   3. 次池以「預算」累加 `(w_i/W)·c_i`,故 extra 的絕對觸發率 = `(1−P_core)·(w_i/W)·c_i`,
+ *      調高任一 extra 只會吃掉次池自己的預算,**永不反噬主池**。
+ *
+ * 唯一的擲骰次數變動:`core 空 + extra 非空` 會多擲 1 顆(現行 0 顆)。因此所有 extra def
+ * 一律 tier "close" 以上——**絕不可為此新增更低的 tier**,否則全樓每組低關係配對都會多擲一顆。
+ *
+ * 串門配對(visitPair)兩池都維持「必定成局」:次池改用純權重(把 c_i 視為 1)。
+ */
+export function pickInteraction(eligible: InteractionDef[], visitPair: boolean): InteractionDef | null {
+  const { core, extra } = splitPools(eligible);
+  let u: number;
+  if (core.length > 0) {
+    // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
+    const total = core.reduce((s, d) => s + d.weight, 0);
+    let roll = Math.random() * total;
+    let def = core[0];
+    for (const d of core) {
+      roll -= d.weight;
+      if (roll <= 0) {
+        def = d;
+        break;
+      }
+    }
+    // 保留原本的擲骰次數以穩定其他系統的亂數序列;串門配對不受失敗結果影響。
+    const chanceRoll = Math.random();
+    if (visitPair || chanceRoll <= def.chance) return def;
+    if (extra.length === 0) return null; // 與擴充前完全相同:主池落空就收工
+    u = def.chance >= 1 ? 0 : (chanceRoll - def.chance) / (1 - def.chance);
+  } else {
+    if (extra.length === 0) return null; // 與擴充前完全相同:0 顆骰
+    u = Math.random();
+  }
+  const wSum = extra.reduce((s, d) => s + d.weight, 0);
+  if (wSum <= 0) return null;
+  let acc = 0;
+  for (const d of extra) {
+    acc += (d.weight / wSum) * (visitPair ? 1 : d.chance);
+    if (u < acc) return d;
+  }
+  return null;
+}
+
+/**
+ * 借錢(零 RNG):錢多的一方轉 `min(amount, 錢多者錢包)` 給錢少的一方。
+ * **只動 rt.wallet,不動 state.money**——房東帳與租客錢包是兩本帳(見 economy.ts)。回傳實際轉出金額。
+ */
+export function applyLend(A: TenantRuntime, B: TenantRuntime, amount: number): number {
+  if (!(amount > 0)) return 0;
+  const rich = (A.wallet ?? 0) >= (B.wallet ?? 0) ? A : B;
+  const poor = rich === A ? B : A;
+  const moved = Math.min(amount, Math.max(0, rich.wallet ?? 0));
+  if (moved <= 0) return 0;
+  rich.wallet = (rich.wallet ?? 0) - moved;
+  poor.wallet = (poor.wallet ?? 0) + moved;
+  return moved;
+}
+
+/** needyBonus(零 RNG):對兩人中 wellbeing 較低的一方額外加值,一律夾在 0~100。 */
+export function applyNeedyBonus(A: TenantRuntime, B: TenantRuntime, bonus: Partial<Tenant["stats"]>) {
+  const needy = A.tenant.stats.wellbeing <= B.tenant.stats.wellbeing ? A : B;
+  const s = needy.tenant.stats;
+  for (const k of ["mood", "stress", "wellbeing", "energy", "affinity"] as const) {
+    const d = bonus[k];
+    if (d) s[k] = clamp(s[k] + d, 0, 100);
+  }
+}
+
 const cdKey = (aId: string, bId: string, defId: string) => `${pairKey(aId, bId)}|${defId}`;
 
 function offCooldown(aId: string, bId: string, def: InteractionDef): boolean {
@@ -529,6 +655,7 @@ export function canStartRoomVisit(visitor: TenantRuntime, host: TenantRuntime, r
   return INTERACTIONS.some(
     (def) => def.location === "room" && def.tier === "close"
       && canInteract(def, visitor.tenant, host.tenant, ctx)
+      && gateOk(def.gate, visitor, host)
       && offCooldown(visitor.tenant.id, host.tenant.id, def),
   );
 }
@@ -566,24 +693,13 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
         (def) => def.location === location
           && (!visitPair || def.tier === "close")
           && canInteract(def, A.tenant, B.tenant, ctx)
+          && gateOk(def.gate, A, B)
           && hasStandingStage(def, roomId)
           && offCooldown(A.tenant.id, B.tenant.id, def),
       );
-      if (eligible.length === 0) continue;
-      // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
-      const total = eligible.reduce((s, d) => s + d.weight, 0);
-      let roll = Math.random() * total;
-      let def = eligible[0];
-      for (const d of eligible) {
-        roll -= d.weight;
-        if (roll <= 0) {
-          def = d;
-          break;
-        }
-      }
-      // 保留原本的擲骰次數以穩定其他系統的亂數序列；串門配對不受失敗結果影響。
-      const chanceRoll = Math.random();
-      if (!visitPair && chanceRoll > def.chance) continue;
+      // 主池/次池兩階段抽籤(見 pickInteraction):主池的擲骰次數與順序與擴充前逐位元相同
+      const def = pickInteraction(eligible, visitPair);
+      if (!def) continue;
 
       performInteraction(A, B, def, roomId);
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
@@ -601,6 +717,9 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
   pushSocialLog(B, marker + line.replace(/\{o\}/g, A.tenant.name), "notable");
   applyPairEffect(A, def.effects);
   applyPairEffect(B, def.effects);
+  // 零 RNG 的附加效果:借錢只在兩人錢包之間搬(房東帳不動)、needyBonus 補給狀況較差的一方
+  if (def.lend) applyLend(A, B, def.lend);
+  if (def.needyBonus) applyNeedyBonus(A, B, def.needyBonus);
   if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);
   if (def.memoryLabel) {
     pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
@@ -641,6 +760,7 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
 
   const roomId = roomOfTenant(aId) ?? roomOfTenant(bId);
   if (!hasStandingStage(def, roomId)) return false;
+  if (!gateOk(def.gate, A, B)) return false; // 劇情前提 AI 也不可越權(如 both_adult)
   const thirdPresent = Object.values(state.runtimes).some(
     (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );

@@ -14,20 +14,21 @@
 
 ---
 
-## 現在狀態(2026-08-17)
+## 現在狀態(2026-08-18)
 
-- **與 `origin/main` 同步(`bdc6c8e`),F 批「打架看得見、門檻可達」已部署上線**(五個 commit
-  `c90f3ff`／`b23802c`／`ba0e20b`／`b4b61f6`／`bdc6c8e`,細節見工作日誌 08-17):門檻
-  `FIGHT_STRESS_SUM = 50`／`FIGHT_STRESS_EACH = 22`,演出 `hidden` → `scuffle`(側面 sprite
-  面對面 + ±1px 推擠,零新美術、**非血腥**);60 遊戲日 normal **9 場**／stressed 21／extreme 23,
-  同一對最短間隔 3 日、違規 0 次;**並肩率 69.8% → 90.6%(48/53)**,🟠 待辦已結(殘留 5 場見
-  `docs/待辦.md`)。擲骰次數／順序全程一位元未動,`src/floor/pathfind.ts`／`agents.ts` 一字未動
-- **部署驗證**:production 回 **200**,線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BY_iC_DS.js`**
-  (713,998 bytes,前版 711,650),標記 `scuffle` 命中 ×6。⚠️ `scufflePushOffset`／`FIGHT_STRESS_SUM`
-  命中 **0 是預期的**(函式名／常數名最小化會被改名)⇒ **不宣稱「全部標記都驗到」**
-- `npm test` **109/109**、app + worker typecheck、build 全綠、`balance-test` **零漂移**
-  (`scripts/balance-snapshot.json` 跨全部五個 commit 未被觸碰);`SAVE_VERSION` 仍 10。
-  ⚠️ **D 批的 worker 端不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
+- **G 批(互動擴充)批次 1「不稀釋的抽籤 + 條件閘」已 commit 未 push**:`interactions.ts` 抽籤
+  改成**主池/次池**(`pickInteraction()`)。主池非空時與擴充前**逐位元相同**(同骰、同分母、同順序、
+  同 `<=`);主池落空時把已花掉的 `chanceRoll` 換算成 `u = (chanceRoll−c)/(1−c)` 抽次池,**零新
+  `Math.random()`** ⇒ 既有 18 種觸發率變化 **0.000%**。另加 `gateOk()`(劇情前提閘,刻意不併進
+  `canInteract()`)、`lend`(只動 `rt.wallet`)、`needyBonus`。**本批零新 def**,設計見 §10-1a
+- `npm test` **110/110**(新增 `interaction-pool-test.ts` 46 項)、app + worker typecheck、build
+  全綠、`balance-test` **零漂移**(`scripts/balance-snapshot.json` 已跨七個 commit 未被觸碰);
+  `SAVE_VERSION` 仍 10
+- **F 批「打架看得見」已部署上線**(`c90f3ff`～`bdc6c8e`,細節見工作日誌 08-17):門檻 50/22、
+  `hidden` → `scuffle`(非血腥),60 遊戲日 normal 9 場／stressed 21／extreme 23,**並肩率
+  69.8% → 90.6%**,🟠 待辦已結。production 回 **200**,bundle `index-CAWvNf_T.js` → **`index-BY_iC_DS.js`**
+  (713,998 bytes)、標記 `scuffle` ×6。⚠️ `scufflePushOffset`／`FIGHT_STRESS_SUM` 命中 **0 是預期的**
+  (識別字被最小化改名)⇒ **不宣稱「全部標記都驗到」**;D 批 worker 端同樣不可外部檢視(同源守衛)
 
 ## 近期已部署基線
 
@@ -35,35 +36,36 @@
 - **咖啡廳聚會／AI context／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`):§4.12 + §4.13 + 安全小修
 - **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
 - **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線
-- **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14
-- **敘事**:本地劇情種子 10→16 條支線,可和 AI 主線並行;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
+- **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14;本地劇情種子
+  10→16 條支線可和 AI 主線並行;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
 
 ## 下一步
 
+- **G 批批次 2:看得見的雙人動作**(純渲染、零模擬改動):`game_pair`／`kiss`／`confess`／
+  `cheers` 四個 pose + `cash`／`care`／`confetti` 三個 fx,並把 `became_couple` 里程碑改成
+  「告白」演出。批次 3/4 才加新 def(屆時快照**會漂**,逐欄審核清單見中控規格)
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**的實際觀感(門檻 50/22、
   並肩率 90.6%);用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒ 會吃到 A 批的產能
   nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會
   頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份
   咖啡廳背景,若 AI 天天寫它,降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
-- **G 批(互動擴充)已開工**:互動 18 → 28 種,四個批次序列執行;批次 1 是不稀釋的抽籤 + 條件閘
 - 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
   要先把 `baselines()` 抽出共用模組解掉循環 import
 
 其餘可選項(依 `docs/待辦.md`):
 
-- **牛奶／寵物鮮食的建議常備量**:開張期菜單根本用不到,建議值卻是 24 ⇒ 新手一開始就在買用不到的生鮮;
+- **牛奶／寵物鮮食的建議常備量**:開張期菜單用不到,建議值卻是 24 ⇒ 新手一開始就在買用不到的生鮮;
   要讓建議值跟著菜單走**會動到平衡**,未擅自動
-- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價最高才 $42 ⇒ 餘裕沒被用掉,
-  名店期客單價停在 ~$37,補高價品項才吃得到(純內容工作)
-- **認養卡下拉的空白列**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`,一旦有可認養寵物就會顯示
-  空白列(租屋卡已修,做法見 `796643f`);其餘見 `docs/待辦.md`,🔴 項目一律先問使用者
+- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價最高才 $42 ⇒ 名店期
+  客單價停在 ~$37,餘裕沒被用掉,補高價品項才吃得到(純內容工作)
+- **認養卡下拉的空白列**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`(租屋卡已修,做法見
+  `796643f`);其餘見 `docs/待辦.md`,🔴 項目一律先問使用者
 
 ## 待使用者決策(不要自行動工)
 
-- **「租客撿到寵物」要不要再補規則事件**(已**部分解決**,優先度低):`adopt_cat` 原本只由
-  AI 生成事件的選項帶進來,`data/events.json` 一則都沒提供 ⇒ 離線/模板 fallback 時永不發生。
-  月度事件鏈 `stray_litter`(後巷的一窩小貓)已給了一條**完全不靠 AI** 的領養路徑。
-  還要不要另外加規則事件?那會改變 `rollEvent()` 的比對序 ⇒ 可能要 `--update` 重建基準。
+- **「租客撿到寵物」要不要再補規則事件**(已**部分解決**,優先度低):`adopt_cat` 只由 AI 事件選項
+  帶進來、`data/events.json` 一則都沒有 ⇒ 離線/模板 fallback 時永不發生;月度事件鏈 `stray_litter`
+  已給了一條**完全不靠 AI** 的領養路徑。再加規則事件會改變 `rollEvent()` 比對序 ⇒ 可能要重建基準。
 - **AI context 快取 C-9** — 裁剪那半早已實作,只剩 worker 端快取;免費層 + 有模板 fallback,
   是否值得做**待使用者決定是否直接結案**(`docs/待辦.md` 第一節)
 - **家具 tier 第三階段**(沙發/電視/浴缸/書桌的恢復乘數)— 種子局這些活動全踩 premium 家具,
@@ -75,10 +77,9 @@
 
 - `.ui-lab/compose.yaml` 的 **NBA 8000 埠映射被註解**(Windows 保留埠 7912-8011 吃掉 8000)——
   **屬工作區根的別的 lease,不可覆蓋**;rent 的截圖流程不受影響
-- **開發機互動式瀏覽器自動化不穩**(wmux browser / Chrome MCP 曾壞掉)——
-  UI 驗證一律走 `npm run ui:shot -- rent` 無頭截圖
-- **Bash 的 curl 在此機沙盒無網路**——部署驗證改用 PowerShell `Invoke-WebRequest`;
-  中文字串要取 bytes 再 UTF8 解碼才搜得到(`-match`／`Contains` 對 CJK 會假陰性)
+- **開發機互動式瀏覽器自動化不穩**(wmux browser / Chrome MCP 曾壞掉)——UI 驗證一律走
+  `npm run ui:shot -- rent` 無頭截圖。**Bash 的 curl 在此機沙盒無網路**,部署驗證改用 PowerShell
+  `Invoke-WebRequest`;中文字串要取 bytes 再 UTF8 解碼才搜得到(`-match`／`Contains` 對 CJK 假陰性)
 - **遊戲的「一天」綁瀏覽器本地時區**(設計基準 UTC+8)——跑測試需 `TZ=Asia/Taipei`
 - 所有玩家共用同一把 Gemini 免費 key;`/api/*` 尚未設 Cloudflare Dashboard rate limit
 

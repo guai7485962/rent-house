@@ -325,8 +325,12 @@ check("批次 2 的 cheers 已被 bar_cheers 用上(新 pose 不是只寫給測�
 check("became_couple 里程碑演出 = confess + confetti(玩家真的看到告白那一幕)",
   /became_couple" \? "confess"/.test(tickSrc) && /spawnFx\("confetti"/.test(tickSrc));
 check("broke_up 里程碑演出 = apart(各自退開)", /broke_up" \? "apart"/.test(tickSrc));
-check("互動目錄 24 種(主池 18 + 批次 3 的次池 6)",
-  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 24, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
+check("互動目錄 28 種(主池 18 + 次池 6 + 批次 4 的戀愛線 4)",
+  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 28, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
+// 批次 4:kiss / confess 兩個 pose 終於被真的 def 用上(不再只有里程碑演出在用)
+check("批次 2 的 kiss 已被 first_kiss / morning_kiss 用上",
+  /id: "first_kiss"[\s\S]*?pose: "kiss"/.test(interactionsSrc) && /id: "morning_kiss"[\s\S]*?pose: "kiss"/.test(interactionsSrc));
+check("批次 2 的 confess 已被 anniversary 用上", /id: "anniversary"[\s\S]*?pose: "confess"/.test(interactionsSrc));
 
 // 安全底線:新動作一律不得繞過既有的 🔞 遮蔽式規則
 check("4 個新 pose 都不是 🔞 內容(hidden 仍是唯一的遮蔽式姿勢)",

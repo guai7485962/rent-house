@@ -170,7 +170,11 @@ const AI_INTERACTION_WHITELIST = [
   "game_night", "share_delivery", "share_earbuds", "feed_snack",
   "catch_up_show", "laundry_wait", "bar_cheers",
 ];
-const AI_INTERACTION_FORBIDDEN = ["lend_money", "bathroom_rush", "night_intimacy", "bath_together", "loveseat_after_dark", "canopy_private_night"];
+const AI_INTERACTION_FORBIDDEN = [
+  "lend_money", "bathroom_rush", "night_intimacy", "bath_together", "loveseat_after_dark", "canopy_private_night",
+  // G 批第 4 批的戀愛線 4 種:全年齡且看得見,但親密的節奏應由遊戲內建規則自己走,不讓 AI 隨口提議
+  "first_kiss", "morning_kiss", "anniversary", "stargaze_window",
+];
 check("AI 互動白名單已擴充至 12 個", systemPrompt.includes("id 只能從這 12 個選"));
 check("AI 互動白名單:12 個 id 全部列在 prompt 裡",
   AI_INTERACTION_WHITELIST.every((id) => systemPrompt.includes(`${id}(`)),

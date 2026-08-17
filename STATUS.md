@@ -17,17 +17,17 @@
 ## 現在狀態(2026-08-20)
 
 - **正在把 08-18 回退掉的 G/H 六批逐批重新套用到 `main`**(未 push,中控逐批部署驗證)。
-  進度:**G-1 ✅ / G-2 ✅ / G-3 ✅ / G-4 ⬜ / G-5 ⬜ / H ⬜**
+  進度:**G-1 ✅ / G-2 ✅ / G-3 ✅ / G-4 ✅ / G-5 ⬜ / H ⬜**
 - **白畫面根因已定案、已由 I 批(`2689311`)修好,與這六批的程式碼無關**:每次部署刪掉上一版
   雜湊資產 + iOS standalone 抓著快取的 `index.html` ⇒ 舊 HTML 去要已被刪的 JS ⇒ 404 ⇒ 白畫面。
   修法見 `docs/系統總覽.md` 地雷紀錄(`_headers` + `assetCacheControl()` 把 HTML 與非 2xx 設成
   `no-store` + 載入失敗自救),線上 header 已驗證。兩個除錯代理各自都**無法重現**這六批的任何例外
-- **G-1** 不稀釋的主池/次池抽籤:主池非空時與擴充前**逐位元相同**,零新 `Math.random()`
-  ⇒ 既有 18 種觸發率變化 **0.000%**;另加 `gateOk()`／`lend`／`needyBonus`
-- **G-2** 租客雙人繪製管線(純渲染、零模擬改動、零新 def):`game_pair`／`kiss`／
-  `confess`／`cheers` 四 pose + `cash`／`care`／`confetti` 三 fx,`became_couple` 改告白演出
-- **G-3** 日常/友誼互動 6 種(目錄 **18 → 24**),全 `pool:"extra"` ⇒ 主池零稀釋,AI 白名單 9 → 12;
-  ⚠️ 本批**帶回它當初 `--update` 過的 balance 快照**(逐欄審核見 `工作日誌.md` 08-18)
+- **G-1** 不稀釋的主池/次池抽籤:主池非空時與擴充前**逐位元相同**、零新 RNG ⇒ 既有 18 種觸發率變 **0.000%**
+- **G-2** 租客雙人繪製管線(純渲染、零模擬改動、零新 def):4 pose + 3 fx,`became_couple` 改告白演出
+- **G-3** 日常/友誼互動 6 種(**18 → 24**),全 `pool:"extra"` ⇒ 主池零稀釋,AI 白名單 9 → 12;⚠️ 本批
+  **帶回它當初 `--update` 過的 balance 快照**(逐欄審核見 `工作日誌.md` 08-18),其餘五批零漂移
+- **G-4** 戀愛線互動 4 種(**24 → 28**),全 `pool:"extra"`、不進 AI 白名單;🔴 安全靠 `tier` 的 `rel.romantic`
+  (只可能經 `canBecomeCouple()` 建立,已含成年 + 取向雙檢),`first_kiss` 另掛 `gate:"both_adult"` 雙保險
 - 驗證(每批都跑):`npm test` **111/111**、typecheck(app + worker)、build、
   `balance-test` **一致**、`npm run smoke:save` **49/0**;`SAVE_VERSION` 仍 10
 

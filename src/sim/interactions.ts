@@ -569,6 +569,112 @@ export const INTERACTIONS: InteractionDef[] = [
     ],
     effects: { rel: 3, mood: 5, stress: -5 },
   },
+  // ——————————————————————————————————————————————————————————————————————
+  // 次池(pool: "extra"):戀愛線目錄(G 批第 4 批)。同樣**對主池零稀釋**。
+  //
+  // 🔴 安全:這四種**全年齡、看得見、不遮蔽**,一律不得標成 `adult: true`
+  //    (那會被 content-variety-test.ts 強制成 hidden 遮蔽姿勢,動畫就沒了)。
+  //    安全性由 `tier` 本身保證:couple/cohabit/crush 都要 `rel.romantic`(或 canRomance),
+  //    而 `rel.romantic` 只可能經 `social.canBecomeCouple()` 建立 —— 那裡已含
+  //    **成年 + 取向雙檢**(canRomance)。未成年與取向不合的兩人永遠走不到這裡。
+  //    `first_kiss` 另掛 `gate: "both_adult"` 當**雙保險**,擋舊存檔可能殘留的非法 romantic。
+  //    這四種**一律不進 AI 白名單**(worker/index.ts 維持 12 個),由 worker-test.ts 釘死。
+  //
+  // 文案同樣是對稱視角(兩人共用同一句,只換 {o});單向措辭黑名單掃描一體適用。
+  // ——————————————————————————————————————————————————————————————————————
+  {
+    id: "first_kiss",
+    tier: "couple",
+    location: "room",
+    pool: "extra",
+    gate: "both_adult", // 雙保險:tier 已保證 romantic ⇒ 已過 canRomance 的成年 + 取向雙檢
+    privacy: true,
+    pose: "kiss",
+    timeWindow: [18, 23],
+    weight: 4,
+    // 8760h ≈ 一遊戲年 ⇒ 實質「每對一生一次」。
+    // ⚠️ 已知行為(中控已接受):舊存檔裡在一起很久的情侶沒有「已接吻過」的紀錄,
+    //    載入後會補演一次初吻,當成一次性的懷舊時刻。
+    cooldownHours: 8760,
+    chance: 0.5,
+    fx: "hearts",
+    memoryLabel: "[第一次的吻]",
+    memoryHint: "那個吻之後,兩個人之間就再也回不去朋友了。",
+    lines: [
+      "和{o}在房裡忽然安靜下來,然後就那樣有了第一個吻。",
+      "燈還亮著,和{o}的第一個吻比想像中還要輕。",
+      "和{o}靠得太近,誰先湊過去的,事後兩個人都想不起來。",
+      "和{o}的第一個吻結束後,誰也沒說話,只是笑了很久。",
+    ],
+    effects: { rel: 5, mood: 12, stress: -8 },
+  },
+  {
+    id: "morning_kiss",
+    tier: "cohabit",
+    location: "room",
+    pool: "extra",
+    pose: "kiss",
+    seatOn: ["double_bed", "canopy_bed"],
+    requiresFurniture: ["double_bed", "canopy_bed"],
+    timeWindow: [7, 9],
+    weight: 2,
+    cooldownHours: 20,
+    chance: 0.3,
+    fx: "hearts",
+    lines: [
+      "鬧鐘響了兩次,和{o}在被窩裡先換了一個吻。",
+      "和{o}在床邊道早安,順手補上一個很短的吻。",
+      "和{o}都還沒完全醒,親了一下就又躺回去賴五分鐘。",
+      "和{o}在晨光裡對看一眼,今天就從這個吻開始。",
+    ],
+    effects: { rel: 2, mood: 5, stress: -3 },
+  },
+  {
+    id: "anniversary",
+    tier: "couple",
+    location: "room",
+    pool: "extra",
+    // 「老夫老妻」用既有欄位當代理,**不新增 couple_since**(零存檔成本;真要記,
+    // encounter / events / AI 三處都得寫入,漏一處就失準)。
+    gate: "deep_couple",
+    pose: "confess",
+    timeWindow: [19, 22],
+    weight: 2,
+    cooldownHours: 240,
+    chance: 0.35,
+    fx: "confetti",
+    memoryLabel: "[在一起這麼久了]",
+    memoryHint: "紀念日那晚翻出的舊照片,兩個人記得的細節還不一樣。",
+    lines: [
+      "和{o}翻起以前的照片,才發現已經在一起這麼久了。",
+      "和{o}窩在房裡數日子,數到後來乾脆改成慶祝。",
+      "沒有蛋糕也沒有花,和{o}就這樣把紀念日過完了,意外地滿足。",
+      "和{o}把當初住進這棟樓的事又講了一遍,兩個人都記錯了不同的細節。",
+    ],
+    effects: { rel: 3, mood: 8, stress: -6 },
+  },
+  {
+    id: "stargaze_window",
+    tier: "crush",
+    location: "room",
+    pool: "extra",
+    // 中控拍板改成「房內窗邊」:頂樓沒有 roomRect,只有 groupScene 的隱藏舞台,演不出來。
+    pose: "stand_face",
+    timeWindow: [22, 1], // 跨夜
+    weight: 2,
+    cooldownHours: 30,
+    chance: 0.3,
+    fx: "hearts",
+    memoryLabel: "[那晚的夜景]",
+    memoryHint: "那晚窗邊的燈火,後來想起來都還很清楚。",
+    lines: [
+      "和{o}把房裡的燈關掉,趴在窗邊看外面的夜景。",
+      "和{o}擠在同一扇窗前找星星,城市太亮,結果一顆也沒找到。",
+      "夜深了,和{o}靠著窗框沒說幾句話,只是一起看著樓下的燈。",
+      "和{o}在窗邊待到很晚,話題從星座扯到小時候的事。",
+    ],
+    effects: { rel: 3, mood: 5, stress: -4 },
+  },
 ];
 
 export interface InteractCtx {

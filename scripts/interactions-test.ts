@@ -142,12 +142,18 @@ for (const k of Object.keys(state.interactionCooldowns)) delete state.interactio
 A.log.splice(0); B.log.splice(0);
 A.inLounge = true; B.inLounge = true;
 state.gameMs = new Date("2026-07-06T22:30:00+08:00").getTime(); // 22 時(談心/開黑時段)
+/**
+ * ⚠️ 不要用「某一句文案」判斷有沒有觸發:每個 def 有 3~4 句,只要亂數序列位移一格就會抽到
+ * 另一句,測試會假性失敗(G 批第 4 批加 def 時踩過——`deep_talk`/`game_night` 明明都演了,
+ * 卻抽到不含關鍵字的那幾句)。改看 `performInteraction()` 一定會寫的**冷卻鍵**。
+ */
+const firedDef = (id: string) => state.interactionCooldowns[`${pairKey(A.tenant.id, B.tenant.id)}|${id}`] != null;
 let loungeHit = false;
 for (let i = 0; i < 200 && !loungeHit; i++) {
   interactionsPass();
-  loungeHit = A.log.some((e) => e.text.includes("聊到深夜") || e.text.includes("還好嗎") || e.text.includes("開黑"));
+  loungeHit = firedDef("deep_talk") || firedDef("game_night");
 }
-check("整合:交誼廳朋友(60)觸發談心/開黑", loungeHit);
+check("整合:交誼廳朋友(60)觸發談心/開黑", loungeHit, JSON.stringify(Object.keys(state.interactionCooldowns)));
 check("整合:朋友階段不會出現曖昧/親密內容", !A.log.some((e) => e.text.includes("耳機") || e.text.includes("請勿打擾") || e.text.includes("水聲")));
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

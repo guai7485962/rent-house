@@ -16,18 +16,20 @@
 
 ## 現在狀態(2026-08-17)
 
-- **F 批「打架看得見、門檻可達」已 commit 未 push**(兩個 commit)。步驟 1 先補量測:
+- **F 批「打架看得見、門檻可達」已 commit 未 push**(三個 commit)。步驟 1 先補量測:
   `scripts/conflict-freq-sim.ts`(分析腳本,**不列入 `run-all.ts`**)跑 60 遊戲日 × 4 人高摩擦滿房 ×
   三種壓力基準,舊門檻下 **打架 0 場**,漏斗 873→535(rel)→198(tension)→198(comp)→**0**(雙方 stress≥80)
   ⇒ 瓶頸 100% 在壓力門檻(壓力平衡點恆落在基準下方約 20 點,`baselines()` 上界 90,
   且 ≥90 會被 `isDeviation` 趕回房間 ⇒ [80,90) 窗口實質為零)
-- **步驟 2／3**:門檻改成 `FIGHT_STRESS_SUM = 62` + `FIGHT_STRESS_EACH = 28`(中控拍板,其餘門檻與擲骰
-  次數／順序一位元未動);演出 `pose: "hidden"` → 新的 `scuffle`(側面 sprite 面對面 + 既有 500ms frame
-  做交替 ±1px 推擠,沿用既有 fight fx,**零新美術、非血腥**,三處註解 + 掃碼測試把關)。
+- **步驟 2／3**:門檻改成 `FIGHT_STRESS_SUM = 50` + `FIGHT_STRESS_EACH = 22`(中控依**逐值實跑**對照表
+  拍板,其餘門檻與擲骰次數／順序一位元未動);演出 `pose: "hidden"` → 新的 `scuffle`(側面 sprite
+  面對面 + 既有 500ms frame 做交替 ±1px 推擠,沿用既有 fight fx,**零新美術、非血腥**,三處註解 + 掃碼測試)。
   `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**(未 `--update`);`SAVE_VERSION` 仍 10
-- ⚠️ **62/28 只救得到高壓住戶**:改完後實跑 normal **0 場**／stressed **17 場**／extreme 22 場
-  (自我抑制有效:同一對最短間隔 3 遊戲日,口角由 108 降到 78)。同法量到 55/24 → normal 1／stressed 14。
-  **要不要再往下調待拍板**,連同另外三條新待辦見 `docs/待辦.md`
+- **50/22 的實跑(60 遊戲日)**:normal **9 場**／stressed 21／extreme 23,分散在 9／19／19 個不同遊戲日,
+  **同一對最短間隔 3 遊戲日、違規 0 次**(自我抑制有效);口角 108→82 ⇒ 總衝突量沒暴增(共用每日 2 場額度)。
+  相容的一對仍是結構性 0(前三道門檻未動)
+- ⚠️ **打架時兩人並肩率 37/53(69.8%)**:沒對上的 16 場中,**10 場是 `socialPass` 在打架成立後繼續跑配對、
+  被 `stand_face` 蓋掉 session**(演出層小修,已記待辦),6 場是走位沒到位(pathfinding,不在本批)
 - **與 `origin/main` 同步(`04f65fe`)為止,C／D／E 三批已部署上線**:`git push origin main` 走 `32ee1b1..04f65fe`,production 回 **200**,
   線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BGI7KZTp.js`**(**711,650 bytes**);ASCII 標記 `cafe_afterhours` ×2、
   `cafe_weekend_night` ×2、`regularCandidateDays` ×7、`regulars` ×32,CJK 標記(下載位元組再 UTF8 解碼 grep)`DAILY_CAFE_TEMPLATES` 三句各 ×1。
@@ -46,9 +48,10 @@
 
 ## 下一步
 
-- **打架門檻要不要從 62/28 再往下調(待拍板)**:現值只讓高壓住戶打得起來,一般住戶 60 遊戲日 0 場。
-  實測替代值 55/24 → normal 1／stressed 14。更好的長解是改成相對各自基準線
-  (`stress >= baselines(rt).stress - 10`),但要先把 `baselines()` 抽出共用模組解掉循環 import
+- **打架演出的並肩率**(🟠):把 `socialPass` 改成「該人已在 `scuffle` 演出中就不掛新 session」,
+  可以收掉 16 場沒對上裡的 10 場(純演出層、零 RNG)。剩下 6 場屬 pathfinding／擁擠處理。
+  更長線:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
+  要先把 `baselines()` 抽出共用模組解掉循環 import
 - **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒
   會吃到 A 批的產能 nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、
   C 批聚會頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份

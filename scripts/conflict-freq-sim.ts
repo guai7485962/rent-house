@@ -84,7 +84,9 @@ const { repairBreakdown } = await import("../src/sim/maintenance");
 const { giveKindness } = await import("../src/sim/kindness");
 const { getRel, compatibility, relationships } = await import("../src/sim/social");
 const { feudActive } = await import("../src/sim/conflicts");
+const { sessionFor } = await import("../src/floor/pairSession");
 const { addPlacement } = await import("../src/sim/placements");
+const { createAgents, tickAgents } = await import("../src/floor/agents");
 const { randomAppearance } = await import("../src/pixel/parts");
 import type { Applicant } from "../src/sim/recruit";
 
@@ -254,12 +256,102 @@ let repairs = 0;
 let kindnesses = 0;
 let maxPairSum = 0;
 let maxPairMin = 0;
+/** 打架當下兩位租客的 sprite 有沒有真的並肩站好(4-鄰接)。 */
+let adjacencyOk = 0;
+let adjacencyBad = 0;
+let adjacencyEver = 0;
+let sessionStomped = 0;
+let pathfindMiss = 0;
+const adjacencyMisses: string[] = [];
 const satisfactionSeries = new Map<string, number[]>(ROOMS.map((room) => [room, []]));
 const activeFeuds = new Set<string>();
 const fightLog: string[] = [];
+/** 每場打架的日期與配對(用來算「同一對的間隔」,驗證自我抑制)。 */
+const fightEvents: { day: number; aId: string; bId: string; pair: string }[] = [];
 const decisionsTaken = new Map<string, number>();
 
 const CONFLICT_COUNT_KEY = "social_conflicts_day_count";
+
+// ---------------------------------------------------------------------------
+// 演出層:真的跑 agent 走位,驗證打架時兩人會並肩站好
+// ---------------------------------------------------------------------------
+
+/**
+ * 「打架看得見」的最後一哩:`fight` 雲的錨點與兩人的走位是**各自獨立**的,
+ * 萬一有一方沒走到 session 指定的格,畫面會變成「雲在中間、兩人分開站」。
+ * 所以本腳本連 agent 層一起跑(比照 `sim-trace.ts`:tick 到全部靜止),
+ * 打架成立的那一小時就量兩人的最終格是不是 4-鄰接。
+ *
+ * ⚠️ agent／pathfind／pairSession／fx 這幾個模組**完全沒有 `Math.random()`**(已掃碼確認),
+ * 所以加跑走位**不會動到亂數序列**,打架次數與不跑走位時逐場相同。
+ */
+const AGENT_DT = 0.1;
+/** 打架 session 只活 **15 現實秒**(`conflicts.tryFight` 的 durationMs);
+ *  0.1 秒一個 tick ⇒ 150 tick 就是玩家實際看得到演出的整個窗口。多跑也沒有意義。 */
+const AGENT_MAX_TICKS = 150;
+let agents = createAgents();
+
+/**
+ * 跑走位到全部靜止(或跑滿 session 的 15 秒)。
+ * `watch` 有值時,逐 tick 記錄那兩位有沒有 4-鄰接過——因為玩家看的是**整段演出**,
+ * 不是最後一幀:中途站到一起過就代表畫面成立。
+ */
+function settleAgents(watches: { aId: string; bId: string }[] = []): Set<string> {
+  const ever = new Set<string>(); // 同一小時可能有兩場打架(每日上限是 2)
+  const sample = () => {
+    for (const w of watches) {
+      const key = `${w.aId}|${w.bId}`;
+      if (ever.has(key)) continue;
+      const ga = agents.find((x) => x.tenantId === w.aId);
+      const gb = agents.find((x) => x.tenantId === w.bId);
+      if (!ga || !gb || ga.hidden || gb.hidden) continue;
+      if (Math.abs(ga.c - gb.c) + Math.abs(ga.r - gb.r) === 1) ever.add(key);
+    }
+  };
+  tickAgents(agents, AGENT_DT); // 先觸發本小時的重新尋路
+  sample();
+  for (let i = 0; i < AGENT_MAX_TICKS && agents.some((a) => !a.hidden && a.moving); i++) {
+    tickAgents(agents, AGENT_DT);
+    sample();
+  }
+  return ever;
+}
+
+/**
+ * 打架成立 → 兩人的 sprite 是否 4-鄰接(上下左右相鄰,不含對角、不含疊格)。
+ *
+ * 沒對上時要能分辨**兩種完全不同的成因**,否則會誤判成走位問題:
+ *   (a) session 還在(pose 仍是 scuffle)但人沒走到 → 走位/擁擠(pathfind 的範圍)
+ *   (b) session 已經被別的系統蓋掉(pose 變成 apart/其他,或整個消失)
+ *       → 同一小時內 `socialPass` 後面的流程搶走了演出,與走位無關
+ */
+function checkAdjacency(aTenantId: string, bTenantId: string, day: number, hour: number, everAdjacent: boolean) {
+  if (everAdjacent) adjacencyEver += 1;
+  const ga = agents.find((x) => x.tenantId === aTenantId);
+  const gb = agents.find((x) => x.tenantId === bTenantId);
+  const sa = sessionFor(aTenantId, state.gameMs);
+  const sb = sessionFor(bTenantId, state.gameMs);
+  const poses = `pose A=${sa?.pose ?? "無"} B=${sb?.pose ?? "無"}`;
+  if (!ga || !gb || ga.hidden || gb.hidden) {
+    adjacencyBad += 1;
+    adjacencyMisses.push(`第 ${day} 日 ${hour} 點:有一方沒有 sprite(hidden);${poses}`);
+    return;
+  }
+  const dist = Math.abs(ga.c - gb.c) + Math.abs(ga.r - gb.r);
+  if (dist === 1) {
+    adjacencyOk += 1;
+    return;
+  }
+  adjacencyBad += 1;
+  const stomped = sa?.pose !== "scuffle" || sb?.pose !== "scuffle";
+  if (stomped) sessionStomped += 1; else pathfindMiss += 1;
+  adjacencyMisses.push(
+    `第 ${day} 日 ${hour} 點:距離 ${dist} A(${ga.c},${ga.r}) B(${gb.c},${gb.r})`
+    + `;錨點 A(${sa?.tile.c},${sa?.tile.r}) B(${sb?.tile.c},${sb?.tile.r});${poses}`
+    + `;moving A=${ga.moving} B=${gb.moving};goal A(${ga.goal?.c},${ga.goal?.r}) B(${gb.goal?.c},${gb.goal?.r})`
+    + `;${stomped ? "**session 被蓋掉**" : "session 還在 ⇒ 走位沒到位"}`,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 主迴圈
@@ -269,13 +361,20 @@ for (let h = 0; h < HOURS; h++) {
   hourlyTick();
 
   // --- 1) 打架:tryFight 一定會掛上 fight_decision 待決事件 ⇒ 精確計數 ---
+  const day = Math.floor(h / 24) + 1;
+  const watches: { aId: string; bId: string }[] = [];
   for (const room of ROOMS) {
     const rt = rtOf(room);
     if (rt?.pendingEvent?.id === "fight_decision") {
       fights += 1;
-      fightLog.push(`第 ${Math.floor(h / 24) + 1} 日 ${h % 24} 點  ${rt.tenant.name} × ${rt.pendingEvent.withName ?? "?"}`);
+      fightLog.push(`第 ${day} 日 ${h % 24} 點  ${rt.tenant.name} × ${rt.pendingEvent.withName ?? "?"}`);
+      fightEvents.push({ day, aId: rt.tenant.id, bId: rt.pendingEvent.withId ?? "", pair: `${rt.tenant.name}×${rt.pendingEvent.withName ?? "?"}` });
+      if (rt.pendingEvent.withId) watches.push({ aId: rt.tenant.id, bId: rt.pendingEvent.withId });
     }
   }
+  // 演出層:讓 sprite 走到本小時的目標(打架時 = session 指定的相鄰兩格)
+  const everAdjacent = settleAgents(watches);
+  for (const w of watches) checkAdjacency(w.aId, w.bId, day, h % 24, everAdjacent.has(`${w.aId}|${w.bId}`));
 
   // --- 2) 衝突計數器(自然口角 + 打架都會 +1),每日歸零 ---
   const cur = state.interactionCooldowns[CONFLICT_COUNT_KEY] ?? 0;
@@ -330,6 +429,7 @@ for (let h = 0; h < HOURS; h++) {
       turnover.push(`第 ${Math.floor(h / 24) + 1} 日  ${last.name} 住了 ${last.daysLived} 日 — ${last.reason}`);
     }
     for (const room of vacant) fillRoom(room);
+    agents = createAgents(); // 換人 ⇒ 舊的 agent 陣列還指著已離開的 tenantId
   }
 
   // --- 7) stress 分布 ---
@@ -412,6 +512,39 @@ console.log(`  🥊 打架 :${fights} 次`);
 for (const line of fightLog) console.log(`      ${line}`);
 console.log(`  換房客:${turnover.length} 次(安居期滿 20 日/圓夢畢業;每換一次 rel/tension 從 0 重來)`);
 for (const line of turnover) console.log(`      ${line}`);
+
+// --- 1b) 自我抑制:同一對兩次打架至少要隔 3 遊戲日(冷戰 3 日 + 打完 stress −15)---
+console.log(`\n--- 1b) 自我抑制:同一對打架的間隔 ---`);
+const byPair = new Map<string, number[]>();
+for (const ev of fightEvents) {
+  const key = [ev.aId, ev.bId].sort().join("|");
+  if (!byPair.has(key)) byPair.set(key, []);
+  byPair.get(key)!.push(ev.day);
+}
+let minGap = Infinity;
+let violations = 0;
+for (const [key, days] of byPair) {
+  const gaps = days.slice(1).map((d, i) => d - days[i]);
+  for (const g of gaps) {
+    minGap = Math.min(minGap, g);
+    if (g < 3) violations += 1;
+  }
+  const label = fightEvents.find((e) => [e.aId, e.bId].sort().join("|") === key)!.pair;
+  console.log(`  ${label.padEnd(24)} ${days.length} 場,日期 ${days.join("/")}${gaps.length ? `,間隔 ${gaps.join("/")} 日` : ""}`);
+}
+console.log(`  最短間隔:${minGap === Infinity ? "—(沒有同一對打第二次)" : `${minGap} 遊戲日`};`
+  + `間隔 <3 日的違規:**${violations}** 次`);
+const fightDays = new Set(fightEvents.map((e) => e.day));
+console.log(`  打架分佈在 ${fightDays.size} 個不同的遊戲日(共 ${fights} 場)⇒ ${fights > 0 ? (fights / fightDays.size).toFixed(2) : "0"} 場/日`);
+
+// --- 1c) 演出層:打架時兩人的 sprite 有沒有並肩站好 ---
+const adjTotal = adjacencyOk + adjacencyBad;
+console.log(`\n--- 1c) 演出層:打架當下兩人 sprite 是否 4-鄰接 ---`);
+console.log(`  相鄰 ${adjacencyOk} / ${adjTotal}`
+  + `${adjTotal > 0 ? `(${(adjacencyOk / adjTotal * 100).toFixed(1)}%)` : ""};沒對上 ${adjacencyBad}`
+  + `(其中 session 被別的系統蓋掉 ${sessionStomped}、session 還在但走位沒到位 ${pathfindMiss})`);
+console.log(`  演出期間(15 現實秒)**曾經**相鄰過:${adjacencyEver} / ${adjTotal}` + (adjTotal > 0 ? `(${(adjacencyEver / adjTotal * 100).toFixed(1)}%)` : ""));
+for (const line of adjacencyMisses.slice(0, 10)) console.log(`      ⚠ ${line}`);
 
 console.log(`\n--- 2) tryFight 漏斗(同框 pair-hour;不含 socialPass 每小時 0.55 的相遇擲骰)---`);
 const step = (label: string, before: number, after: number) =>

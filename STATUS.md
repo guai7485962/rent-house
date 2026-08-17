@@ -14,21 +14,22 @@
 
 ---
 
-## 現在狀態(2026-08-19)
+## 現在狀態(2026-08-20)
 
-- **線上仍是回退後的 `42d4305`。本機有兩個未 push 的 commit:`05d8ff7`(存檔煙霧測試 +
-  `directiveDef()` 修白畫面 bug)與 I 批(白畫面根因修復)。** 兩者要一起送上去
-- **白畫面根因已定案(不是程式碼的錯)**:`[assets] directory = "./dist"` 每次部署都會
-  **刪掉上一版的雜湊資產**,iOS「加到主畫面」standalone 又抓著快取的 `index.html` 不放
-  ⇒ 舊 HTML 去要已被刪的 JS ⇒ 404 ⇒ 白畫面(重整就好;回退時因雜湊相同而「看似修好」)。
-  無 Service Worker。**I 批修法**:`public/_headers` + `worker/index.ts` 的
-  `assetCacheControl()` 兩道 —— HTML `no-store`、雜湊資產 `immutable`、**非 2xx 一律
-  `no-store`**(`_headers` 會把長快取一併套到 404 上,實測);`index.html` 加載入失敗自救
-  (重整一次,旗標防無限重載)。詳見 `docs/系統總覽.md` 地雷紀錄
-- ⚠️ **線上目前還帶著 `05d8ff7` 修掉的既有白畫面 bug**:存檔帶已下架行為指令 id 時
-  `DIRECTIVES[id].endText` 丟 TypeError 炸穿 `hourlyTick()` ⇒ 已改走 `directiveDef()`
-- `npm run smoke:save` **49/0**(新增「舊 HTML 指向已刪雜湊 JS」關卡,拿掉自救腳本即變紅);
-  `npm test` **109/109**、typecheck、build 全綠、`balance-test` **零漂移**;`SAVE_VERSION` 仍 10
+- **正在把 08-18 回退掉的 G/H 六批逐批重新套用到 `main`**(未 push,中控逐批部署驗證)。
+  進度:**G-1 ✅ / G-2 ⬜ / G-3 ⬜ / G-4 ⬜ / G-5 ⬜ / H ⬜**
+- **白畫面根因已定案、已由 I 批(`2689311`)修好,與這六批的程式碼無關**:`[assets]
+  directory = "./dist"` 每次部署刪掉上一版雜湊資產,iOS standalone 又抓著快取的
+  `index.html` ⇒ 舊 HTML 去要已被刪的 JS ⇒ 404 ⇒ 白畫面。修法:`public/_headers` +
+  `worker/index.ts` 的 `assetCacheControl()`(HTML `no-store`、雜湊資產 `immutable`、
+  **非 2xx 一律 `no-store`**)+ `index.html` 載入失敗自救。線上 header 已驗證通過
+- 兩個除錯代理各自都**無法重現**這六批的任何例外(12000+ 幀、2000 遊戲小時、257 次強制
+  互動、90 種存檔欄位變異、真實 Chromium 跑打包產物配四份舊存檔,合計 0 例外)⇒ 原樣重推
+- **本批 G-1**:`pickInteraction()` 主池/次池兩階段抽籤,主池非空時與擴充前**逐位元相同**,
+  主池落空才把已花掉的 `chanceRoll` 換算成 `u=(chanceRoll−c)/(1−c)` 抽次池,零新
+  `Math.random()` ⇒ 既有 18 種觸發率變化 **0.000%**;另加 `gateOk()`／`lend`／`needyBonus`
+- 驗證:`npm test` **110/110**、typecheck(app + worker)、build、`balance-test` **零漂移**、
+  `npm run smoke:save` **49/0**;`SAVE_VERSION` 仍 10
 
 ## 近期已部署基線
 
@@ -61,10 +62,9 @@
 
 ## 待使用者決策(不要自行動工)
 
-- **「租客撿到寵物」要不要再補規則事件**(已**部分解決**,優先度低):`adopt_cat` 原本只由
-  AI 生成事件的選項帶進來,`data/events.json` 一則都沒提供 ⇒ 離線/模板 fallback 時永不發生。
-  月度事件鏈 `stray_litter`(後巷的一窩小貓)已給了一條**完全不靠 AI** 的領養路徑。
-  還要不要另外加規則事件?那會改變 `rollEvent()` 的比對序 ⇒ 可能要 `--update` 重建基準。
+- **「租客撿到寵物」要不要再補規則事件**(已**部分解決**,優先度低):`adopt_cat` 只由 AI 事件選項
+  帶進來、`data/events.json` 一則都沒有 ⇒ 離線/模板 fallback 時永不發生;月度事件鏈 `stray_litter`
+  已給了一條**完全不靠 AI** 的領養路徑。再加規則事件會改變 `rollEvent()` 比對序 ⇒ 可能要重建基準。
 - **AI context 快取 C-9** — 裁剪那半早已實作,只剩 worker 端快取;免費層 + 有模板 fallback,
   是否值得做**待使用者決定是否直接結案**(`docs/待辦.md` 第一節)
 - **家具 tier 第三階段**(沙發/電視/浴缸/書桌的恢復乘數)— 種子局這些活動全踩 premium 家具,

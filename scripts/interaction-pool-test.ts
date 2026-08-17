@@ -4,7 +4,12 @@
  * - 擲骰次數:主池非空 2 顆／主池空+次池空 0 顆／主池空+次池非空 1 顆(唯一的變動,見規格)
  * - 次池預算公式 (1−P_core)·(w/W)·c、條件亂數 u 的均勻性
  * - gateOk() 邊界、applyLend() 守恆(不動 state.money)、applyNeedyBonus() 挑對人
+ * - 真實目錄的結構把關(批次 3 起):主池仍是原本 18 種、次池 6 種、`venue` 不搭
+ *   `requiresFurniture`、`interactions.ts` 全檔不得出現 `adjustTension`
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 const mem: Record<string, string> = {};
 (globalThis as any).localStorage = {
   getItem: (k: string) => mem[k] ?? null,
@@ -265,16 +270,41 @@ applyNeedyBonus(CA, CB, { wellbeing: 10 });
 check("needyBonus:夾在 0~100", CA.tenant.stats.wellbeing === 100);
 
 // ---------------------------------------------------------------------------
-// 7. 真實目錄的現況把關(本批零新內容)
+// 7. 真實目錄的現況把關(批次 3:主池 18 + 次池 6)
 // ---------------------------------------------------------------------------
 const realSplit = splitPools(INTERACTIONS);
-check("批次 1 零新內容:真實目錄目前沒有任何 extra", realSplit.extra.length === 0, `${realSplit.extra.length} 個`);
-check("批次 1 零新內容:真實目錄目前沒有 gate/lend/needyBonus",
-  INTERACTIONS.every((d) => !d.gate && !d.lend && !d.needyBonus));
+check("真實目錄共 24 種", INTERACTIONS.length === 24, `${INTERACTIONS.length}`);
+check("主池仍恰好是原本的 18 種(零稀釋的前提)", realSplit.core.length === 18, `${realSplit.core.length}`);
+check("次池恰好是新加的 6 種", realSplit.extra.length === 6, `${realSplit.extra.length}`);
+check("次池 id 就是規格上的那 6 種",
+  realSplit.extra.map((d) => d.id).sort().join(",")
+    === ["bar_cheers", "bathroom_rush", "catch_up_show", "laundry_wait", "lend_money", "sick_care"].join(","),
+  realSplit.extra.map((d) => d.id).join(","));
 const TIERS = new Set(["close", "crush", "couple", "cohabit"]);
 check("沒有新增更低的 tier(acquaintance 會讓全樓低關係配對多擲骰)",
   INTERACTIONS.every((d) => TIERS.has(d.tier)));
-check("真實目錄仍是 18 種", INTERACTIONS.length === 18, `${INTERACTIONS.length}`);
+check("次池的 def 一律 tier close 以上(擲骰次數變動只發生在朋友以上的配對)",
+  realSplit.extra.every((d) => TIERS.has(d.tier)));
+check("gate/lend/needyBonus 只出現在次池",
+  realSplit.core.every((d) => !d.gate && !d.lend && !d.needyBonus));
+check("lend 只有 lend_money 用,且只搭 one_broke",
+  INTERACTIONS.filter((d) => d.lend).map((d) => `${d.id}:${d.gate}`).join(",") === "lend_money:one_broke");
+
+// 🔴 requiresFurniture 對 venue **無效**:furnitureSetOf() 只查 `p.room === roomId`,
+//    而帶 venue 的 def 演出地點與家具反查的地點不是同一個。設了會變成「永遠鎖死」或「形同虛設」。
+check("帶 venue 的 def 一律不帶 requiresFurniture",
+  INTERACTIONS.filter((d) => d.venue).every((d) => !d.requiresFurniture),
+  INTERACTIONS.filter((d) => d.venue && d.requiresFurniture).map((d) => d.id).join(","));
+// standAt 需要長度 ≥2 的家具(furnitureStandingPair);1×1 的 washing_machine 用不了。
+check("standAt 一律不指向 1×1 家具(washing_machine)",
+  INTERACTIONS.every((d) => !d.standAt?.includes("washing_machine")));
+
+// 🔴 硬規則:負向互動不得餵養冷戰/打架系統(F 系列剛把打架門檻調到 50/22)
+const SRC = readFileSync(fileURLToPath(new URL("../src/sim/interactions.ts", import.meta.url)), "utf8");
+check("interactions.ts 全檔不出現 adjustTension", !/adjustTension/.test(SRC));
+const negative = INTERACTIONS.filter((d) => d.effects.rel < 0);
+check("負向互動只有 bathroom_rush 一種", negative.map((d) => d.id).join(",") === "bathroom_rush", negative.map((d) => d.id).join(","));
+check("負向互動的 rel 扣分不超過 1", negative.every((d) => d.effects.rel >= -1));
 
 console.log(`\n結果:${pass} 通過 / ${fail} 失敗`);
 if (fail > 0) process.exit(1);

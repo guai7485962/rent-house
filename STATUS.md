@@ -16,21 +16,23 @@
 
 ## 現在狀態(2026-08-18)
 
-- **G 批批次 1 + 2 已 commit 未 push,兩批都零新 def**。批次 1「不稀釋的抽籤」:`interactions.ts`
-  改成**主池/次池**(`pickInteraction()`),主池非空時與擴充前**逐位元相同**;主池落空才把已花掉的
-  `chanceRoll` 換算成 `u=(chanceRoll−c)/(1−c)` 抽次池,**零新 `Math.random()`** ⇒ 既有 18 種
-  觸發率變化 **0.000%**。另有 `gateOk()`(劇情前提閘,刻意不併進 `canInteract()`)、`lend`、`needyBonus`
-- **批次 2「看得見的雙人動作」(純渲染,零模擬改動)**:租客補上寵物早就有的雙人繪製管線
-  (`activeTenantPairs`／`drawTenantPairGround`／`drawTenantPairAction`;leader 用 tenantId 字典序,
-  租客沒有 `pairLeader` 欄位)。新 pose `game_pair`／`kiss`／`confess`／`cheers` + 新 fx
-  `cash`／`care`／`confetti`;`game_night`／`room_coop_game` 改 `game_pair`,**`became_couple`
-  里程碑 = `confess` + 彩紙(「告白」終於看得見)**、`broke_up` = `apart`。設計見 §10-6b
-- `npm test` **111/111**(新增 `pair-pose-test.ts` 60 項,含 FakeCtx 像素 diff:`game_pair`
-  相鄰兩拍差 118 px、對照組 `sit` 差 **0**)、typecheck／build 全綠、`balance-test` **零漂移**
-  (`scripts/balance-snapshot.json` 已跨 **16 個 commit** 未被觸碰);`SAVE_VERSION` 仍 10
+- **G 批批次 1～3 已 commit 未 push**。批次 1「不稀釋的抽籤」:`pickInteraction()` 拆成**主池/次池**,
+  主池非空時與擴充前**逐位元相同**,主池落空才把已花掉的 `chanceRoll` 換算成 `u=(chanceRoll−c)/(1−c)`
+  抽次池 ⇒ **零新 `Math.random()`**;另有 `gateOk()`／`lend`／`needyBonus`(§10-1a)。批次 2「看得見的
+  雙人動作」(純渲染):租客雙人繪製管線 + pose `game_pair`／`kiss`／`confess`／`cheers` + fx
+  `cash`／`care`／`confetti`,**`became_couple` = `confess` + 彩紙(「告白」看得見)**(§10-6b)
+- **批次 3「日常／友誼 6 種」**(目錄 18 → 24,全 `pool:"extra"`／`tier:"close"`):`lend_money`／
+  `sick_care`／`catch_up_show`／`bathroom_rush`／`laundry_wait`／`bar_cheers`;AI 白名單 9 → 12
+  (借錢與搶浴室**不進**)。三個坑已用測試釘死:文案**不可寫單向句**(兩人共用同一句,`{o}` 一換就
+  語意反轉)、`requiresFurniture` 對 `venue` 無效、`interactions.ts` 全檔不得有 `adjustTension`。見 §10-2a
+- `npm test` **111/111**、typecheck／build 全綠;**`balance-snapshot.json` 本批首次 `--update`**
+  (跨 16 個 commit 未動):逐欄審核後只有 `mood` −0.7／`stress` −0.5／`wellbeing` +0.1 的序列位移,
+  `tenantCount`／`rent`／`wallet`／`arrears`／`logs`／`money` 全不變;`SAVE_VERSION` 仍 10
+- **零稀釋實證**(`scripts/interaction-freq-sim.ts`,一次性量測、不入回歸集):100 遊戲日 × 6 種子 ×
+  A/B 對照,core 合計 A=971／B=919(**方向是變多,不是被擠掉**)、core 內部組成最大偏移 **2.97 個
+  百分點**,新 6 種每種都觸發過。⚠️ 單種子的前後比對無效——次池命中會位移整條亂數序列
 - **F 批「打架看得見」已部署上線**(`c90f3ff`～`bdc6c8e`):門檻 50/22、`hidden`→`scuffle`(非血腥),
-  並肩率 69.8% → 90.6%,🟠 待辦已結,production 回 **200**。⚠️ `scufflePushOffset` 等識別字在
-  bundle 中被最小化改名 ⇒ 掃碼命中 **0 是預期的**,**不宣稱「全部標記都驗到」**
+  並肩率 69.8% → 90.6%。⚠️ `scufflePushOffset` 在 bundle 中被最小化改名 ⇒ 掃碼命中 **0 是預期的**
 
 ## 近期已部署基線
 
@@ -41,25 +43,23 @@
 
 ## 下一步
 
-- **G 批批次 3:新互動目錄 A(日常／友誼 6 種)**,全部 `pool:"extra"`／`tier:"close"` 以上,吃
-  批次 1 的 `gate`／`lend` 與批次 2 的 `game_pair`／`cheers`／`cash`／`care`。這是 G 批**第一次
-  真的加 def** ⇒ 快照**會漂**(次池命中多花一顆選句骰),逐欄審核清單見中控規格;批次 4 是戀愛線 4 種
-- **實玩觀察(全部併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**的實際觀感(門檻 50/22、
-  並肩率 90.6%);用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒ 會吃到 A 批的產能
-  nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會
-  頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份
-  咖啡廳背景,若 AI 天天寫它,降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
+- **G 批批次 4:新互動目錄 B(戀愛線 4 種)**——`first_kiss`／`morning_kiss`／`anniversary`／
+  `stargaze_window`,用批次 2 的 `kiss`／`confess`／`confetti`。⚠️ **絕不可**把 `first_kiss` 標成
+  `adult: true`(會被 `content-variety-test.ts` 強制成 `hidden`,動畫就沒了);四種都不進 AI 白名單
+- **實玩觀察(併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**觀感(門檻 50/22、並肩率 90.6%)與
+  **G 批新互動**的實際頻率;用**舊存檔**開局(雇 4 人以上且吧台仍是贈品那座 ⇒ 吃到 A 批產能
+  nerf 104→78);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會頻率,以及 **D 批會不會「蓋台」**
+  (四位租客同一份咖啡廳背景;降級開關 `lineHash("cafe-ctx|day") % N` 每日輪一位,單行改動未做)
 - 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
   要先把 `baselines()` 抽出共用模組解掉循環 import
 
 其餘可選項(依 `docs/待辦.md`):
 
-- **牛奶／寵物鮮食的建議常備量**:開張期菜單用不到,建議值卻是 24 ⇒ 新手一開始就在買用不到的生鮮;
+- **牛奶／寵物鮮食的建議常備量**:開張期菜單用不到卻建議 24 ⇒ 新手一開始就在買用不到的生鮮;
   要讓建議值跟著菜單走**會動到平衡**,未擅自動
-- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,但菜單標價最高才 $42 ⇒ 名店期
-  客單價停在 ~$37,餘裕沒被用掉,補高價品項才吃得到(純內容工作)
-- **認養卡下拉的空白列**(🟢 小):`CafePanel.vue` 認養卡仍用空的 `v-model`(租屋卡已修,做法見
-  `796643f`);其餘見 `docs/待辦.md`,🔴 項目一律先問使用者
+- **第三層研發的高價品項**:`CAFE_MAX_AVG_TICKET` 已放寬到 $55,菜單標價最高才 $42 ⇒ 名店期客單價
+  停在 ~$37,補高價品項才吃得到(純內容)。**認養卡下拉空白列**(🟢 小):`CafePanel.vue` 仍用空
+  `v-model`(租屋卡已修,做法見 `796643f`);其餘見 `docs/待辦.md`,🔴 項目一律先問使用者
 
 ## 待使用者決策(不要自行動工)
 

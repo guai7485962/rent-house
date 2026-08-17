@@ -317,13 +317,16 @@ check("雙人動作特效層畫在 drawFx 之前(fx 仍是最上層的資訊層)
 // 回貼到既有內容:電動夜與房內連線改用 game_pair;里程碑演出改用 confess / apart
 const interactionsSrc = readFileSync(join(here, "..", "src", "sim", "interactions.ts"), "utf8");
 const tickSrc = readFileSync(join(here, "..", "src", "sim", "tick.ts"), "utf8");
-check("game_night / room_coop_game 已改用 game_pair(不再只是站好的 sit)",
-  (interactionsSrc.match(/pose: "game_pair"/g) ?? []).length === 2);
+// 批次 2 把 game_night / room_coop_game 改成 game_pair;批次 3 的 catch_up_show 也共用同一組演出。
+check("game_night / room_coop_game / catch_up_show 都用 game_pair(不再只是站好的 sit)",
+  (interactionsSrc.match(/pose: "game_pair"/g) ?? []).length === 3);
+check("批次 2 的 cheers 已被 bar_cheers 用上(新 pose 不是只寫給測試看的)",
+  /id: "bar_cheers"[\s\S]*?pose: "cheers"/.test(interactionsSrc));
 check("became_couple 里程碑演出 = confess + confetti(玩家真的看到告白那一幕)",
   /became_couple" \? "confess"/.test(tickSrc) && /spawnFx\("confetti"/.test(tickSrc));
 check("broke_up 里程碑演出 = apart(各自退開)", /broke_up" \? "apart"/.test(tickSrc));
-check("本批沒有新增任何 InteractionDef(批次 2 是純渲染)",
-  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 18, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
+check("互動目錄 24 種(主池 18 + 批次 3 的次池 6)",
+  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 24, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
 
 // 安全底線:新動作一律不得繞過既有的 🔞 遮蔽式規則
 check("4 個新 pose 都不是 🔞 內容(hidden 仍是唯一的遮蔽式姿勢)",

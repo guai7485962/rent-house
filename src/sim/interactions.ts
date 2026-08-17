@@ -431,6 +431,144 @@ export const INTERACTIONS: InteractionDef[] = [
     ],
     effects: { rel: 3, mood: 4, stress: -3 },
   },
+  // ——————————————————————————————————————————————————————————————————————
+  // 次池(pool: "extra"):日常/友誼目錄。**對主池零稀釋**——只在主池落空後,用已經花掉的
+  // chanceRoll 換算出的條件亂數抽(見 pickInteraction),所以既有 18 種的觸發率一位元未動。
+  //
+  // 🔴 文案硬性限制:performInteraction() 對**兩人推同一句**、只把 {o} 換成對方名字,
+  //    所以一律用「和{o}…」「{o}和自己…」的對稱視角。借錢/照顧這種天生不對稱的內容,
+  //    改用「兩人一起面對」的語氣繞開,絕不可寫「我借給{o}」這種單向句
+  //    (content-variety-test.ts 有單向措辭黑名單掃描把關)。
+  // ——————————————————————————————————————————————————————————————————————
+  {
+    id: "lend_money",
+    tier: "close",
+    location: "lounge",
+    pool: "extra",
+    gate: "one_broke",
+    pose: "stand_face",
+    timeWindow: [18, 23],
+    weight: 2,
+    cooldownHours: 72,
+    chance: 0.35,
+    fx: "cash",
+    lend: 2000, // 只在兩人錢包之間搬,房東帳(state.money)一毛不動
+    lines: [
+      "和{o}在走廊上把這個月的發薪日算了一遍,最後決定先撐過這幾天。",
+      "和{o}在交誼廳算了一晚的帳,金額喬定之後兩個人都鬆了一口氣。",
+      "和{o}之間多了一筆沒有寫借據的帳,誰也沒把話說得太重。",
+      "和{o}把錢的事攤開來講,尷尬歸尷尬,講完反而輕鬆了。",
+    ],
+    effects: { rel: 3, mood: 2, stress: -4 },
+  },
+  {
+    id: "sick_care",
+    tier: "close",
+    location: "room",
+    pool: "extra",
+    gate: "one_unwell",
+    pose: "sit",
+    timeWindow: [8, 22],
+    weight: 3,
+    cooldownHours: 36,
+    chance: 0.4,
+    fx: "care",
+    needyBonus: { wellbeing: 3 },
+    lines: [
+      "熱粥擺在桌上,{o}和自己誰也沒提要不要去看醫生。",
+      "和{o}窩在房裡沒說幾句話,只是把熱水一杯一杯續上。",
+      "{o}和自己一整個下午都很安靜,毯子被拉好了兩次。",
+      "和{o}守著同一盞小燈,等身體慢慢好起來。",
+    ],
+    effects: { rel: 4, mood: 4, stress: -5 },
+  },
+  {
+    id: "catch_up_show",
+    tier: "close",
+    location: "room",
+    pool: "extra",
+    pose: "game_pair",
+    timeWindow: [19, 23],
+    requiresFurniture: ["tv_console"],
+    weight: 2,
+    cooldownHours: 20,
+    chance: 0.3,
+    fx: "chat",
+    lines: [
+      "和{o}補了三集進度,吐槽的時間比劇情還長。",
+      "和{o}約好一起追,結果誰先看完誰就被威脅不准暴雷。",
+      "和{o}為了猜結局吵了半集,片尾一出來兩個人都猜錯。",
+      "和{o}說好只看一集,回過神時已經播到下一季的預告。",
+    ],
+    effects: { rel: 2, mood: 4, stress: -3 },
+  },
+  {
+    id: "bathroom_rush",
+    tier: "close",
+    location: "lounge",
+    // ⚠️ venue 的家具**不能**用 requiresFurniture 反查(furnitureSetOf 只查 p.room === roomId,
+    //    而這裡的 roomId 是 "lounge")。這一條純靠時段 + 冷卻,不設 requiresFurniture。
+    venue: "bathroom",
+    pool: "extra",
+    pose: "stand_face",
+    timeWindow: [7, 9],
+    weight: 2,
+    cooldownHours: 30,
+    chance: 0.25,
+    fx: "anger",
+    // 🔴 目錄裡唯一的負向互動,rel 只扣 1,而且**完全不碰 social.ts 的張力(tension)通道**——
+    //    冷戰/打架的門檻剛在 F 系列調過(50/22),餵養它會直接破壞那組平衡。
+    //    這條硬規則由 interaction-pool-test.ts 的原始碼掃描把關。
+    lines: [
+      "和{o}在浴室門口對峙了三秒,最後猜拳決定誰先進去。",
+      "和{o}同時伸手去推浴室的門,兩個人都愣了一下才鬆手。",
+      "早上的浴室只有一間,和{o}互相催了幾句,誰也沒真的生氣。",
+      "和{o}在門口排隊排到快遲到,出門前還是互相補了一句抱歉。",
+    ],
+    effects: { rel: -1, mood: -2, stress: 3 },
+  },
+  {
+    id: "laundry_wait",
+    tier: "close",
+    location: "lounge",
+    venue: "laundry", // 同上:洗衣機 footprint 1×1,standAt 也用不了(需長度 ≥2)
+    pool: "extra",
+    pose: "stand_face",
+    timeWindow: [10, 20],
+    weight: 2,
+    cooldownHours: 24,
+    chance: 0.25,
+    fx: "chat",
+    lines: [
+      "和{o}一起盯著洗衣機轉,話題從天氣扯到晚餐。",
+      "和{o}在洗衣間等脫水,無聊到開始比誰的襪子比較多。",
+      "洗衣機的聲音很吵,和{o}還是有一搭沒一搭地聊完了一輪。",
+      "和{o}在洗衣間排隊,等待的三十分鐘意外地不難熬。",
+    ],
+    effects: { rel: 2, mood: 2, stress: -2 },
+  },
+  {
+    id: "bar_cheers",
+    tier: "close",
+    location: "lounge",
+    pool: "extra",
+    gate: "both_adult", // 小酌一律成年雙檢;文案也不寫醉態
+    pose: "cheers",
+    standAt: ["bar_counter"],
+    requiresFurniture: ["bar_counter"],
+    timeWindow: [20, 23],
+    weight: 2,
+    cooldownHours: 20,
+    chance: 0.3,
+    fx: "chat",
+    lines: [
+      "和{o}在吧台各倒了一杯,碰了下杯就沒再說話。",
+      "和{o}在吧台前碰杯,聊的都是一些不重要但很舒服的事。",
+      "和{o}靠著吧台各喝各的,偶爾舉杯示意一下就夠了。",
+      "和{o}在吧台聊到燈都調暗了,杯子裡還剩最後一口。",
+    ],
+    effects: { rel: 3, mood: 5, stress: -5 },
+  },
 ];
 
 export interface InteractCtx {

@@ -152,9 +152,10 @@ event 規則:
   - "other":對那位鄰居的數值 {mood,stress,affinity,satisfaction}。
   - "rel":兩人關係 {delta(正=拉近/戀情加速、負=吵架疏遠), couple(true=在一起), breakup(true=分手)}。
   - 例:讓兩人戀情加速 → rel.delta 給較大正值、必要時 couple 設 true;室友打架 → rel.delta 負值 + 雙方 stress 上升。
-  - "interaction"(選填,只能搭配 "with"):讓兩人**在遊戲畫面上實際演出**一段互動,id 只能從這 9 個選:
+  - "interaction"(選填,只能搭配 "with"):讓兩人**在遊戲畫面上實際演出**一段互動,id 只能從這 12 個選:
     cuddle_tv(窩著看劇)/ midnight_snack(深夜宵夜)/ lazy_morning(賴床)/ cook_dinner(一起做飯)/
-    deep_talk(深夜談心)/ game_night(開黑打電動)/ share_delivery(分外送)/ share_earbuds(共用耳機)/ feed_snack(餵宵夜)。
+    deep_talk(深夜談心)/ game_night(開黑打電動)/ share_delivery(分外送)/ share_earbuds(共用耳機)/ feed_snack(餵宵夜)/
+    catch_up_show(一起追劇)/ laundry_wait(洗衣間閒聊)/ bar_cheers(吧台小酌)。
     用在選項效果自然的地方(勸和好 → deep_talk、撮合 → share_earbuds、慶祝 → cook_dinner);親密內容不在清單內,由遊戲內建規則自行發生,不要嘗試。
 
 只輸出 JSON,格式:

@@ -16,36 +16,36 @@
 
 ## 現在狀態(2026-08-18)
 
-- **G 批批次 1～3 已 commit 未 push**。批次 1「不稀釋的抽籤」:`pickInteraction()` 拆成**主池/次池**,
-  主池非空時與擴充前**逐位元相同**,主池落空才把已花掉的 `chanceRoll` 換算成 `u=(chanceRoll−c)/(1−c)`
-  抽次池 ⇒ **零新 `Math.random()`**;另有 `gateOk()`／`lend`／`needyBonus`(§10-1a)。批次 2「看得見的
-  雙人動作」(純渲染):租客雙人繪製管線 + pose `game_pair`／`kiss`／`confess`／`cheers` + fx
-  `cash`／`care`／`confetti`,**`became_couple` = `confess` + 彩紙(「告白」看得見)**(§10-6b)
-- **批次 3「日常／友誼 6 種」**(目錄 18 → 24,全 `pool:"extra"`／`tier:"close"`):`lend_money`／
-  `sick_care`／`catch_up_show`／`bathroom_rush`／`laundry_wait`／`bar_cheers`;AI 白名單 9 → 12
-  (借錢與搶浴室**不進**)。三個坑已用測試釘死:文案**不可寫單向句**(兩人共用同一句,`{o}` 一換就
-  語意反轉)、`requiresFurniture` 對 `venue` 無效、`interactions.ts` 全檔不得有 `adjustTension`。見 §10-2a
-- `npm test` **111/111**、typecheck／build 全綠;**`balance-snapshot.json` 本批首次 `--update`**
-  (跨 16 個 commit 未動):逐欄審核後只有 `mood` −0.7／`stress` −0.5／`wellbeing` +0.1 的序列位移,
-  `tenantCount`／`rent`／`wallet`／`arrears`／`logs`／`money` 全不變;`SAVE_VERSION` 仍 10
+- **G 批(互動擴充)四批全部完成,已 commit 未 push**。批次 1「不稀釋的抽籤」:`pickInteraction()`
+  拆成**主池/次池**,主池非空時與擴充前**逐位元相同**,落空才把已花掉的 `chanceRoll` 換算成
+  `u=(chanceRoll−c)/(1−c)` 抽次池 ⇒ **零新 `Math.random()`**;另有 `gateOk()`／`lend`／`needyBonus`(§10-1a)。
+  批次 2(純渲染):租客雙人繪製管線 + pose `game_pair`／`kiss`／`confess`／`cheers` + fx `cash`／
+  `care`／`confetti`,**`became_couple` = `confess` + 彩紙(「告白」看得見)**(§10-6b)
+- **批次 3 + 4:互動目錄 18 → 28**(全 `pool:"extra"`／`tier:"close"` 以上)。日常／友誼 6 種(§10-2a,
+  三個坑已用測試釘死:文案**不可寫單向句**、`requiresFurniture` 對 `venue` 無效、`interactions.ts`
+  全檔不得有 `adjustTension`)+ **戀愛線 4 種** `first_kiss`／`morning_kiss`／`anniversary`／
+  `stargaze_window`(§10-2b)。🔴 戀愛線四種是**全年齡、看得見、不遮蔽**,安全由 `tier` 保證
+  (`rel.romantic` 只可能經 `canBecomeCouple()` ⇒ 成年 + 取向雙檢),**絕不可標 `adult: true`**
+  (會被強制成 `hidden`);`first_kiss` 另掛 `both_adult` 雙保險。AI 白名單維持 12 個,**戀愛線四種不進**
+- `npm test` **111/111**、typecheck／build 全綠;`SAVE_VERSION` 仍 10。**批次 4 的 balance 零漂移未
+  `--update`**(種子局兩人十天內沒成情侶 ⇒ 四種 `room` 戀愛線一次都沒觸發);批次 3 曾逐欄審核後 `--update`
 - **零稀釋實證**(`scripts/interaction-freq-sim.ts`,一次性量測、不入回歸集):100 遊戲日 × 6 種子 ×
-  A/B 對照,core 合計 A=971／B=919(**方向是變多,不是被擠掉**)、core 內部組成最大偏移 **2.97 個
-  百分點**,新 6 種每種都觸發過。⚠️ 單種子的前後比對無效——次池命中會位移整條亂數序列
+  A/B 對照,core 合計 A=930／B=919(**+1.2%,方向是變多不是被擠掉**)、core 內部組成最大偏移 **0.45 個
+  百分點**、次池 10 種每種都觸發過。⚠️ 單種子的前後比對無效——次池命中會位移整條亂數序列
+- ⚠️ **已知行為(中控已接受)**:`first_kiss` 冷卻 8760h ≈ 一遊戲年(每對一生一次)⇒ **舊存檔裡在一起
+  很久的情侶,載入後會補演一次初吻**(舊檔沒有「已接吻過」紀錄,技術上無法迴避)
 - **F 批「打架看得見」已部署上線**(`c90f3ff`～`bdc6c8e`):門檻 50/22、`hidden`→`scuffle`(非血腥),
   並肩率 69.8% → 90.6%。⚠️ `scufflePushOffset` 在 bundle 中被最小化改名 ⇒ 掃碼命中 **0 是預期的**
 
 ## 近期已部署基線
 
-- **咖啡廳聚會／AI context／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`):§4.12 + §4.13 + 安全小修
-- **咖啡廳分區與常客**(`f56ef3b`／`05cc2ea`):四區機能差異(§4.10)+ 跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
-- **咖啡廳 P1～P4b**:逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板均上線
+- **咖啡廳**:聚會／AI context／鍵消毒(`8296ed9`／`11a3d9a`／`04f65fe`,§4.12+§4.13)、分區與常客(`f56ef3b`／`05cc2ea`,§4.10+§4.11)、P1～P4b(逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板)全部上線。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
 - **內容**:店貓辣椒、月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14、本地劇情種子 10→16;**送養合照** `PetPhoto.vue` 即時決定性重畫,不存圖片資料
 
 ## 下一步
 
-- **G 批批次 4:新互動目錄 B(戀愛線 4 種)**——`first_kiss`／`morning_kiss`／`anniversary`／
-  `stargaze_window`,用批次 2 的 `kiss`／`confess`／`confetti`。⚠️ **絕不可**把 `first_kiss` 標成
-  `adult: true`(會被 `content-variety-test.ts` 強制成 `hidden`,動畫就沒了);四種都不進 AI 白名單
+- **G 批已可驗收:push + deploy(由中控處理)**,四批共 4 個 commit(`65869c9`／`fa4c365`／
+  `af9ed03`／本批)未 push、未部署
 - **實玩觀察(併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**觀感(門檻 50/22、並肩率 90.6%)與
   **G 批新互動**的實際頻率;用**舊存檔**開局(雇 4 人以上且吧台仍是贈品那座 ⇒ 吃到 A 批產能
   nerf 104→78);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會頻率,以及 **D 批會不會「蓋台」**

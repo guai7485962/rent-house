@@ -4,8 +4,10 @@
  * - 擲骰次數:主池非空 2 顆／主池空+次池空 0 顆／主池空+次池非空 1 顆(唯一的變動,見規格)
  * - 次池預算公式 (1−P_core)·(w/W)·c、條件亂數 u 的均勻性
  * - gateOk() 邊界、applyLend() 守恆(不動 state.money)、applyNeedyBonus() 挑對人
- * - 真實目錄的結構把關(批次 3 起):主池仍是原本 18 種、次池 6 種、`venue` 不搭
+ * - 真實目錄的結構把關(批次 3/4):主池仍是原本 18 種、次池 10 種、`venue` 不搭
  *   `requiresFurniture`、`interactions.ts` 全檔不得出現 `adjustTension`
+ * - 🔴 戀愛線安全(批次 4):未成年/取向不合一律進不了 4 種戀愛線;`first_kiss` 不是
+ *   `adult: true`(才有動畫)但仍不繞過 `canRomance` —— 由 tier + `both_adult` 雙保險把關
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,9 +31,9 @@ Math.random = () => {
 };
 const reseed = (s: number) => { __seed = s; __rolls = 0; };
 
-const { pickInteraction, splitPools, gateOk, applyLend, applyNeedyBonus, INTERACTIONS } =
+const { pickInteraction, splitPools, gateOk, canInteract, applyLend, applyNeedyBonus, INTERACTIONS } =
   await import("../src/sim/interactions");
-const { relationships, pairKey } = await import("../src/sim/social");
+const { relationships, pairKey, canRomance, canBecomeCouple } = await import("../src/sim/social");
 const { state } = await import("../src/store");
 import type { InteractionDef } from "../src/sim/interactions";
 import type { TenantRuntime } from "../src/sim/gameState";
@@ -270,15 +272,16 @@ applyNeedyBonus(CA, CB, { wellbeing: 10 });
 check("needyBonus:夾在 0~100", CA.tenant.stats.wellbeing === 100);
 
 // ---------------------------------------------------------------------------
-// 7. 真實目錄的現況把關(批次 3:主池 18 + 次池 6)
+// 7. 真實目錄的現況把關(批次 3 + 4:主池 18 + 次池 10)
 // ---------------------------------------------------------------------------
 const realSplit = splitPools(INTERACTIONS);
-check("真實目錄共 24 種", INTERACTIONS.length === 24, `${INTERACTIONS.length}`);
+check("真實目錄共 28 種", INTERACTIONS.length === 28, `${INTERACTIONS.length}`);
 check("主池仍恰好是原本的 18 種(零稀釋的前提)", realSplit.core.length === 18, `${realSplit.core.length}`);
-check("次池恰好是新加的 6 種", realSplit.extra.length === 6, `${realSplit.extra.length}`);
-check("次池 id 就是規格上的那 6 種",
+check("次池恰好是新加的 10 種(批次 3 的 6 + 批次 4 的 4)", realSplit.extra.length === 10, `${realSplit.extra.length}`);
+check("次池 id 就是規格上的那 10 種",
   realSplit.extra.map((d) => d.id).sort().join(",")
-    === ["bar_cheers", "bathroom_rush", "catch_up_show", "laundry_wait", "lend_money", "sick_care"].join(","),
+    === ["anniversary", "bar_cheers", "bathroom_rush", "catch_up_show", "first_kiss",
+      "laundry_wait", "lend_money", "morning_kiss", "sick_care", "stargaze_window"].join(","),
   realSplit.extra.map((d) => d.id).join(","));
 const TIERS = new Set(["close", "crush", "couple", "cohabit"]);
 check("沒有新增更低的 tier(acquaintance 會讓全樓低關係配對多擲骰)",
@@ -305,6 +308,93 @@ check("interactions.ts 全檔不出現 adjustTension", !/adjustTension/.test(SRC
 const negative = INTERACTIONS.filter((d) => d.effects.rel < 0);
 check("負向互動只有 bathroom_rush 一種", negative.map((d) => d.id).join(",") === "bathroom_rush", negative.map((d) => d.id).join(","));
 check("負向互動的 rel 扣分不超過 1", negative.every((d) => d.effects.rel >= -1));
+
+// ---------------------------------------------------------------------------
+// 8. 🔴 戀愛線 4 種的安全把關(批次 4)
+//
+// 這四種是**全年齡、看得見、不遮蔽**的內容,所以不能靠 `adult: true` 來保證安全
+// (標了反而會被 content-variety-test.ts 強制成 hidden,動畫就沒了)。真正的保證是:
+//   tier couple/cohabit ⇒ 需要 `rel.romantic`;tier crush ⇒ 需要 romantic 或 canRomance。
+//   而 `rel.romantic` 只可能經 `canBecomeCouple()` 建立 ⇒ 已含成年 + 取向雙檢。
+// `first_kiss` 另掛 `gate: "both_adult"` 當雙保險,擋舊存檔可能殘留的非法 romantic。
+// ---------------------------------------------------------------------------
+const ROMANCE_IDS = ["first_kiss", "morning_kiss", "anniversary", "stargaze_window"];
+const romanceDefs = ROMANCE_IDS.map((id) => INTERACTIONS.find((d) => d.id === id)!);
+check("戀愛線 4 種都在目錄裡", romanceDefs.every(Boolean));
+check("🔴 戀愛線 4 種一律不是 adult 內容(標了會被強制成 hidden,動畫就沒了)",
+  romanceDefs.every((d) => !d.adult), romanceDefs.filter((d) => d.adult).map((d) => d.id).join(","));
+check("first_kiss 的演出是看得見的 kiss,不是遮蔽式 hidden",
+  romanceDefs[0].pose === "kiss" && romanceDefs[1].pose === "kiss", `${romanceDefs[0].pose}/${romanceDefs[1].pose}`);
+check("first_kiss 掛了 both_adult 雙保險(擋舊存檔殘留的非法 romantic)",
+  romanceDefs[0].gate === "both_adult", `${romanceDefs[0].gate}`);
+check("first_kiss 的冷卻 ≈ 一遊戲年 ⇒ 每對一生一次", romanceDefs[0].cooldownHours >= 8760);
+check("戀愛線 4 種全在次池(對主池零稀釋)", romanceDefs.every((d) => d.pool === "extra"));
+
+const T = (id: string, gender: "male" | "female", attractedTo: ("male" | "female")[], isAdult: boolean) =>
+  ({
+    id, name: id, gender, attractedTo, isAdult,
+    occupation: "", bio: "", coreTags: [], memoryTags: [],
+    finance: { monthlyRent: 1000, paymentReliability: 80, monthsOverdue: 0 },
+    stats: { mood: 60, stress: 40, wellbeing: 70, energy: 60, affinity: 50 },
+    preferences: {}, visualState: "idle", recentSummary: "",
+  }) as unknown as Parameters<typeof canInteract>[1];
+const wrap = (t: any): TenantRuntime => ({ tenant: t, wallet: 10000 }) as unknown as TenantRuntime;
+const HOUR_OF: Record<string, number> = { first_kiss: 20, morning_kiss: 8, anniversary: 20, stargaze_window: 23 };
+/** 實際上線的完整判定:`runGroup()` 的 eligible filter 就是 canInteract && gateOk */
+const allowed = (def: (typeof romanceDefs)[number], a: any, b: any) =>
+  canInteract(def, a, b, {
+    hour: HOUR_OF[def.id], thirdPresent: false, adultMode: state.adultMode, cohabiting: true,
+    furniture: new Set(["double_bed", "canopy_bed", "tv_console"]),
+  }) && gateOk(def.gate, wrap(a), wrap(b));
+
+const setRel = (a: any, b: any, value: number, romantic: boolean) => {
+  relationships[pairKey(a.id, b.id)] = { value, tension: 0, lastConflictGameMs: 0, romantic, cohabitOffered: romantic };
+};
+
+// (a) 未成年:整條戀愛線的入口(canBecomeCouple)就進不去 ⇒ 永遠不會有 romantic
+const MINOR = T("safe_minor", "female", ["male"], false);
+const ADULT = T("safe_adult", "male", ["female"], true);
+check("未成年:canRomance / canBecomeCouple 一律 false(戀愛線唯一入口)",
+  !canRomance(MINOR as any, ADULT as any) && !canBecomeCouple(MINOR as any, ADULT as any));
+setRel(MINOR, ADULT, 100, false);
+check("🔴 未成年 + rel 100(非情侶)⇒ 戀愛線 4 種全擋",
+  romanceDefs.every((d) => !allowed(d, MINOR, ADULT)),
+  romanceDefs.filter((d) => allowed(d, MINOR, ADULT)).map((d) => d.id).join(","));
+// 舊存檔殘留的非法 romantic:tier 擋不住,靠 gate: both_adult 這道雙保險
+setRel(MINOR, ADULT, 100, true);
+check("🔴 未成年 + 舊存檔殘留的非法 romantic ⇒ first_kiss 仍被 both_adult 雙保險擋掉",
+  !allowed(romanceDefs[0], MINOR, ADULT));
+check("雙保險擋的是 gate 不是 tier(證明這條測試沒有空轉:canInteract 本身確實過了)",
+  canInteract(romanceDefs[0], MINOR as any, ADULT as any, {
+    hour: 20, thirdPresent: false, adultMode: state.adultMode, cohabiting: true, furniture: new Set<string>(),
+  }) && !gateOk("both_adult", wrap(MINOR), wrap(ADULT)));
+delete relationships[pairKey(MINOR.id, ADULT.id)];
+
+// (b) 取向不合:同樣過不了 canRomance ⇒ romantic 永遠建立不起來
+const HETERO_A = T("safe_h1", "male", ["female"], true);
+const HETERO_B = T("safe_h2", "male", ["female"], true);
+check("取向不合:canRomance / canBecomeCouple 一律 false",
+  !canRomance(HETERO_A as any, HETERO_B as any) && !canBecomeCouple(HETERO_A as any, HETERO_B as any));
+setRel(HETERO_A, HETERO_B, 100, false);
+check("🔴 取向不合 + rel 100(非情侶)⇒ 戀愛線 4 種全擋",
+  romanceDefs.every((d) => !allowed(d, HETERO_A, HETERO_B)),
+  romanceDefs.filter((d) => allowed(d, HETERO_A, HETERO_B)).map((d) => d.id).join(","));
+delete relationships[pairKey(HETERO_A.id, HETERO_B.id)];
+
+// (c) 合法情侶 ⇒ 四種都演得起來(否則上面三條全是空轉)
+const OK_A = T("safe_ok_a", "male", ["female"], true);
+const OK_B = T("safe_ok_b", "female", ["male"], true);
+setRel(OK_A, OK_B, 96, true);
+check("對照組:合法成年情侶 ⇒ 戀愛線 4 種都通得過(上面的擋法不是空轉)",
+  romanceDefs.every((d) => allowed(d, OK_A, OK_B)),
+  romanceDefs.filter((d) => !allowed(d, OK_A, OK_B)).map((d) => d.id).join(","));
+delete relationships[pairKey(OK_A.id, OK_B.id)];
+
+// AI 白名單:批次 4 的四種一律不進(worker-test.ts 另把整個集合釘死)
+const WORKER_SRC = readFileSync(fileURLToPath(new URL("../worker/index.ts", import.meta.url)), "utf8");
+check("🔴 戀愛線 4 種一律不在 AI 互動白名單裡",
+  ROMANCE_IDS.every((id) => !WORKER_SRC.includes(id)),
+  ROMANCE_IDS.filter((id) => WORKER_SRC.includes(id)).join(","));
 
 console.log(`\n結果:${pass} 通過 / ${fail} 失敗`);
 if (fail > 0) process.exit(1);

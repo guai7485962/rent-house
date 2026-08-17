@@ -4,8 +4,8 @@
  * `interaction-pool-test.ts` 用蒙地卡羅證明了**抽籤本身**對主池零稀釋(逐位元);但真正
  * 上線後還會疊上時段/家具/gate/冷卻/退租換人,所以這裡直接跑真的 `hourlyTick()` 迴圈,
  * 統計每個 `InteractionDef` 實際觸發幾次,回答兩個問題:
- *   ① 既有 18 種的分布,在次池加入 6 種新內容前後是否一致
- *   ② 新 6 種是否每一種都真的出現過(沒有因時段/家具/gate 疊加而永遠啞掉)
+ *   ① 既有 18 種的分布,在次池加入新內容(批次 3 的 6 種 + 批次 4 的戀愛線 4 種)前後是否一致
+ *   ② 次池每一種是否都真的出現過(沒有因時段/家具/gate 疊加而永遠啞掉)
  *
  * ⚠️ **為什麼一定要多種子 A/B,不能只跑一次前後比對**:次池命中一次就會多消耗一顆選句骰,
  * 整條亂數序列從此位移。這棟樓是混沌系統(退租換人、事件、天氣全在同一條序列上),
@@ -64,7 +64,10 @@ if (!CHILD_SEED) {
   }
 
   const sum = (m: Map<string, number>, ids: string[]) => ids.reduce((s, id) => s + (m.get(id) ?? 0), 0);
-  const EXTRA_IDS = ["lend_money", "sick_care", "catch_up_show", "bathroom_rush", "laundry_wait", "bar_cheers"];
+  const EXTRA_IDS = [
+    "lend_money", "sick_care", "catch_up_show", "bathroom_rush", "laundry_wait", "bar_cheers", // 批次 3
+    "first_kiss", "morning_kiss", "anniversary", "stargaze_window", // 批次 4(戀愛線)
+  ];
   const CORE_IDS = order.filter((id) => !EXTRA_IDS.includes(id));
   const coreA = sum(agg.A, CORE_IDS);
   const coreB = sum(agg.B, CORE_IDS);
@@ -72,7 +75,7 @@ if (!CHILD_SEED) {
 
   console.log(`\n${"=".repeat(78)}`);
   console.log(`=== 零稀釋 A/B 實測:${DAYS} 遊戲日 × ${SEED_COUNT} 種子 × 4 人滿房`);
-  console.log(`===   A = 完整 24 種目錄 / B = 濾掉次池(= 批次 2 之前的 18 種)`);
+  console.log(`===   A = 完整 28 種目錄 / B = 濾掉次池(= 批次 2 之前的 18 種)`);
   console.log(`${"=".repeat(78)}\n`);
   console.log("id".padEnd(22) + "pool".padEnd(7) + "A".padStart(6) + "B".padStart(7) + "   差異%    A 佔 core%  B 佔 core%");
   console.log("-".repeat(78));
@@ -103,7 +106,7 @@ if (!CHILD_SEED) {
   console.log(`extra 合計  A=${extraA}(B 組定義上為 0)`);
   const silentExtra = EXTRA_IDS.filter((id) => (agg.A.get(id) ?? 0) === 0);
   console.log(silentExtra.length === 0
-    ? "✅ 新 6 種每一種都觸發過"
+    ? `✅ 次池 ${EXTRA_IDS.length} 種每一種都觸發過`
     : `⚠️ 新目錄從未觸發:${silentExtra.join(", ")}`);
   // 組成差異:core 內部各自的佔比(對序列位移比絕對次數穩健得多)
   const maxShareDrift = CORE_IDS.reduce((m, id) => {

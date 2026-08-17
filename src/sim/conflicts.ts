@@ -3,7 +3,8 @@
  *
  * 冷戰(feud):大吵/打架後 3 遊戲日互相迴避——不去有對方在的交誼廳、相遇不互動、
  * 關係每日小扣;期滿氣消,自動解除。
- * 打架:關係 <20 + 相容度 ≤ -3 + 雙方壓力 ≥80 才可能觸發 → 打鬥雲演出(遮蔽式,不見血)
+ * 打架:關係 <20 + 積怨 ≥70 + 相容度 ≤ -3 + 壓力門檻(見 FIGHT_STRESS_*)才可能觸發
+ * → 卡通推擠演出(scuffle,兩人看得見、但不見血)+ 打鬥雲 fx
  * → 雙方受傷(wellbeing↓)+ 家具損壞(接 §7-1 維修系統)+ 必發房東抉擇(調解/各打五十/警告)。
  */
 import type { Tenant } from "../types";
@@ -178,15 +179,46 @@ function fightDecision(a: Tenant, b: Tenant): EventDef {
 }
 
 /**
+ * 打架的壓力門檻(2026-08-17 依 `scripts/conflict-freq-sim.ts` 的實測改成「合計 + 各自下限」)。
+ *
+ * 舊門檻是「**雙方** stress ≥ 80」,實測證明那不是難,是**不可達**:
+ * 逐時活動增量長期為負(睡覺 −5/h、洗澡 −4、打電動 −3)而 homeostasis 只有 6%/h,
+ * 壓力平衡點落在 `baselines()` 基準**下方約 20 點**、幾乎不曾超過基準;基準本身又夾在 10~90。
+ * 高摩擦滿房跑 60 遊戲日 × 三種壓力基準(38/58/78),打架 **0 場**,漏斗
+ * 873→535(rel)→198(tension)→198(comp)→**0**(stress),瓶頸 100% 在這一關。
+ * 而且 stress ≥90/≥95 會被 `tick.decideState()` 判成 `isDeviation` 趕回房間
+ * (`inLounge = false`)⇒ [80, 90) 的可用窗口實質為零。
+ *
+ * 現值 62/28 取自實測分布(一般高摩擦住戶的配對合計壓力 p90 = 61.6、上限 67)。
+ * ⚠️ **改完之後的實跑**(同一支腳本、同一組種子,60 遊戲日):
+ *   normal(基準 ~40)**0 場**、stressed(基準 ~60)**17 場**、extreme(基準 ~80)22 場。
+ * 也就是說 62/28 只讓「本來就高壓」的住戶打得起來,壓力基準落在預設值附近的住戶仍是 0。
+ * 同一支腳本量到的替代值:55/24 → normal 1、stressed 14;50/22 → normal 9、stressed 14。
+ * 現值由中控拍板;要讓一般住戶也偶爾看得到打架,得再往下調(已回報,待拍板)。
+ *
+ * 相容的一對永遠是確定 0 —— 前三道門檻(rel<20、tension≥70、comp≤−3)就擋掉了。
+ *
+ * ⚠️ 更好的寫法是相對各自基準線(`stress >= baselines(rt).stress - 10`,自動適應不同原型),
+ * 但 `conflicts.ts` import `tick.ts` 的 `baselines` 會造成循環 import(`tick.ts` 已 import 本檔),
+ * 要先把 `baselines()` 抽到共用模組。已記在 `docs/待辦.md`,本批不做。
+ */
+export const FIGHT_STRESS_SUM = 62;
+export const FIGHT_STRESS_EACH = 28;
+
+/**
  * 嘗試觸發打架(socialPass 相遇前呼叫)。條件全中才擲骰:
- * 關係 <20 + 相容度 ≤ -3 + 雙方壓力 ≥80 + 非冷戰中。回傳 true = 打起來了(這對這小時到此為止)。
+ * 關係 <20 + 積怨 ≥70 + 相容度 ≤ -3 + 壓力(各 ≥28 且合計 ≥62)+ 非冷戰中。
+ * 回傳 true = 打起來了(這對這小時到此為止)。
  */
 export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number = Math.random): boolean {
   const rel = getRel(A.tenant.id, B.tenant.id);
   if ((rel?.value ?? 0) >= 20) return false;
   if ((rel?.tension ?? 0) < 70) return false;
   if (compatibility(A.tenant, B.tenant) > -3) return false;
-  if (A.tenant.stats.stress < 80 || B.tenant.stats.stress < 80) return false;
+  // 「兩人都在氣頭上」= 各自要高於自己的日常水位(EACH),而且加起來夠嗆(SUM);
+  // 不再要求兩個人同時飆到極端值——那個窗口被 isDeviation 壓成了零。
+  if (A.tenant.stats.stress < FIGHT_STRESS_EACH || B.tenant.stats.stress < FIGHT_STRESS_EACH) return false;
+  if (A.tenant.stats.stress + B.tenant.stats.stress < FIGHT_STRESS_SUM) return false;
   if (feudActive(A.tenant.id, B.tenant.id)) return false;
   if (B.pendingEvent) return false; // A 的 pendingEvent 由 socialPass 先濾掉
   if (rng() > 0.6) return false;
@@ -209,11 +241,15 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
   notify(`💢 ${A.tenant.name} 和 ${B.tenant.name} 在交誼廳大打出手!`);
   unlock("brawl"); // 成就:樓要塌了(§G-7)
 
-  // 演出:打鬥雲(遮蔽式,不見血)——兩人 sprite 隱藏,只剩一團雲 + 星星
+  // 演出:打鬥雲 + **看得見的卡通推擠**(2026-08-17 由 `pose: "hidden"` 改成 `"scuffle"`)。
+  // 舊版把兩人 sprite 直接藏起來,畫面上只剩一團雲 ⇒ 就算真的打起來玩家也看不到人。
+  // 🚫 **維持非血腥**:scuffle 只是兩人面對面、左右交替 ±1px 的拉扯位移,
+  //    沿用既有的側面 sprite 與既有的 fight fx(雲 + 星星),
+  //    **不畫傷口、不畫血、不新增任何暴力細節**,也不得在後續批次升級成血腥描寫。
   const at = A.targetTile ?? B.targetTile;
   if (at) {
     spawnFx("fight", at.c, at.r, 15000);
-    startPairSession(A.tenant.id, B.tenant.id, at, "hidden", state.gameMs, 15000);
+    startPairSession(A.tenant.id, B.tenant.id, at, "scuffle", state.gameMs, 15000);
   }
 
   // 家具遭殃(接 §7-1):混戰波及其中一人的房間設備,房東要花錢修
@@ -221,7 +257,7 @@ export function tryFight(A: TenantRuntime, B: TenantRuntime, rng: () => number =
   if (roomId) triggerBreakdown(roomId, "damage", rng);
 
   // 之後:冷戰(靜默登記,打架日誌已經夠大聲)+ 必發房東抉擇
-  // 打鬥雲優先演完，避免冷戰退場立即把 hidden session 蓋掉；一般口角/修羅場仍會直接摔門。
+  // 推擠演出優先演完，避免冷戰退場立即把 scuffle session 蓋掉；一般口角/修羅場仍會直接摔門。
   startFeud(A, B, true, false);
   A.pendingEvent = fightDecision(A.tenant, B.tenant);
   return true;

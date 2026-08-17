@@ -12,9 +12,13 @@ import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "../sim/clock";
 
 /**
  * pair = 相鄰站一起;stand_face = 面對面聊天;cook_pair = 並肩料理;
- * sit = 並肩坐;lie = 並排躺;hidden = 隱藏(🔞 遮蔽式);apart = 各自退開(冷戰摔門)。
+ * sit = 並肩坐;lie = 並排躺;hidden = 隱藏(🔞 遮蔽式);apart = 各自退開(冷戰摔門);
+ * scuffle = 打架的卡通推擠(§10-2:面對面側身 + 交替 ±1px 拉扯,**不見血**)。
+ *
+ * 🚫 `scuffle` 與 `hidden` 是**兩件事**:hidden 是 🔞 成人內容的遮蔽式演出(永遠不畫);
+ * scuffle 是打架**要看得見**,但只到卡通推擠為止——不畫傷口、不畫血。
  */
-export type PairPose = "pair" | "stand_face" | "cook_pair" | "sit" | "lie" | "hidden" | "apart";
+export type PairPose = "pair" | "stand_face" | "cook_pair" | "sit" | "lie" | "hidden" | "apart" | "scuffle";
 
 export interface PairSession {
   aId: string;
@@ -75,9 +79,11 @@ export function sessionFor(tenantId: string, gameNow: number): { tile: Tile; pos
   return null;
 }
 
-/** 面對面姿勢只在水平相鄰時畫側向提示；垂直排列維持正面，避免假裝看向錯誤方向。 */
+/** 面對面的姿勢(聊天 stand_face / 打架 scuffle)只在水平相鄰時畫側向提示；
+ *  垂直排列維持正面，避免假裝看向錯誤方向。 */
+const FACING_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["stand_face", "scuffle"]);
 function facingToward(pose: PairPose, mine: Tile, other: Tile): -1 | 0 | 1 {
-  if (pose !== "stand_face" || mine.r !== other.r || mine.c === other.c) return 0;
+  if (!FACING_POSES.has(pose) || mine.r !== other.r || mine.c === other.c) return 0;
   return other.c > mine.c ? 1 : -1;
 }
 

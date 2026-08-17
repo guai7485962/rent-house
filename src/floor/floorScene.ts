@@ -152,7 +152,7 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     }
     for (const a of agents ?? []) {
       if (a.hidden) continue;
-      items.push({ y: a.py, draw: () => { drawAgent(ctx, a); drawAmbient(ctx, a, frame); } });
+      items.push({ y: a.py, draw: () => { drawAgent(ctx, a, frame); drawAmbient(ctx, a, frame); } });
     }
     for (const guest of guests ?? []) {
       if (guest.hidden || guest.phase === "departed") continue;
@@ -749,7 +749,7 @@ export function clearFacingMemory() {
 
 /**
  * 朝向推導的優先序(由高到低):
- * 1. `pairSession` 的 `stand_face` facing → 維持既有行為,側面朝向對方
+ * 1. `pairSession` 的**面對面**姿勢(`stand_face` 聊天 / `scuffle` 打架)facing → 側面朝向對方
  * 2. 移動中 → 由 `a.path[0]` 減 `{a.c, a.r}` 推導。`findPath()` 是 **4 鄰 BFS(無對角)**
  *    (`pathfind.ts:57-62`),所以差值保證是正交四方向之一
  * 3. 靜止 → 沿用最後已知方向(上面那張 Map)
@@ -763,7 +763,7 @@ export function clearFacingMemory() {
  */
 export function agentView(a: Agent): CharView {
   if (a.pose === "cook_pair") return "front";
-  if (!a.moving && a.pose === "stand_face" && a.facing !== 0) {
+  if (!a.moving && (a.pose === "stand_face" || a.pose === "scuffle") && a.facing !== 0) {
     const dir: CharView = a.facing > 0 ? "side_r" : "side_l";
     lastFacingDir.set(a.tenantId, dir);
     return dir;
@@ -784,7 +784,24 @@ export function agentView(a: Agent): CharView {
   return lastFacingDir.get(a.tenantId) ?? "front";
 }
 
-function drawAgent(ctx: Ctx, a: Agent) {
+/**
+ * 打架(§10-2)的推擠位移:朝對方 +1px、再退開 −1px,靠既有的 500ms `frame` 計數交替。
+ *
+ * 兩人的 `facing` 必定相反(`pairSession.facingToward()`),共用同一個 frame ⇒
+ * 同一拍一起往中間擠、下一拍一起彈開,讀起來就是「互相拉扯」。
+ *
+ * 🚫 **維持非血腥**:打架的演出**只有**這個 ±1px 位移 + 既有的側面 sprite + 既有的
+ * `fight` fx(卡通打鬥雲 + 星星)。**不畫傷口、不畫血、不新增任何暴力細節**,
+ * 也不得在後續批次升級成血腥描寫。沒有新美術,沿用四方向站姿圖。
+ *
+ * 純函式 + export 是為了讓 `scripts/scuffle-pose-test.ts` 能直接斷言相位,不必架整張畫布。
+ */
+export function scufflePushOffset(a: Agent, frame: number): number {
+  if (a.moving || a.pose !== "scuffle" || a.facing === 0) return 0;
+  return a.facing * (Math.floor(Math.max(0, frame)) % 2 === 0 ? 1 : -1);
+}
+
+function drawAgent(ctx: Ctx, a: Agent, frame: number) {
   const pal = charPalette(a.tenantId);
   // §10-6 雙人圖式:互動 session 抵達定點後坐下/躺下(還在走路時照常走)
   if (!a.moving && a.pose === "lie") {
@@ -817,10 +834,12 @@ function drawAgent(ctx: Ctx, a: Agent) {
     sprite = step ? set.walkA : set.walkB;
     yoff = step ? 0 : -1; // 走路上下彈跳
   }
-  drawSprite(ctx, sprite, a.px + 3, a.py - 4 + yoff, pal);
+  // 打架:朝對方擠一格再退開(見 scufflePushOffset;非血腥,只有位移)
+  const xoff = scufflePushOffset(a, frame);
+  drawSprite(ctx, sprite, a.px + 3 + xoff, a.py - 4 + yoff, pal);
   // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件(依視角換圖層;朝左會鏡射)
   const ap = getCustomAppearance(a.tenantId);
-  if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3, a.py - 4 + yoff, view);
+  if (ap) drawAppearanceOverlay(ctx, ap, a.px + 3 + xoff, a.py - 4 + yoff, view);
   // 舊的 drawFacingCue()(在正面基底上補一顆側眼與鼻尖)已移除:
   // stand_face 且 facing !== 0 現在直接畫**真正的側面 sprite**,側臉本身就自帶
   // 單眼與凸出的鼻樑,再補一顆點會落在錯的位置。facing === 0(垂直相鄰)舊版本來就不畫。

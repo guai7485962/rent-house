@@ -1,7 +1,7 @@
 /**
  * 衝突系統(§10-2 打架/冷戰)驗證:
- * - tryFight 條件矩陣:關係 <20 + 相容度 ≤-3 + 雙方壓力 ≥80 全中才打
- * - 打架後果:受傷/關係大扣/記憶/打鬥雲 fx + hidden session/家具毀損(接 §7-1)/冷戰/房東抉擇
+ * - tryFight 條件矩陣:關係 <20 + 積怨 ≥70 + 相容度 ≤-3 + 壓力(各 ≥28 且合計 ≥62)全中才打
+ * - 打架後果:受傷/關係大扣/記憶/打鬥雲 fx + **看得見的** scuffle session/家具毀損(接 §7-1)/冷戰/房東抉擇
  * - 房東抉擇:調解 → 冷戰解除+關係回補;警告單方 → 跨租客效果
  * - 冷戰:互動與相遇全擋、交誼廳迴避、每日關係小扣、期滿氣消
  * - 存檔往返
@@ -26,7 +26,7 @@ const mem: Record<string, string> = {};
   removeItem: (k: string) => { delete mem[k]; },
 };
 
-const { tryFight, feudActive, startFeud, endFeud, feudPass, maybeFeudAfterConflict, avoidLounge } = await import("../src/sim/conflicts");
+const { tryFight, feudActive, startFeud, endFeud, feudPass, maybeFeudAfterConflict, avoidLounge, FIGHT_STRESS_SUM, FIGHT_STRESS_EACH } = await import("../src/sim/conflicts");
 const { relationships, pairKey, getRel } = await import("../src/sim/social");
 const { canInteract, INTERACTIONS } = await import("../src/sim/interactions");
 const { activeFx, clearFx } = await import("../src/floor/fx");
@@ -53,10 +53,16 @@ const tag = (id: string): CoreTag => ({ id, label: id, behaviorHint: "" });
 A.tenant.coreTags = [tag("noisy"), tag("gamer"), tag("early_bird")];
 B.tenant.coreTags = [tag("sound_sensitive"), tag("night_owl")];
 
-function setup(rel = 10, stressA = 90, stressB = 90, tension = 80) {
+function setup(rel = 10, stressA = 40, stressB = 40, tension = 80) {
   relationships[k] = { value: rel, tension, lastConflictGameMs: 0, romantic: false, cohabitOffered: false };
   A.tenant.stats.stress = stressA;
   B.tenant.stats.stress = stressB;
+  // 壓力門檻改成「合計 + 各自下限」後,邊界用例會連打好幾場,wellbeing/mood 會被扣到 0
+  // 而讓「受傷/心情重挫」的比較失去意義;每次 setup 一併回到中間值,讓每條斷言彼此獨立。
+  for (const rt of [A, B]) {
+    rt.tenant.stats.wellbeing = 70;
+    rt.tenant.stats.mood = 60;
+  }
   A.targetTile = { c: 7, r: 10 }; // 無頭初始沒定位,給 fx/session 一個錨點
   A.pendingEvent = null;
   B.pendingEvent = null;
@@ -68,15 +74,28 @@ function setup(rel = 10, stressA = 90, stressB = 90, tension = 80) {
 }
 
 // --- 條件矩陣(rng=0:機率必過,只驗條件)---
+check("門檻常數是實測拍板的 62 / 28", FIGHT_STRESS_SUM === 62 && FIGHT_STRESS_EACH === 28);
 setup(30);
 check("關係 30 → 不打", !tryFight(A, B, () => 0));
-setup(10, 70, 90);
-check("一方壓力 70 → 不打", !tryFight(A, B, () => 0));
 setup(10, 90, 90, 69);
 check("積怨未達 70 → 不打", !tryFight(A, B, () => 0));
 setup(10, 90, 90);
 state.feuds[k] = { untilMs: state.gameMs + MS_PER_GAME_HOUR };
 check("已在冷戰 → 不打(眼不見為淨)", !tryFight(A, B, () => 0));
+
+// 壓力門檻的邊界(2026-08-17 由「雙方 ≥80」改成「各 ≥28 且合計 ≥62」)
+setup(10, 28, 28); // 各自到下限,但合計只有 56
+check("各 28、合計 56 → 不打(卡合計)", !tryFight(A, B, () => 0));
+setup(10, 34, 28); // 剛好 62
+check("34 + 28 = 62 → 打(合計剛好到)", tryFight(A, B, () => 0));
+setup(10, 27, 80); // 合計 107 很高,但一方低於各自下限
+check("27 + 80 → 不打(卡各自下限)", !tryFight(A, B, () => 0));
+setup(10, 27, 34); // 兩邊都不足
+check("27 + 34 → 不打(兩關都卡)", !tryFight(A, B, () => 0));
+setup(10, 31, 31); // 各 ≥28 且合計 62
+check("31 + 31 = 62 → 打(平均分配也算數)", tryFight(A, B, () => 0));
+setup(10, 90, 90);
+check("雙方 90(舊門檻)→ 仍然打", tryFight(A, B, () => 0));
 setup();
 const goodTags = B.tenant.coreTags;
 B.tenant.coreTags = [tag("gamer"), tag("night_owl")]; // 相容度變好
@@ -94,7 +113,8 @@ check("關係大扣", (getRel(A.tenant.id, B.tenant.id)?.value ?? 99) < 10);
 check("雙方留下[大打出手]記憶", [A, B].every((rt) => rt.tenant.memoryTags.some((m) => m.label === "[大打出手]")));
 check("打架日誌(major)", A.log.some((e) => e.text.includes("大打出手") && e.importance === "major"));
 check("打鬥雲 fx 掛上", activeFx().some((f) => f.kind === "fight"));
-check("遮蔽式 session(hidden)", sessionFor(A.tenant.id, state.gameMs)?.pose === "hidden");
+check("打架 session 是看得見的 scuffle,不是 hidden", sessionFor(A.tenant.id, state.gameMs)?.pose === "scuffle");
+check("兩人都掛上 scuffle(不是只有一方)", sessionFor(B.tenant.id, state.gameMs)?.pose === "scuffle");
 check("家具毀損(接維修系統)", state.breakdowns.r301?.defId === "damage" || state.breakdowns.r302?.defId === "damage");
 check("自動進入冷戰", feudActive(A.tenant.id, B.tenant.id));
 check("必發房東抉擇(3 選項、跨租客)", A.pendingEvent?.id === "fight_decision" && A.pendingEvent.choices.length === 3 && A.pendingEvent.withId === B.tenant.id);

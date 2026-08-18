@@ -74,7 +74,7 @@ export {
   resolveHousePetOverload, processPetRehoming, isPetOnSite,
   ensureShopCat, isShopCat, SHOP_CAT_ID, SHOP_CAT_NAME, SHOP_CAT_OWNER, SHOP_CAT_COLOR,
 } from "./sim/pets";
-export { diaryPass, ensureDiaryHours, narrateStatus, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
+export { diaryPass, ensureDiaryHours, produceDailyDiaries, resumeDeferredDiaries } from "./sim/narration";
 export { ACHIEVEMENTS, unlock, recordAlumnus, legacyPass, type AchievementDef } from "./sim/legacy";
 export { WISH_DEFS, wishPass, ensureWishes, wishBrief, wishIdForOccupation, GRADUATE_AFTER_DAYS, type WishId, type TenantWish } from "./sim/wishes";
 export { KINDNESS_ACTS, giveKindness, caredToday, CARE_ACHIEVEMENT_AT, type KindnessId } from "./sim/kindness";

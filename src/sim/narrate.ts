@@ -110,19 +110,7 @@ export interface NarrateCtx {
 }
 
 export type AiProvider = "gemini-flash" | "gemini-flash-lite" | "workers-ai-qwen" | "workers-ai-llama" | "claude";
-export type AiFallbackReason =
-  | "catchup" | "quota" | "offline" | "no_key" | "forbidden" | "parse" | "upstream" | "unknown"
-  // 🔴 H 批新增:讓「為什麼還沒補上」不再無聲。前六個是既有語意,不改字面;以下四個是新的。
-  /** 請求超過 narrateTiming.timeoutMs 仍未回 → AbortController 中止(管線不會卡死) */
-  | "timeout"
-  /** 上一輪升級還在跑,這次請求排隊等它(正常狀態,不是壞掉) */
-  | "busy"
-  /** 分頁在背景 → 暫停升級,回到前景自動恢復(正常狀態,不是壞掉) */
-  | "hidden"
-  /** 今日升級次數(DEFERRED_DAILY_BUDGET)已用完,換遊戲日自動重置 */
-  | "budget"
-  /** context 組裝或日記產生時丟例外 → 降級成安全模板(不該發生,出現代表存檔有髒資料) */
-  | "internal";
+export type AiFallbackReason = "catchup" | "quota" | "offline" | "no_key" | "forbidden" | "parse" | "upstream" | "unknown";
 
 export interface NarrateResult {
   diary: string;
@@ -142,12 +130,6 @@ export interface NarrateResult {
   fallbackReason?: AiFallbackReason;
 }
 
-/** fetch 逾時(毫秒)。worker 端本身有重試與 70 秒 quota sleep,設太短會誤殺正常的慢回應;
- *  但**一定要有**——沒有逾時的 fetch 只要一次不回來,resumeDeferredDiaries() 的
- *  deferredRun 就永遠不 settle,之後每次升級都在第一行 return,升級管線永久卡死到重新整理。
- *  測試可覆寫。 */
-export const narrateTiming = { timeoutMs: 45_000 };
-
 function classifyFailure(status: number, error?: string): AiFallbackReason {
   if (error === "quota" || status === 429) return "quota";
   if (error === "no_key" || status === 503) return "no_key";
@@ -160,21 +142,11 @@ function classifyFailure(status: number, error?: string): AiFallbackReason {
 export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
   let quota = false;
   let fallbackReason: AiFallbackReason = "unknown";
-  // 🔴 H 批:逾時守門。AbortController 缺席(極舊環境)時退回無逾時的舊行為,不讓 narrate 直接壞掉。
-  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  let timedOut = false;
-  const timer = controller
-    ? setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, narrateTiming.timeoutMs)
-    : null;
   try {
     const res = await fetch("/api/narrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(ctx),
-      ...(controller ? { signal: controller.signal } : {}),
     });
     if (!res.ok) {
       try {
@@ -209,12 +181,8 @@ export async function narrateDay(ctx: NarrateCtx): Promise<NarrateResult> {
         };
     }
   } catch {
-    // abort 也會走到這裡:逾時與真正的離線要分開標,玩家才知道是「AI 太慢」還是「沒網路」
-    fallbackReason = timedOut ? "timeout" : "offline";
-    /* 離線 / 無後端 / 逾時 → 走 fallback */
-  } finally {
-    // 成功、失敗、逾時三條路都會經過:計時器一定清掉,promise 一定 settle
-    if (timer !== null) clearTimeout(timer);
+    fallbackReason = "offline";
+    /* 離線 / 無後端 → 走 fallback */
   }
   return { diary: templateDiary(ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null, ai: false, quota, fallbackReason };
 }

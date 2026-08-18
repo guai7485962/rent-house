@@ -24,12 +24,6 @@ import { MS_PER_GAME_HOUR, REAL_MS_PER_GAME_HOUR } from "./clock";
 
 export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
 
-/**
- * 劇情前提閘(零 RNG)。刻意**不放進 `canInteract()`**——那個函式是「安全硬規則的唯一入口」
- * (分級/成年/私密),gate 只是劇情前提;混進去會稀釋語意,也會逼簽章從 Tenant 改成 TenantRuntime。
- */
-export type InteractionGate = "one_broke" | "one_unwell" | "both_adult" | "deep_couple";
-
 export interface InteractionDef {
   id: string;
   /** 關係門檻:close=好友以上(50+)、crush=曖昧(75+ 且互有好感)、couple=情侶、cohabit=同居中的情侶 */
@@ -61,18 +55,6 @@ export interface InteractionDef {
   standAt?: string[];
   /** 演出改在指定共用設施發生(如一起洗澡在「bathroom」淋浴間,而不是在自己房間) */
   venue?: string;
-  /**
-   * 抽籤池(見 pickInteraction):省略/"core" = 既有主池,抽法逐位元照舊;
-   * "extra" = 次池,只在主池落空後用「重算的條件亂數」抽,**對主池零稀釋**。
-   * 次池的 def 一律 tier "close" 以上(見 pickInteraction 的擲骰次數說明)。
-   */
-  pool?: "core" | "extra";
-  /** 劇情前提閘(零 RNG);與 canInteract() 的安全硬規則分開,見 gateOk() */
-  gate?: InteractionGate;
-  /** 借錢:錢多的一方轉這個金額給錢少的一方。只動 rt.wallet,不動 state.money(房東帳) */
-  lend?: number;
-  /** 對 wellbeing 較低的一方額外加的數值(零 RNG) */
-  needyBonus?: Partial<Tenant["stats"]>;
   effects: { rel: number; mood?: number; stress?: number; energy?: number };
 }
 
@@ -321,7 +303,7 @@ export const INTERACTIONS: InteractionDef[] = [
     id: "game_night",
     tier: "close",
     location: "lounge",
-    pose: "game_pair", // 並肩坐 + 手把 + 螢幕閃光(G-2:純渲染,座位/擲骰一位元未動)
+    pose: "sit",
     seatOn: ["shared_sofa"],
     timeWindow: [19, 23],
     requiresFurniture: ["lounge_console", "lounge_tv"],
@@ -418,7 +400,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "close",
     location: "room",
     requiresFurniture: ["tv_console"],
-    pose: "game_pair", // 同上:房內雙人連線也看得到手把與螢幕光
+    pose: "sit",
     timeWindow: [18, 23],
     weight: 2,
     cooldownHours: 12,
@@ -430,256 +412,6 @@ export const INTERACTIONS: InteractionDef[] = [
       "把手把丟給{o}救場,結果兩個人輪流失誤,笑到根本沒法專心。",
     ],
     effects: { rel: 3, mood: 4, stress: -3 },
-  },
-  // ——————————————————————————————————————————————————————————————————————
-  // 次池(pool: "extra"):日常/友誼目錄。**對主池零稀釋**——只在主池落空後,用已經花掉的
-  // chanceRoll 換算出的條件亂數抽(見 pickInteraction),所以既有 18 種的觸發率一位元未動。
-  //
-  // 🔴 文案硬性限制:performInteraction() 對**兩人推同一句**、只把 {o} 換成對方名字,
-  //    所以一律用「和{o}…」「{o}和自己…」的對稱視角。借錢/照顧這種天生不對稱的內容,
-  //    改用「兩人一起面對」的語氣繞開,絕不可寫「我借給{o}」這種單向句
-  //    (content-variety-test.ts 有單向措辭黑名單掃描把關)。
-  // ——————————————————————————————————————————————————————————————————————
-  {
-    id: "lend_money",
-    tier: "close",
-    location: "lounge",
-    pool: "extra",
-    gate: "one_broke",
-    pose: "stand_face",
-    timeWindow: [18, 23],
-    weight: 2,
-    cooldownHours: 72,
-    chance: 0.35,
-    fx: "cash",
-    lend: 2000, // 只在兩人錢包之間搬,房東帳(state.money)一毛不動
-    lines: [
-      "和{o}在走廊上把這個月的發薪日算了一遍,最後決定先撐過這幾天。",
-      "和{o}在交誼廳算了一晚的帳,金額喬定之後兩個人都鬆了一口氣。",
-      "和{o}之間多了一筆沒有寫借據的帳,誰也沒把話說得太重。",
-      "和{o}把錢的事攤開來講,尷尬歸尷尬,講完反而輕鬆了。",
-    ],
-    effects: { rel: 3, mood: 2, stress: -4 },
-  },
-  {
-    id: "sick_care",
-    tier: "close",
-    location: "room",
-    pool: "extra",
-    gate: "one_unwell",
-    pose: "sit",
-    timeWindow: [8, 22],
-    weight: 3,
-    cooldownHours: 36,
-    chance: 0.4,
-    fx: "care",
-    needyBonus: { wellbeing: 3 },
-    lines: [
-      "熱粥擺在桌上,{o}和自己誰也沒提要不要去看醫生。",
-      "和{o}窩在房裡沒說幾句話,只是把熱水一杯一杯續上。",
-      "{o}和自己一整個下午都很安靜,毯子被拉好了兩次。",
-      "和{o}守著同一盞小燈,等身體慢慢好起來。",
-    ],
-    effects: { rel: 4, mood: 4, stress: -5 },
-  },
-  {
-    id: "catch_up_show",
-    tier: "close",
-    location: "room",
-    pool: "extra",
-    pose: "game_pair",
-    timeWindow: [19, 23],
-    requiresFurniture: ["tv_console"],
-    weight: 2,
-    cooldownHours: 20,
-    chance: 0.3,
-    fx: "chat",
-    lines: [
-      "和{o}補了三集進度,吐槽的時間比劇情還長。",
-      "和{o}約好一起追,結果誰先看完誰就被威脅不准暴雷。",
-      "和{o}為了猜結局吵了半集,片尾一出來兩個人都猜錯。",
-      "和{o}說好只看一集,回過神時已經播到下一季的預告。",
-    ],
-    effects: { rel: 2, mood: 4, stress: -3 },
-  },
-  {
-    id: "bathroom_rush",
-    tier: "close",
-    location: "lounge",
-    // ⚠️ venue 的家具**不能**用 requiresFurniture 反查(furnitureSetOf 只查 p.room === roomId,
-    //    而這裡的 roomId 是 "lounge")。這一條純靠時段 + 冷卻,不設 requiresFurniture。
-    venue: "bathroom",
-    pool: "extra",
-    pose: "stand_face",
-    timeWindow: [7, 9],
-    weight: 2,
-    cooldownHours: 30,
-    chance: 0.25,
-    fx: "anger",
-    // 🔴 目錄裡唯一的負向互動,rel 只扣 1,而且**完全不碰 social.ts 的張力(tension)通道**——
-    //    冷戰/打架的門檻剛在 F 系列調過(50/22),餵養它會直接破壞那組平衡。
-    //    這條硬規則由 interaction-pool-test.ts 的原始碼掃描把關。
-    lines: [
-      "和{o}在浴室門口對峙了三秒,最後猜拳決定誰先進去。",
-      "和{o}同時伸手去推浴室的門,兩個人都愣了一下才鬆手。",
-      "早上的浴室只有一間,和{o}互相催了幾句,誰也沒真的生氣。",
-      "和{o}在門口排隊排到快遲到,出門前還是互相補了一句抱歉。",
-    ],
-    effects: { rel: -1, mood: -2, stress: 3 },
-  },
-  {
-    id: "laundry_wait",
-    tier: "close",
-    location: "lounge",
-    venue: "laundry", // 同上:洗衣機 footprint 1×1,standAt 也用不了(需長度 ≥2)
-    pool: "extra",
-    pose: "stand_face",
-    timeWindow: [10, 20],
-    weight: 2,
-    cooldownHours: 24,
-    chance: 0.25,
-    fx: "chat",
-    lines: [
-      "和{o}一起盯著洗衣機轉,話題從天氣扯到晚餐。",
-      "和{o}在洗衣間等脫水,無聊到開始比誰的襪子比較多。",
-      "洗衣機的聲音很吵,和{o}還是有一搭沒一搭地聊完了一輪。",
-      "和{o}在洗衣間排隊,等待的三十分鐘意外地不難熬。",
-    ],
-    effects: { rel: 2, mood: 2, stress: -2 },
-  },
-  {
-    id: "bar_cheers",
-    tier: "close",
-    location: "lounge",
-    pool: "extra",
-    gate: "both_adult", // 小酌一律成年雙檢;文案也不寫醉態
-    pose: "cheers",
-    standAt: ["bar_counter"],
-    requiresFurniture: ["bar_counter"],
-    timeWindow: [20, 23],
-    weight: 2,
-    cooldownHours: 20,
-    chance: 0.3,
-    fx: "chat",
-    lines: [
-      "和{o}在吧台各倒了一杯,碰了下杯就沒再說話。",
-      "和{o}在吧台前碰杯,聊的都是一些不重要但很舒服的事。",
-      "和{o}靠著吧台各喝各的,偶爾舉杯示意一下就夠了。",
-      "和{o}在吧台聊到燈都調暗了,杯子裡還剩最後一口。",
-    ],
-    effects: { rel: 3, mood: 5, stress: -5 },
-  },
-  // ——————————————————————————————————————————————————————————————————————
-  // 次池(pool: "extra"):戀愛線目錄(G 批第 4 批)。同樣**對主池零稀釋**。
-  //
-  // 🔴 安全:這四種**全年齡、看得見、不遮蔽**,一律不得標成 `adult: true`
-  //    (那會被 content-variety-test.ts 強制成 hidden 遮蔽姿勢,動畫就沒了)。
-  //    安全性由 `tier` 本身保證:couple/cohabit/crush 都要 `rel.romantic`(或 canRomance),
-  //    而 `rel.romantic` 只可能經 `social.canBecomeCouple()` 建立 —— 那裡已含
-  //    **成年 + 取向雙檢**(canRomance)。未成年與取向不合的兩人永遠走不到這裡。
-  //    四種**一律另掛成年雙檢當雙保險**,擋舊存檔可能殘留的非法 romantic:三種直接掛
-  //    `gate: "both_adult"`;`anniversary` 的 gate 欄位已被 `deep_couple` 佔用(gate 是單值),
-  //    改由 `gateOk()` 的 `deep_couple` 分支自己蘊含成年雙檢 —— 見那裡的說明。
-  //    這四種**一律不進 AI 白名單**(worker/index.ts 維持 12 個),由 worker-test.ts 釘死。
-  //
-  // 文案同樣是對稱視角(兩人共用同一句,只換 {o});單向措辭黑名單掃描一體適用。
-  // ——————————————————————————————————————————————————————————————————————
-  {
-    id: "first_kiss",
-    tier: "couple",
-    location: "room",
-    pool: "extra",
-    gate: "both_adult", // 雙保險:tier 已保證 romantic ⇒ 已過 canRomance 的成年 + 取向雙檢
-    privacy: true,
-    pose: "kiss",
-    timeWindow: [18, 23],
-    weight: 4,
-    // 8760h ≈ 一遊戲年 ⇒ 實質「每對一生一次」。
-    // ⚠️ 已知行為(中控已接受):舊存檔裡在一起很久的情侶沒有「已接吻過」的紀錄,
-    //    載入後會補演一次初吻,當成一次性的懷舊時刻。
-    cooldownHours: 8760,
-    chance: 0.5,
-    fx: "hearts",
-    memoryLabel: "[第一次的吻]",
-    memoryHint: "那個吻之後,兩個人之間就再也回不去朋友了。",
-    lines: [
-      "和{o}在房裡忽然安靜下來,然後就那樣有了第一個吻。",
-      "燈還亮著,和{o}的第一個吻比想像中還要輕。",
-      "和{o}靠得太近,誰先湊過去的,事後兩個人都想不起來。",
-      "和{o}的第一個吻結束後,誰也沒說話,只是笑了很久。",
-    ],
-    effects: { rel: 5, mood: 12, stress: -8 },
-  },
-  {
-    id: "morning_kiss",
-    tier: "cohabit",
-    location: "room",
-    pool: "extra",
-    gate: "both_adult", // 雙保險:tier 已保證 romantic ⇒ 已過 canRomance 的成年 + 取向雙檢
-    pose: "kiss",
-    seatOn: ["double_bed", "canopy_bed"],
-    requiresFurniture: ["double_bed", "canopy_bed"],
-    timeWindow: [7, 9],
-    weight: 2,
-    cooldownHours: 20,
-    chance: 0.3,
-    fx: "hearts",
-    lines: [
-      "鬧鐘響了兩次,和{o}在被窩裡先換了一個吻。",
-      "和{o}在床邊道早安,順手補上一個很短的吻。",
-      "和{o}都還沒完全醒,親了一下就又躺回去賴五分鐘。",
-      "和{o}在晨光裡對看一眼,今天就從這個吻開始。",
-    ],
-    effects: { rel: 2, mood: 5, stress: -3 },
-  },
-  {
-    id: "anniversary",
-    tier: "couple",
-    location: "room",
-    pool: "extra",
-    // 「老夫老妻」用既有欄位當代理,**不新增 couple_since**(零存檔成本;真要記,
-    // encounter / events / AI 三處都得寫入,漏一處就失準)。
-    // gate 是單值,這裡給不了第二個 `both_adult`;成年雙檢由 `deep_couple` 自己蘊含(見 gateOk)。
-    gate: "deep_couple",
-    pose: "confess",
-    timeWindow: [19, 22],
-    weight: 2,
-    cooldownHours: 240,
-    chance: 0.35,
-    fx: "confetti",
-    memoryLabel: "[在一起這麼久了]",
-    memoryHint: "紀念日那晚翻出的舊照片,兩個人記得的細節還不一樣。",
-    lines: [
-      "和{o}翻起以前的照片,才發現已經在一起這麼久了。",
-      "和{o}窩在房裡數日子,數到後來乾脆改成慶祝。",
-      "沒有蛋糕也沒有花,和{o}就這樣把紀念日過完了,意外地滿足。",
-      "和{o}把當初住進這棟樓的事又講了一遍,兩個人都記錯了不同的細節。",
-    ],
-    effects: { rel: 3, mood: 8, stress: -6 },
-  },
-  {
-    id: "stargaze_window",
-    tier: "crush",
-    location: "room",
-    pool: "extra",
-    // 雙保險:crush 已要求 romantic 或(rel ≥ 75 + 互有取向);這道閘只擋舊存檔殘留的非法 romantic
-    gate: "both_adult",
-    // 中控拍板改成「房內窗邊」:頂樓沒有 roomRect,只有 groupScene 的隱藏舞台,演不出來。
-    pose: "stand_face",
-    timeWindow: [22, 1], // 跨夜
-    weight: 2,
-    cooldownHours: 30,
-    chance: 0.3,
-    fx: "hearts",
-    memoryLabel: "[那晚的夜景]",
-    memoryHint: "那晚窗邊的燈火,後來想起來都還很清楚。",
-    lines: [
-      "和{o}把房裡的燈關掉,趴在窗邊看外面的夜景。",
-      "和{o}擠在同一扇窗前找星星,城市太亮,結果一顆也沒找到。",
-      "夜深了,和{o}靠著窗框沒說幾句話,只是一起看著樓下的燈。",
-      "和{o}在窗邊待到很晚,話題從星座扯到小時候的事。",
-    ],
-    effects: { rel: 3, mood: 5, stress: -4 },
   },
 ];
 
@@ -778,117 +510,6 @@ export function canInteract(def: InteractionDef, a: Tenant, b: Tenant, ctx: Inte
   return true;
 }
 
-/**
- * 劇情前提閘(純函式、零 RNG、不看時間)。與 `canInteract()` 分開:那裡是安全硬規則的唯一入口,
- * 這裡只回答「這段劇情此刻說得通嗎」。gate 只會讓 def **更難**觸發,不會放寬任何安全條件。
- */
-export function gateOk(gate: InteractionGate | undefined, A: TenantRuntime, B: TenantRuntime): boolean {
-  if (!gate) return true;
-  switch (gate) {
-    case "one_broke": {
-      const wa = A.wallet ?? 0;
-      const wb = B.wallet ?? 0;
-      return Math.min(wa, wb) < 3000 && Math.max(wa, wb) >= 8000;
-    }
-    case "one_unwell":
-      return Math.min(A.tenant.stats.wellbeing, B.tenant.stats.wellbeing) < 40;
-    case "both_adult":
-      return (A.tenant.isAdult ?? true) && (B.tenant.isAdult ?? true);
-    case "deep_couple": {
-      // 這道閘只服務戀愛線,所以自己蘊含 `both_adult` 的成年雙檢當雙保險(gate 是單值,
-      // anniversary 掛不了第二個);正常存檔的 romantic 都經 canBecomeCouple() ⇒ 本來就成年。
-      if (!((A.tenant.isAdult ?? true) && (B.tenant.isAdult ?? true))) return false;
-      const rel = getRel(A.tenant.id, B.tenant.id);
-      return !!rel?.romantic && (rel.value >= 95 || rel.cohabitOffered);
-    }
-  }
-}
-
-/** 依 `pool` 欄位把候選拆成主池/次池;filter 保序 ⇒ 無 extra 時 core 與原 eligible 逐位元相同。 */
-export function splitPools(eligible: InteractionDef[]): { core: InteractionDef[]; extra: InteractionDef[] } {
-  const core: InteractionDef[] = [];
-  const extra: InteractionDef[] = [];
-  for (const d of eligible) ((d.pool ?? "core") === "core" ? core : extra).push(d);
-  return { core, extra };
-}
-
-/**
- * 兩階段抽籤:**主池零稀釋**地擴充互動目錄。
- *
- * 直接把新 def 丟進同一個 weight 抽籤會稀釋既有內容(實測 game_night 12.5% → 3.1%)。
- * 這裡改成:
- *   1. 主池(core)非空 ⇒ 與擴充前**逐位元相同**:同一顆 weight 骰、同一個分母、同一個累減順序,
- *      再擲同一顆 chanceRoll,命中語意仍是 `<=`。
- *   2. 主池落空(chanceRoll > def.chance)時**不再擲骰**,而是把已經花掉的 chanceRoll 換算成
- *      `u = (chanceRoll − c) / (1 − c)` 去抽次池。合法性:在「chanceRoll > c」的條件下
- *      chanceRoll 在 [c,1) 均勻,故 u 在 [0,1) 均勻。**零新 Math.random()**。
- *   3. 次池以「預算」累加 `(w_i/W)·c_i`,故 extra 的絕對觸發率 = `(1−P_core)·(w_i/W)·c_i`,
- *      調高任一 extra 只會吃掉次池自己的預算,**永不反噬主池**。
- *
- * 唯一的擲骰次數變動:`core 空 + extra 非空` 會多擲 1 顆(現行 0 顆)。因此所有 extra def
- * 一律 tier "close" 以上——**絕不可為此新增更低的 tier**,否則全樓每組低關係配對都會多擲一顆。
- *
- * 串門配對(visitPair)兩池都維持「必定成局」:次池改用純權重(把 c_i 視為 1)。
- */
-export function pickInteraction(eligible: InteractionDef[], visitPair: boolean): InteractionDef | null {
-  const { core, extra } = splitPools(eligible);
-  let u: number;
-  if (core.length > 0) {
-    // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
-    const total = core.reduce((s, d) => s + d.weight, 0);
-    let roll = Math.random() * total;
-    let def = core[0];
-    for (const d of core) {
-      roll -= d.weight;
-      if (roll <= 0) {
-        def = d;
-        break;
-      }
-    }
-    // 保留原本的擲骰次數以穩定其他系統的亂數序列;串門配對不受失敗結果影響。
-    const chanceRoll = Math.random();
-    if (visitPair || chanceRoll <= def.chance) return def;
-    if (extra.length === 0) return null; // 與擴充前完全相同:主池落空就收工
-    u = def.chance >= 1 ? 0 : (chanceRoll - def.chance) / (1 - def.chance);
-  } else {
-    if (extra.length === 0) return null; // 與擴充前完全相同:0 顆骰
-    u = Math.random();
-  }
-  const wSum = extra.reduce((s, d) => s + d.weight, 0);
-  if (wSum <= 0) return null;
-  let acc = 0;
-  for (const d of extra) {
-    acc += (d.weight / wSum) * (visitPair ? 1 : d.chance);
-    if (u < acc) return d;
-  }
-  return null;
-}
-
-/**
- * 借錢(零 RNG):錢多的一方轉 `min(amount, 錢多者錢包)` 給錢少的一方。
- * **只動 rt.wallet,不動 state.money**——房東帳與租客錢包是兩本帳(見 economy.ts)。回傳實際轉出金額。
- */
-export function applyLend(A: TenantRuntime, B: TenantRuntime, amount: number): number {
-  if (!(amount > 0)) return 0;
-  const rich = (A.wallet ?? 0) >= (B.wallet ?? 0) ? A : B;
-  const poor = rich === A ? B : A;
-  const moved = Math.min(amount, Math.max(0, rich.wallet ?? 0));
-  if (moved <= 0) return 0;
-  rich.wallet = (rich.wallet ?? 0) - moved;
-  poor.wallet = (poor.wallet ?? 0) + moved;
-  return moved;
-}
-
-/** needyBonus(零 RNG):對兩人中 wellbeing 較低的一方額外加值,一律夾在 0~100。 */
-export function applyNeedyBonus(A: TenantRuntime, B: TenantRuntime, bonus: Partial<Tenant["stats"]>) {
-  const needy = A.tenant.stats.wellbeing <= B.tenant.stats.wellbeing ? A : B;
-  const s = needy.tenant.stats;
-  for (const k of ["mood", "stress", "wellbeing", "energy", "affinity"] as const) {
-    const d = bonus[k];
-    if (d) s[k] = clamp(s[k] + d, 0, 100);
-  }
-}
-
 const cdKey = (aId: string, bId: string, defId: string) => `${pairKey(aId, bId)}|${defId}`;
 
 function offCooldown(aId: string, bId: string, def: InteractionDef): boolean {
@@ -908,7 +529,6 @@ export function canStartRoomVisit(visitor: TenantRuntime, host: TenantRuntime, r
   return INTERACTIONS.some(
     (def) => def.location === "room" && def.tier === "close"
       && canInteract(def, visitor.tenant, host.tenant, ctx)
-      && gateOk(def.gate, visitor, host)
       && offCooldown(visitor.tenant.id, host.tenant.id, def),
   );
 }
@@ -946,13 +566,24 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
         (def) => def.location === location
           && (!visitPair || def.tier === "close")
           && canInteract(def, A.tenant, B.tenant, ctx)
-          && gateOk(def.gate, A, B)
           && hasStandingStage(def, roomId)
           && offCooldown(A.tenant.id, B.tenant.id, def),
       );
-      // 主池/次池兩階段抽籤(見 pickInteraction):主池的擲骰次數與順序與擴充前逐位元相同
-      const def = pickInteraction(eligible, visitPair);
-      if (!def) continue;
+      if (eligible.length === 0) continue;
+      // 權重挑一個,再擲觸發機率(不是每小時都黏在一起)
+      const total = eligible.reduce((s, d) => s + d.weight, 0);
+      let roll = Math.random() * total;
+      let def = eligible[0];
+      for (const d of eligible) {
+        roll -= d.weight;
+        if (roll <= 0) {
+          def = d;
+          break;
+        }
+      }
+      // 保留原本的擲骰次數以穩定其他系統的亂數序列；串門配對不受失敗結果影響。
+      const chanceRoll = Math.random();
+      if (!visitPair && chanceRoll > def.chance) continue;
 
       performInteraction(A, B, def, roomId);
       triggered.add(pairKey(A.tenant.id, B.tenant.id));
@@ -970,9 +601,6 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
   pushSocialLog(B, marker + line.replace(/\{o\}/g, A.tenant.name), "notable");
   applyPairEffect(A, def.effects);
   applyPairEffect(B, def.effects);
-  // 零 RNG 的附加效果:借錢只在兩人錢包之間搬(房東帳不動)、needyBonus 補給狀況較差的一方
-  if (def.lend) applyLend(A, B, def.lend);
-  if (def.needyBonus) applyNeedyBonus(A, B, def.needyBonus);
   if (def.effects.rel) adjustRelationship(A.tenant.id, B.tenant.id, def.effects.rel);
   if (def.memoryLabel) {
     pushMemory(A.tenant, def.memoryLabel, def.memoryHint ?? "", "ai_event");
@@ -1013,7 +641,6 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
 
   const roomId = roomOfTenant(aId) ?? roomOfTenant(bId);
   if (!hasStandingStage(def, roomId)) return false;
-  if (!gateOk(def.gate, A, B)) return false; // 劇情前提 AI 也不可越權(如 both_adult)
   const thirdPresent = Object.values(state.runtimes).some(
     (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );

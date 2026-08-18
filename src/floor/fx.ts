@@ -5,13 +5,7 @@
  * 純資料模組,繪製在 floorScene.drawFx。
  */
 
-/**
- * ⚠️ 每加一個 kind 就必須在 `floorScene.drawFx()` 補一段分支,否則會出現「掛了演出卻什麼都沒畫」
- * 的靜默失敗。`scripts/fx-test.ts` 有掃碼斷言把關(union 每個成員都要在 drawFx 出現)。
- */
-export type FxKind =
-  | "hearts" | "heartbreak" | "anger" | "chat" | "steam" | "lights" | "fight" | "slam"
-  | "cash" | "care" | "confetti";
+export type FxKind = "hearts" | "heartbreak" | "anger" | "chat" | "steam" | "lights" | "fight" | "slam";
 
 export interface Fx {
   kind: FxKind;

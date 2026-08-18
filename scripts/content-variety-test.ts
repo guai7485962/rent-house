@@ -87,23 +87,6 @@ check("外出句庫:目的地池不含佔位符、也不帶 emoji 前綴", outin
 check("每種雙人互動至少 3 條文案", INTERACTIONS.every((def) => def.lines.length >= 3));
 check("雙人文案都能代換對方名字", INTERACTIONS.every((def) => def.lines.every((line) => !line.replace(/\{o\}/g, "鄰居").includes("{o}"))));
 check("成人互動仍全數使用 hidden 遮蔽姿勢", INTERACTIONS.filter((def) => def.adult).every((def) => def.pose === "hidden"));
-// 次池(pool:"extra")是後加的日常/友誼目錄,句數不得比主池寒酸。
-const extraDefs = INTERACTIONS.filter((def) => def.pool === "extra");
-check("次池互動至少 3 條文案", extraDefs.length > 0 && extraDefs.every((def) => def.lines.length >= 3),
-  extraDefs.map((d) => `${d.id}=${d.lines.length}`).join(","));
-const interactionLines = INTERACTIONS.flatMap((def) => def.lines);
-const interactionDupes = interactionLines.filter((line, i) => interactionLines.indexOf(line) !== i);
-check("雙人文案:跨 def 也沒有重複句", interactionDupes.length === 0, JSON.stringify([...new Set(interactionDupes)]));
-
-/**
- * 🔴 單向措辭黑名單:`performInteraction()` 對**兩人推同一句**、只把 `{o}` 換成對方名字。
- * 所以「我借錢給{o}」這種單向句在對方的日誌上語意會整個反過來(變成對方借給自己)。
- * 文案一律要寫成「和{o}…」「{o}和自己…」的對稱/中性視角。
- */
-const ONE_WAY_PHRASES = ["我借給", "我借錢給", "我照顧", "替他", "替她", "幫他付", "幫她付", "我付了"];
-const oneWayHits = INTERACTIONS.flatMap((def) =>
-  def.lines.filter((line) => ONE_WAY_PHRASES.some((p) => line.includes(p))).map((line) => `${def.id}: ${line}`));
-check("雙人文案沒有單向措辭(兩人共用同一句,單向句會語意反轉)", oneWayHits.length === 0, JSON.stringify(oneWayHits));
 
 console.log(`\n內容統計:觀察 ${observationCount} 句 / 每日 ${DAILY_TEMPLATES.length + DAILY_STRESS_TEMPLATES.length + DAILY_LOW_MOOD_TEMPLATES.length + DAILY_HAPPY_TEMPLATES.length + DAILY_SOCIAL_TEMPLATES.length} 句 / 雙人 ${INTERACTIONS.reduce((sum, def) => sum + def.lines.length, 0)} 句 / 夢境 ${dreamCount} 句 / 外出 ${outingCount} 句`);
 console.log(`=== 結果:${pass} 通過 / ${fail} 失敗 ===`);

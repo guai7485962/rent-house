@@ -162,25 +162,6 @@ check("日記 prompt 含 observation 指引與夾值提示", systemPrompt.includ
 check("prompt 含自發行為 behavior 指引(含新 4 種、排除 adopt_cat)",
   systemPrompt.includes('"behavior"') && systemPrompt.includes("comfort_seek") && systemPrompt.includes("sulk") && systemPrompt.includes("adopt_cat 不在此清單"));
 check("事件 directive 白名單已擴充至 10 個", systemPrompt.includes("id 只能從這 10 個選"));
-// AI 提議互動白名單(G 批第 3 批:9 → 12)。lend_money / bathroom_rush 語意上不該由 AI 隨口提議
-// (前者真的搬錢、後者是負向互動),四種戀愛線也一律不進;這裡把整個集合釘死。
-const AI_INTERACTION_WHITELIST = [
-  "cuddle_tv", "midnight_snack", "lazy_morning", "cook_dinner", "deep_talk",
-  "game_night", "share_delivery", "share_earbuds", "feed_snack",
-  "catch_up_show", "laundry_wait", "bar_cheers",
-];
-const AI_INTERACTION_FORBIDDEN = [
-  "lend_money", "bathroom_rush", "night_intimacy", "bath_together", "loveseat_after_dark", "canopy_private_night",
-  // G 批第 4 批的戀愛線 4 種:全年齡且看得見,但親密的節奏應由遊戲內建規則自己走,不讓 AI 隨口提議
-  "first_kiss", "morning_kiss", "anniversary", "stargaze_window",
-];
-check("AI 互動白名單已擴充至 12 個", systemPrompt.includes("id 只能從這 12 個選"));
-check("AI 互動白名單:12 個 id 全部列在 prompt 裡",
-  AI_INTERACTION_WHITELIST.every((id) => systemPrompt.includes(`${id}(`)),
-  AI_INTERACTION_WHITELIST.filter((id) => !systemPrompt.includes(`${id}(`)).join(","));
-check("AI 互動白名單:借錢/負向/🔞 一律不在清單內",
-  AI_INTERACTION_FORBIDDEN.every((id) => !systemPrompt.includes(id)),
-  AI_INTERACTION_FORBIDDEN.filter((id) => systemPrompt.includes(id)).join(","));
 check("prompt 含 arc tone 指引(enum 三值 + 收束語意)", systemPrompt.includes('"tone"') && systemPrompt.includes("如釋重負") && systemPrompt.includes('"up|down|tense(選填)"'));
 check("prompt 含成長標籤白名單與僅限收束防線", systemPrompt.includes('"growthTag"') && systemPrompt.includes("more_confident") && systemPrompt.includes("只有收束(done=true)時"));
 check("prompt 會列出既有永久成長避免重複", buildPrompt(clampCtx({ name: "a", growthTags: ["[更有自信]"] })).includes("永久成長:[更有自信]"));

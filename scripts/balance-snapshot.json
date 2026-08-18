@@ -6,12 +6,12 @@
   "tenantCount": 2,
   "tenants": {
     "tenant_chen_engineer": {
-      "mood": 94.3,
-      "stress": 38.1,
+      "mood": 95,
+      "stress": 38.6,
       "energy": 82,
       "wellbeing": 72.4,
       "affinity": 55,
-      "satisfaction": 72.9,
+      "satisfaction": 73,
       "rent": 14000,
       "wallet": 23819,
       "arrears": 0,
@@ -20,9 +20,9 @@
     },
     "tenant_lin_asmr": {
       "mood": 100,
-      "stress": 6.6,
+      "stress": 6.8,
       "energy": 96,
-      "wellbeing": 79.7,
+      "wellbeing": 79.6,
       "affinity": 79.6,
       "satisfaction": 90.4,
       "rent": 16500,

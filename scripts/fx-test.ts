@@ -4,9 +4,6 @@
  * - encounter 回傳 tone(friendly/romantic/conflict)
  * - narrate quota 旗標型別接通(NarrateResult.quota)
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { spawnFx, activeFx, clearFx } from "../src/floor/fx";
 import { encounter, relationships, pairKey } from "../src/sim/social";
 import type { Tenant } from "../src/types";
@@ -29,23 +26,6 @@ for (let i = 0; i < 60; i++) spawnFx("chat", i, 0, 5000);
 check("上限 40 不爆量", activeFx().length <= 40);
 clearFx();
 check("clearFx 清空", activeFx().length === 0);
-
-// --- 掃碼:FxKind union 的每個成員都要在 drawFx 有分支 ---
-// 「加了 kind 卻忘了畫」是靜默失敗:spawnFx 照樣進佇列、畫面上什麼都沒有,
-// 而且沒有任何型別錯誤會提醒你。這條掃碼是唯一的把關。
-{
-  const here = dirname(fileURLToPath(import.meta.url));
-  const readSrc = (rel: string) => readFileSync(join(here, "..", "src", rel), "utf8");
-  const fxSrc = readSrc("floor/fx.ts");
-  const sceneSrc = readSrc("floor/floorScene.ts");
-  const unionStart = fxSrc.indexOf("export type FxKind");
-  const union = fxSrc.slice(unionStart, fxSrc.indexOf(";", unionStart));
-  const kinds = [...union.matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
-  const drawBody = sceneSrc.slice(sceneSrc.indexOf("function drawFx"), sceneSrc.indexOf("/** 隨狀態的環境演出"));
-  const missing = kinds.filter((k) => !drawBody.includes(`f.kind === "${k}"`));
-  check(`FxKind union 掃得到全部成員(目前 ${kinds.length} 種)`, kinds.length >= 11);
-  check(`每個 FxKind 在 drawFx 都有分支(漏接=${missing.join(",") || "無"})`, missing.length === 0);
-}
 
 // --- encounter tone ---
 const t = (id: string, tags: string[] = []): Tenant =>

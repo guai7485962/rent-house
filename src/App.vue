@@ -59,7 +59,6 @@ import {
   stopGame,
   resume,
   resumeDeferredDiaries,
-  narrateStatus,
   placeAt,
   cancelPlacing,
   sellFurnitureAt,
@@ -182,12 +181,6 @@ onMounted(() => {
    */
   (window as unknown as { rentDebug: Record<string, unknown> }).rentDebug = {
     fastForward: (hours: number) => startFastForward(hours),
-    /**
-     * AI 日記診斷出口(H 批)。**唯讀**:不打請求、不改狀態、不寫存檔。
-     * 「當日觀察都沒有 AI 說明」時在 console 打 `rentDebug.narrateStatus()`,
-     * 一眼看出是額度用盡、分頁在背景、今日升級次數用完,還是升級迴圈卡住(deferredRunStale)。
-     */
-    narrateStatus: () => narrateStatus(),
   };
   // 分頁重新可見時補進度(掛機回來)
   document.addEventListener("visibilitychange", onVisible);

@@ -19,7 +19,6 @@ import {
   type CharView,
 } from "../pixel/sprites";
 import type { Agent } from "./agents";
-import type { PairPose } from "./pairSession";
 import {
   guestDrawX,
   guestDrawY,
@@ -151,11 +150,6 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     for (const [a, b] of petPairs) {
       items.push({ y: Math.min(a.py, b.py) + 2, draw: () => drawPetPairGround(ctx, a, b, frame) });
     }
-    // 租客的雙人共享圖層(G-2):地面道具和寵物那層一樣依 y 混排,動作特效層在下方統一畫。
-    const tenantPairs = activeTenantPairs(agents ?? []);
-    for (const [a, b] of tenantPairs) {
-      items.push({ y: Math.min(a.py, b.py) + 2, draw: () => drawTenantPairGround(ctx, a, b, frame) });
-    }
     for (const a of agents ?? []) {
       if (a.hidden) continue;
       items.push({ y: a.py, draw: () => { drawAgent(ctx, a, frame); drawAmbient(ctx, a, frame); } });
@@ -173,7 +167,6 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
     for (const guest of guests ?? []) drawGuestBubble(ctx, guest, frame);
     for (const worker of staff ?? []) drawStaffBubble(ctx, worker);
     for (const [a, b] of petPairs) drawPetPairAction(ctx, a, b, frame);
-    for (const [a, b] of tenantPairs) drawTenantPairAction(ctx, a, b, frame);
     for (const f of activeFx()) drawFx(ctx, f, frame); // 互動/事件演出(愛心/怒氣/心碎/對話)
   } else {
     // 離線預覽:靜態站立
@@ -677,31 +670,6 @@ function drawFx(ctx: Ctx, f: Fx, frame: number) {
     pxPat(ctx, PAT_BANG, x + 13, y - 13, "#ffcf4a");
     rect(ctx, x + 1 - shake, y - 8, 2, 1, "#ff8a5b");
     rect(ctx, x, y - 5, 3, 1, "#ff8a5b");
-  } else if (f.kind === "cash") {
-    // 借錢:兩張飄落的鈔票(一張高一張低,各自隨 bob 錯開,讀起來是「錢在兩人之間換手」)
-    rect(ctx, x + 1, y - 11 - bob, 6, 4, "#3f6b4a");
-    rect(ctx, x + 2, y - 10 - bob, 4, 2, "#8fd0a0");
-    rect(ctx, x + 8, y - 6 - ((frame + 1) % 3), 6, 4, "#3f6b4a");
-    rect(ctx, x + 9, y - 5 - ((frame + 1) % 3), 4, 2, "#8fd0a0");
-  } else if (f.kind === "care") {
-    // 生病照顧:冒熱氣的馬克杯 + 一個小十字(不畫病症,只畫「有人在照顧」)
-    rect(ctx, x + 3, y - 8, 6, 6, "#2f2a38");
-    rect(ctx, x + 4, y - 7, 4, 4, "#f6efe6");
-    rect(ctx, x + 4, y - 7, 4, 1, "#c8763f");
-    rect(ctx, x + 9, y - 6, 1, 2, "#f6efe6"); // 把手
-    rect(ctx, x + 5, y - 12 - bob, 1, 2, "#dfe9ee");
-    rect(ctx, x + 12, y - 9 - bob, 1, 3, "#ff9aa2"); // 小十字
-    rect(ctx, x + 11, y - 8 - bob, 3, 1, "#ff9aa2");
-  } else if (f.kind === "confetti") {
-    // 彩紙:6 片放射狀 + 一顆星,色相隨 frame % 3 輪替 ⇒ 每一拍都在動
-    const hues = ["#ff6b9d", "#ffd23e", "#7fd7ff"];
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2 + bob * 0.4;
-      const cx = x + 8 + Math.round(Math.cos(ang) * (5 + bob * 2));
-      const cy = y - 8 + Math.round(Math.sin(ang) * (4 + bob));
-      rect(ctx, cx, cy, 2, 2, hues[(i + frame) % 3]);
-    }
-    pxPat(ctx, PAT_STAR, x + 6, y - 15 - bob, frame % 2 ? "#fff3b0" : "#ffd23e");
   }
 }
 
@@ -774,18 +742,6 @@ function drawAmbient(ctx: Ctx, a: Agent, frame: number) {
  */
 const lastFacingDir = new Map<string, CharView>();
 
-/**
- * 姿勢分類表(G-2)。三張表刻意分開:一個姿勢可以「坐著」又「有雙人共享圖層」
- * (`game_pair` 就同時在 SEATED 與 PAIR_DRAW 裡),硬塞成一張列舉會失真。
- *
- * - `SEATED_POSES`:走 `drawAgent` 的坐姿分支(14 行 sprite、椅子、提早 return)
- * - `SIDE_FACING_POSES`:側面相對 ⇒ `agentView` 回 side_r/side_l
- * - `PAIR_DRAW_POSES`:有雙人共享圖層(地面道具 + 動作特效兩層,比照寵物的 pairAction)
- */
-const SEATED_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["sit", "game_pair"]);
-const SIDE_FACING_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["stand_face", "scuffle", "kiss", "confess", "cheers"]);
-const PAIR_DRAW_POSES: ReadonlySet<PairPose> = new Set<PairPose>(["game_pair", "kiss", "confess", "cheers"]);
-
 /** 測試/離線渲染重置用:清掉跨幀朝向記憶,讓渲染回到「零記憶」的決定性狀態。 */
 export function clearFacingMemory() {
   lastFacingDir.clear();
@@ -799,9 +755,6 @@ export function clearFacingMemory() {
  * 3. 靜止 → 沿用最後已知方向(上面那張 Map)
  * 4. 都沒有 → 正面
  *
- * 規則 1 的成員在 `SIDE_FACING_POSES`:除了原本的 stand_face / scuffle,G-2 的
- * kiss / confess / cheers 也是「側面相對」的雙人動作,共用同一組四方向站姿圖(零新美術)。
- *
  * 例外:`cook_pair` 一律回正面 —— 既有的 `drawCookingCue()` 是照**正面基底**畫的
  * 抬手 + 鍋鏟像素,套在背面/側面骨架上會錯位。並肩料理本來就面向流理台,維持正面不失真。
  *
@@ -810,7 +763,7 @@ export function clearFacingMemory() {
  */
 export function agentView(a: Agent): CharView {
   if (a.pose === "cook_pair") return "front";
-  if (!a.moving && !!a.pose && SIDE_FACING_POSES.has(a.pose) && a.facing !== 0) {
+  if (!a.moving && (a.pose === "stand_face" || a.pose === "scuffle") && a.facing !== 0) {
     const dir: CharView = a.facing > 0 ? "side_r" : "side_l";
     lastFacingDir.set(a.tenantId, dir);
     return dir;
@@ -855,23 +808,20 @@ function drawAgent(ctx: Ctx, a: Agent, frame: number) {
     drawLying(ctx, a, pal);
     return;
   }
-  const seated = !a.moving && !!a.pose && SEATED_POSES.has(a.pose);
-  if (seated && a.seatBack) drawActivityChair(ctx, a);
+  if (!a.moving && a.pose === "sit" && a.seatBack) drawActivityChair(ctx, a);
   // 咖啡廳裡沒有任何座位時,走位會退到大廳空地板格(`routine.cafeSeatTarget()` 的虛擬
   // placement),腳下沒有家具 ⇒ 直接畫坐姿會像坐在地上。補一張咖啡廳椅當地板座位。
   // 條件刻意收到 `at_cafe`:其它 visualState 的坐姿一律走原路徑,一位元不變。
-  else if (seated && a.vs === "at_cafe" && !furnitureAt(a.c, a.r)) {
+  else if (!a.moving && a.pose === "sit" && a.vs === "at_cafe" && !furnitureAt(a.c, a.r)) {
     drawCafeChair(ctx, a.px, a.py);
   }
   groundShadow(ctx, a.px + TILE / 2, a.py + TILE - 1, 11);
-  if (seated) {
+  if (!a.moving && a.pose === "sit") {
     // 坐姿 14 行(站姿 19):底邊貼齊同一地面線 → 頭自然比站著矮一截
     drawSprite(ctx, CHAR_SIT, a.px + 3, a.py + 1, pal);
     const apSit = getCustomAppearance(a.tenantId);
     if (apSit) drawAppearanceOverlay(ctx, apSit, a.px + 3, a.py + 1);
     if (a.vs === "at_cafe") drawCoffeeCup(ctx, a.px + 8, a.py + 8);
-    // 並肩打電動:手上多一台小手把(螢幕閃光在雙人動作層,見 drawTenantPairAction)
-    if (a.pose === "game_pair") drawControllerCue(ctx, a);
     return;
   }
   // 四方向:先推導視角,再查該視角的站/走 A/走 B
@@ -884,9 +834,8 @@ function drawAgent(ctx: Ctx, a: Agent, frame: number) {
     sprite = step ? set.walkA : set.walkB;
     yoff = step ? 0 : -1; // 走路上下彈跳
   }
-  // 打架:朝對方擠一格再退開(非血腥,只有位移);親吻/告白:朝對方前傾(見 pairLeanOffset)。
-  // 兩者互斥(姿勢不同),相加只是省一個分支。
-  const xoff = scufflePushOffset(a, frame) + pairLeanOffset(a, frame);
+  // 打架:朝對方擠一格再退開(見 scufflePushOffset;非血腥,只有位移)
+  const xoff = scufflePushOffset(a, frame);
   drawSprite(ctx, sprite, a.px + 3 + xoff, a.py - 4 + yoff, pal);
   // 部件化外觀(§9-1):在基底 sprite 上疊髮型/配件(依視角換圖層;朝左會鏡射)
   const ap = getCustomAppearance(a.tenantId);
@@ -912,40 +861,6 @@ function drawCoffeeCup(ctx: Ctx, x: number, y: number) {
   rect(ctx, x + 1, y + 1, 3, 1, "#6b4433"); // 咖啡液面
   rect(ctx, x + 4, y + 2, 1, 1, "#f6efe6"); // 把手
   rect(ctx, x, y + 5, 5, 1, "#cdbfae"); // 杯墊
-}
-
-/**
- * 雙人動作的前傾位移(G-2)。**刻意獨立於打架的推擠函式**:兩者的節奏、適用姿勢與
- * 設計意圖都不同,合成一個函式會讓任何一邊的調整波及另一邊。
- *
- * - `kiss`:兩人同拍一起靠近 1px、下一拍回位 ⇒ 讀起來是「湊近」而不是抽搐
- * - `confess`:同一拍**一方遞出、一方微退**。主客之分用 `tenantId` 字典序決定
- *   (租客沒有寵物那種 `pairLeader` 欄位),完全決定性、不擲骰、不看繪製順序
- * - 其餘所有姿勢(含 `cheers`、`game_pair` 與既有 8 種)一律回 0
- *
- * 純函式 + export 是為了讓 `scripts/pair-pose-test.ts` 能直接斷言相位,不必架整張畫布。
- */
-export function pairLeanOffset(a: Agent, frame: number): number {
-  if (a.moving || a.facing === 0) return 0;
-  const beat = Math.floor(Math.max(0, frame)) % 2 === 0;
-  if (a.pose === "kiss") return beat ? a.facing : 0;
-  if (a.pose === "confess") {
-    const lead = !a.pairWith || a.tenantId.localeCompare(a.pairWith) < 0;
-    return beat ? (lead ? a.facing : -a.facing) : 0;
-  }
-  return 0;
-}
-
-/** 並肩打電動:雙手捧著一台小手把(比照 drawCoffeeCup 疊在腹前的做法,零新美術)。 */
-function drawControllerCue(ctx: Ctx, a: Agent) {
-  const x = a.px + 5;
-  const y = a.py + 7;
-  rect(ctx, x, y, 7, 4, "#2f2a38"); // 描邊:深色衣服上也切得出輪廓
-  rect(ctx, x + 1, y + 1, 5, 2, "#6f7686"); // 機身
-  rect(ctx, x + 2, y + 1, 1, 1, "#cfd6ff"); // 十字鍵
-  rect(ctx, x + 4, y + 2, 1, 1, "#ff8f9c"); // 按鈕
-  rect(ctx, x - 1, y + 1, 1, 3, "#4a4550"); // 左握把
-  rect(ctx, x + 7, y + 1, 1, 3, "#4a4550"); // 右握把
 }
 
 /** 並肩料理:抬起靠流理台的一隻手，搭配鍋鏟像素，和一般站姿區分。 */
@@ -1425,100 +1340,6 @@ function drawPetPairAction(ctx: Ctx, a: PetAgent, b: PetAgent, frame: number) {
     rect(ctx, Math.floor(bx), Math.floor(by) - 7 + bob, 1, 4, "#9fc4da");
     rect(ctx, Math.floor(bx), Math.floor(by) - 2, 1, 1, "#9fc4da");
     for (let x = cx - 4; x <= cx + 4; x += 4) rect(ctx, x, cy + 3, 2, 1, "#817b91");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 租客的雙人共享圖層(G-2)。管線整個抄寵物那套(`activePetPairs` / `drawPetPairGround`
-// / `drawPetPairAction`):**地面道具層**先鋪(和人一起依 y 混排,會被走到前面的人蓋住),
-// **動作特效層**最後畫(蓋在所有人之上,但仍在 `drawFx` 之前)。
-//
-// 唯一的差別是 leader 怎麼決定:寵物有 `pairLeader` 欄位,租客沒有 ⇒ 改用 `tenantId`
-// **字典序**。字典序是全序且與傳入順序無關 ⇒ 同一對永遠只畫一次、且永遠是同一個人當
-// 座標基準,離線單幀渲染與線上逐幀完全一致。
-//
-// 🔴 這兩個函式跑在 rAF 迴圈裡,**丟例外 = 動畫永久停格**。因此對
-// 「找不到對手」「對手已 hidden」「兩人姿勢不一致(session 被別的演出接手了)」
-// 一律靜默跳過,絕不假設 `pairWith` 指得到人。
-// ---------------------------------------------------------------------------
-
-/** 這一幀有雙人共享圖層要畫的租客配對;每對只回傳一次(字典序在前者當 leader/座標基準)。 */
-export function activeTenantPairs(agents: readonly Agent[]): [Agent, Agent][] {
-  const byId = new Map(agents.map((a) => [a.tenantId, a]));
-  const pairs: [Agent, Agent][] = [];
-  for (const leader of agents) {
-    if (leader.hidden || !leader.pose || !PAIR_DRAW_POSES.has(leader.pose) || !leader.pairWith) continue;
-    if (leader.tenantId.localeCompare(leader.pairWith) >= 0) continue; // 只讓字典序在前的那一位登記
-    const partner = byId.get(leader.pairWith);
-    if (!partner || partner.hidden || partner.pose !== leader.pose) continue;
-    pairs.push([leader, partner]);
-  }
-  return pairs;
-}
-
-/** 地面道具層:讓兩個人看起來在同一幕裡(共用一台主機、共用一個托盤),而不是各站各的。 */
-function drawTenantPairGround(ctx: Ctx, a: Agent, b: Agent, frame: number) {
-  if (!a.pose || a.pose !== b.pose) return;
-  const cx = Math.floor((Math.min(a.px, b.px) + Math.max(a.px, b.px) + TILE) / 2);
-  const cy = Math.floor((Math.min(a.py, b.py) + Math.max(a.py, b.py) + TILE) / 2);
-  if (a.pose === "game_pair") {
-    // 兩人腳邊的主機 + 一條連向螢幕的線 + 分著吃的零食碗
-    rect(ctx, cx - 5, cy + 6, 10, 4, "#2b2f3a");
-    rect(ctx, cx - 4, cy + 7, 8, 1, "#4b5566");
-    rect(ctx, cx - 2, cy + 7, 1, 1, frame % 2 ? "#7fd7ff" : "#3f6b8a"); // 電源燈
-    rect(ctx, cx - 9, cy + 9, 6, 1, "#3a3d46"); // 訊號線
-    rect(ctx, cx + 6, cy + 7, 5, 3, "#c8a06a");
-    rect(ctx, cx + 7, cy + 8, 3, 1, "#f0d9a8");
-  } else if (a.pose === "cheers") {
-    // 吧台上的托盤與一瓶共飲的酒(不寫醉態,只是兩個杯子的來源)
-    rect(ctx, cx - 6, cy + 6, 12, 3, "#6b4a33");
-    rect(ctx, cx - 5, cy + 7, 10, 1, "#a5794f");
-    rect(ctx, cx - 1, cy + 2, 3, 5, "#3f5f4a");
-    rect(ctx, cx, cy + 1, 1, 2, "#8fb79c");
-  } else if (a.pose === "confess") {
-    // 已經落地的第一批彩紙(空中那批在動作層),暗示「剛剛爆開過」
-    for (let i = -6; i <= 6; i += 4) rect(ctx, cx + i, cy + 7 + (i % 3 === 0 ? 1 : 0), 2, 1, i < 0 ? "#ff9ec2" : "#ffd23e");
-  }
-}
-
-/** 動作特效層:每個姿勢一段無文字的像素演出,蓋在人物之上。 */
-function drawTenantPairAction(ctx: Ctx, a: Agent, b: Agent, frame: number) {
-  if (!a.pose || a.pose !== b.pose) return;
-  const ax = a.px + TILE / 2, ay = a.py;
-  const bx = b.px + TILE / 2, by = b.py;
-  const cx = Math.floor((ax + bx) / 2), cy = Math.floor((ay + by) / 2);
-  const bob = frame % 2;
-  if (a.pose === "game_pair") {
-    // 螢幕閃光打在兩人臉上:冷光橫掃過臉部高度,亮度/位置逐拍變化 ⇒ 畫面真的在動
-    ctx.save();
-    ctx.globalAlpha = frame % 2 ? 0.34 : 0.16;
-    ctx.fillStyle = frame % 3 === 1 ? "#bcdcff" : "#7fb4ff";
-    for (const who of [a, b]) ctx.fillRect(who.px + 3 + bob, who.py + 1, 10, 5);
-    ctx.restore();
-    // 螢幕方向的兩道光線,隨拍長短交替
-    rect(ctx, cx - 6 - bob * 2, cy - 4, 3, 1, "#cfe6ff");
-    rect(ctx, cx + 4 + bob * 2, cy - 6, 3, 1, "#cfe6ff");
-  } else if (a.pose === "kiss") {
-    // 兩人頭頂之間一顆脈動的愛心(大小隨拍變),不蓋住臉
-    pxPat(ctx, PAT_HEART, cx - 2, cy - 9 - bob, bob ? "#ff6b9d" : "#ff9ec2");
-    rect(ctx, cx - 4, cy - 11 - bob, 1, 1, "#ffd0e0");
-    rect(ctx, cx + 4, cy - 12 + bob, 1, 1, "#ffd0e0");
-  } else if (a.pose === "confess") {
-    // 中間爆開的放射狀彩紙 + 一顆星:告白那一幕(became_couple 里程碑就掛這個)
-    const hues = ["#ff6b9d", "#ffd23e", "#7fd7ff"];
-    for (let i = 0; i < 6; i++) {
-      const ang = (i / 6) * Math.PI * 2 + bob * 0.5;
-      rect(ctx, cx + Math.round(Math.cos(ang) * (6 + bob * 2)), cy - 6 + Math.round(Math.sin(ang) * (5 + bob)), 2, 2, hues[(i + frame) % 3]);
-    }
-    pxPat(ctx, PAT_STAR, cx - 2, cy - 14 - bob, frame % 2 ? "#fff3b0" : "#ffd23e");
-  } else if (a.pose === "cheers") {
-    // 各自抬起的杯子 + 中間碰杯的「叮」星芒
-    for (const who of [a, b]) {
-      const hx = who.px + (who.facing > 0 ? 10 : 4);
-      rect(ctx, hx, who.py - 2 - bob, 3, 3, "#2f2a38");
-      rect(ctx, hx + 1, who.py - 1 - bob, 1, 1, "#f2d38a");
-    }
-    pxPat(ctx, PAT_STAR, cx - 2, cy - 5 - bob, frame % 2 ? "#fff3b0" : "#ffd23e");
   }
 }
 

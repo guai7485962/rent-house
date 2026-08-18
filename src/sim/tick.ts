@@ -90,7 +90,7 @@ import {
 import { weeklyReportPass } from "./weeklyReport";
 import { growthBaselineDelta } from "./growth";
 import { spawnFx, pruneFxByGame } from "../floor/fx";
-import { startPairSession, type PairPose } from "../floor/pairSession";
+import { startPairSession } from "../floor/pairSession";
 import { canStartRoomVisit, interactionsPass } from "./interactions";
 import { save } from "./persistence";
 import { getDef } from "../furniture/catalog";
@@ -1237,11 +1237,9 @@ export function hourlyTick(live = false) {
   for (const rt of Object.values(state.runtimes)) {
     // 行為指令到期 → 恢復往常 + 留一筆日誌(在暫停檢查之前,免得掛著過期指令)
     if (rt.directive && day > rt.directive.untilDay) {
-      // 舊存檔可能留著目錄裡已不存在的指令 id;查無就只清掉、不留日誌,
-      // 絕不能讓 undefined.endText 炸掉整個 hourlyTick(見下方 diaryPass 的同類註解)。
-      const def = DIRECTIVES[rt.directive.id] as (typeof DIRECTIVES)[keyof typeof DIRECTIVES] | undefined;
+      const def = DIRECTIVES[rt.directive.id];
       rt.directive = null;
-      if (def) pushSocialLog(rt, def.endText, "notable");
+      pushSocialLog(rt, def.endText, "notable");
     }
     if (rt.pendingEvent) {
       rt.inLounge = false;
@@ -1294,14 +1292,7 @@ export function hourlyTick(live = false) {
   dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
   petsPass(); // 寵物貓:換去處 + 闖房/搗蛋/大小便事件
   scheduledCommunityPass(); // 有時段的群體事件:到早晨／傍晚／夜間才結算並把參與者帶到場景
-  // 🔴 H 批:日記是唯一會碰外部服務與大量存檔欄位的 pass,而它就排在換日區塊
-  // (收租/AI 額度重置/心願/樓層事件鏈/save)的**正前方** —— 例外逃出去會讓整個遊戲靜止。
-  // produceDiaryFor() 內部已自保,這裡再包一層,連 ensureDiaryHours() 之類都兜住。
-  try {
-    diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
-  } catch (err) {
-    console.error("[tick] diaryPass 失敗,本小時略過日記,其餘結算照常", err);
-  }
+  diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     dirtyComplaintPass(day); // 整潔太低 → 抱怨髒亂(每 2 日一次,壓力小升)
@@ -1446,9 +1437,7 @@ export function socialPass(skip: Set<string> = new Set()) {
       const at = A.targetTile ?? B.targetTile;
       if (at) {
         // 里程碑/衝突是「一瞬間」的演出 → 短;聊天泡泡是「進行中」→ 持續到下一個動作
-        // G-2:「在一起了」不再只是一行通知 —— 掛 confess 姿勢 + 彩紙,玩家真的看到告白那一幕。
-        // 「在一起」本身仍由 `encounter()` 判定(social.ts),這裡只換演出:零 RNG、零關係邏輯改動。
-        if (res.milestone === "became_couple") spawnFx("confetti", at.c, at.r, 15000);
+        if (res.milestone === "became_couple") spawnFx("hearts", at.c, at.r, 15000);
         else if (res.milestone === "broke_up") spawnFx("heartbreak", at.c, at.r, 15000);
         else if (res.tone === "conflict") spawnFx("anger", at.c, at.r, 10000);
         else if (res.tone === "romantic") spawnFx("hearts", at.c, at.r, 10000);
@@ -1456,11 +1445,7 @@ export function socialPass(skip: Set<string> = new Set()) {
         // 姿勢(兩人在一起)預設持續到下一個動作(1 遊戲小時);快轉時 gameUntil 會收掉。
         // 本小時稍早打過架的人此時仍在 scuffle 演出中 ⇒ `startPairSession` 會擋掉這次覆蓋
         // (守衛在 pairSession.ts;相遇的數值後果照舊,只是不另外掛走位)。
-        const milestonePose: PairPose =
-          res.milestone === "became_couple" ? "confess"
-            : res.milestone === "broke_up" ? "apart"
-              : "stand_face";
-        startPairSession(A.tenant.id, B.tenant.id, at, milestonePose, state.gameMs);
+        startPairSession(A.tenant.id, B.tenant.id, at, "stand_face", state.gameMs);
       }
       // 每日上限只管自然口角／打架；分手、群體事件等劇情衝突不占額度，也不由此升級冷戰。
       if (res.naturalConflict) maybeFeudAfterConflict(A, B);

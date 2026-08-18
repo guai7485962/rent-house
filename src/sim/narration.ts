@@ -7,7 +7,6 @@
  */
 import {
   narrateDay,
-  narrateTiming,
   templateDiary,
   type AiFallbackReason,
   type NarrativeFocus,
@@ -56,14 +55,6 @@ export function setNarrateImplForTest(fn: typeof narrateImpl) {
   narrateImpl = fn;
 }
 
-/** 測試注入點:讓 buildNarrateCtx() 對指定租客丟例外。
- *  正式執行永遠是 null(零成本),存在的理由是 `narrate-resilience-test.ts` 要能證明
- *  「ctx 組裝爆炸不會炸穿 hourlyTick」—— 用髒資料模擬會連帶弄壞其他 pass,失去針對性。 */
-let ctxFaultForTest: ((rt: TenantRuntime) => void) | null = null;
-export function setCtxFaultForTest(fn: ((rt: TenantRuntime) => void) | null) {
-  ctxFaultForTest = fn;
-}
-
 interface DiaryJob {
   id: string;
   diaryId: string;
@@ -74,22 +65,10 @@ interface DiaryJob {
 const diaryQueue: DiaryJob[] = [];
 let diaryRun: Promise<void> | null = null;
 let deferredRun: Promise<void> | null = null;
-/** 每次啟動 drainDeferredDiaries() 都換一張票:被「放生」的舊 run 之後才 settle 時,
- *  它的 finally 不可以把新 run 的 deferredRun 清掉(否則同時兩輪在跑) */
-let deferredRunToken = 0;
-let deferredRunStartedAt = 0;
-/** deferredRun 掛超過這個時間仍未 settle → 判定卡死,允許重新起一輪。
- *  單輪最壞時間:2 篇 × (45s 逾時 + 70s 429 重試 + 45s 第二次逾時) + 90s 間隔 ≈ 5.5 分鐘,
- *  所以門檻設 8 分鐘,不會誤殺正常流程,又不會像過去那樣卡到重新整理為止。 */
-export const DEFERRED_RUN_STALE_MS = 8 * 60_000;
 const DEFERRED_DAILY_BUDGET = 6;
 let deferredBudget = DEFERRED_DAILY_BUDGET;
 let deferredBudgetDay = -1;
 let diarySerial = 0;
-/** 最近一次「升級沒有發生」的原因與時間(給 rentDebug.narrateStatus() 看,不入存檔) */
-let lastDeferredExit: { reason: AiFallbackReason | "stalled" | "done"; at: number } | null = null;
-/** 最近一次 ctx 組裝／日記產生的例外(給 rentDebug.narrateStatus() 看,不入存檔) */
-let lastNarrationError: { tenantId: string; message: string; at: number } | null = null;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,91 +91,24 @@ export function resetDiaryQuota() {
   deferredBudgetDay = gameDayIndex();
 }
 
-/** ctx 組裝爆掉時的最小可用 context:每一欄都是常數或帶預設的直接欄位,本身不可能再丟例外。
- *  templateDiary() 只需要 name/stats/relationships/events/weekday/weather 就能產出一句話。 */
-function safeNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
-  // 每一欄都自帶保險:安全 ctx 是「最後一道防線」,它自己再丟例外就前功盡棄了。
-  const pick = <T>(read: () => T, fallback: T): T => {
-    try {
-      const value = read();
-      return value === undefined || value === null ? fallback : value;
-    } catch {
-      return fallback;
-    }
-  };
-  return {
-    name: pick(() => rt.tenant.name, "租客"),
-    occupation: pick(() => rt.tenant.occupation, ""),
-    bio: pick(() => rt.tenant.bio, ""),
-    dayLabel,
-    coreTags: [],
-    memoryTags: [],
-    stats: {
-      mood: pick(() => rt.tenant.stats.mood, 50),
-      stress: pick(() => rt.tenant.stats.stress, 50),
-      affinity: pick(() => rt.tenant.stats.affinity, 50),
-      satisfaction: 50,
-    },
-    room: { noise: 0, soundproof: 0, treated: false, complaintRisk: false },
-    todayLog: [],
-    relationships: [],
-    events: [],
-    neighbors: [],
-    summary: "",
-    arc: null,
-    flags: [],
-    eventDue: false,
-  };
-}
-
-/** 為單一租客產生「這一天」的日記:live 進錯開佇列、否則模板同步落地。
- *
- *  🔴 H 批:整段包 try/catch。這個函式在 `diaryPass()` 裡被呼叫,而 `diaryPass()` 位於
- *  `hourlyTick()` 的倒數第二段 —— 任何例外炸出去都會讓它**後面**的 collectRent()／
- *  resetDiaryQuota()／wishPass()／floorChainPass()／save() 全部不執行,並且一路炸穿
- *  syncToNow() 與 setInterval,遊戲從此靜止。寧可寫出一篇模板日記,也不能讓例外逃出去。 */
+/** 為單一租客產生「這一天」的日記:live 進錯開佇列、否則模板同步落地 */
 function produceDiaryFor(rt: TenantRuntime, live: boolean): void {
-  const dayLabel = `第 ${gameDayIndex() + 1} 天(${weekdayLabel(state.gameMs)})`;
-  let job: DiaryJob;
-  let ctxFailed = false;
-  try {
-    job = {
-      id: rt.tenant.id,
-      diaryId: `diary_${rt.tenant.id}_${state.gameMs}_${++diarySerial}`,
-      gameMs: state.gameMs,
-      ctx: buildNarrateCtx(rt, dayLabel),
-      live,
-    };
-  } catch (err) {
-    ctxFailed = true;
-    recordNarrationError(rt, err, "buildNarrateCtx");
-    job = {
-      id: rt?.tenant?.id ?? "unknown",
-      diaryId: `diary_${rt?.tenant?.id ?? "unknown"}_${state.gameMs}_${++diarySerial}`,
-      gameMs: state.gameMs,
-      ctx: safeNarrateCtx(rt, dayLabel),
-      live: false, // 髒 ctx 不送 API:送出去也只會被 worker 打回來
-    };
+  const job: DiaryJob = {
+    id: rt.tenant.id,
+    diaryId: `diary_${rt.tenant.id}_${state.gameMs}_${++diarySerial}`,
+    gameMs: state.gameMs,
+    ctx: buildNarrateCtx(rt, `第 ${gameDayIndex() + 1} 天(${weekdayLabel(state.gameMs)})`),
+    live,
+  };
+  if (live) {
+    diaryQueue.push(job);
+    void processDiaryQueue();
+  } else {
+    applyDiaryResult(job, {
+      diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null,
+      ai: false, fallbackReason: "catchup",
+    });
   }
-  try {
-    if (job.live) {
-      diaryQueue.push(job);
-      void processDiaryQueue();
-    } else {
-      applyDiaryResult(job, {
-        diary: templateDiary(job.ctx), newMemory: null, event: null, summaryUpdate: null, arcUpdate: null,
-        ai: false, fallbackReason: ctxFailed ? "internal" : "catchup",
-      });
-    }
-  } catch (err) {
-    recordNarrationError(rt, err, "produceDiaryFor");
-  }
-}
-
-function recordNarrationError(rt: TenantRuntime | undefined, err: unknown, where: string) {
-  const message = `${where}: ${err instanceof Error ? err.message : String(err)}`;
-  lastNarrationError = { tenantId: rt?.tenant?.id ?? "unknown", message, at: Date.now() };
-  if (typeof console !== "undefined") console.error("[narration] 日記產生失敗,已降級成模板", message, err);
 }
 
 /** 每小時檢查:輪到誰的日記時段就生成(每人每日一篇;tick 每小時呼叫)。
@@ -338,41 +250,10 @@ function refreshDeferredBudget() {
   deferredBudget = DEFERRED_DAILY_BUDGET;
 }
 
-/**
- * 提早退出時,把原因寫進**佇列最前面那一篇**的 fallbackReason —— chip 才顯示得出
- * 「為什麼還沒補上」。過去這四條路徑全部靜默 break,玩家只看到永遠的「⏳ 待補 · 掛機補進度」。
- * 只有真的改變時才 save(),避免每 3 分鐘的定時重試把存檔寫爛。
- */
-function markDeferredExit(reason: AiFallbackReason | "stalled" | "done") {
-  lastDeferredExit = { reason, at: Date.now() };
-  if (reason === "stalled" || reason === "done") return;
-  const pending = state.pendingDiaries[0];
-  if (!pending) return;
-  const log = state.runtimes[pending.tenantId]?.log.find((entry) => entry.diaryId === pending.diaryId && entry.aiPending);
-  if (!log || log.aiFallbackReason === reason) return;
-  log.aiFallbackReason = reason;
-  save();
-}
-
 /** 回到前景或前景定時器觸發時，用少量、錯開的免費請求把內建日記原地升級。 */
 export function resumeDeferredDiaries(max = 2): Promise<void> {
   refreshDeferredBudget();
-  // 🔴 H 批:卡死自癒。narrateDay() 已有 45 秒逾時,理論上 deferredRun 一定 settle;
-  // 這裡是第二道保險 —— 只要有任何未來的路徑讓 promise 永不 settle,超過門檻就放生重來,
-  // 而不是像過去那樣每次都在第一行 return、一路卡到玩家重新整理。
-  if (deferredRun && Date.now() - deferredRunStartedAt > DEFERRED_RUN_STALE_MS) {
-    markDeferredExit("stalled");
-    deferredRun = null; // 舊 run 之後才 settle 也無妨:token 對不上,不會清掉新的
-  }
-  if (deferredRun) {
-    markDeferredExit("busy"); // 上一輪還在跑 → 這次請求排隊,不是壞掉
-    return deferredRun;
-  }
-  const token = ++deferredRunToken;
-  deferredRunStartedAt = Date.now();
-  deferredRun = drainDeferredDiaries(max).finally(() => {
-    if (deferredRunToken === token) deferredRun = null;
-  });
+  if (!deferredRun) deferredRun = drainDeferredDiaries(max).finally(() => (deferredRun = null));
   return deferredRun;
 }
 
@@ -384,14 +265,8 @@ async function drainDeferredDiaries(max: number) {
       const span = Math.max(0, diaryTiming.deferredMaxGapMs - diaryTiming.deferredMinGapMs);
       await sleep(diaryTiming.deferredMinGapMs + Math.floor(Math.random() * (span + 1)));
     }
-    if (typeof document !== "undefined" && document.hidden) {
-      markDeferredExit("hidden"); // 分頁在背景是正常狀態;onVisible 會再呼叫 resumeDeferredDiaries()
-      return;
-    }
-    if (quotaHold) {
-      markDeferredExit("quota");
-      return;
-    }
+    if (typeof document !== "undefined" && document.hidden) break;
+    if (quotaHold) break;
     const pending = state.pendingDiaries[0];
     const rt = state.runtimes[pending.tenantId];
     const log = rt?.log.find((entry) => entry.diaryId === pending.diaryId && entry.aiPending);
@@ -401,19 +276,16 @@ async function drainDeferredDiaries(max: number) {
     }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       log.aiFallbackReason = "offline";
-      lastDeferredExit = { reason: "offline", at: Date.now() };
       save();
-      return;
+      break;
     }
     attempted++;
     deferredBudget--;
     const result = await generateDiary({ id: pending.tenantId, diaryId: pending.diaryId, gameMs: pending.gameMs, ctx: pending.ctx, live: true });
     if (!result.ai) {
-      const reason = result.fallbackReason ?? (result.quota ? "quota" : "unknown");
-      log.aiFallbackReason = reason;
-      lastDeferredExit = { reason, at: Date.now() };
+      log.aiFallbackReason = result.fallbackReason ?? (result.quota ? "quota" : "unknown");
       save();
-      return;
+      break;
     }
     log.text = result.diary;
     log.ai = true;
@@ -424,93 +296,11 @@ async function drainDeferredDiaries(max: number) {
     applyDiaryEffects(rt, result, pending.gameMs, pending.ctx.todayLog);
     save();
   }
-  // 迴圈條件把關的第三個提早退出:今日升級次數用完(換遊戲日 refreshDeferredBudget() 自動恢復)。
-  if (state.pendingDiaries.length && deferredBudget <= 0) markDeferredExit("budget");
-  else if (!state.pendingDiaries.length) markDeferredExit("done");
 }
 
 export function resetDeferredDiaryBudgetForTest(value = 4) {
   deferredBudget = value;
   deferredBudgetDay = gameDayIndex();
-}
-
-/** 測試用:把升級管線的模組層狀態清回原點(卡死自癒/提早退出測試之間要互不汙染) */
-export function resetNarrationRuntimeForTest() {
-  deferredRun = null;
-  deferredRunStartedAt = 0;
-  deferredRunToken++;
-  lastDeferredExit = null;
-  lastNarrationError = null;
-  quotaHold = false;
-  quotaNoticeShown = false;
-}
-
-export interface NarrateStatus {
-  /** 當日額度已判定用盡(換遊戲日 resetDiaryQuota() 會清掉) */
-  quotaHold: boolean;
-  /** 今日還剩幾次「原地升級」請求 */
-  deferredBudget: number;
-  deferredBudgetDay: number;
-  gameDay: number;
-  /** 還在等 AI 補寫的日記篇數 */
-  pendingDiaries: number;
-  /** 佇列最前面那一篇(下一個會被升級的) */
-  frontPending: { tenantId: string; diaryId: string; reason: string | null } | null;
-  /** 即時佇列(live 日記)狀態 */
-  liveQueue: number;
-  liveRunPending: boolean;
-  /** 升級迴圈是否還在跑;卡死時 ageMs 會一路長大 */
-  deferredRunPending: boolean;
-  deferredRunAgeMs: number | null;
-  deferredRunStale: boolean;
-  /** 最近一次「沒補成」的原因與時間 */
-  lastExit: { reason: string; agoMs: number; at: string } | null;
-  /** 最近一次 ctx 組裝/日記產生的例外 */
-  lastError: { tenantId: string; message: string; agoMs: number; at: string } | null;
-  /** 目前生效的 fetch 逾時 */
-  fetchTimeoutMs: number;
-  staleThresholdMs: number;
-}
-
-/**
- * 🔴 H 批:玩家/開發者可用的診斷出口(`rentDebug.narrateStatus()`)。
- * **唯讀** —— 不打任何請求、不改任何狀態、不寫存檔。專門回答「AI 日記到底卡在哪」。
- */
-export function narrateStatus(): NarrateStatus {
-  const now = Date.now();
-  const front = state.pendingDiaries[0];
-  const frontLog = front
-    ? state.runtimes[front.tenantId]?.log.find((entry) => entry.diaryId === front.diaryId)
-    : undefined;
-  const age = deferredRun ? now - deferredRunStartedAt : null;
-  return {
-    quotaHold,
-    deferredBudget,
-    deferredBudgetDay,
-    gameDay: gameDayIndex(),
-    pendingDiaries: state.pendingDiaries.length,
-    frontPending: front
-      ? { tenantId: front.tenantId, diaryId: front.diaryId, reason: frontLog?.aiFallbackReason ?? null }
-      : null,
-    liveQueue: diaryQueue.length,
-    liveRunPending: diaryRun !== null,
-    deferredRunPending: deferredRun !== null,
-    deferredRunAgeMs: age,
-    deferredRunStale: age !== null && age > DEFERRED_RUN_STALE_MS,
-    lastExit: lastDeferredExit
-      ? { reason: lastDeferredExit.reason, agoMs: now - lastDeferredExit.at, at: new Date(lastDeferredExit.at).toISOString() }
-      : null,
-    lastError: lastNarrationError
-      ? {
-          tenantId: lastNarrationError.tenantId,
-          message: lastNarrationError.message,
-          agoMs: now - lastNarrationError.at,
-          at: new Date(lastNarrationError.at).toISOString(),
-        }
-      : null,
-    fetchTimeoutMs: narrateTiming.timeoutMs,
-    staleThresholdMs: DEFERRED_RUN_STALE_MS,
-  };
 }
 
 /** 雙人弧成立門檻:至少是朋友(關係值 35)或情侶,故事線才可能自然涉及兩人 */
@@ -684,7 +474,6 @@ export function buildCafeNarrateCtx(): NarrateCafeCtx | null {
 /** tone 脈衝:查寫死的 ARC_TONE_PULSE 表,AI 只能選方向不能自訂數值 */
 /** 從 runtime 組出當天的敘事 context */
 export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx {
-  ctxFaultForTest?.(rt);
   const dayAgo = state.gameMs - 24 * 3600 * 1000;
   // 上一篇「當日觀察」不能再當成今天的原始素材，否則 AI 會摘要自己的摘要，
   // 把同一措辭逐日放大。其餘片段先做近似去重，只保留最近八個不同畫面。
@@ -776,13 +565,7 @@ export function buildNarrateCtx(rt: TenantRuntime, dayLabel: string): NarrateCtx
     coreTags: rt.tenant.coreTags.map((t) => t.label),
     memoryTags: rt.tenant.memoryTags.map((t) => t.label),
     tagDetails,
-    // 🔴 H 批:安全查表。舊存檔可能帶著目錄裡已不存在的 growth tag id ——
-    // 直接 GROWTH_TAGS[id].label 會丟 TypeError,一路炸穿 diaryPass → hourlyTick,
-    // 讓同一個 tick 後面的收租/額度重置/心願/樓層事件鏈與 save() 全部不執行。
-    growthTags: (rt.tenant.growthTags ?? []).flatMap((id) => {
-      const label: string | undefined = GROWTH_TAGS[id]?.label;
-      return label ? [label] : [];
-    }),
+    growthTags: (rt.tenant.growthTags ?? []).map((id) => GROWTH_TAGS[id].label),
     stats: { mood: rt.tenant.stats.mood, stress: rt.tenant.stats.stress, affinity: rt.tenant.stats.affinity, satisfaction: Math.round(rt.satisfaction) },
     room: {
       noise: acoustics.noise,

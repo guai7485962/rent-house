@@ -8,9 +8,12 @@ const IMPORTANCE_ICON = { minor: "·", notable: "◆", major: "★" } as const;
 const PROVIDER_LABEL: Record<string, string> = {
   "gemini-flash": "Gemini Flash", "gemini-flash-lite": "Gemini Lite", "workers-ai-qwen": "Workers Qwen", "workers-ai-llama": "Workers Llama", claude: "Claude",
 };
+// ⚠️ 這張表必須與 FeedPanel.vue / LogFeed.vue 兩處完全一致(同一份文案,兩個入口都會顯示)。
+// 既有標籤文字有測試在斷言,不得更動;H 批只新增下面五個。
 const FALLBACK_LABEL: Record<string, string> = {
   catchup: "掛機補進度", quota: "免費額度已滿", offline: "目前離線", no_key: "未設定服務", forbidden: "連線驗證失敗",
   parse: "AI 格式異常", upstream: "AI 暫時無回應", unknown: "稍後再試",
+  timeout: "AI 回應逾時", busy: "AI 補寫排隊中", hidden: "分頁在背景", budget: "今日補寫已滿", internal: "資料異常",
 };
 const providerLabel = (provider?: string) => provider ? PROVIDER_LABEL[provider] ?? "AI" : "AI";
 const fallbackLabel = (reason?: string) => reason ? FALLBACK_LABEL[reason] ?? "稍後再試" : "內建";

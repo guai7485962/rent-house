@@ -16,20 +16,21 @@
 
 ## 現在狀態(2026-08-20)
 
-- **正在把 08-18 回退掉的 G/H 六批逐批重新套用到 `main`**(未 push,中控逐批部署驗證)。
-  進度:**G-1 ✅ / G-2 ✅ / G-3 ✅ / G-4 ✅ / G-5 ✅ / H ⬜**
+- **08-18 被回退的 G/H 六批已全部原樣重新套用到 `main`**(`f141c77`～HEAD,**未 push**,
+  由中控逐批部署驗證)。程式碼零改寫,六批各自一個 commit、訊息註明原 hash
 - **白畫面根因已定案、已由 I 批(`2689311`)修好,與這六批的程式碼無關**:每次部署刪掉上一版雜湊
   資產 + iOS standalone 抓著快取的 `index.html` ⇒ 舊 HTML 去要已被刪的 JS ⇒ 404 ⇒ 白畫面(修法見
   `docs/系統總覽.md` 地雷紀錄,線上 header 已驗證)。兩個除錯代理各自都**無法重現**這六批的任何例外
 - **G-1** 不稀釋的主池/次池抽籤:主池非空時與擴充前**逐位元相同**、零新 RNG ⇒ 既有 18 種觸發率變 **0.000%**
 - **G-2** 租客雙人繪製管線(純渲染、零模擬改動、零新 def):4 pose + 3 fx,`became_couple` 改告白演出
-- **G-3** 日常/友誼互動 6 種(**18 → 24**),全 `pool:"extra"`、AI 白名單 9 → 12;⚠️ **只有本批帶回它當初 `--update` 過的 balance 快照**
-- **G-4** 戀愛線互動 4 種(**24 → 28**),全 `pool:"extra"`、不進 AI 白名單;🔴 安全靠 `tier` 的 `rel.romantic`
-  (只可能經 `canBecomeCouple()` 建立,已含成年 + 取向雙檢),`first_kiss` 另掛 `gate:"both_adult"` 雙保險
-- **G-5** 成年雙檢一致化(縱深防禦):`morning_kiss`／`stargaze_window` 補 `gate:"both_adult"`,
-  `anniversary` 因 `gate` 已被 `deep_couple` 佔用,改讓 `gateOk()` 的 `deep_couple` 分支自己先檢 `isAdult`
-- 驗證(每批都跑):`npm test` **111/111**、typecheck(app + worker)、build、
-  `balance-test` **一致**、`npm run smoke:save` **49/0**;`SAVE_VERSION` 仍 10
+- **G-3** 日常/友誼互動 6 種(**18 → 24**);⚠️ **只有這批帶回它當初 `--update` 過的 balance 快照**
+- **G-4 / G-5** 戀愛線互動 4 種(**24 → 28**),全 `pool:"extra"`、不進 AI 白名單;🔴 安全靠 `tier` 的
+  `rel.romantic`(只可能經 `canBecomeCouple()` 建立,已含成年 + 取向雙檢),四種再一致掛 `both_adult` 雙保險
+- **H 批** AI 日記卡死修復:`narrateDay()` fetch 45s 逾時 + `deferredRun` 8 分鐘 stale watchdog +
+  四個靜默退出改留標籤 + `safeNarrateCtx()` 降級 + `rentDebug.narrateStatus()` 唯讀診斷。
+  ⚠️ `tick.ts` 指令到期那處**保留 `05d8ff7` 的 `directiveDef()`**(涵蓋四處呼叫點),丟掉 H 批的重複修法
+- 驗證(**每批都獨立跑完才提交**):`npm test` 110→111→111→111→111→**112**、typecheck(app +
+  worker)、build、`balance-test` **六批全部快照一致**、**`npm run smoke:save` 六批全部 49/0**;`SAVE_VERSION` 仍 10
 
 ## 近期已部署基線
 
@@ -42,13 +43,12 @@
 
 ## 下一步
 
-- **實玩觀察(併成同一輪,跑十幾個遊戲日)**:**F 批打架**觀感(門檻 50/22、並肩率 90.6%);
-  用**舊存檔**開局(雇 4 人以上且吧台仍是開張贈品那座 ⇒ 吃到 A 批產能 nerf 104→78,確認
-  「加寬吧台」提示夠明顯);同輪看常客升格節奏、劇情弧多樣性、C 批聚會頻率
-  (`CAFE_GATHER_CHANCE` 單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份咖啡廳
-  背景,若 AI 天天寫它,降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
-- 🔴 **先推 I 批 + `05d8ff7` 驗證線上白畫面修復**(部署後在手機上把 App 滑掉重開,確認
-  header 已變成 `no-store`),再逐批重推 G/H 批;**一次只推一批**,線上驗證通過才推下一批
+- **實玩觀察(併成同一輪,跑十幾個遊戲日)**:**F 批打架**觀感(50/22、並肩率 90.6%)+ **G 批新增的
+  10 種互動與雙人動畫**;用**舊存檔**開局(雇 4 人以上且吧台仍是贈品那座 ⇒ 吃到 A 批產能 nerf
+  104→78);同輪看常客升格節奏、劇情弧多樣性、C 批聚會頻率(`CAFE_GATHER_CHANCE` 單一常數好調),
+  以及 **D 批會不會「蓋台」**——降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
+- 🔴 **逐批 push G/H 六批並驗證線上**:一次只推一批,部署後在手機上把 App 滑掉重開確認正常,
+  過了才推下一批(白畫面修復的 `no-store` header 已隨 I 批上線驗證通過)
 - 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
   要先把 `baselines()` 抽出共用模組解掉循環 import
 

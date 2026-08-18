@@ -1292,7 +1292,14 @@ export function hourlyTick(live = false) {
   dramaPass(); // 戲劇事件:劈腿抓包/偷吃冰箱(§10-2 戲劇批)
   petsPass(); // 寵物貓:換去處 + 闖房/搗蛋/大小便事件
   scheduledCommunityPass(); // 有時段的群體事件:到早晨／傍晚／夜間才結算並把參與者帶到場景
-  diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
+  // 🔴 H 批:日記是唯一會碰外部服務與大量存檔欄位的 pass,而它就排在換日區塊
+  // (收租/AI 額度重置/心願/樓層事件鏈/save)的**正前方** —— 例外逃出去會讓整個遊戲靜止。
+  // produceDiaryFor() 內部已自保,這裡再包一層,連 ensureDiaryHours() 之類都兜住。
+  try {
+    diaryPass(hour, live); // 輪到日記時段的租客生成日記(每人錯開在一天不同時間,分散 AI 額度)
+  } catch (err) {
+    console.error("[tick] diaryPass 失敗,本小時略過日記,其餘結算照常", err);
+  }
   if (d.getDate() !== prevDay) {
     pruneStaleMemories(); // 記憶與現況矛盾 → 淡出(例:心情很好卻掛著[情緒低落])
     dirtyComplaintPass(day); // 整潔太低 → 抱怨髒亂(每 2 日一次,壓力小升)

@@ -15,7 +15,7 @@ import {
   canRomance,
 } from "./social";
 import type { EventEffect } from "./events";
-import { DIRECTIVES } from "./directives";
+import { directiveDef } from "./directives";
 import { endFeud } from "./conflicts";
 import { forceInteraction } from "./interactions";
 import { adoptCat, adoptPet, petIcon, resolvePetFarewell } from "./pets";
@@ -616,11 +616,13 @@ function applyEffect(rt: TenantRuntime, eff: EventEffect) {
   }
   // 行為指令(已在 events 消毒過白名單):接下來 N 遊戲日的行為看得見地改變
   if (eff.directive) {
-    const def = DIRECTIVES[eff.directive.id];
-    rt.directive = { id: eff.directive.id, untilDay: gameDayIndex() + eff.directive.days };
-    pushSocialLog(rt, def.startText, "major");
-    if (eff.directive.id === "adopt_cat") adoptCat(rt.tenant.id); // 貓不只是指令:留下來成為永久寵物
-    applyHour(rt, new Date(state.gameMs).getHours(), false); // 立即依新行為重新定位
+    const def = directiveDef(eff.directive.id); // 查無(例如已下架的 id)→ 不套用,也不丟例外
+    if (def) {
+      rt.directive = { id: eff.directive.id, untilDay: gameDayIndex() + eff.directive.days };
+      pushSocialLog(rt, def.startText, "major");
+      if (eff.directive.id === "adopt_cat") adoptCat(rt.tenant.id); // 貓不只是指令:留下來成為永久寵物
+      applyHour(rt, new Date(state.gameMs).getHours(), false); // 立即依新行為重新定位
+    }
   }
 }
 

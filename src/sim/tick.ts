@@ -9,7 +9,7 @@ import { bathroomActivityForDay, laundryHourForDay, routineNeedsMet, routineSlot
 import { rollEvent } from "./events";
 import { encounter, listRelationships, pairKey, getRel, relationshipDailyPass } from "./social";
 import { memoryDrift, pruneContradictedMemories, decayMemories } from "./memoryEffects";
-import { DIRECTIVES } from "./directives";
+import { directiveDef } from "./directives";
 import { generateHourly } from "./generate";
 import { TENANT_SPOTS } from "../floor/map";
 import { roomRect } from "./placements";
@@ -1237,9 +1237,9 @@ export function hourlyTick(live = false) {
   for (const rt of Object.values(state.runtimes)) {
     // 行為指令到期 → 恢復往常 + 留一筆日誌(在暫停檢查之前,免得掛著過期指令)
     if (rt.directive && day > rt.directive.untilDay) {
-      const def = DIRECTIVES[rt.directive.id];
+      const def = directiveDef(rt.directive.id); // 已下架的舊 id → null,靜靜丟掉就好
       rt.directive = null;
-      pushSocialLog(rt, def.endText, "notable");
+      if (def) pushSocialLog(rt, def.endText, "notable");
     }
     if (rt.pendingEvent) {
       rt.inLounge = false;

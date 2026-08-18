@@ -18,7 +18,7 @@
  *   balance 快照與 headless 測試不受影響。
  */
 import { clamp, gameDayIndex, GAME_START, pushSocialLog, state, type TenantRuntime } from "./gameState";
-import { DIRECTIVES, sanitizeSelfBehavior, type DirectiveId } from "./directives";
+import { directiveDef, sanitizeSelfBehavior, type DirectiveId } from "./directives";
 import { adjustRelationship, getRel } from "./social";
 import { sanitizeReasonText } from "./narrativeQuality";
 
@@ -116,7 +116,8 @@ function applySelfBehavior(rt: TenantRuntime, behavior: { id: DirectiveId; days:
   if (today - diaryDay > 1) return; // 待補日記隔太久:過時的行為反應不補套
   if (rt.directive) return; // 已有進行中指令(不論來源):玩家拍板的永遠優先,也不疊自發
   if (today - (rt.lastSelfBehaviorDay ?? -99) < SELF_BEHAVIOR_COOLDOWN_DAYS) return;
-  const def = DIRECTIVES[behavior.id];
+  const def = directiveDef(behavior.id);
+  if (!def) return; // 白名單消毒過的 id 理論上一定查得到;查不到就當沒這回事,不能丟例外
   rt.directive = { id: behavior.id, untilDay: today + behavior.days, source: "ai" };
   rt.lastSelfBehaviorDay = today;
   pushSocialLog(rt, `🌀 ${reason}——${def.startText}`, "major");

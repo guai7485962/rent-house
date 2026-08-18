@@ -95,6 +95,20 @@ export const DIRECTIVES: Record<DirectiveId, DirectiveDef> = {
   },
 };
 
+/**
+ * 查目錄;**查無回 null**。
+ *
+ * 🔴 存檔裡的指令 id 不保證還在目錄裡:下架一個指令之後,老玩家存檔仍帶著舊 id,
+ * 而 `load()` 對 `rt.directive` 是原封不動放行的。裸寫 `DIRECTIVES[id].xxx` 會在
+ * `hourlyTick()` 開頭就丟 TypeError ⇒ 整個掛機迴圈與首幀一起死 ⇒ 玩家看到白畫面。
+ * 所有「來自存檔/AI」的查表一律走這支。
+ */
+export function directiveDef(id: unknown): DirectiveDef | null {
+  return typeof id === "string" && Object.prototype.hasOwnProperty.call(DIRECTIVES, id)
+    ? DIRECTIVES[id as DirectiveId]
+    : null;
+}
+
 /** 進行中的行為指令(存進 TenantRuntime、入存檔) */
 export interface ActiveDirective {
   id: DirectiveId;

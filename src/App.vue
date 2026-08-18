@@ -28,7 +28,7 @@ import {
 } from "./sim/comfort";
 import { getDef } from "./furniture/catalog";
 import { rotatedFootprint, type FurnitureRotation } from "./furniture/rotation";
-import { DIRECTIVES } from "./sim/directives";
+import { directiveDef } from "./sim/directives";
 import { todayWeather, weatherLabel } from "./sim/weather";
 import { GROWTH_TAGS } from "./sim/growth";
 import { WISH_DEFS, wishOutcomeBrief, wishResult, proactiveSettleFarewell } from "./sim/wishes";
@@ -431,7 +431,9 @@ const directiveChip = computed(() => {
   const left = d.untilDay - gameDayIndex() + 1;
   if (left <= 0) return null;
   // source=ai:AI 觀察的自發行為(房客自己的決定);缺省/choice = 玩家事件拍板
-  return `${DIRECTIVES[d.id].label}${d.source === "ai" ? "(自發)" : ""} · 剩 ${left} 天`;
+  const def = directiveDef(d.id);
+  if (!def) return null; // 舊存檔帶著已下架的 id → 不顯示,不能讓整個房間面板掛掉
+  return `${def.label}${d.source === "ai" ? "(自發)" : ""} · 剩 ${left} 天`;
 });
 
 const ATTR_LABEL: Record<string, string> = {

@@ -10,7 +10,9 @@
     "typecheck": "npm run typecheck:app && npm run typecheck:worker",
     "typecheck:app": "vue-tsc --noEmit",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
-    "test": "tsx scripts/run-all.ts"
+    "test": "tsx scripts/run-all.ts",
+    "smoke:save": "tsx scripts/save-smoke-test.ts",
+    "fixtures:save": "tsx scripts/make-save-fixtures.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

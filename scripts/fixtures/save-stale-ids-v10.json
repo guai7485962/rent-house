@@ -1,0 +1,4839 @@
+{
+  "v": 10,
+  "realAnchorMs": 1787101200000,
+  "gameAnchorMs": 1783260000000,
+  "gameMs": 1784988000000,
+  "money": 147567,
+  "starterBonusGiven": false,
+  "occupancy": {
+    "r301": "tenant_chen_engineer",
+    "r302": "tenant_lin_asmr",
+    "r303": "tenant_r303_1787069467008_0",
+    "r304": "tenant_r304_1787069467018_0"
+  },
+  "cohabits": {},
+  "applicantPools": {},
+  "placements": [
+    {
+      "defId": "single_bed",
+      "room": "r301",
+      "c": 1,
+      "r": 1
+    },
+    {
+      "defId": "gaming_desk",
+      "room": "r301",
+      "c": 4,
+      "r": 1
+    },
+    {
+      "defId": "beanbag",
+      "room": "r301",
+      "c": 4,
+      "r": 3
+    },
+    {
+      "defId": "tv_console",
+      "room": "r301",
+      "c": 3,
+      "r": 6
+    },
+    {
+      "defId": "cat_tower",
+      "room": "r301",
+      "c": 1,
+      "r": 6
+    },
+    {
+      "defId": "single_bed",
+      "room": "r302",
+      "c": 13,
+      "r": 1
+    },
+    {
+      "defId": "mic_desk",
+      "room": "r302",
+      "c": 10,
+      "r": 1
+    },
+    {
+      "defId": "floor_lamp",
+      "room": "r302",
+      "c": 12,
+      "r": 3
+    },
+    {
+      "defId": "aroma",
+      "room": "r302",
+      "c": 10,
+      "r": 6
+    },
+    {
+      "defId": "plant",
+      "room": "r302",
+      "c": 11,
+      "r": 7
+    },
+    {
+      "defId": "bookshelf",
+      "room": "r302",
+      "c": 14,
+      "r": 6
+    },
+    {
+      "defId": "single_bed",
+      "room": "r303",
+      "c": 1,
+      "r": 16
+    },
+    {
+      "defId": "single_bed",
+      "room": "r304",
+      "c": 13,
+      "r": 16
+    },
+    {
+      "defId": "fridge",
+      "room": "lounge",
+      "c": 1,
+      "r": 9
+    },
+    {
+      "defId": "stove",
+      "room": "lounge",
+      "c": 2,
+      "r": 9
+    },
+    {
+      "defId": "counter",
+      "room": "lounge",
+      "c": 3,
+      "r": 9
+    },
+    {
+      "defId": "coffee_machine",
+      "room": "lounge",
+      "c": 5,
+      "r": 9
+    },
+    {
+      "defId": "lounge_plant",
+      "room": "lounge",
+      "c": 6,
+      "r": 9
+    },
+    {
+      "defId": "dining_table",
+      "room": "lounge",
+      "c": 2,
+      "r": 11
+    },
+    {
+      "defId": "washing_machine",
+      "room": "lounge",
+      "c": 5,
+      "r": 12
+    },
+    {
+      "defId": "lounge_rug",
+      "room": "lounge",
+      "c": 9,
+      "r": 11
+    },
+    {
+      "defId": "lounge_tv",
+      "room": "lounge",
+      "c": 10,
+      "r": 9
+    },
+    {
+      "defId": "bar_counter",
+      "room": "lounge",
+      "c": 13,
+      "r": 9
+    },
+    {
+      "defId": "coffee_table",
+      "room": "lounge",
+      "c": 11,
+      "r": 11
+    },
+    {
+      "defId": "shared_sofa",
+      "room": "lounge",
+      "c": 10,
+      "r": 13
+    },
+    {
+      "defId": "entrance_mat",
+      "room": "lounge",
+      "c": 7,
+      "r": 31
+    },
+    {
+      "defId": "shower",
+      "room": "bathroom",
+      "c": 1,
+      "r": 24
+    },
+    {
+      "defId": "bath_plant",
+      "room": "bathroom",
+      "c": 5,
+      "r": 24
+    },
+    {
+      "defId": "toilet",
+      "room": "bathroom",
+      "c": 1,
+      "r": 28
+    },
+    {
+      "defId": "bath_sink",
+      "room": "bathroom",
+      "c": 4,
+      "r": 28
+    },
+    {
+      "defId": "laundry_washer",
+      "room": "laundry",
+      "c": 10,
+      "r": 24
+    },
+    {
+      "defId": "laundry_washer",
+      "room": "laundry",
+      "c": 11,
+      "r": 24
+    },
+    {
+      "defId": "drying_rack",
+      "room": "laundry",
+      "c": 13,
+      "r": 24
+    },
+    {
+      "defId": "utility_sink",
+      "room": "laundry",
+      "c": 10,
+      "r": 29
+    },
+    {
+      "defId": "laundry_basket",
+      "room": "laundry",
+      "c": 12,
+      "r": 30
+    },
+    {
+      "defId": "cafe_counter",
+      "room": "cafe_counter",
+      "c": 3,
+      "r": 38,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_table",
+      "room": "cafe_floor",
+      "c": 2,
+      "r": 43,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_front",
+      "room": "cafe_floor",
+      "c": 1,
+      "r": 43,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_side",
+      "room": "cafe_floor",
+      "c": 3,
+      "r": 43,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_table",
+      "room": "cafe_floor",
+      "c": 2,
+      "r": 45,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_front",
+      "room": "cafe_floor",
+      "c": 1,
+      "r": 45,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_side",
+      "room": "cafe_floor",
+      "c": 3,
+      "r": 45,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_table",
+      "room": "cafe_floor",
+      "c": 11,
+      "r": 36,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_front",
+      "room": "cafe_floor",
+      "c": 10,
+      "r": 36,
+      "rotation": 0
+    },
+    {
+      "defId": "cafe_chair_side",
+      "room": "cafe_floor",
+      "c": 12,
+      "r": 36,
+      "rotation": 0
+    },
+    {
+      "defId": "retired_furniture",
+      "c": 2,
+      "r": 17,
+      "rotation": 0,
+      "roomId": "r303"
+    }
+  ],
+  "upgrades": {},
+  "relationships": [
+    {
+      "key": "tenant_chen_engineer|tenant_lin_asmr",
+      "value": 100,
+      "tension": 12,
+      "lastConflictGameMs": 0,
+      "romantic": true,
+      "cohabitOffered": false
+    },
+    {
+      "key": "tenant_chen_engineer|tenant_r304_1787069467018_0",
+      "value": 0,
+      "tension": 26,
+      "lastConflictGameMs": 1784977200000,
+      "romantic": false,
+      "cohabitOffered": false
+    },
+    {
+      "key": "tenant_lin_asmr|tenant_r304_1787069467018_0",
+      "value": 0,
+      "tension": 98,
+      "lastConflictGameMs": 1784876400000,
+      "romantic": false,
+      "cohabitOffered": false
+    },
+    {
+      "key": "tenant_r303_1787069467008_0|tenant_r304_1787069467018_0",
+      "value": 100,
+      "tension": 0,
+      "lastConflictGameMs": 0,
+      "romantic": true,
+      "cohabitOffered": true
+    },
+    {
+      "key": "tenant_chen_engineer|tenant_r303_1787069467008_0",
+      "value": 0,
+      "tension": 72,
+      "lastConflictGameMs": 1784977200000,
+      "romantic": false,
+      "cohabitOffered": false
+    },
+    {
+      "key": "tenant_lin_asmr|tenant_r303_1787069467008_0",
+      "value": 0.17938342308625577,
+      "tension": 95,
+      "lastConflictGameMs": 1784790000000,
+      "romantic": false,
+      "cohabitOffered": false
+    }
+  ],
+  "ledger": [
+    {
+      "gameMs": 1784476800000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "聶婉柔 房租",
+      "amount": 347,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "凌宸曜 房租",
+      "amount": 374,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784476800000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784509200000,
+      "label": "咖啡廳進貨",
+      "amount": -812,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784548800000,
+      "label": "咖啡廳營收",
+      "amount": 1756,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "陳家豪 房租",
+      "amount": 371,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "聶婉柔 房租",
+      "amount": 346,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "凌宸曜 房租",
+      "amount": 374,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784563200000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784595600000,
+      "label": "咖啡廳進貨",
+      "amount": -806,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784635200000,
+      "label": "咖啡廳營收",
+      "amount": 1804,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "陳家豪 房租",
+      "amount": 371,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "聶婉柔 房租",
+      "amount": 347,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "凌宸曜 房租",
+      "amount": 374,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784649600000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784682000000,
+      "label": "咖啡廳進貨",
+      "amount": -830,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784721600000,
+      "label": "咖啡廳營收",
+      "amount": 1776,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "陳家豪 房租",
+      "amount": 371,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "聶婉柔 房租",
+      "amount": 347,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "凌宸曜 房租",
+      "amount": 375,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784736000000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784768400000,
+      "label": "咖啡廳進貨",
+      "amount": -814,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784808000000,
+      "label": "咖啡廳營收",
+      "amount": 1846,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "陳家豪 房租",
+      "amount": 374,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "聶婉柔 房租",
+      "amount": 346,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "凌宸曜 房租",
+      "amount": 376,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784822400000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784854800000,
+      "label": "咖啡廳進貨",
+      "amount": -846,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784894400000,
+      "label": "咖啡廳營收",
+      "amount": 1786,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "陳家豪 房租",
+      "amount": 372,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "林小婕 房租",
+      "amount": 550,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "聶婉柔 房租",
+      "amount": 347,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "凌宸曜 房租",
+      "amount": 376,
+      "category": "rent"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "投幣洗衣機收入",
+      "amount": 640,
+      "category": "other"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "管理費 / 水電",
+      "amount": -650,
+      "category": "upkeep"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "咖啡廳固定開銷",
+      "amount": -370,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784908800000,
+      "label": "咖啡廳員工薪資",
+      "amount": -260,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784941200000,
+      "label": "咖啡廳進貨",
+      "amount": -822,
+      "category": "cafe"
+    },
+    {
+      "gameMs": 1784980800000,
+      "label": "咖啡廳營收",
+      "amount": 1845,
+      "category": "cafe"
+    }
+  ],
+  "noticeLog": [
+    {
+      "gameMs": 1784340000000,
+      "text": "🐈 店貓「辣椒」在吧台旁邊翻肚睡成一攤,馬翊安 拍了張照才捨得走"
+    },
+    {
+      "gameMs": 1784365200000,
+      "text": "❄️ 林小婕 和 凌宸曜 鬧翻了,進入冷戰"
+    },
+    {
+      "gameMs": 1784365200000,
+      "text": "🐈💥 店貓「辣椒」在洗衣間把東西掃下桌,摔得粉碎"
+    },
+    {
+      "gameMs": 1784426400000,
+      "text": "🐈 店貓「辣椒」跳上窗邊的空位坐鎮,何宇辰 一邊喝咖啡一邊偷偷伸手摸了兩下"
+    },
+    {
+      "gameMs": 1784455200000,
+      "text": "🐾 小虎 伏低身子慢慢靠近,辣椒 聞了聞牠的鼻尖,最後和平地並肩坐下。"
+    },
+    {
+      "gameMs": 1784476800000,
+      "text": "🏢 有一件全樓事務要你決定:噪音糾紛要你裁決"
+    },
+    {
+      "gameMs": 1784476800000,
+      "text": "💧 【頂樓漏水整修】第一話 · 天花板的水漬——滴水聲從半夜開始沒停過,臉盆一個接一個被搬出來。"
+    },
+    {
+      "gameMs": 1784476800000,
+      "text": "📊 第 2 週生活報告完成:本週淨賺 $12,035"
+    },
+    {
+      "gameMs": 1784512800000,
+      "text": "🐈 店貓「辣椒」蹲在點餐台前面看客人排隊,崔宛蓁 讓她先過"
+    },
+    {
+      "gameMs": 1784538000000,
+      "text": "🐈💥 店貓「辣椒」在陳家豪 的房間把東西掃下桌,摔得粉碎"
+    },
+    {
+      "gameMs": 1784541600000,
+      "text": "🐕💥 公寓犬「小虎」在交誼廳把靠墊咬開,棉花散了一地"
+    },
+    {
+      "gameMs": 1784570400000,
+      "text": "🐕💩 公寓犬「小虎」在交誼廳留下了『驚喜』,只好自己捏著鼻子清乾淨"
+    },
+    {
+      "gameMs": 1784581200000,
+      "text": "🐾 小虎 伏低身子慢慢靠近,辣椒 聞了聞牠的鼻尖,最後和平地並肩坐下。"
+    },
+    {
+      "gameMs": 1784599200000,
+      "text": "🐈 店貓「辣椒」在吧台旁邊翻肚睡成一攤,程皓然 拍了張照才捨得走"
+    },
+    {
+      "gameMs": 1784631600000,
+      "text": "🐾 辣椒 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。"
+    },
+    {
+      "gameMs": 1784685600000,
+      "text": "🐈 店貓「辣椒」在吧台旁邊翻肚睡成一攤,伍柏勳 拍了張照才捨得走"
+    },
+    {
+      "gameMs": 1784721600000,
+      "text": "🐕💥 公寓犬「小虎」在交誼廳把靠墊咬開,棉花散了一地"
+    },
+    {
+      "gameMs": 1784728800000,
+      "text": "🐾 小虎 伏低身子慢慢靠近,辣椒 聞了聞牠的鼻尖,最後和平地並肩坐下。"
+    },
+    {
+      "gameMs": 1784772000000,
+      "text": "🐈 店貓「辣椒」繞著 章昀傑 的腳邊走了三圈,確認過氣味才願意讓他坐下"
+    },
+    {
+      "gameMs": 1784786400000,
+      "text": "陳家豪 和 林小婕 在一起了 ❤️"
+    },
+    {
+      "gameMs": 1784822400000,
+      "text": "🏢 有一件全樓事務要你決定:噪音糾紛要你裁決"
+    },
+    {
+      "gameMs": 1784822400000,
+      "text": "💧 【頂樓漏水整修】第二話 · 師傅上來勘查——抓漏師傅上樓勘查,敲敲打打了一整個下午。"
+    },
+    {
+      "gameMs": 1784847600000,
+      "text": "🐾 辣椒 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。"
+    },
+    {
+      "gameMs": 1784858400000,
+      "text": "🐈 店貓「辣椒」把尾巴掃過 孫奕帆 的小腿,得到了一句「牠是店長吧」的評價"
+    },
+    {
+      "gameMs": 1784876400000,
+      "text": "❄️ 林小婕 和 凌宸曜 鬧翻了,進入冷戰"
+    },
+    {
+      "gameMs": 1784923200000,
+      "text": "🐾 小虎 伏低身子慢慢靠近,辣椒 聞了聞牠的鼻尖,最後和平地並肩坐下。"
+    },
+    {
+      "gameMs": 1784930400000,
+      "text": "🐈💥 店貓「辣椒」在交誼廳把東西掃下桌,摔得粉碎"
+    },
+    {
+      "gameMs": 1784944800000,
+      "text": "🐈 店貓「辣椒」把尾巴掃過 袁筱嵐 的小腿,得到了一句「牠是店長吧」的評價"
+    },
+    {
+      "gameMs": 1784973600000,
+      "text": "🐕💥 公寓犬「小虎」在交誼廳把靠墊咬開,棉花散了一地"
+    },
+    {
+      "gameMs": 1784977200000,
+      "text": "❄️ 陳家豪 和 聶婉柔 鬧翻了,進入冷戰"
+    }
+  ],
+  "feedSeenMs": 0,
+  "weeklyReports": [
+    {
+      "id": "week-7-1783872000000",
+      "gameMs": 1783872000000,
+      "timeLabel": "7/13 00:00",
+      "week": 1,
+      "startDay": 1,
+      "endDay": 7,
+      "income": 25136,
+      "expense": 12852,
+      "net": 12284,
+      "highlights": [
+        {
+          "gameMs": 1783872000000,
+          "text": "🚽 早晨尖峰:凌宸曜、聶婉柔、陳家豪 在廁所浴室門口排起隊",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1783832400000,
+          "text": "🐾 辣椒 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1783821600000,
+          "text": "🐈 店貓「辣椒」蹲在點餐台前面看客人排隊,莊可欣 讓她先過",
+          "importance": "major"
+        }
+      ],
+      "relationshipChanges": [
+        {
+          "aName": "聶婉柔",
+          "bName": "凌宸曜",
+          "delta": 52,
+          "current": 52,
+          "label": "好朋友"
+        },
+        {
+          "aName": "陳家豪",
+          "bName": "林小婕",
+          "delta": 29,
+          "current": 29,
+          "label": "點頭之交"
+        }
+      ]
+    },
+    {
+      "id": "week-14-1784476800000",
+      "gameMs": 1784476800000,
+      "timeLabel": "7/20 00:00",
+      "week": 2,
+      "startDay": 8,
+      "endDay": 14,
+      "income": 25001,
+      "expense": 12966,
+      "net": 12035,
+      "highlights": [
+        {
+          "gameMs": 1784476800000,
+          "text": "🏢 有一件全樓事務要你決定:噪音糾紛要你裁決",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784476800000,
+          "text": "💧 【頂樓漏水整修】第一話 · 天花板的水漬——滴水聲從半夜開始沒停過,臉盆一個接一個被搬出來。",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784455200000,
+          "text": "🐾 小虎 伏低身子慢慢靠近,辣椒 聞了聞牠的鼻尖,最後和平地並肩坐下。",
+          "importance": "major"
+        }
+      ],
+      "relationshipChanges": [
+        {
+          "aName": "聶婉柔",
+          "bName": "凌宸曜",
+          "delta": 46,
+          "current": 98,
+          "label": "情侶"
+        },
+        {
+          "aName": "陳家豪",
+          "bName": "林小婕",
+          "delta": 28,
+          "current": 57,
+          "label": "好朋友"
+        }
+      ]
+    }
+  ],
+  "lastWeeklyReportDay": 14,
+  "weeklyRelationshipSnapshot": {
+    "tenant_chen_engineer|tenant_lin_asmr": 57.26730594248511,
+    "tenant_chen_engineer|tenant_r304_1787069467018_0": 0.6847704499494285,
+    "tenant_lin_asmr|tenant_r304_1787069467018_0": 0,
+    "tenant_r303_1787069467008_0|tenant_r304_1787069467018_0": 97.73556963400915,
+    "tenant_chen_engineer|tenant_r303_1787069467008_0": 0,
+    "tenant_lin_asmr|tenant_r303_1787069467008_0": 0
+  },
+  "lastBackupMs": 0,
+  "adultMode": false,
+  "interactionCooldowns": {
+    "social_conflicts_day_index": 20,
+    "social_conflicts_day_count": 0,
+    "crosspet|tenant_chen_engineer|tenant_lin_asmr": 1784984400000,
+    "pet|shop_cat_chili|visit|tenant_chen_engineer": 1784912400000,
+    "pet|shop_cat_chili|poop": 1784898000000,
+    "pet|tenant_chen_engineer|journal": 1784476800000,
+    "pet|tenant_lin_asmr|journal": 1784476800000,
+    "pet|shop_cat_chili|journal": 1784476800000,
+    "pet|tenant_lin_asmr|poop": 1784570400000,
+    "petpair|shop_cat_chili|tenant_chen_engineer": 1784959200000,
+    "pet|tenant_lin_asmr|visit|tenant_chen_engineer": 1784836800000,
+    "pet|tenant_chen_engineer|visit|tenant_r303_1787069467008_0": 1784908800000,
+    "pet|shop_cat_chili|visit|tenant_r303_1787069467008_0": 1784919600000,
+    "pet|shop_cat_chili|shift": 1784944800000,
+    "tenant_chen_engineer|tenant_lin_asmr|fridge_theft": 1784116800000,
+    "pet|tenant_chen_engineer|visit|tenant_lin_asmr": 1784761200000,
+    "crosspet|shop_cat_chili|tenant_lin_asmr": 1784923200000,
+    "pet|shop_cat_chili|visit|tenant_r304_1787069467018_0": 1784883600000,
+    "pet|tenant_chen_engineer|poop": 1784829600000,
+    "pet|tenant_lin_asmr|visit|tenant_lin_asmr": 1784890800000,
+    "pet|tenant_lin_asmr|break": 1784973600000,
+    "pet|tenant_chen_engineer|visit|tenant_r304_1787069467018_0": 1784980800000,
+    "pet|shop_cat_chili|break": 1784930400000,
+    "pet|shop_cat_chili|visit|tenant_lin_asmr": 1784872800000,
+    "pet|tenant_lin_asmr|visit|tenant_r303_1787069467008_0": 1784815200000,
+    "tenant_lin_asmr|tenant_r304_1787069467018_0|fridge_theft": 1784379600000,
+    "pet|tenant_chen_engineer|break": 1784901600000,
+    "pet|tenant_lin_asmr|visit|tenant_r304_1787069467018_0": 1784466000000,
+    "community|kitchen_cook": 1784131200000,
+    "community|noise_tribunal": 1783526400000,
+    "tenant_lin_asmr|tenant_r303_1787069467008_0|fridge_theft": 1784559600000,
+    "community|morning_rush": 1783872000000,
+    "tenant_chen_engineer|tenant_r304_1787069467018_0|fridge_theft": 1784307600000,
+    "tenant_r303_1787069467008_0|tenant_r304_1787069467018_0|game_night": 1784890800000,
+    "community|cafe_afterhours": 1783958400000,
+    "tenant_r303_1787069467008_0|tenant_r304_1787069467018_0|share_delivery": 1784185200000,
+    "tenant_r303_1787069467008_0|tenant_r304_1787069467018_0|share_earbuds": 1784286000000,
+    "tenant_chen_engineer|tenant_r303_1787069467008_0|fridge_theft": 1784934000000,
+    "dream|tenant_chen_engineer": 17,
+    "dream|tenant_r304_1787069467018_0": 18,
+    "tenant_chen_engineer|tenant_lin_asmr|room_hangout": 1784901600000,
+    "community|bathroom": 1784908800000,
+    "dream|tenant_lin_asmr": 18,
+    "outing|tenant_chen_engineer|tenant_r303_1787069467008_0": 15,
+    "outing|__day": 15,
+    "tenant_chen_engineer|tenant_lin_asmr|share_delivery": 1784700000000,
+    "dream|tenant_r303_1787069467008_0": 17,
+    "community|morning_coffee": 1784736000000,
+    "tenant_chen_engineer|tenant_lin_asmr|room_coop_game": 1784894400000
+  },
+  "breakdowns": {
+    "r303": {
+      "defId": "wiring",
+      "cost": 1200,
+      "sinceMs": 1783699200000
+    },
+    "r301": {
+      "defId": "leak",
+      "cost": 2900,
+      "sinceMs": 1784217600000
+    }
+  },
+  "feuds": {
+    "tenant_lin_asmr|tenant_r304_1787069467018_0": {
+      "untilMs": 1785135600000
+    },
+    "tenant_chen_engineer|tenant_r303_1787069467008_0": {
+      "untilMs": 1785236400000
+    },
+    "tenant_chen_engineer|tenant_lin_asmr": {
+      "untilMs": 1785247200000
+    }
+  },
+  "pets": {
+    "tenant_chen_engineer": {
+      "name": "布丁",
+      "kind": "cat",
+      "color": 1,
+      "ownerId": "tenant_chen_engineer",
+      "hangout": "lounge",
+      "sinceMs": 1783260000000,
+      "pairWith": "tenant_lin_asmr",
+      "pairAction": "greet",
+      "pairUntilMs": 1784991600000
+    },
+    "tenant_lin_asmr": {
+      "name": "小虎",
+      "kind": "dog",
+      "color": 3,
+      "ownerId": "landlord",
+      "hangout": "lounge",
+      "sinceMs": 1783260000000,
+      "housePlacement": "permanent",
+      "pairWith": "tenant_chen_engineer",
+      "pairAction": "greet",
+      "pairUntilMs": 1784991600000
+    },
+    "shop_cat_chili": {
+      "name": "辣椒",
+      "kind": "cat",
+      "color": 4,
+      "ownerId": "shopkeeper",
+      "shopCat": true,
+      "hangout": "lounge",
+      "sinceMs": 1783260000000
+    }
+  },
+  "petHomes": [],
+  "achievements": [
+    "cat_burglar",
+    "full_house",
+    "tycoon",
+    "first_growth",
+    "first_love",
+    "retired_achievement"
+  ],
+  "wishesFulfilled": 0,
+  "reputation": 0,
+  "graduateCount": 0,
+  "careGiven": 0,
+  "alumni": [],
+  "pendingGroupEvent": null,
+  "scheduledCommunityEvents": [],
+  "floorChain": {
+    "chainId": "roof_leak",
+    "stage": 2,
+    "startDay": 14,
+    "lastAdvanceDay": 18,
+    "entries": [
+      {
+        "stage": 1,
+        "title": "第一話 · 天花板的水漬",
+        "text": "滴水聲從半夜開始沒停過,臉盆一個接一個被搬出來。",
+        "gameMs": 1784476800000
+      },
+      {
+        "stage": 2,
+        "title": "第二話 · 師傅上來勘查",
+        "text": "抓漏師傅上樓勘查,敲敲打打了一整個下午。",
+        "gameMs": 1784822400000
+      }
+    ],
+    "done": false
+  },
+  "lastChainEndDay": -99,
+  "pendingChainEvent": null,
+  "pendingDiaries": [
+    {
+      "diaryId": "diary_tenant_lin_asmr_1784941200000_77",
+      "tenantId": "tenant_lin_asmr",
+      "gameMs": 1784941200000,
+      "ctx": {
+        "name": "林小婕",
+        "occupation": "ASMR 實況主",
+        "bio": "25 歲,全職 ASMR 實況主,頻道剛破萬訂閱。生活完全日夜顛倒但異常自律:準時交租、房間一塵不染,只是她的「上班時間」是凌晨十二點到清晨六點。",
+        "dayLabel": "第 20 天(週六)",
+        "coreTags": [
+          "[夜貓子]",
+          "[聲音敏感]",
+          "[高度自律]"
+        ],
+        "memoryTags": [
+          "[冰箱結仇]",
+          "[經歷:門口那隻貓]",
+          "[手頭拮据]",
+          "[經歷:第一次說不]",
+          "[冷戰中]"
+        ],
+        "tagDetails": [
+          {
+            "label": "[夜貓子]",
+            "hint": "凌晨 0 點到 6 點開直播,白天睡覺。窗簾永遠拉死,作息與整棟樓相反。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[聲音敏感]",
+            "hint": "職業病:對聲音極度敏感。樓上腳步聲、水管聲、鄰居裝修都會讓她抓狂,可能因噪音問題主動聯絡房東(罕見地正面溝通)。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[高度自律]",
+            "hint": "生活儀式感極強:直播前固定泡茶、擦拭設備、做嗓音熱身。房間永遠整齊,交租永遠提前一天。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[經歷:門口那隻貓]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 1,
+            "source": "ai_event"
+          },
+          {
+            "label": "[冷戰中]",
+            "hint": "和凌宸曜徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "kind": "memory",
+            "intensity": 0.95,
+            "source": "ai_event"
+          },
+          {
+            "label": "[經歷:第一次說不]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.95,
+            "source": "ai_event"
+          },
+          {
+            "label": "[手頭拮据]",
+            "hint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "kind": "memory",
+            "intensity": 0.8499999999999999,
+            "source": "ai_event"
+          },
+          {
+            "label": "[冰箱結仇]",
+            "hint": "陳家豪偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "kind": "memory",
+            "intensity": 0.049999999999999684,
+            "source": "ai_event"
+          }
+        ],
+        "growthTags": [
+          "[重新抱有希望]",
+          "[更敢做決定]"
+        ],
+        "stats": {
+          "mood": 100,
+          "stress": 8.127348183270124,
+          "affinity": 89.6,
+          "satisfaction": 89
+        },
+        "room": {
+          "noise": 0,
+          "soundproof": 0,
+          "treated": false,
+          "complaintRisk": true
+        },
+        "todayLog": [
+          "🐈 店貓「辣椒」溜進房裡蹭他的腳邊,忍不住陪牠玩了好一陣子,整個人都被療癒了。",
+          "和 凌宸曜 作息相反：一人晚睡、一人需要早起",
+          "❄️ 和 凌宸曜 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "把手把丟給陳家豪救場,結果兩個人輪流失誤,笑到根本沒法專心。",
+          "和陳家豪在房裡窩了一下午,天南地北地聊。",
+          "🍂 「頻道破萬」的記憶漸漸淡了,不再影響心情。",
+          "🪥 和 陳家豪 分享了快用完的牙膏,站在鏡子前聊起今天的安排。",
+          "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。"
+        ],
+        "todayHighlights": [
+          {
+            "text": "🐈 店貓「辣椒」溜進房裡蹭他的腳邊,忍不住陪牠玩了好一陣子,整個人都被療癒了。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "和 凌宸曜 作息相反：一人晚睡、一人需要早起",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "❄️ 和 凌宸曜 徹底鬧翻,進入冷戰,互相當作看不見。",
+            "importance": "major",
+            "source": "log"
+          },
+          {
+            "text": "把手把丟給陳家豪救場,結果兩個人輪流失誤,笑到根本沒法專心。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "和陳家豪在房裡窩了一下午,天南地北地聊。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🍂 「頻道破萬」的記憶漸漸淡了,不再影響心情。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🪥 和 陳家豪 分享了快用完的牙膏,站在鏡子前聊起今天的安排。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。",
+            "importance": "minor",
+            "source": "log"
+          }
+        ],
+        "focus": {
+          "kind": "major",
+          "headline": "❄️ 和 凌宸曜 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "reason": "這是今天最高重要性的實際事件"
+        },
+        "relationships": [
+          "與 凌宸曜 陌生",
+          "與 聶婉柔 陌生",
+          "與 陳家豪 情侶"
+        ],
+        "events": [],
+        "neighbors": [
+          "陳家豪",
+          "聶婉柔",
+          "凌宸曜"
+        ],
+        "summary": "頻道破萬後的第一週。昨晚直播到清晨六點，狀態很好，下播後罕見地開了一瓶氣泡酒自己慶祝。",
+        "arc": null,
+        "sideArc": null,
+        "pastArcThemes": [
+          "門口那隻貓",
+          "第一次說不"
+        ],
+        "flags": [
+          "頂樓的漏水還沒修好",
+          "養了一隻狗「小虎」"
+        ],
+        "eventDue": true,
+        "weather": "☁️ 陰天",
+        "weekday": "週六",
+        "finance": "手頭拮据(收入暫時中斷,省吃儉用中)",
+        "wish": "養出一群固定的聽眾(進度約 32%,還在起步,正一點一點往這個夢想靠近)",
+        "cafe": {
+          "brief": "一份都沒賣出去,打烊時椅子還是早上擺的樣子",
+          "trend": "flat",
+          "regulars": [
+            "梁子謙已經 3 天沒出現了"
+          ]
+        }
+      }
+    },
+    {
+      "diaryId": "diary_tenant_r303_1787069467008_0_1784959200000_78",
+      "tenantId": "tenant_r303_1787069467008_0",
+      "gameMs": 1784959200000,
+      "ctx": {
+        "name": "聶婉柔",
+        "occupation": "退休教師",
+        "bio": "剛退休的國文老師,白天在家泡茶讀書,對整棟樓的動靜瞭若指掌。",
+        "dayLabel": "第 20 天(週六)",
+        "coreTags": [
+          "[早睡早起]",
+          "[愛管閒事]"
+        ],
+        "memoryTags": [
+          "[冰箱結仇]",
+          "[經歷:下班時的天亮]",
+          "[心動的距離]"
+        ],
+        "tagDetails": [
+          {
+            "label": "[早睡早起]",
+            "hint": "晚上十點就寢,清晨聽廣播。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[愛管閒事]",
+            "hint": "鄰居的大小事都想關心一下。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[心動的距離]",
+            "hint": "那晚共用耳機的距離,近得能聽見彼此的呼吸。",
+            "kind": "memory",
+            "intensity": 0.5999999999999996,
+            "source": "ai_event"
+          },
+          {
+            "label": "[經歷:下班時的天亮]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.39999999999999963,
+            "source": "ai_event"
+          },
+          {
+            "label": "[冰箱結仇]",
+            "hint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "kind": "memory",
+            "intensity": 0.24999999999999967,
+            "source": "ai_event"
+          }
+        ],
+        "growthTags": [
+          "[腳步更穩]"
+        ],
+        "stats": {
+          "mood": 94.03988846407874,
+          "stress": 4.4715642544070375,
+          "affinity": 55,
+          "satisfaction": 81
+        },
+        "room": {
+          "noise": 0,
+          "soundproof": 0,
+          "treated": false,
+          "complaintRisk": false
+        },
+        "todayLog": [
+          "和凌宸曜組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+          "⚡ 工作到一半又跳電,檔案差點沒存到。",
+          "💢 放在共用冰箱、寫了名字的布丁被 陳家豪 偷吃了,當場抓包!",
+          "闔上書之後長長呼出一口氣,像剛結束一趟遠行。",
+          "對著食譜影片暫停又倒轉,鍋裡的東西已經有點焦慮。",
+          "邊吃邊放空,筷子懸在半空中好幾秒才想起要夾菜。",
+          "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。"
+        ],
+        "todayHighlights": [
+          {
+            "text": "和凌宸曜組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "⚡ 工作到一半又跳電,檔案差點沒存到。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "💢 放在共用冰箱、寫了名字的布丁被 陳家豪 偷吃了,當場抓包!",
+            "importance": "major",
+            "source": "log"
+          },
+          {
+            "text": "闔上書之後長長呼出一口氣,像剛結束一趟遠行。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "對著食譜影片暫停又倒轉,鍋裡的東西已經有點焦慮。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "邊吃邊放空,筷子懸在半空中好幾秒才想起要夾菜。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。",
+            "importance": "minor",
+            "source": "log"
+          }
+        ],
+        "focus": {
+          "kind": "major",
+          "headline": "💢 放在共用冰箱、寫了名字的布丁被 陳家豪 偷吃了,當場抓包!",
+          "reason": "這是今天最高重要性的實際事件"
+        },
+        "relationships": [
+          "與 陳家豪 陌生",
+          "與 林小婕 陌生",
+          "與 凌宸曜 情侶"
+        ],
+        "events": [],
+        "neighbors": [
+          "陳家豪",
+          "林小婕",
+          "凌宸曜"
+        ],
+        "summary": "聶婉柔剛搬進 303 房。剛退休的國文老師，白天在家泡茶讀書，對整棟樓的動靜瞭若指掌。",
+        "arc": null,
+        "sideArc": {
+          "theme": "抽屜裡的舊照片",
+          "stage": 2,
+          "maxStage": 3,
+          "summary": "那張照片被拿出來又放回去好幾次。"
+        },
+        "pastArcThemes": [
+          "下班時的天亮"
+        ],
+        "flags": [
+          "頂樓的漏水還沒修好"
+        ],
+        "eventDue": true,
+        "weather": "☁️ 陰天",
+        "weekday": "週六",
+        "wish": "把會的東西傳給一個人(進度約 62%,已經走了一半,越來越有勁)",
+        "cafe": {
+          "brief": "賣出 25 份,$876 進帳,節奏跟昨天差不多",
+          "trend": "flat",
+          "regulars": [
+            "梁子謙今天第 16 次來,還是招牌美式咖啡",
+            "連雅涵今天第 16 次來,還是基礎寵物小點"
+          ]
+        }
+      }
+    },
+    {
+      "diaryId": "diary_tenant_r304_1787069467018_0_1784973600000_79",
+      "tenantId": "tenant_r304_1787069467018_0",
+      "gameMs": 1784973600000,
+      "ctx": {
+        "name": "凌宸曜",
+        "occupation": "健身教練",
+        "bio": "清晨帶課的健身教練,把自律當信仰,冰箱塞滿雞胸肉。",
+        "dayLabel": "第 20 天(週六)",
+        "coreTags": [
+          "[晨型人]",
+          "[健身狂]"
+        ],
+        "memoryTags": [
+          "[冰箱結仇]",
+          "[經歷:抽屜裡的舊照片]",
+          "[心動的距離]",
+          "[手頭拮据]",
+          "[經歷:清晨那條路]",
+          "[冷戰中]"
+        ],
+        "tagDetails": [
+          {
+            "label": "[晨型人]",
+            "hint": "五點起床,晨跑後才出門帶課。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[健身狂]",
+            "hint": "在家也要拉彈力帶,體態極好。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[冷戰中]",
+            "hint": "和林小婕徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "kind": "memory",
+            "intensity": 0.95,
+            "source": "ai_event"
+          },
+          {
+            "label": "[經歷:清晨那條路]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.95,
+            "source": "ai_event"
+          },
+          {
+            "label": "[手頭拮据]",
+            "hint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "kind": "memory",
+            "intensity": 0.6999999999999997,
+            "source": "ai_event"
+          },
+          {
+            "label": "[心動的距離]",
+            "hint": "那晚共用耳機的距離,近得能聽見彼此的呼吸。",
+            "kind": "memory",
+            "intensity": 0.5999999999999996,
+            "source": "ai_event"
+          },
+          {
+            "label": "[經歷:抽屜裡的舊照片]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.5999999999999996,
+            "source": "ai_event"
+          },
+          {
+            "label": "[冰箱結仇]",
+            "hint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "kind": "memory",
+            "intensity": 0.09999999999999969,
+            "source": "ai_event"
+          }
+        ],
+        "growthTags": [
+          "[學會放下]",
+          "[更有耐心]"
+        ],
+        "stats": {
+          "mood": 81.1739014465942,
+          "stress": 28.44289293806445,
+          "affinity": 55,
+          "satisfaction": 72
+        },
+        "room": {
+          "noise": 0,
+          "soundproof": 0,
+          "treated": false,
+          "complaintRisk": false
+        },
+        "todayLog": [
+          "和聶婉柔組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+          "🐈💩 在凌宸曜 的房間角落發現了「辣椒」留下的不可言說的『驚喜』……氣到說不出話。",
+          "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。",
+          "把同一頁手機畫面上下滑了好幾次,資訊完全沒有進到腦子裡。",
+          "水杯端到嘴邊停住,想事情想到忘記自己在喝水。",
+          "坐在沙發上抱著抱枕發呆,連貓經過都懶得逗。",
+          "手指無意識地敲著桌面,眼神卻飄到了很遠的地方。",
+          "望著窗外一動不動,不知道在看風景還是看人生。"
+        ],
+        "todayHighlights": [
+          {
+            "text": "和聶婉柔組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🐈💩 在凌宸曜 的房間角落發現了「辣椒」留下的不可言說的『驚喜』……氣到說不出話。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "把同一頁手機畫面上下滑了好幾次,資訊完全沒有進到腦子裡。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "水杯端到嘴邊停住,想事情想到忘記自己在喝水。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "坐在沙發上抱著抱枕發呆,連貓經過都懶得逗。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "手指無意識地敲著桌面,眼神卻飄到了很遠的地方。",
+            "importance": "minor",
+            "source": "log"
+          },
+          {
+            "text": "望著窗外一動不動,不知道在看風景還是看人生。",
+            "importance": "minor",
+            "source": "log"
+          }
+        ],
+        "focus": {
+          "kind": "notable",
+          "headline": "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。",
+          "reason": "這是今天最值得發展的明顯變化"
+        },
+        "relationships": [
+          "與 林小婕 陌生",
+          "與 聶婉柔 情侶",
+          "與 陳家豪 陌生"
+        ],
+        "events": [],
+        "neighbors": [
+          "陳家豪",
+          "林小婕",
+          "聶婉柔"
+        ],
+        "summary": "凌宸曜剛搬進 304 房。清晨帶課的健身教練，把自律當信仰，冰箱塞滿雞胸肉。",
+        "arc": null,
+        "sideArc": null,
+        "pastArcThemes": [
+          "抽屜裡的舊照片",
+          "清晨那條路"
+        ],
+        "flags": [
+          "頂樓的漏水還沒修好"
+        ],
+        "eventDue": true,
+        "weather": "☁️ 陰天",
+        "weekday": "週六",
+        "wish": "存一筆自己的小店基金(進度約 62%,已經走了一半,越來越有勁)",
+        "cafe": {
+          "brief": "今天服務了 45 位客人,營收 $1599",
+          "trend": "flat",
+          "regulars": [
+            "劉祐廷今天第 18 次來,還是本日配方咖啡",
+            "梁子謙今天第 16 次來,還是招牌美式咖啡"
+          ]
+        }
+      }
+    },
+    {
+      "diaryId": "diary_tenant_chen_engineer_1784988000000_80",
+      "tenantId": "tenant_chen_engineer",
+      "gameMs": 1784988000000,
+      "ctx": {
+        "name": "陳家豪",
+        "occupation": "後端工程師",
+        "bio": "29 歲,新創公司後端工程師。上週在公司樓下撿到一隻流浪橘貓偷偷帶回租屋處,正處於連續加班的崩潰邊緣,靠貓續命。",
+        "dayLabel": "第 21 天(週六)",
+        "coreTags": [
+          "[社恐]",
+          "[工作狂]",
+          "[夜貓子]"
+        ],
+        "memoryTags": [
+          "[偷養浪貓]",
+          "[冰箱結仇]",
+          "[經歷:借出去的那把傘]",
+          "[手頭拮据]",
+          "[經歷:差點養死的那盆]",
+          "[冷戰中]"
+        ],
+        "tagDetails": [
+          {
+            "label": "[社恐]",
+            "hint": "極力避免與房東正面接觸。包裹會堆在門口好幾天才在深夜取回,聽到敲門聲會先靜止不動假裝不在。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[工作狂]",
+            "hint": "醒著的時間幾乎都在電腦前。會忘記吃飯,外送餐盒堆積。上線 deploy 的日子情緒特別緊繃。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[夜貓子]",
+            "hint": "凌晨 2~4 點是活動高峰,中午前幾乎不會起床。深夜螢幕光是這個房間的常態。",
+            "kind": "core",
+            "intensity": 1
+          },
+          {
+            "label": "[冷戰中]",
+            "hint": "和聶婉柔徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "kind": "memory",
+            "intensity": 1,
+            "source": "ai_event"
+          },
+          {
+            "label": "[偷養浪貓]",
+            "hint": "橘貓名叫「Bug」。租約禁止養寵物,他一直提心吊膽怕被房東發現。貓叫聲、貓砂袋、突然增加的紙箱都是破綻。",
+            "kind": "memory",
+            "intensity": 1,
+            "source": "system"
+          },
+          {
+            "label": "[經歷:差點養死的那盆]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.8999999999999999,
+            "source": "ai_event"
+          },
+          {
+            "label": "[手頭拮据]",
+            "hint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "kind": "memory",
+            "intensity": 0.8499999999999999,
+            "source": "ai_event"
+          },
+          {
+            "label": "[經歷:借出去的那把傘]",
+            "hint": "這段經歷已成為他的一部分",
+            "kind": "memory",
+            "intensity": 0.5499999999999996,
+            "source": "ai_event"
+          },
+          {
+            "label": "[冰箱結仇]",
+            "hint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "kind": "memory",
+            "intensity": 0.19999999999999968,
+            "source": "ai_event"
+          }
+        ],
+        "growthTags": [
+          "[重新抱有希望]",
+          "[更有耐心]"
+        ],
+        "stats": {
+          "mood": 95.385826323828,
+          "stress": 42.77481698700261,
+          "affinity": 55,
+          "satisfaction": 73
+        },
+        "room": {
+          "noise": 2,
+          "soundproof": 0,
+          "treated": false,
+          "complaintRisk": true
+        },
+        "todayLog": [
+          "🐾 雙貓互動:布丁 和 辣椒 聯手把小東西推下來,聽見聲音後還一起裝無辜。",
+          "😋 半夜偷吃了 聶婉柔 冰箱裡的布丁,結果被抓個正著…",
+          "🐾 貓狗相遇:布丁 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。",
+          "🐾 雙貓互動:布丁 和 辣椒 在房間裡你追我跑,繞過家具後又一起折返。",
+          "和 聶婉柔 作息相反：一人晚睡、一人需要早起",
+          "❄️ 和 聶婉柔 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "🥐 客人指著菜單上的本日配方咖啡,只好回他「咖啡豆用完了」,他點點頭就走了。",
+          "🐾 貓狗相遇:小虎 伏低身子慢慢靠近,布丁 聞了聞牠的鼻尖,最後和平地並肩坐下。"
+        ],
+        "todayHighlights": [
+          {
+            "text": "🐾 雙貓互動:布丁 和 辣椒 聯手把小東西推下來,聽見聲音後還一起裝無辜。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "😋 半夜偷吃了 聶婉柔 冰箱裡的布丁,結果被抓個正著…",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🐾 貓狗相遇:布丁 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🐾 雙貓互動:布丁 和 辣椒 在房間裡你追我跑,繞過家具後又一起折返。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "和 聶婉柔 作息相反：一人晚睡、一人需要早起",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "❄️ 和 聶婉柔 徹底鬧翻,進入冷戰,互相當作看不見。",
+            "importance": "major",
+            "source": "log"
+          },
+          {
+            "text": "🥐 客人指著菜單上的本日配方咖啡,只好回他「咖啡豆用完了」,他點點頭就走了。",
+            "importance": "notable",
+            "source": "log"
+          },
+          {
+            "text": "🐾 貓狗相遇:小虎 伏低身子慢慢靠近,布丁 聞了聞牠的鼻尖,最後和平地並肩坐下。",
+            "importance": "notable",
+            "source": "log"
+          }
+        ],
+        "focus": {
+          "kind": "major",
+          "headline": "❄️ 和 聶婉柔 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "reason": "這是今天最高重要性的實際事件"
+        },
+        "relationships": [
+          "與 凌宸曜 陌生",
+          "與 聶婉柔 陌生",
+          "與 林小婕 情侶"
+        ],
+        "events": [],
+        "neighbors": [
+          "林小婕",
+          "聶婉柔",
+          "凌宸曜"
+        ],
+        "summary": "連續加班第 12 天。昨天凌晨三點才回家，進門第一件事是抱起橘貓埋在牠身上很久。",
+        "arc": null,
+        "sideArc": null,
+        "pastArcThemes": [
+          "借出去的那把傘",
+          "差點養死的那盆"
+        ],
+        "flags": [
+          "頂樓的漏水還沒修好",
+          "養了一隻貓「布丁」"
+        ],
+        "eventDue": true,
+        "weather": "☀️ 晴朗",
+        "weekday": "週六",
+        "finance": "手頭拮据(收入暫時中斷,省吃儉用中)",
+        "wish": "在工作上站穩腳步(進度約 66%,已經走了一半,越來越有勁)",
+        "cafe": {
+          "brief": "52 位客人、$1845 —— 平常的一天",
+          "trend": "flat",
+          "regulars": []
+        }
+      }
+    },
+    {
+      "diaryId": "fixture_pending_diary",
+      "tenantId": "tenant_r303_1787069467008_0",
+      "gameMs": 1784988000000,
+      "ctx": {
+        "name": "聶婉柔",
+        "neighbors": []
+      }
+    }
+  ],
+  "cafe": {
+    "open": true,
+    "standingOrders": {
+      "coffee_bean": 130,
+      "milk": 24,
+      "flour": 52,
+      "butter": 24,
+      "cat_can": 56,
+      "pet_fresh": 24
+    },
+    "stock": {
+      "coffee_bean": 2,
+      "milk": 24,
+      "flour": 22,
+      "butter": 9,
+      "cat_can": 41,
+      "pet_fresh": 24
+    },
+    "research": null,
+    "completed": [
+      "cafe_research_basic_brewing",
+      "retired_research"
+    ],
+    "upgrades": [
+      "cafe_signboard",
+      "cafe_second_machine",
+      "cafe_outdoor_seats",
+      "cafe_cold_storage",
+      "cafe_pet_tower",
+      "cafe_signboard_lv3",
+      "cafe_signboard_lv4",
+      "retired_cafe_upgrade"
+    ],
+    "extraStaff": 1,
+    "guests": [],
+    "popularity": 1.7999999999999998,
+    "history": [
+      {
+        "day": 0,
+        "guests": 0,
+        "revenue": 0,
+        "cost": 630,
+        "net": -630
+      },
+      {
+        "day": 1,
+        "guests": 50,
+        "revenue": 1770,
+        "cost": 2074,
+        "net": -304
+      },
+      {
+        "day": 2,
+        "guests": 53,
+        "revenue": 1882,
+        "cost": 1440,
+        "net": 442
+      },
+      {
+        "day": 3,
+        "guests": 55,
+        "revenue": 1956,
+        "cost": 1494,
+        "net": 462
+      },
+      {
+        "day": 4,
+        "guests": 55,
+        "revenue": 1960,
+        "cost": 1526,
+        "net": 434
+      },
+      {
+        "day": 5,
+        "guests": 49,
+        "revenue": 1732,
+        "cost": 1530,
+        "net": 202
+      },
+      {
+        "day": 6,
+        "guests": 55,
+        "revenue": 1974,
+        "cost": 1428,
+        "net": 546
+      },
+      {
+        "day": 7,
+        "guests": 55,
+        "revenue": 1966,
+        "cost": 1534,
+        "net": 432
+      },
+      {
+        "day": 8,
+        "guests": 55,
+        "revenue": 1956,
+        "cost": 1530,
+        "net": 426
+      },
+      {
+        "day": 9,
+        "guests": 54,
+        "revenue": 1928,
+        "cost": 1530,
+        "net": 398
+      },
+      {
+        "day": 10,
+        "guests": 55,
+        "revenue": 1962,
+        "cost": 1510,
+        "net": 452
+      },
+      {
+        "day": 11,
+        "guests": 55,
+        "revenue": 1962,
+        "cost": 1530,
+        "net": 432
+      },
+      {
+        "day": 12,
+        "guests": 54,
+        "revenue": 1938,
+        "cost": 1532,
+        "net": 406
+      },
+      {
+        "day": 13,
+        "guests": 50,
+        "revenue": 1762,
+        "cost": 1518,
+        "net": 244
+      },
+      {
+        "day": 14,
+        "guests": 50,
+        "revenue": 1758,
+        "cost": 1446,
+        "net": 312
+      },
+      {
+        "day": 15,
+        "guests": 50,
+        "revenue": 1756,
+        "cost": 1442,
+        "net": 314
+      },
+      {
+        "day": 16,
+        "guests": 51,
+        "revenue": 1804,
+        "cost": 1436,
+        "net": 368
+      },
+      {
+        "day": 17,
+        "guests": 50,
+        "revenue": 1776,
+        "cost": 1460,
+        "net": 316
+      },
+      {
+        "day": 18,
+        "guests": 52,
+        "revenue": 1846,
+        "cost": 1444,
+        "net": 402
+      },
+      {
+        "day": 19,
+        "guests": 50,
+        "revenue": 1786,
+        "cost": 1476,
+        "net": 310
+      }
+    ],
+    "sales": [
+      {
+        "day": 6,
+        "sold": {
+          "cafe_menu_daily_bake": 14,
+          "cafe_menu_house_coffee": 17,
+          "cafe_menu_cafe_research_basic_brewing": 14,
+          "cafe_menu_pet_snack": 10
+        },
+        "missed": {},
+        "missedBy": {},
+        "revenue": 1966,
+        "ingredientCost": 900,
+        "served": 55,
+        "refused": 0,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 904,
+        "abandoned": 17
+      },
+      {
+        "day": 7,
+        "sold": {
+          "cafe_menu_pet_snack": 10,
+          "cafe_menu_house_coffee": 22,
+          "cafe_menu_daily_bake": 13,
+          "cafe_menu_cafe_research_basic_brewing": 10
+        },
+        "missed": {},
+        "missedBy": {},
+        "revenue": 1956,
+        "ingredientCost": 900,
+        "served": 55,
+        "refused": 0,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 900
+      },
+      {
+        "day": 8,
+        "sold": {
+          "cafe_menu_house_coffee": 16,
+          "cafe_menu_cafe_research_basic_brewing": 16,
+          "cafe_menu_daily_bake": 14,
+          "cafe_menu_pet_snack": 8
+        },
+        "missed": {
+          "cafe_menu_cafe_research_basic_brewing": 1
+        },
+        "missedBy": {
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 1
+          }
+        },
+        "revenue": 1928,
+        "ingredientCost": 880,
+        "served": 54,
+        "refused": 1,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 900
+      },
+      {
+        "day": 9,
+        "sold": {
+          "cafe_menu_daily_bake": 20,
+          "cafe_menu_house_coffee": 19,
+          "cafe_menu_pet_snack": 10,
+          "cafe_menu_cafe_research_basic_brewing": 6
+        },
+        "missed": {},
+        "missedBy": {},
+        "revenue": 1962,
+        "ingredientCost": 900,
+        "served": 55,
+        "refused": 0,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 880
+      },
+      {
+        "day": 10,
+        "sold": {
+          "cafe_menu_daily_bake": 13,
+          "cafe_menu_cafe_research_basic_brewing": 11,
+          "cafe_menu_house_coffee": 20,
+          "cafe_menu_pet_snack": 11
+        },
+        "missed": {},
+        "missedBy": {},
+        "revenue": 1962,
+        "ingredientCost": 902,
+        "served": 55,
+        "refused": 0,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 900
+      },
+      {
+        "day": 11,
+        "sold": {
+          "cafe_menu_pet_snack": 12,
+          "cafe_menu_house_coffee": 15,
+          "cafe_menu_daily_bake": 10,
+          "cafe_menu_cafe_research_basic_brewing": 17
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 1
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 1
+          }
+        },
+        "revenue": 1938,
+        "ingredientCost": 888,
+        "served": 54,
+        "refused": 1,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 902,
+        "abandoned": 1
+      },
+      {
+        "day": 12,
+        "sold": {
+          "cafe_menu_house_coffee": 27,
+          "cafe_menu_daily_bake": 10,
+          "cafe_menu_pet_snack": 8,
+          "cafe_menu_cafe_research_basic_brewing": 5
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_cafe_research_basic_brewing": 2
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 3
+          },
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 2
+          }
+        },
+        "revenue": 1762,
+        "ingredientCost": 816,
+        "served": 50,
+        "refused": 5,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 888
+      },
+      {
+        "day": 13,
+        "sold": {
+          "cafe_menu_house_coffee": 27,
+          "cafe_menu_daily_bake": 12,
+          "cafe_menu_pet_snack": 6,
+          "cafe_menu_cafe_research_basic_brewing": 5
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_cafe_research_basic_brewing": 2
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 3
+          },
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 2
+          }
+        },
+        "revenue": 1758,
+        "ingredientCost": 812,
+        "served": 50,
+        "refused": 5,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 816,
+        "abandoned": 27
+      },
+      {
+        "day": 14,
+        "sold": {
+          "cafe_menu_daily_bake": 15,
+          "cafe_menu_house_coffee": 25,
+          "cafe_menu_cafe_research_basic_brewing": 7,
+          "cafe_menu_pet_snack": 3
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 4,
+          "cafe_menu_cafe_research_basic_brewing": 1
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 4
+          },
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 1
+          }
+        },
+        "revenue": 1756,
+        "ingredientCost": 806,
+        "served": 50,
+        "refused": 5,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 812
+      },
+      {
+        "day": 15,
+        "sold": {
+          "cafe_menu_house_coffee": 23,
+          "cafe_menu_daily_bake": 12,
+          "cafe_menu_cafe_research_basic_brewing": 9,
+          "cafe_menu_pet_snack": 7
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_cafe_research_basic_brewing": 1
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 3
+          },
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 1
+          }
+        },
+        "revenue": 1804,
+        "ingredientCost": 830,
+        "served": 51,
+        "refused": 4,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 806
+      },
+      {
+        "day": 16,
+        "sold": {
+          "cafe_menu_cafe_research_basic_brewing": 13,
+          "cafe_menu_daily_bake": 11,
+          "cafe_menu_house_coffee": 19,
+          "cafe_menu_pet_snack": 7
+        },
+        "missed": {
+          "cafe_menu_cafe_research_basic_brewing": 2,
+          "cafe_menu_house_coffee": 3
+        },
+        "missedBy": {
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 2
+          },
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 3
+          }
+        },
+        "revenue": 1776,
+        "ingredientCost": 814,
+        "served": 50,
+        "refused": 5,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 830
+      },
+      {
+        "day": 17,
+        "sold": {
+          "cafe_menu_house_coffee": 20,
+          "cafe_menu_cafe_research_basic_brewing": 12,
+          "cafe_menu_daily_bake": 13,
+          "cafe_menu_pet_snack": 7
+        },
+        "missed": {
+          "cafe_menu_cafe_research_basic_brewing": 1,
+          "cafe_menu_house_coffee": 2
+        },
+        "missedBy": {
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 1
+          },
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 2
+          }
+        },
+        "revenue": 1846,
+        "ingredientCost": 846,
+        "served": 52,
+        "refused": 3,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 814
+      },
+      {
+        "day": 18,
+        "sold": {
+          "cafe_menu_house_coffee": 18,
+          "cafe_menu_cafe_research_basic_brewing": 14,
+          "cafe_menu_pet_snack": 11,
+          "cafe_menu_daily_bake": 7
+        },
+        "missed": {
+          "cafe_menu_house_coffee": 5
+        },
+        "missedBy": {
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 5
+          }
+        },
+        "revenue": 1786,
+        "ingredientCost": 822,
+        "served": 50,
+        "refused": 5,
+        "settled": true,
+        "restocked": true,
+        "restockCost": 846
+      },
+      {
+        "day": 19,
+        "sold": {
+          "cafe_menu_cafe_research_basic_brewing": 12,
+          "cafe_menu_house_coffee": 20,
+          "cafe_menu_daily_bake": 15,
+          "cafe_menu_pet_snack": 5
+        },
+        "missed": {
+          "cafe_menu_cafe_research_basic_brewing": 1,
+          "cafe_menu_house_coffee": 2
+        },
+        "missedBy": {
+          "cafe_menu_cafe_research_basic_brewing": {
+            "coffee_bean": 1
+          },
+          "cafe_menu_house_coffee": {
+            "coffee_bean": 2
+          }
+        },
+        "revenue": 1845,
+        "ingredientCost": 842,
+        "served": 52,
+        "refused": 3,
+        "settled": false,
+        "restocked": true,
+        "restockCost": 822
+      }
+    ],
+    "regulars": [
+      {
+        "name": "葉采薇",
+        "appearance": {
+          "hairStyle": "bob",
+          "hairColor": "#7a4530",
+          "shirt": "#5aa06a",
+          "pants": "#44503a",
+          "skin": "#e8b088",
+          "accessory": "round_glasses"
+        },
+        "taste": "pet",
+        "visits": 13,
+        "sinceDay": 2,
+        "lastVisitDay": 19,
+        "affection": 52,
+        "itemCounts": {
+          "cafe_menu_daily_bake": 7,
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_pet_snack": 1
+        }
+      },
+      {
+        "name": "彭凱文",
+        "appearance": {
+          "hairStyle": "ponytail",
+          "hairColor": "#241f2c",
+          "shirt": "#4a6ac8",
+          "pants": "#3a4a5a",
+          "skin": "#d99a6c",
+          "accessory": "none"
+        },
+        "taste": "pet",
+        "visits": 16,
+        "sinceDay": 2,
+        "lastVisitDay": 19,
+        "affection": 52,
+        "itemCounts": {
+          "cafe_menu_house_coffee": 11,
+          "cafe_menu_cafe_research_basic_brewing": 1,
+          "cafe_menu_daily_bake": 1,
+          "cafe_menu_pet_snack": 1
+        }
+      },
+      {
+        "name": "梁子謙",
+        "appearance": {
+          "hairStyle": "long",
+          "hairColor": "#2c2620",
+          "shirt": "#d0a040",
+          "pants": "#3d4257",
+          "skin": "#8d5524",
+          "accessory": "bow"
+        },
+        "taste": "bakery",
+        "visits": 16,
+        "sinceDay": 2,
+        "lastVisitDay": 19,
+        "affection": 64,
+        "itemCounts": {
+          "cafe_menu_house_coffee": 6,
+          "cafe_menu_cafe_research_basic_brewing": 5,
+          "cafe_menu_daily_bake": 2,
+          "cafe_menu_pet_snack": 1
+        }
+      },
+      {
+        "name": "劉祐廷",
+        "appearance": {
+          "hairStyle": "spiky",
+          "hairColor": "#c8a050",
+          "shirt": "#b070c8",
+          "pants": "#3a4a5a",
+          "skin": "#d99a6c",
+          "accessory": "bow"
+        },
+        "taste": "bakery",
+        "visits": 18,
+        "sinceDay": 2,
+        "lastVisitDay": 19,
+        "affection": 72,
+        "itemCounts": {
+          "cafe_menu_cafe_research_basic_brewing": 10,
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_daily_bake": 2,
+          "cafe_menu_pet_snack": 1
+        }
+      },
+      {
+        "name": "連雅涵",
+        "appearance": {
+          "hairStyle": "long",
+          "hairColor": "#2c2620",
+          "shirt": "#d0a040",
+          "pants": "#3d4257",
+          "skin": "#c68e6a",
+          "accessory": "round_glasses"
+        },
+        "taste": "bakery",
+        "visits": 16,
+        "sinceDay": 2,
+        "lastVisitDay": 19,
+        "affection": 58,
+        "itemCounts": {
+          "cafe_menu_pet_snack": 8,
+          "cafe_menu_house_coffee": 4,
+          "cafe_menu_cafe_research_basic_brewing": 1,
+          "cafe_menu_daily_bake": 1
+        }
+      },
+      {
+        "name": "崔宛蓁",
+        "appearance": {
+          "hairStyle": "short",
+          "hairColor": "#241f2c",
+          "shirt": "#4a6ac8",
+          "pants": "#3d4257",
+          "skin": "#f4c9a6",
+          "accessory": "glasses"
+        },
+        "taste": "bakery",
+        "visits": 15,
+        "sinceDay": 2,
+        "lastVisitDay": 18,
+        "affection": 54,
+        "itemCounts": {
+          "cafe_menu_daily_bake": 9,
+          "cafe_menu_house_coffee": 3,
+          "cafe_menu_pet_snack": 1
+        }
+      }
+    ],
+    "regularCandidates": {
+      "傅宜蓁": 10,
+      "常泰維": 7,
+      "廖沛辰": 7,
+      "徐若安": 12,
+      "梅昕妤": 10,
+      "殷仲賢": 6,
+      "游舒涵": 8,
+      "程皓然": 11,
+      "章昀傑": 10,
+      "莊可欣": 8,
+      "趙家妤": 10,
+      "郝紹謙": 6,
+      "陶婕瑜": 10,
+      "陸承澤": 10,
+      "高詠晴": 7,
+      "余思妤": 1
+    },
+    "regularCandidateDays": {
+      "傅宜蓁": 16,
+      "常泰維": 18,
+      "廖沛辰": 19,
+      "徐若安": 19,
+      "梅昕妤": 19,
+      "殷仲賢": 16,
+      "游舒涵": 14,
+      "程皓然": 19,
+      "章昀傑": 19,
+      "莊可欣": 19,
+      "趙家妤": 19,
+      "郝紹謙": 18,
+      "陶婕瑜": 19,
+      "陸承澤": 19,
+      "高詠晴": 18,
+      "余思妤": 19
+    }
+  },
+  "runtimes": {
+    "tenant_chen_engineer": {
+      "tenant": {
+        "id": "tenant_chen_engineer",
+        "name": "陳家豪",
+        "occupation": "後端工程師",
+        "bio": "29 歲,新創公司後端工程師。上週在公司樓下撿到一隻流浪橘貓偷偷帶回租屋處,正處於連續加班的崩潰邊緣,靠貓續命。",
+        "gender": "male",
+        "attractedTo": [
+          "female"
+        ],
+        "coreTags": [
+          {
+            "id": "introvert",
+            "label": "[社恐]",
+            "behaviorHint": "極力避免與房東正面接觸。包裹會堆在門口好幾天才在深夜取回,聽到敲門聲會先靜止不動假裝不在。"
+          },
+          {
+            "id": "workaholic",
+            "label": "[工作狂]",
+            "behaviorHint": "醒著的時間幾乎都在電腦前。會忘記吃飯,外送餐盒堆積。上線 deploy 的日子情緒特別緊繃。"
+          },
+          {
+            "id": "night_owl",
+            "label": "[夜貓子]",
+            "behaviorHint": "凌晨 2~4 點是活動高峰,中午前幾乎不會起床。深夜螢幕光是這個房間的常態。"
+          }
+        ],
+        "memoryTags": [
+          {
+            "id": "stray_cat_adopted",
+            "label": "[偷養浪貓]",
+            "behaviorHint": "橘貓名叫「Bug」。租約禁止養寵物,他一直提心吊膽怕被房東發現。貓叫聲、貓砂袋、突然增加的紙箱都是破綻。",
+            "acquiredAt": "2026-06-28T22:30:00+08:00",
+            "source": "system"
+          },
+          {
+            "id": "ai_1787069467566",
+            "label": "[冰箱結仇]",
+            "behaviorHint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "acquiredAt": "2026-07-09T04:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.19999999999999968
+          },
+          {
+            "id": "ai_1787069468571",
+            "label": "[經歷:借出去的那把傘]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-15T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.5499999999999996
+          },
+          {
+            "id": "ai_1787069469498",
+            "label": "[手頭拮据]",
+            "behaviorHint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "acquiredAt": "2026-07-21T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.8499999999999999
+          },
+          {
+            "id": "ai_1787069469660",
+            "label": "[經歷:差點養死的那盆]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-22T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.8999999999999999
+          },
+          {
+            "id": "ai_1787069470133",
+            "label": "[冷戰中]",
+            "behaviorHint": "和聶婉柔徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "acquiredAt": "2026-07-25T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 1
+          }
+        ],
+        "finance": {
+          "monthlyRent": 14000,
+          "paymentReliability": 75,
+          "monthsOverdue": 0
+        },
+        "stats": {
+          "mood": 95.385826323828,
+          "stress": 42.77481698700261,
+          "wellbeing": 75.7329432783636,
+          "energy": 82,
+          "affinity": 55
+        },
+        "preferences": {
+          "tech": 8,
+          "soundproof": 6,
+          "cozy": 4
+        },
+        "visualState": "watching_tv",
+        "recentSummary": "連續加班第 12 天。昨天凌晨三點才回家,進門第一件事是抱起橘貓 Bug 埋在牠身上很久。外送盒已經堆了五個,垃圾兩天沒倒。今天有一個 deploy,他早上出門前反常地餵了雙倍貓食,像是預感今天會很晚回來。",
+        "growthTags": [
+          "hopeful",
+          "patient",
+          "resilient",
+          "retired_growth_tag"
+        ],
+        "appearance": {
+          "hairStyle": "spiky",
+          "hairColor": "#3a3346",
+          "shirt": "#5f86b0",
+          "pants": "#464b63",
+          "skin": "#f0c19a",
+          "accessory": "glasses"
+        }
+      },
+      "roomNo": "301",
+      "cleanliness": 25.685620126838838,
+      "roomProps": [],
+      "log": [
+        {
+          "gameMs": 1784869200000,
+          "timeLabel": "7/24 13:00",
+          "text": "貓尾巴掃過臉頰好幾次,還是捨不得把腿上的主子抱走。",
+          "visualState": "playing_with_cat",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "廚房收拾得比煮之前還乾淨,這習慣值得加分。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "和林小婕在沙發上靠在一起,氣氛很甜。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "和凌宸曜窩在沙發上一起看電視。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "牆上的購物清單被撕走了,想必正在生鮮區逐項核對。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784880000000,
+          "timeLabel": "7/24 16:00",
+          "text": "廚房的垃圾先拎下樓了,順路的事總是一起辦。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784883600000,
+          "timeLabel": "7/24 17:00",
+          "text": "房裡沒人,晚餐的碗也是空的——今天決定去外面覓食。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "折疊環保袋從掛勾上消失了,採買的行程八九不離十。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "對著食物雙手合十才開動,吃相莫名令人放心。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "🥐 有人想點招牌美式咖啡,咖啡豆沒了——他看了看菜單,還是把門帶上走了。",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "看到聶婉柔一個人搬東西,順手幫了一把,兩人配合得意外順利。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "在廚房碰到凌宸曜,分了點宵夜給對方。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "盯著螢幕的眼神已經沒有焦距,手指還在機械式地敲鍵盤。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "把手把丟給林小婕救場,結果兩個人輪流失誤,笑到根本沒法專心。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784898000000,
+          "timeLabel": "7/24 21:00",
+          "text": "把頭埋進手臂裡趴了一會,再抬頭時又是一條打工人。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "電視開著當背景音,人在沙發上滑手機,標準的雙螢幕人生。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "和林小婕在房裡窩了一下午,天南地北地聊。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "🐈💥 「布丁」在房間把東西掃下桌,摔得粉碎……只好默默去收拾殘局。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "咖啡廳打烊的鐵門聲響起時,陳家豪才想起今天過得有多快。和鄰居:與 聶婉柔 陌生。",
+          "visualState": "idle",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_chen_engineer_1784901600000_76",
+          "aiPending": false,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784905200000,
+          "timeLabel": "7/24 23:00",
+          "text": "忽然從椅子上彈起來歡呼,看來這一局贏得漂亮。",
+          "visualState": "gaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "對著螢幕嘆了一口很長的氣,然後繼續打字,像認命一樣。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🍂 「連續加班中」的記憶漸漸淡了,不再影響心情。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "💧 半夜被滴水聲吵醒,盆子又滿了。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "今日只繳了部分房租 $372,其餘拖欠。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🥐 午後那波人潮把招牌美式咖啡掃得乾乾淨淨,店裡剩下的香氣比商品還多。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🪥 和 林小婕 並排整理儀容,還順手提醒對方衣領沒翻好。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784912400000,
+          "timeLabel": "7/25 01:00",
+          "text": "開會開到眼神放空,麥克風一亮又立刻坐直裝作全程專心。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784912400000,
+          "timeLabel": "7/25 01:00",
+          "text": "🐈 店貓「辣椒」溜進房裡蹭他的腳邊,忍不住陪牠玩了好一陣子,整個人都被療癒了。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784916000000,
+          "timeLabel": "7/25 02:00",
+          "text": "輸掉關鍵一局後安靜了三秒,接著若無其事地按下重新配對。",
+          "visualState": "gaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784916000000,
+          "timeLabel": "7/25 02:00",
+          "text": "🐾 雙貓互動:布丁 和 辣椒 聯手把小東西推下來,聽見聲音後還一起裝無辜。",
+          "visualState": "gaming",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784919600000,
+          "timeLabel": "7/25 03:00",
+          "text": "揉了揉太陽穴,深呼吸一口,又把自己按回螢幕前。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784923200000,
+          "timeLabel": "7/25 04:00",
+          "text": "把最後一口慢慢吃完才收碗,這頓飯看來很合胃口。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784926800000,
+          "timeLabel": "7/25 05:00",
+          "text": "熱水澡之後整個人的腳步都輕了,拖鞋踩得啪嗒啪嗒響。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784930400000,
+          "timeLabel": "7/25 06:00",
+          "text": "額前的頭髮睡得亂七八糟,本人倒是一臉天下太平。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "😋 半夜偷吃了 聶婉柔 冰箱裡的布丁,結果被抓個正著…",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784937600000,
+          "timeLabel": "7/25 08:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784937600000,
+          "timeLabel": "7/25 08:00",
+          "text": "🐾 貓狗相遇:布丁 豎起尾巴退到高處,小虎 也停下腳步轉開視線,彼此保留安全距離。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784941200000,
+          "timeLabel": "7/25 09:00",
+          "text": "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784944800000,
+          "timeLabel": "7/25 10:00",
+          "text": "額前的頭髮睡得亂七八糟,本人倒是一臉天下太平。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784948400000,
+          "timeLabel": "7/25 11:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784952000000,
+          "timeLabel": "7/25 12:00",
+          "text": "整個人斜躺成一個大字,把單人床睡出了雙人床的氣勢。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784955600000,
+          "timeLabel": "7/25 13:00",
+          "text": "隔著玻璃看外面的人來人往,咖啡涼了一半才回過神。",
+          "visualState": "at_cafe",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "廚房收拾得比煮之前還乾淨,這習慣值得加分。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "和林小婕在沙發上靠在一起,氣氛很甜。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "🐾 雙貓互動:布丁 和 辣椒 在房間裡你追我跑,繞過家具後又一起折返。",
+          "visualState": "cooking",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784962800000,
+          "timeLabel": "7/25 15:00",
+          "text": "房間安靜到有點過分,這種安靜通常要撐到深夜才會被鑰匙聲打破。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784966400000,
+          "timeLabel": "7/25 16:00",
+          "text": "耳機留在桌上沒帶,今天這一趟顯然不是去放鬆的。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784970000000,
+          "timeLabel": "7/25 17:00",
+          "text": "外套掛在門後沒帶走,穿著居家服就下樓的距離,也就那一段。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784973600000,
+          "timeLabel": "7/25 18:00",
+          "text": "水杯滿滿一杯沒喝完,離開得很急,像是被誰催了一通電話。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "把最後一口慢慢吃完才收碗,這頓飯看來很合胃口。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和 聶婉柔 作息相反：一人晚睡、一人需要早起",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "❄️ 和 聶婉柔 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "visualState": "eating",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和 凌宸曜 作息相反：一人晚睡、一人需要早起",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "把待辦清單劃掉一項時露出短暫的笑,很快又打開下一份檔案。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "🥐 客人指著菜單上的本日配方咖啡,只好回他「咖啡豆用完了」,他點點頭就走了。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784984400000,
+          "timeLabel": "7/25 21:00",
+          "text": "桌邊的便利貼越貼越多,已經快看不到桌面原本的顏色。",
+          "visualState": "working_at_desk",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784984400000,
+          "timeLabel": "7/25 21:00",
+          "text": "🐾 貓狗相遇:小虎 伏低身子慢慢靠近,布丁 聞了聞牠的鼻尖,最後和平地並肩坐下。",
+          "visualState": "working_at_desk",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "對著劇情激動地跟空氣講評,比劇中人還入戲。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "今天看著陳家豪進進出出,忽然覺得一間房有人好好生活著,就不只是租金數字。和鄰居:與 凌宸曜 陌生。",
+          "visualState": "watching_tv",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_chen_engineer_1784988000000_80",
+          "aiPending": true,
+          "aiFallbackReason": "catchup"
+        }
+      ],
+      "lastSeenMs": 1783260000000,
+      "pendingEvent": null,
+      "decisions": [],
+      "targetTile": {
+        "c": 2,
+        "r": 5
+      },
+      "satisfaction": 73.41889886340385,
+      "unhappyHours": 0,
+      "lastEventDay": -99,
+      "rentChangeDay": -99,
+      "directive": null,
+      "wallet": 23124,
+      "arrears": 0,
+      "hardshipUntilDay": 22,
+      "lastHardshipDay": 16,
+      "rentGraceUntilDay": -99,
+      "lastRentPleaDay": -99,
+      "wish": {
+        "id": "career_step",
+        "progress": 66,
+        "fulfilledDay": -99,
+        "graduateDay": -99,
+        "announced": false
+      },
+      "arc": null,
+      "sideArc": null,
+      "arcHistory": [
+        "借出去的那把傘",
+        "差點養死的那盆"
+      ],
+      "flags": [
+        "頂樓的漏水還沒修好"
+      ],
+      "diaryHour": 22,
+      "lastDiaryDay": 20,
+      "moveInMs": 1783260000000
+    },
+    "tenant_lin_asmr": {
+      "tenant": {
+        "id": "tenant_lin_asmr",
+        "name": "林小婕",
+        "occupation": "ASMR 實況主",
+        "bio": "25 歲,全職 ASMR 實況主,頻道剛破萬訂閱。生活完全日夜顛倒但異常自律:準時交租、房間一塵不染,只是她的「上班時間」是凌晨十二點到清晨六點。",
+        "gender": "female",
+        "attractedTo": [
+          "male"
+        ],
+        "coreTags": [
+          {
+            "id": "night_owl",
+            "label": "[夜貓子]",
+            "behaviorHint": "凌晨 0 點到 6 點開直播,白天睡覺。窗簾永遠拉死,作息與整棟樓相反。"
+          },
+          {
+            "id": "sound_sensitive",
+            "label": "[聲音敏感]",
+            "behaviorHint": "職業病:對聲音極度敏感。樓上腳步聲、水管聲、鄰居裝修都會讓她抓狂,可能因噪音問題主動聯絡房東(罕見地正面溝通)。"
+          },
+          {
+            "id": "self_disciplined",
+            "label": "[高度自律]",
+            "behaviorHint": "生活儀式感極強:直播前固定泡茶、擦拭設備、做嗓音熱身。房間永遠整齊,交租永遠提前一天。"
+          }
+        ],
+        "memoryTags": [
+          {
+            "id": "ai_1787069467116",
+            "label": "[冰箱結仇]",
+            "behaviorHint": "陳家豪偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "acquiredAt": "2026-07-06T03:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.049999999999999684
+          },
+          {
+            "id": "ai_1787069468422",
+            "label": "[經歷:門口那隻貓]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-14T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 1
+          },
+          {
+            "id": "ai_1787069469498",
+            "label": "[手頭拮据]",
+            "behaviorHint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "acquiredAt": "2026-07-21T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.8499999999999999
+          },
+          {
+            "id": "ai_1787069469831",
+            "label": "[經歷:第一次說不]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-23T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.95
+          },
+          {
+            "id": "ai_1787069469936",
+            "label": "[冷戰中]",
+            "behaviorHint": "和凌宸曜徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "acquiredAt": "2026-07-24T07:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.95
+          }
+        ],
+        "finance": {
+          "monthlyRent": 16500,
+          "paymentReliability": 100,
+          "monthsOverdue": 0
+        },
+        "stats": {
+          "mood": 99.20968790128282,
+          "stress": 9.078380647729729,
+          "wellbeing": 79.07536570500028,
+          "energy": 96,
+          "affinity": 89.6
+        },
+        "preferences": {
+          "soundproof": 10,
+          "cozy": 7,
+          "style": 5,
+          "noise": -10
+        },
+        "visualState": "streaming",
+        "recentSummary": "頻道破萬後的第一週。昨晚直播到清晨六點,狀態很好,下播後罕見地開了一瓶氣泡酒自己慶祝。白天睡覺時被隔壁棟裝修聲吵醒兩次,睡眠品質變差,已在筆記本上寫下「跟房東反映?」但還在猶豫。",
+        "growthTags": [
+          "hopeful",
+          "decisive"
+        ],
+        "appearance": {
+          "hairStyle": "long",
+          "hairColor": "#8a5540",
+          "shirt": "#df90ae",
+          "pants": "#6f5d80",
+          "skin": "#f4c9a6",
+          "accessory": "headphones"
+        }
+      },
+      "roomNo": "302",
+      "cleanliness": 62.28966308643901,
+      "roomProps": [
+        "screen_glow",
+        "mic_setup_active",
+        "curtains_closed"
+      ],
+      "log": [
+        {
+          "gameMs": 1784829600000,
+          "timeLabel": "7/24 02:00",
+          "text": "對著聊天室的留言念念有詞,不時爆出一陣大笑。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784833200000,
+          "timeLabel": "7/24 03:00",
+          "text": "對空氣道謝的樣子有點好笑,大概是收到了斗內。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784836800000,
+          "timeLabel": "7/24 04:00",
+          "text": "對著鏡頭又笑又比手勢,一個人把房間演成了綜藝現場。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784840400000,
+          "timeLabel": "7/24 05:00",
+          "text": "螢幕前談笑風生,鏡頭一關,表情瞬間鬆了下來。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784844000000,
+          "timeLabel": "7/24 06:00",
+          "text": "刷牙時默默跟著手機計時,兩分鐘一到就露出完成任務的表情。",
+          "visualState": "washing_at_sink",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784847600000,
+          "timeLabel": "7/24 07:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784847600000,
+          "timeLabel": "7/24 07:00",
+          "text": "💤 「頻道破萬」在夢裡被貼上了公佈欄,自己的名字排在最前面。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784851200000,
+          "timeLabel": "7/24 08:00",
+          "text": "棉被裹成一顆繭,只露出一撮頭髮在外面透氣。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784854800000,
+          "timeLabel": "7/24 09:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784854800000,
+          "timeLabel": "7/24 09:00",
+          "text": "房東的監視器不會說話,但林小婕今天那些小動作,多少透露了一點心事。和鄰居:與 凌宸曜 陌生。",
+          "visualState": "sleeping_on_bed",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_lin_asmr_1784854800000_73",
+          "aiPending": false,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784858400000,
+          "timeLabel": "7/24 10:00",
+          "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784862000000,
+          "timeLabel": "7/24 11:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784865600000,
+          "timeLabel": "7/24 12:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784869200000,
+          "timeLabel": "7/24 13:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "窩在椅子裡翻書,房間安靜得只剩翻頁的聲音。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "和陳家豪在沙發上靠在一起,氣氛很甜。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "🐈 店貓「辣椒」溜進房裡蹭他的腳邊,忍不住陪牠玩了好一陣子,整個人都被療癒了。",
+          "visualState": "reading",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "把最喜歡的那一塊留到最後才吃,是個先苦後甘派。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "被聶婉柔塞了一包吃不完的零食,嘴上嫌棄,收下時倒挺開心。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "和 凌宸曜 作息相反：一人晚睡、一人需要早起",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "❄️ 和 凌宸曜 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "visualState": "eating",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784880000000,
+          "timeLabel": "7/24 16:00",
+          "text": "手機握在手裡,螢幕暗了也沒察覺,整個人放空待機。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784883600000,
+          "timeLabel": "7/24 17:00",
+          "text": "忽然站起來像想起什麼,走兩步又停住,記憶顯然再次離家出走。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "坐在椅子上盯著天花板,靈魂大概出門散步去了。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "裹著浴巾出來,頭髮上的水珠一路滴到房間。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "🐕 門沒關好,公寓犬「小虎」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "望著窗外一動不動,不知道在看風景還是看人生。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "把手把丟給陳家豪救場,結果兩個人輪流失誤,笑到根本沒法專心。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784898000000,
+          "timeLabel": "7/24 21:00",
+          "text": "整個人癱成一灘,姿勢隨便到讓人懷疑骨頭放假了。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "下播後反覆重看片段,看到自己的失誤時把臉埋進了手掌。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "和陳家豪在房裡窩了一下午,天南地北地聊。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784905200000,
+          "timeLabel": "7/24 23:00",
+          "text": "直播臨時出了小狀況,還是笑著圓了回來,鏡頭外才鬆一口氣。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "下播後對著鏡頭揮手好久,關掉之後安靜得有點寂寞。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🍂 「頻道破萬」的記憶漸漸淡了,不再影響心情。",
+          "visualState": "streaming",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "準時繳清今日房租 $550。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🪥 和 陳家豪 分享了快用完的牙膏,站在鏡子前聊起今天的安排。",
+          "visualState": "streaming",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784912400000,
+          "timeLabel": "7/25 01:00",
+          "text": "直播臨時出了小狀況,還是笑著圓了回來,鏡頭外才鬆一口氣。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784916000000,
+          "timeLabel": "7/25 02:00",
+          "text": "對著聊天室的留言念念有詞,不時爆出一陣大笑。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784919600000,
+          "timeLabel": "7/25 03:00",
+          "text": "讀到熟悉觀眾的留言時眼睛一亮,連聲音都多了幾分真心。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784923200000,
+          "timeLabel": "7/25 04:00",
+          "text": "對著聊天室的留言念念有詞,不時爆出一陣大笑。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784926800000,
+          "timeLabel": "7/25 05:00",
+          "text": "補光燈把半個房間照得亮堂堂,像個小型攝影棚。",
+          "visualState": "streaming",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784930400000,
+          "timeLabel": "7/25 06:00",
+          "text": "洗完澡換上最寬鬆的衣服,整個人終於從今天下班了。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "棉被裹成一顆繭,只露出一撮頭髮在外面透氣。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784937600000,
+          "timeLabel": "7/25 08:00",
+          "text": "整個人斜躺成一個大字,把單人床睡出了雙人床的氣勢。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784941200000,
+          "timeLabel": "7/25 09:00",
+          "text": "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784941200000,
+          "timeLabel": "7/25 09:00",
+          "text": "今天林小婕看起來悶悶的,希望只是累了,不是遇上了什麼難關。和鄰居:與 凌宸曜 陌生。",
+          "visualState": "sleeping_on_bed",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_lin_asmr_1784941200000_77",
+          "aiPending": true,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784944800000,
+          "timeLabel": "7/25 10:00",
+          "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784948400000,
+          "timeLabel": "7/25 11:00",
+          "text": "睡夢中把棉被往身上拉了拉,只剩腳尖還固執地露在外面。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784952000000,
+          "timeLabel": "7/25 12:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784955600000,
+          "timeLabel": "7/25 13:00",
+          "text": "棉被裹成一顆繭,只露出一撮頭髮在外面透氣。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "翻到喜歡的句子時拿手機拍了下來,又回頭多讀了兩遍。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "和陳家豪在沙發上靠在一起,氣氛很甜。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784962800000,
+          "timeLabel": "7/25 15:00",
+          "text": "邊吃邊放空,筷子懸在半空中好幾秒才想起要夾菜。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784966400000,
+          "timeLabel": "7/25 16:00",
+          "text": "窩在椅子裡翻書,房間安靜得只剩翻頁的聲音。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784970000000,
+          "timeLabel": "7/25 17:00",
+          "text": "看到緊張的劇情整個人往前傾,抱枕都快被捏變形了。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784973600000,
+          "timeLabel": "7/25 18:00",
+          "text": "傍晚燉了一鍋湯,整層樓大概都聞得到那股香氣。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "水聲裡混著走音的歌聲,心情看起來不錯。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "忽然站起來像想起什麼,走兩步又停住,記憶顯然再次離家出走。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784984400000,
+          "timeLabel": "7/25 21:00",
+          "text": "躺在床上睜著眼睛,什麼也沒做,就這麼靜靜地耗著。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "下播後反覆重看片段,看到自己的失誤時把臉埋進了手掌。",
+          "visualState": "streaming",
+          "importance": "minor"
+        }
+      ],
+      "lastSeenMs": 1783260000000,
+      "pendingEvent": null,
+      "decisions": [],
+      "targetTile": {
+        "c": 11,
+        "r": 3
+      },
+      "satisfaction": 93.02139012673152,
+      "unhappyHours": 0,
+      "lastEventDay": -99,
+      "rentChangeDay": -99,
+      "directive": {
+        "id": "retired_directive",
+        "untilDay": 0,
+        "source": "ai"
+      },
+      "wallet": 25025,
+      "arrears": 0,
+      "hardshipUntilDay": 21,
+      "lastHardshipDay": 16,
+      "rentGraceUntilDay": -99,
+      "lastRentPleaDay": -99,
+      "wish": {
+        "id": "grow_channel",
+        "progress": 32,
+        "fulfilledDay": -99,
+        "graduateDay": -99,
+        "announced": false
+      },
+      "arc": null,
+      "sideArc": null,
+      "arcHistory": [
+        "門口那隻貓",
+        "第一次說不"
+      ],
+      "flags": [
+        "頂樓的漏水還沒修好"
+      ],
+      "diaryHour": 9,
+      "lastDiaryDay": 19,
+      "moveInMs": 1783260000000
+    },
+    "tenant_r303_1787069467008_0": {
+      "tenant": {
+        "id": "tenant_r303_1787069467008_0",
+        "name": "聶婉柔",
+        "occupation": "退休教師",
+        "bio": "剛退休的國文老師,白天在家泡茶讀書,對整棟樓的動靜瞭若指掌。",
+        "gender": "female",
+        "attractedTo": [
+          "male"
+        ],
+        "appearance": {
+          "hairStyle": "bob",
+          "hairColor": "#5a3020",
+          "shirt": "#d0a040",
+          "pants": "#3a4a5a",
+          "skin": "#a5673f",
+          "accessory": "none"
+        },
+        "isAdult": true,
+        "coreTags": [
+          {
+            "id": "early_bird",
+            "label": "[早睡早起]",
+            "behaviorHint": "晚上十點就寢,清晨聽廣播。"
+          },
+          {
+            "id": "busybody",
+            "label": "[愛管閒事]",
+            "behaviorHint": "鄰居的大小事都想關心一下。"
+          }
+        ],
+        "memoryTags": [
+          {
+            "id": "ai_1787069467774",
+            "label": "[冰箱結仇]",
+            "behaviorHint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "acquiredAt": "2026-07-10T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.24999999999999967
+          },
+          {
+            "id": "ai_1787069468107",
+            "label": "[經歷:下班時的天亮]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-12T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.39999999999999963
+          },
+          {
+            "id": "ai_1787069468851",
+            "label": "[心動的距離]",
+            "behaviorHint": "那晚共用耳機的距離,近得能聽見彼此的呼吸。",
+            "acquiredAt": "2026-07-17T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.5999999999999996
+          },
+          {
+            "id": "ai_1787069470133",
+            "label": "[冷戰中]",
+            "behaviorHint": "和陳家豪徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "acquiredAt": "2026-07-25T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 1
+          }
+        ],
+        "finance": {
+          "monthlyRent": 12000,
+          "paymentReliability": 80,
+          "monthsOverdue": 0
+        },
+        "stats": {
+          "mood": 92.56473815329652,
+          "stress": 15.35560297031893,
+          "wellbeing": 80.47228899473777,
+          "energy": 99,
+          "affinity": 55
+        },
+        "preferences": {
+          "cozy": 7,
+          "storage": 4
+        },
+        "visualState": "washing_at_sink",
+        "recentSummary": "聶婉柔 剛搬進 303 房。剛退休的國文老師,白天在家泡茶讀書,對整棟樓的動靜瞭若指掌。",
+        "growthTags": [
+          "grounded"
+        ]
+      },
+      "roomNo": "303",
+      "cleanliness": 56.22971473123409,
+      "roomProps": [],
+      "log": [
+        {
+          "gameMs": 1784822400000,
+          "timeLabel": "7/24 00:00",
+          "text": "📖 那張照片今天又被拿出來了。他沒有說話。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784826000000,
+          "timeLabel": "7/24 01:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784829600000,
+          "timeLabel": "7/24 02:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784833200000,
+          "timeLabel": "7/24 03:00",
+          "text": "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784836800000,
+          "timeLabel": "7/24 04:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784840400000,
+          "timeLabel": "7/24 05:00",
+          "text": "枕頭掉到地上也渾然不覺,這種睡眠品質令人羨慕。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784844000000,
+          "timeLabel": "7/24 06:00",
+          "text": "沖澡的水聲又快又急,看來只是例行公事的戰鬥澡。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784847600000,
+          "timeLabel": "7/24 07:00",
+          "text": "邊吃邊放空,筷子懸在半空中好幾秒才想起要夾菜。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784851200000,
+          "timeLabel": "7/24 08:00",
+          "text": "換了三個姿勢還在讀,看來今天這本書是真的放不下。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784854800000,
+          "timeLabel": "7/24 09:00",
+          "text": "擦窗戶擦得特別賣力,連角落的灰都不放過。",
+          "visualState": "cleaning",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784858400000,
+          "timeLabel": "7/24 10:00",
+          "text": "讀到某一頁忽然停下來,盯著窗外想了很久。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784862000000,
+          "timeLabel": "7/24 11:00",
+          "text": "煮麵的水滾了才發現忘記拿碗,小跑步去櫃子翻找。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784865600000,
+          "timeLabel": "7/24 12:00",
+          "text": "一口接一口吃得很急,是餓過頭了還是趕時間。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784869200000,
+          "timeLabel": "7/24 13:00",
+          "text": "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "監視器拍到聶婉柔和別人笑成一團,公共區難得有了像家的聲音。和鄰居:與 陳家豪 陌生。",
+          "visualState": "sleeping_on_bed",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_r303_1787069467008_0_1784872800000_74",
+          "aiPending": false,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "零食袋窸窸窣窣地響,配上罐頭笑聲,很標準的放鬆夜。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "被林小婕塞了一包吃不完的零食,嘴上嫌棄,收下時倒挺開心。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784880000000,
+          "timeLabel": "7/24 16:00",
+          "text": "房裡的燈全暗著,加班的人不會替空房間留燈。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784883600000,
+          "timeLabel": "7/24 17:00",
+          "text": "鞋櫃裡少了那雙好穿脫的,晚上走的路不會短。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "煮麵的水滾了才發現忘記拿碗,小跑步去櫃子翻找。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "把最後一口慢慢吃完才收碗,這頓飯看來很合胃口。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "和凌宸曜組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "看到陳家豪一個人搬東西,順手幫了一把,兩人配合得意外順利。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "電視開著當背景音,人在沙發上滑手機,標準的雙螢幕人生。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784898000000,
+          "timeLabel": "7/24 21:00",
+          "text": "書頁間掉出一張舊票根,比原本的內容多看了好一會。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "進門前還一臉匆忙,出來時整個人的腳步明顯從容多了。",
+          "visualState": "using_toilet",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784905200000,
+          "timeLabel": "7/24 23:00",
+          "text": "整個人斜躺成一個大字,把單人床睡出了雙人床的氣勢。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🐈 門沒關好,陳家豪 的貓「布丁」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "⚡ 工作到一半又跳電,檔案差點沒存到。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "今日只繳了部分房租 $347,其餘拖欠。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784912400000,
+          "timeLabel": "7/25 01:00",
+          "text": "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784916000000,
+          "timeLabel": "7/25 02:00",
+          "text": "整個人斜躺成一個大字,把單人床睡出了雙人床的氣勢。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784919600000,
+          "timeLabel": "7/25 03:00",
+          "text": "睡到一半忽然笑出聲,不知道夢裡發生了什麼好事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784919600000,
+          "timeLabel": "7/25 03:00",
+          "text": "🐈 門沒關好,店貓「辣椒」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784923200000,
+          "timeLabel": "7/25 04:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784926800000,
+          "timeLabel": "7/25 05:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784930400000,
+          "timeLabel": "7/25 06:00",
+          "text": "在廁所裡看完一整串群組訊息,出門時才發現腿已經坐麻了。",
+          "visualState": "using_toilet",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "吃完靠在椅背上摸摸肚子,一臉此生無憾的滿足。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "💢 放在共用冰箱、寫了名字的布丁被 陳家豪 偷吃了,當場抓包!",
+          "visualState": "eating",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784937600000,
+          "timeLabel": "7/25 08:00",
+          "text": "嘴角跟著書頁的內容微微上揚,想必讀到了有趣的段落。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784941200000,
+          "timeLabel": "7/25 09:00",
+          "text": "丟東西前拿著猶豫了半天,最後還是放回了原位。",
+          "visualState": "cleaning",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784944800000,
+          "timeLabel": "7/25 10:00",
+          "text": "闔上書之後長長呼出一口氣,像剛結束一趟遠行。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784948400000,
+          "timeLabel": "7/25 11:00",
+          "text": "對著食譜影片暫停又倒轉,鍋裡的東西已經有點焦慮。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784952000000,
+          "timeLabel": "7/25 12:00",
+          "text": "邊吃邊放空,筷子懸在半空中好幾秒才想起要夾菜。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784955600000,
+          "timeLabel": "7/25 13:00",
+          "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "聶婉柔今天和鄰居相處得很自然,有些默契似乎已經不需要特別說明。和鄰居:與 陳家豪 陌生。",
+          "visualState": "sleeping_on_bed",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_r303_1787069467008_0_1784959200000_78",
+          "aiPending": true,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784962800000,
+          "timeLabel": "7/25 15:00",
+          "text": "電視開著當背景音,人在沙發上滑手機,標準的雙螢幕人生。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784966400000,
+          "timeLabel": "7/25 16:00",
+          "text": "折疊環保袋從掛勾上消失了,採買的行程八九不離十。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784970000000,
+          "timeLabel": "7/25 17:00",
+          "text": "門沒鎖死,只是虛掩著,看樣子是那種「買個東西馬上回來」的出門。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784973600000,
+          "timeLabel": "7/25 18:00",
+          "text": "對著食譜影片暫停又倒轉,鍋裡的東西已經有點焦慮。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "吃到好吃的那一瞬間,整個人都亮了起來。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和 陳家豪 作息相反：一人晚睡、一人需要早起",
+          "visualState": "eating",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "❄️ 和 陳家豪 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "visualState": "eating",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和凌宸曜在交誼廳小聲說著只有彼此聽得懂的話。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "縮在沙發裡追劇,一集接一集,手指誠實地按著下一集。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784984400000,
+          "timeLabel": "7/25 21:00",
+          "text": "書看到一半滑落在胸口,人靠著椅背閉目養神。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "水龍頭一開太大濺濕了衣角,只好站在洗手台前努力拍乾。",
+          "visualState": "washing_at_sink",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "(這篇還在等 AI 補寫)",
+          "visualState": "washing_at_sink",
+          "importance": "notable",
+          "ai": true,
+          "daily": true,
+          "diaryId": "fixture_pending_diary",
+          "aiPending": true
+        }
+      ],
+      "lastSeenMs": 1783260000000,
+      "pendingEvent": null,
+      "decisions": [],
+      "targetTile": {
+        "c": 4,
+        "r": 29
+      },
+      "archetypeKey": "retired_archetype",
+      "satisfaction": 79.13090865075971,
+      "unhappyHours": 0,
+      "lastEventDay": -99,
+      "rentChangeDay": -99,
+      "directive": null,
+      "wallet": 22311,
+      "arrears": 0,
+      "hardshipUntilDay": -99,
+      "lastHardshipDay": -99,
+      "rentGraceUntilDay": -99,
+      "lastRentPleaDay": -99,
+      "wish": {
+        "id": "teach_someone",
+        "progress": 62,
+        "fulfilledDay": -99,
+        "graduateDay": -99,
+        "announced": false
+      },
+      "arc": null,
+      "sideArc": {
+        "id": "larc_arc_seed_old_photo_16",
+        "theme": "抽屜裡的舊照片",
+        "stage": 2,
+        "maxStage": 3,
+        "summary": "那張照片被拿出來又放回去好幾次。",
+        "seedId": "arc_seed_old_photo",
+        "localDay": 18
+      },
+      "arcHistory": [
+        "下班時的天亮"
+      ],
+      "flags": [
+        "頂樓的漏水還沒修好"
+      ],
+      "diaryHour": 14,
+      "lastDiaryDay": 19,
+      "moveInMs": 1783260000000
+    },
+    "tenant_r304_1787069467018_0": {
+      "tenant": {
+        "id": "tenant_r304_1787069467018_0",
+        "name": "凌宸曜",
+        "occupation": "健身教練",
+        "bio": "清晨帶課的健身教練,把自律當信仰,冰箱塞滿雞胸肉。",
+        "gender": "male",
+        "attractedTo": [
+          "female"
+        ],
+        "appearance": {
+          "hairStyle": "short",
+          "hairColor": "#32271d",
+          "shirt": "#d97a3a",
+          "pants": "#4a4055",
+          "skin": "#8d5524",
+          "accessory": "none"
+        },
+        "isAdult": true,
+        "coreTags": [
+          {
+            "id": "early_bird",
+            "label": "[晨型人]",
+            "behaviorHint": "五點起床,晨跑後才出門帶課。"
+          },
+          {
+            "id": "fitness",
+            "label": "[健身狂]",
+            "behaviorHint": "在家也要拉彈力帶,體態極好。"
+          }
+        ],
+        "memoryTags": [
+          {
+            "id": "ai_1787069467317",
+            "label": "[冰箱結仇]",
+            "behaviorHint": "林小婕偷吃了自己冰箱的食物,看到對方就想起那顆布丁。",
+            "acquiredAt": "2026-07-07T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.09999999999999969
+          },
+          {
+            "id": "ai_1787069468729",
+            "label": "[經歷:抽屜裡的舊照片]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-16T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.5999999999999996
+          },
+          {
+            "id": "ai_1787069468851",
+            "label": "[心動的距離]",
+            "behaviorHint": "那晚共用耳機的距離,近得能聽見彼此的呼吸。",
+            "acquiredAt": "2026-07-17T11:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.5999999999999996
+          },
+          {
+            "id": "ai_1787069469036",
+            "label": "[手頭拮据]",
+            "behaviorHint": "工作出了狀況,收入斷了,連吃飯都要省著來",
+            "acquiredAt": "2026-07-18T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.6999999999999997
+          },
+          {
+            "id": "ai_1787069469831",
+            "label": "[經歷:清晨那條路]",
+            "behaviorHint": "這段經歷已成為他的一部分",
+            "acquiredAt": "2026-07-23T16:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.95
+          },
+          {
+            "id": "ai_1787069469936",
+            "label": "[冷戰中]",
+            "behaviorHint": "和林小婕徹底鬧翻,現在連交誼廳都刻意錯開。",
+            "acquiredAt": "2026-07-24T07:00:00.000Z",
+            "source": "ai_event",
+            "intensity": 0.95
+          }
+        ],
+        "finance": {
+          "monthlyRent": 13000,
+          "paymentReliability": 80,
+          "monthsOverdue": 0
+        },
+        "stats": {
+          "mood": 84.07523579718372,
+          "stress": 19.440900686027163,
+          "wellbeing": 75.04663615265781,
+          "energy": 100,
+          "affinity": 55
+        },
+        "preferences": {
+          "cozy": 3,
+          "storage": 5,
+          "noise": 3
+        },
+        "visualState": "sleeping_on_bed",
+        "recentSummary": "凌宸曜 剛搬進 304 房。清晨帶課的健身教練,把自律當信仰,冰箱塞滿雞胸肉。",
+        "growthTags": [
+          "lets_go",
+          "patient"
+        ]
+      },
+      "roomNo": "304",
+      "cleanliness": 36.417137545434166,
+      "roomProps": [
+        "lights_off"
+      ],
+      "log": [
+        {
+          "gameMs": 1784829600000,
+          "timeLabel": "7/24 02:00",
+          "text": "蜷在被窩裡睡得像被拔掉電源,連翻身都省了。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784833200000,
+          "timeLabel": "7/24 03:00",
+          "text": "翻來覆去好一陣子才安靜下來,看來心裡裝著事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784836800000,
+          "timeLabel": "7/24 04:00",
+          "text": "刷牙時默默跟著手機計時,兩分鐘一到就露出完成任務的表情。",
+          "visualState": "washing_at_sink",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784840400000,
+          "timeLabel": "7/24 05:00",
+          "text": "捧著碗看著螢幕吃飯,配飯的影片比菜色還重要。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784844000000,
+          "timeLabel": "7/24 06:00",
+          "text": "帽子從掛勾上不見了,外頭日頭正好。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784847600000,
+          "timeLabel": "7/24 07:00",
+          "text": "帽子從掛勾上不見了,外頭日頭正好。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784851200000,
+          "timeLabel": "7/24 08:00",
+          "text": "門口那雙沾著草屑的鞋今天又出勤了。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784854800000,
+          "timeLabel": "7/24 09:00",
+          "text": "耳機盒空著,擺明了是要邊走邊聽點什麼。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784858400000,
+          "timeLabel": "7/24 10:00",
+          "text": "陽台的花澆過了水,澆完人就晃出去了。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784862000000,
+          "timeLabel": "7/24 11:00",
+          "text": "房間安靜到有點過分,這種安靜通常要撐到深夜才會被鑰匙聲打破。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784865600000,
+          "timeLabel": "7/24 12:00",
+          "text": "工作用的後背包不見了,這個時間點回不來,答案通常只有一個。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784869200000,
+          "timeLabel": "7/24 13:00",
+          "text": "床鋪維持著早上離開的樣子,今天大概又要很晚才會有人躺回去。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "把最喜歡的那一塊留到最後才吃,是個先苦後甘派。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784872800000,
+          "timeLabel": "7/24 14:00",
+          "text": "和陳家豪窩在沙發上一起看電視。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "折了書角又愧疚地攤平,改用手邊的收據當書籤。",
+          "visualState": "reading",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "和 林小婕 作息相反：一人晚睡、一人需要早起",
+          "visualState": "reading",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784876400000,
+          "timeLabel": "7/24 15:00",
+          "text": "❄️ 和 林小婕 徹底鬧翻,進入冷戰,互相當作看不見。",
+          "visualState": "reading",
+          "importance": "major"
+        },
+        {
+          "gameMs": 1784880000000,
+          "timeLabel": "7/24 16:00",
+          "text": "遙控器轉了一大圈,最後還是回到一開始那一台。",
+          "visualState": "watching_tv",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784883600000,
+          "timeLabel": "7/24 17:00",
+          "text": "鍋蓋一掀發現成果比預期好,忍不住先站在爐邊偷吃一口。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784883600000,
+          "timeLabel": "7/24 17:00",
+          "text": "🐈 門沒關好,店貓「辣椒」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "cooking",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "一個人吃飯也擺得整整齊齊,連餐墊都鋪好了。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "🐈 門沒關好,陳家豪 的貓「布丁」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784887200000,
+          "timeLabel": "7/24 18:00",
+          "text": "咖啡廳打烊的鐵門聲響起時,凌宸曜才想起今天過得有多快。和鄰居:與 林小婕 陌生。",
+          "visualState": "eating",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_r304_1787069467018_0_1784887200000_75",
+          "aiPending": false,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "躺在床上睜著眼睛,什麼也沒做,就這麼靜靜地耗著。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "和聶婉柔組隊打到忘記時間,一個喊指揮、一個專門製造意外。",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784890800000,
+          "timeLabel": "7/24 19:00",
+          "text": "在廚房碰到陳家豪,分了點宵夜給對方。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784894400000,
+          "timeLabel": "7/24 20:00",
+          "text": "一邊刷牙一邊用手機確認今天行程,差點把牙膏泡沫噴到螢幕上。",
+          "visualState": "washing_at_sink",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784898000000,
+          "timeLabel": "7/24 21:00",
+          "text": "額前的頭髮睡得亂七八糟,本人倒是一臉天下太平。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784898000000,
+          "timeLabel": "7/24 21:00",
+          "text": "🐈💩 在凌宸曜 的房間角落發現了「辣椒」留下的不可言說的『驚喜』……氣到說不出話。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784901600000,
+          "timeLabel": "7/24 22:00",
+          "text": "睡夢中把棉被往身上拉了拉,只剩腳尖還固執地露在外面。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784905200000,
+          "timeLabel": "7/24 23:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "整個人斜躺成一個大字,把單人床睡出了雙人床的氣勢。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "🧹 房間亂得讓人靜不下心,忍不住嫌了句「該打掃了」。",
+          "visualState": "sleeping_on_bed",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784908800000,
+          "timeLabel": "7/25 00:00",
+          "text": "今日只繳了部分房租 $376,其餘拖欠。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784912400000,
+          "timeLabel": "7/25 01:00",
+          "text": "枕頭掉到地上也渾然不覺,這種睡眠品質令人羨慕。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784916000000,
+          "timeLabel": "7/25 02:00",
+          "text": "鬧鐘震了兩輪都沒醒,最後被自己翻身的動靜嚇了一跳。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784919600000,
+          "timeLabel": "7/25 03:00",
+          "text": "睡相意外地端正,像在拍寢具廣告,可惜沒人付通告費。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784923200000,
+          "timeLabel": "7/25 04:00",
+          "text": "熱水澡之後整個人的腳步都輕了,拖鞋踩得啪嗒啪嗒響。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784926800000,
+          "timeLabel": "7/25 05:00",
+          "text": "一口接一口吃得很急,是餓過頭了還是趕時間。",
+          "visualState": "eating",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784930400000,
+          "timeLabel": "7/25 06:00",
+          "text": "房間空著,桌上壓著一張沒寫完的待辦,第一項還沒打勾。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784934000000,
+          "timeLabel": "7/25 07:00",
+          "text": "書包放著沒帶,這趟出門顯然不遠,回來還要再出去一次。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784937600000,
+          "timeLabel": "7/25 08:00",
+          "text": "門外走廊還留著一點腳步聲的餘溫,今天出門得比太陽還早。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784941200000,
+          "timeLabel": "7/25 09:00",
+          "text": "桌上的馬克杯空著沒洗,看來今天的咖啡打算在外面解決。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784944800000,
+          "timeLabel": "7/25 10:00",
+          "text": "手機留在桌上沒帶走,這種出門是刻意要放空的。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784948400000,
+          "timeLabel": "7/25 11:00",
+          "text": "房裡靜著,調味料架上有一格明顯空著,今天要補齊了。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784952000000,
+          "timeLabel": "7/25 12:00",
+          "text": "牆上的購物清單被撕走了,想必正在生鮮區逐項核對。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784955600000,
+          "timeLabel": "7/25 13:00",
+          "text": "桌上留著一張特價傳單,被折起一角做了記號。",
+          "visualState": "away",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784959200000,
+          "timeLabel": "7/25 14:00",
+          "text": "把同一頁手機畫面上下滑了好幾次,資訊完全沒有進到腦子裡。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784962800000,
+          "timeLabel": "7/25 15:00",
+          "text": "水杯端到嘴邊停住,想事情想到忘記自己在喝水。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784966400000,
+          "timeLabel": "7/25 16:00",
+          "text": "坐在沙發上抱著抱枕發呆,連貓經過都懶得逗。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784970000000,
+          "timeLabel": "7/25 17:00",
+          "text": "手指無意識地敲著桌面,眼神卻飄到了很遠的地方。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784973600000,
+          "timeLabel": "7/25 18:00",
+          "text": "望著窗外一動不動,不知道在看風景還是看人生。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784973600000,
+          "timeLabel": "7/25 18:00",
+          "text": "難得的週末,凌宸曜沒被鬧鐘追著跑,連監視器畫面看起來都悠哉了點。和鄰居:與 林小婕 陌生。",
+          "visualState": "idle",
+          "importance": "major",
+          "ai": false,
+          "daily": true,
+          "diaryId": "diary_tenant_r304_1787069467018_0_1784973600000_79",
+          "aiPending": true,
+          "aiFallbackReason": "catchup"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "發呆發得很徹底,連監視器都替這份專注感到佩服。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和 陳家豪 作息相反：一人晚睡、一人需要早起",
+          "visualState": "idle",
+          "importance": "notable"
+        },
+        {
+          "gameMs": 1784977200000,
+          "timeLabel": "7/25 19:00",
+          "text": "和聶婉柔在交誼廳小聲說著只有彼此聽得懂的話。",
+          "visualState": "idle",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "洗了很久很久,大概是把一整天的疲憊都沖掉了。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784980800000,
+          "timeLabel": "7/25 20:00",
+          "text": "🐈 門沒關好,陳家豪 的貓「布丁」晃了進來,巡視一圈又晃了出去。",
+          "visualState": "showering",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784984400000,
+          "timeLabel": "7/25 21:00",
+          "text": "被子踢到床尾,又在睡夢中摸索著撈回來,重複了三次。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        },
+        {
+          "gameMs": 1784988000000,
+          "timeLabel": "7/25 22:00",
+          "text": "抱著枕頭側睡,呼吸均勻,今天大概沒什麼煩心事。",
+          "visualState": "sleeping_on_bed",
+          "importance": "minor"
+        }
+      ],
+      "lastSeenMs": 1783260000000,
+      "pendingEvent": null,
+      "decisions": [],
+      "targetTile": {
+        "c": 12,
+        "r": 16
+      },
+      "archetypeKey": "early_riser",
+      "satisfaction": 72.40197802501051,
+      "unhappyHours": 0,
+      "lastEventDay": -99,
+      "rentChangeDay": -99,
+      "directive": null,
+      "wallet": 19853,
+      "arrears": 0,
+      "hardshipUntilDay": -99,
+      "lastHardshipDay": 13,
+      "rentGraceUntilDay": -99,
+      "lastRentPleaDay": -99,
+      "wish": {
+        "id": "open_shop",
+        "progress": 62,
+        "fulfilledDay": -99,
+        "graduateDay": -99,
+        "announced": false
+      },
+      "arc": null,
+      "sideArc": null,
+      "arcHistory": [
+        "抽屜裡的舊照片",
+        "清晨那條路"
+      ],
+      "flags": [
+        "頂樓的漏水還沒修好"
+      ],
+      "diaryHour": 18,
+      "lastDiaryDay": 19,
+      "moveInMs": 1783260000000
+    }
+  }
+}

@@ -46,6 +46,12 @@
 - 先用 `git status --porcelain` 與 `git diff -- STATUS.md 工作日誌.md docs/待辦.md`
   確認本次確實有 `STATUS.md` 與日誌的變更（動到待辦時 `docs/待辦.md` 也要有）。
 - 相關功能至少跑對應測試；跨系統或平衡改動跑 `npm test` 與 `npm run build`。
+- **動到 `src/` 或 `worker/` 的批次,提交前必須跑存檔啟動煙霧測試 `npm run smoke:save`**
+  (`vite build` → 把既有存檔種進 localStorage → 無頭瀏覽器真的啟動 app → 快轉 48 小時)。
+  `npm test`／UI Lab／`balance-test` **全部是全新 session、全新 state**,抓不到
+  「只在載入舊存檔才炸」與「打包後才現形」的問題(2026-08-18 線上白畫面事故)。
+- **部署一次只推一批,等線上驗證通過再推下一批。** 2026-08-18 六批一起推,
+  壞掉時無法定位是哪一批,只能整包回退。
 - 刻意改變平衡時，確認差異合理後執行 `npx tsx scripts/balance-test.ts --update`，並在日誌說明原因。
 - 保留未成年排除戀愛線、成人內容遮蔽式且預設關、AI 輸出白名單／夾值／消毒等既有硬規則。
 

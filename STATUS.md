@@ -14,20 +14,20 @@
 
 ---
 
-## 現在狀態(2026-08-17)
+## 現在狀態(2026-08-19)
 
-- **與 `origin/main` 同步(`bdc6c8e`),F 批「打架看得見、門檻可達」已部署上線**(五個 commit
-  `c90f3ff`／`b23802c`／`ba0e20b`／`b4b61f6`／`bdc6c8e`,細節見工作日誌 08-17):門檻
-  `FIGHT_STRESS_SUM = 50`／`FIGHT_STRESS_EACH = 22`,演出 `hidden` → `scuffle`(側面 sprite
-  面對面 + ±1px 推擠,零新美術、**非血腥**);60 遊戲日 normal **9 場**／stressed 21／extreme 23,
-  同一對最短間隔 3 日、違規 0 次;**並肩率 69.8% → 90.6%(48/53)**,🟠 待辦已結(殘留 5 場見
-  `docs/待辦.md`)。擲骰次數／順序全程一位元未動,`src/floor/pathfind.ts`／`agents.ts` 一字未動
-- **部署驗證**:production 回 **200**,線上 bundle 由 `index-CAWvNf_T.js` 換成 **`index-BY_iC_DS.js`**
-  (713,998 bytes,前版 711,650),標記 `scuffle` 命中 ×6。⚠️ `scufflePushOffset`／`FIGHT_STRESS_SUM`
-  命中 **0 是預期的**(函式名／常數名最小化會被改名)⇒ **不宣稱「全部標記都驗到」**
-- `npm test` **109/109**、app + worker typecheck、build 全綠、`balance-test` **零漂移**
-  (`scripts/balance-snapshot.json` 跨全部五個 commit 未被觸碰);`SAVE_VERSION` 仍 10。
-  ⚠️ **D 批的 worker 端不可外部檢視**(`/api/narrate` 有同源守衛),靠 `worker-test.ts` 斷言擋著
+- **HEAD `42d4305` = 回退 commit,未 push。** 2026-08-18 把 G 批(互動擴充五批)+ H 批
+  (敘事韌性)**六個 commit 一起部署**,線上變白畫面、app 起不來,已緊急回退恢復服務。
+  **六批每一批都跑過完整驗證(`npm test` 112/112、typecheck、build、balance 零漂移、
+  UI Lab 18 張截圖 0 error)全部綠燈,沒有一關抓到。** 根因由除錯代理在 worktree 追查中
+- **本批補的是驗證流程的破口**:新增 `npm run smoke:save`(存檔啟動煙霧測試)——
+  `vite build` → 把既有存檔種進 localStorage → 無頭 Edge/Chrome 真的啟動 app →
+  快轉 48 遊戲小時 → 收 console error 與未捕捉例外;附自我檢查(故意打壞產物必須變紅)。
+  **它立刻抓到 `42d4305` 上一個既有的白畫面 bug**:存檔帶著已下架的行為指令 id 時
+  `DIRECTIVES[id].endText` 丟 TypeError 炸穿 `hourlyTick()` ⇒ 已改走 `directiveDef()`
+- ⚠️ **同一支煙霧測試對壞掉的 `25cc591` 是綠的**(四份 fixture × 打包產物 × 48 小時快轉皆無異常)
+  ⇒ 線上白畫面**不是**「Chromium + 舊存檔 + 打包產物」這條路徑,見 `docs/待辦.md` 🔴 條目
+- `npm test` **109/109**、app + worker typecheck、build 全綠、`balance-test` **零漂移**;`SAVE_VERSION` 仍 10
 
 ## 近期已部署基線
 
@@ -45,7 +45,7 @@
   nerf 104→78,確認「加寬吧台」提示夠明顯);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會
   頻率(`CAFE_GATHER_CHANCE` 是單一常數好調),以及 **D 批會不會「蓋台」**——四位租客拿到同一份
   咖啡廳背景,若 AI 天天寫它,降級開關是 `lineHash("cafe-ctx|day") % N` 每日輪一位(單行改動,未做)
-- **G 批(互動擴充)已開工**:互動 18 → 28 種,四個批次序列執行;批次 1 是不稀釋的抽籤 + 條件閘
+- 🔴 **先把白畫面根因查清楚再談重推 G/H 批**;重推時**一次只推一批**,線上驗證通過才推下一批
 - 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),
   要先把 `baselines()` 抽出共用模組解掉循環 import
 
@@ -103,6 +103,7 @@
 ```powershell
 npm test; npm run typecheck; npm run build
 npx tsx scripts/balance-test.ts       # 刻意改平衡才審核後加 --update
+npm run smoke:save                    # 動到 src/ 或 worker/ 必跑(既有存檔啟動打包產物)
 # UI 改動另從 workspace 根跑 npm run ui:shot -- rent，並檢查 PNG/report.json
 ```
 

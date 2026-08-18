@@ -577,7 +577,9 @@ export const INTERACTIONS: InteractionDef[] = [
   //    安全性由 `tier` 本身保證:couple/cohabit/crush 都要 `rel.romantic`(或 canRomance),
   //    而 `rel.romantic` 只可能經 `social.canBecomeCouple()` 建立 —— 那裡已含
   //    **成年 + 取向雙檢**(canRomance)。未成年與取向不合的兩人永遠走不到這裡。
-  //    `first_kiss` 另掛 `gate: "both_adult"` 當**雙保險**,擋舊存檔可能殘留的非法 romantic。
+  //    四種**一律另掛成年雙檢當雙保險**,擋舊存檔可能殘留的非法 romantic:三種直接掛
+  //    `gate: "both_adult"`;`anniversary` 的 gate 欄位已被 `deep_couple` 佔用(gate 是單值),
+  //    改由 `gateOk()` 的 `deep_couple` 分支自己蘊含成年雙檢 —— 見那裡的說明。
   //    這四種**一律不進 AI 白名單**(worker/index.ts 維持 12 個),由 worker-test.ts 釘死。
   //
   // 文案同樣是對稱視角(兩人共用同一句,只換 {o});單向措辭黑名單掃描一體適用。
@@ -613,6 +615,7 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "cohabit",
     location: "room",
     pool: "extra",
+    gate: "both_adult", // 雙保險:tier 已保證 romantic ⇒ 已過 canRomance 的成年 + 取向雙檢
     pose: "kiss",
     seatOn: ["double_bed", "canopy_bed"],
     requiresFurniture: ["double_bed", "canopy_bed"],
@@ -636,6 +639,7 @@ export const INTERACTIONS: InteractionDef[] = [
     pool: "extra",
     // 「老夫老妻」用既有欄位當代理,**不新增 couple_since**(零存檔成本;真要記,
     // encounter / events / AI 三處都得寫入,漏一處就失準)。
+    // gate 是單值,這裡給不了第二個 `both_adult`;成年雙檢由 `deep_couple` 自己蘊含(見 gateOk)。
     gate: "deep_couple",
     pose: "confess",
     timeWindow: [19, 22],
@@ -658,6 +662,8 @@ export const INTERACTIONS: InteractionDef[] = [
     tier: "crush",
     location: "room",
     pool: "extra",
+    // 雙保險:crush 已要求 romantic 或(rel ≥ 75 + 互有取向);這道閘只擋舊存檔殘留的非法 romantic
+    gate: "both_adult",
     // 中控拍板改成「房內窗邊」:頂樓沒有 roomRect,只有 groupScene 的隱藏舞台,演不出來。
     pose: "stand_face",
     timeWindow: [22, 1], // 跨夜
@@ -789,6 +795,9 @@ export function gateOk(gate: InteractionGate | undefined, A: TenantRuntime, B: T
     case "both_adult":
       return (A.tenant.isAdult ?? true) && (B.tenant.isAdult ?? true);
     case "deep_couple": {
+      // 這道閘只服務戀愛線,所以自己蘊含 `both_adult` 的成年雙檢當雙保險(gate 是單值,
+      // anniversary 掛不了第二個);正常存檔的 romantic 都經 canBecomeCouple() ⇒ 本來就成年。
+      if (!((A.tenant.isAdult ?? true) && (B.tenant.isAdult ?? true))) return false;
       const rel = getRel(A.tenant.id, B.tenant.id);
       return !!rel?.romantic && (rel.value >= 95 || rel.cohabitOffered);
     }

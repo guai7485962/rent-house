@@ -6,8 +6,8 @@
  * - gateOk() 邊界、applyLend() 守恆(不動 state.money)、applyNeedyBonus() 挑對人
  * - 真實目錄的結構把關(批次 3/4):主池仍是原本 18 種、次池 10 種、`venue` 不搭
  *   `requiresFurniture`、`interactions.ts` 全檔不得出現 `adjustTension`
- * - 🔴 戀愛線安全(批次 4):未成年/取向不合一律進不了 4 種戀愛線;`first_kiss` 不是
- *   `adult: true`(才有動畫)但仍不繞過 `canRomance` —— 由 tier + `both_adult` 雙保險把關
+ * - 🔴 戀愛線安全(批次 4 + G-5):未成年/取向不合一律進不了 4 種戀愛線;四種都不是
+ *   `adult: true`(才有動畫)但仍不繞過 `canRomance` —— 由 tier + 成年雙檢雙保險把關
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -316,7 +316,8 @@ check("負向互動的 rel 扣分不超過 1", negative.every((d) => d.effects.r
 // (標了反而會被 content-variety-test.ts 強制成 hidden,動畫就沒了)。真正的保證是:
 //   tier couple/cohabit ⇒ 需要 `rel.romantic`;tier crush ⇒ 需要 romantic 或 canRomance。
 //   而 `rel.romantic` 只可能經 `canBecomeCouple()` 建立 ⇒ 已含成年 + 取向雙檢。
-// `first_kiss` 另掛 `gate: "both_adult"` 當雙保險,擋舊存檔可能殘留的非法 romantic。
+// 四種另各掛一道成年雙檢當雙保險,擋舊存檔可能殘留的非法 romantic:三種是 `gate: "both_adult"`,
+// `anniversary` 的 gate 被 `deep_couple` 佔用(單值),由 gateOk 的 deep_couple 分支自己蘊含成年雙檢。
 // ---------------------------------------------------------------------------
 const ROMANCE_IDS = ["first_kiss", "morning_kiss", "anniversary", "stargaze_window"];
 const romanceDefs = ROMANCE_IDS.map((id) => INTERACTIONS.find((d) => d.id === id)!);
@@ -325,8 +326,9 @@ check("🔴 戀愛線 4 種一律不是 adult 內容(標了會被強制成 hidde
   romanceDefs.every((d) => !d.adult), romanceDefs.filter((d) => d.adult).map((d) => d.id).join(","));
 check("first_kiss 的演出是看得見的 kiss,不是遮蔽式 hidden",
   romanceDefs[0].pose === "kiss" && romanceDefs[1].pose === "kiss", `${romanceDefs[0].pose}/${romanceDefs[1].pose}`);
-check("first_kiss 掛了 both_adult 雙保險(擋舊存檔殘留的非法 romantic)",
-  romanceDefs[0].gate === "both_adult", `${romanceDefs[0].gate}`);
+check("戀愛線 4 種都掛了成年雙檢的閘(three × both_adult + anniversary 的 deep_couple)",
+  romanceDefs.every((d) => d.gate === "both_adult" || d.gate === "deep_couple"),
+  romanceDefs.map((d) => `${d.id}=${d.gate}`).join(","));
 check("first_kiss 的冷卻 ≈ 一遊戲年 ⇒ 每對一生一次", romanceDefs[0].cooldownHours >= 8760);
 check("戀愛線 4 種全在次池(對主池零稀釋)", romanceDefs.every((d) => d.pool === "extra"));
 
@@ -341,11 +343,13 @@ const T = (id: string, gender: "male" | "female", attractedTo: ("male" | "female
 const wrap = (t: any): TenantRuntime => ({ tenant: t, wallet: 10000 }) as unknown as TenantRuntime;
 const HOUR_OF: Record<string, number> = { first_kiss: 20, morning_kiss: 8, anniversary: 20, stargaze_window: 23 };
 /** 實際上線的完整判定:`runGroup()` 的 eligible filter 就是 canInteract && gateOk */
-const allowed = (def: (typeof romanceDefs)[number], a: any, b: any) =>
+const canPart = (def: (typeof romanceDefs)[number], a: any, b: any) =>
   canInteract(def, a, b, {
     hour: HOUR_OF[def.id], thirdPresent: false, adultMode: state.adultMode, cohabiting: true,
     furniture: new Set(["double_bed", "canopy_bed", "tv_console"]),
-  }) && gateOk(def.gate, wrap(a), wrap(b));
+  });
+const gatePart = (def: (typeof romanceDefs)[number], a: any, b: any) => gateOk(def.gate, wrap(a), wrap(b));
+const allowed = (def: (typeof romanceDefs)[number], a: any, b: any) => canPart(def, a, b) && gatePart(def, a, b);
 
 const setRel = (a: any, b: any, value: number, romantic: boolean) => {
   relationships[pairKey(a.id, b.id)] = { value, tension: 0, lastConflictGameMs: 0, romantic, cohabitOffered: romantic };
@@ -360,14 +364,23 @@ setRel(MINOR, ADULT, 100, false);
 check("🔴 未成年 + rel 100(非情侶)⇒ 戀愛線 4 種全擋",
   romanceDefs.every((d) => !allowed(d, MINOR, ADULT)),
   romanceDefs.filter((d) => allowed(d, MINOR, ADULT)).map((d) => d.id).join(","));
-// 舊存檔殘留的非法 romantic:tier 擋不住,靠 gate: both_adult 這道雙保險
+// 舊存檔殘留的非法 romantic:tier 擋不住,靠四種各自掛的成年雙檢這道雙保險
 setRel(MINOR, ADULT, 100, true);
-check("🔴 未成年 + 舊存檔殘留的非法 romantic ⇒ first_kiss 仍被 both_adult 雙保險擋掉",
-  !allowed(romanceDefs[0], MINOR, ADULT));
-check("雙保險擋的是 gate 不是 tier(證明這條測試沒有空轉:canInteract 本身確實過了)",
-  canInteract(romanceDefs[0], MINOR as any, ADULT as any, {
-    hour: 20, thirdPresent: false, adultMode: state.adultMode, cohabiting: true, furniture: new Set<string>(),
-  }) && !gateOk("both_adult", wrap(MINOR), wrap(ADULT)));
+check("🔴 未成年 + 舊存檔殘留的非法 romantic ⇒ 戀愛線 4 種全被成年雙保險擋掉",
+  romanceDefs.every((d) => !allowed(d, MINOR, ADULT)),
+  romanceDefs.filter((d) => allowed(d, MINOR, ADULT)).map((d) => d.id).join(","));
+// 防空轉:擋掉的必須是 gate 而不是 tier。四種這時的 canInteract 本身都過得了——
+// stargaze_window 雖然是 crush tier,但 crush 也認 `rel.romantic`,殘留的非法 romantic
+// 一樣讓它過 tier ⇒ 四種都構造得出「tier 過、gate 擋」,不必為它另立一種斷言。
+check("雙保險擋的是 gate 不是 tier(4 種的 canInteract 本身都過了,這幾條沒有空轉)",
+  romanceDefs.every((d) => canPart(d, MINOR, ADULT)),
+  romanceDefs.filter((d) => !canPart(d, MINOR, ADULT)).map((d) => d.id).join(","));
+check("🔴 4 種的 gate 各自都回 false(anniversary 走 deep_couple 分支蘊含的成年雙檢)",
+  romanceDefs.every((d) => !gatePart(d, MINOR, ADULT)),
+  romanceDefs.filter((d) => gatePart(d, MINOR, ADULT)).map((d) => d.id).join(","));
+// deep_couple 那條路徑單獨釘死:rel 100 + cohabitOffered 本來足以過閘,未成年仍要擋下來
+check("🔴 deep_couple 蘊含成年雙檢:未成年 + 非法 romantic + rel 100 仍擋",
+  !gateOk("deep_couple", wrap(MINOR), wrap(ADULT)));
 delete relationships[pairKey(MINOR.id, ADULT.id)];
 
 // (b) 取向不合:同樣過不了 canRomance ⇒ romantic 永遠建立不起來

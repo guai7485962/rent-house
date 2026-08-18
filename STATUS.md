@@ -16,7 +16,7 @@
 
 ## 現在狀態(2026-08-18)
 
-- **G 批(互動擴充)四批全部完成,已 commit 未 push**。批次 1「不稀釋的抽籤」:`pickInteraction()`
+- **G 批(互動擴充)四批 + G-5 安全一致性修補全部完成,已 commit 未 push**。批次 1「不稀釋的抽籤」:`pickInteraction()`
   拆成**主池/次池**,主池非空時與擴充前**逐位元相同**,落空才把已花掉的 `chanceRoll` 換算成
   `u=(chanceRoll−c)/(1−c)` 抽次池 ⇒ **零新 `Math.random()`**;另有 `gateOk()`／`lend`／`needyBonus`(§10-1a)。
   批次 2(純渲染):租客雙人繪製管線 + pose `game_pair`／`kiss`／`confess`／`cheers` + fx `cash`／
@@ -26,7 +26,7 @@
   全檔不得有 `adjustTension`)+ **戀愛線 4 種** `first_kiss`／`morning_kiss`／`anniversary`／
   `stargaze_window`(§10-2b)。🔴 戀愛線四種是**全年齡、看得見、不遮蔽**,安全由 `tier` 保證
   (`rel.romantic` 只可能經 `canBecomeCouple()` ⇒ 成年 + 取向雙檢),**絕不可標 `adult: true`**
-  (會被強制成 `hidden`);`first_kiss` 另掛 `both_adult` 雙保險。AI 白名單維持 12 個,**戀愛線四種不進**
+  (會被強制成 `hidden`);**四種各另掛成年雙檢當雙保險**(G-5:三種 `both_adult`,`anniversary` 由 `deep_couple` 蘊含)。AI 白名單維持 12 個,**戀愛線四種不進**
 - `npm test` **111/111**、typecheck／build 全綠;`SAVE_VERSION` 仍 10。**批次 4 的 balance 零漂移未
   `--update`**(種子局兩人十天內沒成情侶 ⇒ 四種 `room` 戀愛線一次都沒觸發);批次 3 曾逐欄審核後 `--update`
 - **零稀釋實證**(`scripts/interaction-freq-sim.ts`,一次性量測、不入回歸集):100 遊戲日 × 6 種子 ×
@@ -44,8 +44,8 @@
 
 ## 下一步
 
-- **G 批已可驗收:push + deploy(由中控處理)**,四批共 4 個 commit(`65869c9`／`fa4c365`／
-  `af9ed03`／本批)未 push、未部署
+- **G 批已可驗收:push + deploy(由中控處理)**,共 5 個 commit(`65869c9`／`fa4c365`／
+  `af9ed03`／`0f83166`／本批 G-5)未 push、未部署
 - **實玩觀察(併成同一輪,跑十幾個遊戲日)**:看 **F 批打架**觀感(門檻 50/22、並肩率 90.6%)與
   **G 批新互動**的實際頻率;用**舊存檔**開局(雇 4 人以上且吧台仍是贈品那座 ⇒ 吃到 A 批產能
   nerf 104→78);同一輪看常客升格節奏、劇情弧多樣性、C 批聚會頻率,以及 **D 批會不會「蓋台」**

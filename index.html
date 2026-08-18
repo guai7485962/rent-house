@@ -13,6 +13,70 @@
     <meta property="og:description" content="觀察像素租客的日常,AI 每天為他們寫觀察日記的掛機經營遊戲。" />
     <meta property="og:type" content="website" />
     <title>房東監視中</title>
+    <!--
+      🔴 白畫面自救(2026-08-18 線上事故;根因與 header 設定見 public/_headers 與 worker/index.ts)
+
+      即使 HTML 已經設成 no-store,仍可能有裝置(iOS standalone 尤甚)手上還握著舊的
+      index.html —— 它指向的 /assets/index-XXXX.js 早就被下一次部署刪掉了,載入 404、
+      整頁白畫面,console 只有一條 404 而沒有任何 JS 例外,連錯誤畫面都長不出來。
+
+      ⚠️ 位置很重要:必須放在 head 區塊的最後 —— vite build 會把
+      `script type="module" crossorigin src="/assets/index-<hash>.js"` 注入到 head 尾端,
+      放在 body 就會跟那支 script 的載入失敗搶跑。
+      ⚠️ 本註解內不可出現 head 的結束標籤字串:vite 是用字串比對找注入點的,
+      寫在註解裡會害它把 module script 注入到註解內部(整個 app 就此不會載入)。
+      這段刻意寫成打包器碰不到的 inline script。
+      資源載入失敗不會冒泡,只有在 window 的 capture 階段收得到。
+      防無限重載:sessionStorage 記一次旗標,只自救一次;第二次失敗改顯示可讀的錯誤畫面。
+      成功開機由 src/main.ts 呼叫 window.__rhBootOk() 清旗標。
+    -->
+    <script>
+      (function () {
+        var KEY = "rh_boot_recovery";
+        var healed = false;
+        function flag(v) {
+          try { return v === undefined ? sessionStorage.getItem(KEY) : (v === null ? sessionStorage.removeItem(KEY) : sessionStorage.setItem(KEY, v)); }
+          catch (e) { return null; } // 無痕模式等 sessionStorage 不可用:寧可不自救也不要無限重載
+        }
+        window.__rhBootOk = function () { flag(null); };
+        function fatal(src) {
+          flag(null); // 已經放棄自救,別讓旗標卡住下一次正常開機
+          var html =
+            '<div style="padding:24px;font:16px/1.7 system-ui,-apple-system,sans-serif;color:#e8e4f0;background:#241f33;min-height:100vh;box-sizing:border-box">'
+            + '<p style="font-size:20px;font-weight:700;margin:0 0 12px">遊戲檔案載入失敗</p>'
+            + '<p style="margin:0 0 8px">重新整理過一次仍然抓不到程式檔。通常是網路不穩,或是手機把舊版畫面存太久。</p>'
+            + '<p style="margin:0 0 16px">請關掉這個視窗(從主畫面圖示啟動的話請把 App 滑掉)再重開一次；存檔在本機,不會不見。</p>'
+            + '<button id="rh-retry" style="font:16px system-ui;padding:10px 20px;border:0;border-radius:8px;background:#7a5cff;color:#fff">再試一次</button>'
+            + '<p style="margin:16px 0 0;font-size:12px;opacity:.6;word-break:break-all">載入失敗:' + String(src).slice(0, 200) + '</p>'
+            + '</div>';
+          var paint = function () {
+            var mount = document.getElementById("app") || document.body;
+            if (!mount) return;
+            mount.innerHTML = html;
+            var btn = document.getElementById("rh-retry");
+            if (btn) btn.addEventListener("click", function () { location.reload(); });
+          };
+          if (document.body) paint();
+          else document.addEventListener("DOMContentLoaded", paint);
+        }
+        window.addEventListener("error", function (ev) {
+          var el = ev.target;
+          if (!el || el === window || healed) return;
+          var tag = el.tagName;
+          var src = tag === "SCRIPT" ? el.src : (tag === "LINK" ? el.href : null);
+          if (!src) return; // 圖片載不到不算致命,交給 app 自己處理
+          healed = true;
+          if (flag()) { fatal(src); return; } // 自救過一次還是壞 → 顯示看得懂的錯誤,不再重載
+          flag(String(Date.now()));
+          // 先用 cache: "reload" 打穿 HTTP 快取把新的 index.html 拉回來,再重新載入。
+          // fetch 失敗(離線/舊瀏覽器)就退回單純 reload —— 使用者實測手動重整就會好。
+          var done = false;
+          var go = function () { if (done) return; done = true; location.reload(); };
+          setTimeout(go, 3000);
+          try { fetch(location.href, { cache: "reload" }).then(go, go); } catch (e) { go(); }
+        }, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

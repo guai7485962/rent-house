@@ -10,6 +10,13 @@
  *   (c) 渲染迴圈首幀丟例外
  * 三類問題可以一路全綠 —— 六批一起上線後使用者拿到黑畫面。本檔補的就是這個破口。
  *
+ * 🔴 第二類破口(2026-08-19 補):**部署換版造成的白畫面**。
+ * `[assets] directory = "./dist"` 每次部署都刪掉上一版的雜湊資產,拿著舊 index.html 的裝置
+ * 會去要已不存在的 `/assets/index-XXXX.js` ⇒ 404 ⇒ 白畫面,而且 console 只有一條 404、
+ * 沒有任何 JS 例外。`staleHtmlCheck()` 直接重現這個情境,驗自救會重整救回來、
+ * 且救不回來時停在可讀錯誤畫面(不無限重載);`distStaticCheck()` 驗 `_headers` 與自救腳本
+ * 真的在打包產物裡、位置正確。
+ *
  * 做法:`vite build` → 靜態伺服 `dist/` → 無頭 Edge/Chrome(CDP)→
  * 先把 fixture 種進 localStorage,再導向 app → 等畫面長出來 → 收 console error
  * 與未捕捉例外 → 再 reload 一次(驗證這一版寫回去的存檔自己讀得回來)。
@@ -86,8 +93,29 @@ const MIME: Record<string, string> = {
 let injectFault = false;
 const FAULT = `throw new Error("save-smoke 自我檢查:故意在模組載入期丟出的例外");
 `;
+/**
+ * 🔴 白畫面事故模擬:把 index.html 裡的雜湊 JS 檔名換成一個不存在的名字,
+ * 重現「裝置手上握著舊 HTML、它指向的 /assets/index-XXXX.js 已被下一次部署刪掉」。
+ * "once"  = 只有第一次要 HTML 時給舊版(之後給正確的)⇒ 自救重整後應該救得回來。
+ * "always" = 永遠給舊版 ⇒ 自救救不了,必須停在可讀的錯誤畫面而不是無限重載。
+ */
+let staleHtmlMode: "off" | "once" | "always" = "off";
+let htmlRequests = 0;
+const STALE_ASSET = "/assets/index-STALE000.js";
+function serveHtml(): string {
+  htmlRequests++;
+  const html = readFileSync(join(distDir, "index.html"), "utf8");
+  if (staleHtmlMode === "off") return html;
+  if (staleHtmlMode === "once") staleHtmlMode = "off";
+  return html.replace(/\/assets\/index-[A-Za-z0-9_-]+\.js/g, STALE_ASSET);
+}
 const server = createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
+  if (path === "/" || path === "/index.html") {
+    res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" });
+    res.end(serveHtml());
+    return;
+  }
   // 空白頁:必須跟 app 同源才能先種 localStorage
   if (path === "/__smoke_blank__") { res.writeHead(200, { "content-type": MIME[".html"] }); res.end("<!doctype html><title>blank</title>"); return; }
   // AI 後端在本測試裡刻意不存在:narrateDay 會走 fallback,不該產生 console error
@@ -195,10 +223,10 @@ const PROBE = `(() => {
     const raw = localStorage.getItem(${JSON.stringify(SAVE_KEY)});
     if (raw) { const s = JSON.parse(raw); saveVersion = s.v; saveGameMs = s.gameMs; }
   } catch (e) { /* localStorage 不可用 */ }
-  return { nodes, textLen: text.length, hasErrorNotice: text.includes("畫面發生錯誤"), canvases, painted, saveVersion, saveGameMs };
+  return { nodes, textLen: text.length, hasErrorNotice: text.includes("畫面發生錯誤"), hasBootFail: text.includes("遊戲檔案載入失敗"), canvases, painted, saveVersion, saveGameMs };
 })()`;
 
-interface Probe { nodes: number; textLen: number; hasErrorNotice: boolean; canvases: number; painted: number; saveVersion: number | null; saveGameMs: number | null }
+interface Probe { nodes: number; textLen: number; hasErrorNotice: boolean; hasBootFail: boolean; canvases: number; painted: number; saveVersion: number | null; saveGameMs: number | null }
 
 const info = await browserInfo();
 const cdp = await Cdp.connect(info.webSocketDebuggerUrl);
@@ -242,7 +270,7 @@ async function runCase(c: (typeof CASES)[number]): Promise<void> {
   /** 導向 app 並等畫面長出來;逾時回傳最後一次體檢結果(通常就是白畫面的證據) */
   async function boot(label: string): Promise<Probe> {
     await cdp.send("Page.navigate", { url: `${origin}/` }, sessionId);
-    let probe: Probe = { nodes: 0, textLen: 0, hasErrorNotice: false, canvases: 0, painted: 0, saveVersion: null, saveGameMs: null };
+    let probe: Probe = { nodes: 0, textLen: 0, hasErrorNotice: false, hasBootFail: false, canvases: 0, painted: 0, saveVersion: null, saveGameMs: null };
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 250));
       try {
@@ -334,9 +362,93 @@ async function selfCheck(): Promise<void> {
   }
 }
 
+/**
+ * 🔴 「舊 HTML 指向已被刪掉的雜湊 JS」關卡 —— 2026-08-18 線上白畫面事故的重現與修復驗收。
+ *
+ * 事故機制:`[assets] directory = "./dist"` 每次部署都會刪掉上一版的雜湊資產,
+ * iOS standalone 又會抓著快取的 index.html 不放 ⇒ 舊 HTML 去要不存在的 JS ⇒ 404 ⇒ 白畫面
+ * (console 只有一條 404,沒有 JS 例外,所以上面 selfCheck 那種「丟例外」的偵測抓不到)。
+ *
+ * 這裡驗兩件事:
+ *  (a) 自救會觸發並救回來(重整一次拿到新 HTML);
+ *  (b) 救不回來時**不會無限重載**,而是停在看得懂的錯誤畫面。
+ */
+async function staleHtmlCheck(mode: "once" | "always"): Promise<void> {
+  const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
+  const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
+  await cdp.send("Runtime.enable", {}, sessionId);
+  await cdp.send("Page.enable", {}, sessionId);
+  htmlRequests = 0;
+  staleHtmlMode = mode;
+  await cdp.send("Page.navigate", { url: `${origin}/` }, sessionId);
+  let probe: Probe | null = null;
+  const recovered = () => mode === "once"
+    ? (probe?.nodes ?? 0) > 20 && (probe?.painted ?? 0) > 0
+    : !!probe?.hasBootFail;
+  for (let i = 0; i < 80; i++) {          // 最多 20 秒:自救含一次 fetch + 一次 reload
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      const res = await cdp.send("Runtime.evaluate", { expression: PROBE, returnByValue: true }, sessionId);
+      if (res.result?.value) probe = res.result.value as Probe;
+    } catch { /* 導向中 */ }
+    if (recovered()) break;
+  }
+  try {
+    const shot = await cdp.send("Page.captureScreenshot", { format: "png" }, sessionId);
+    writeFileSync(join(shotDir, `stale-html-${mode}.png`), Buffer.from(shot.data, "base64"));
+  } catch { /* 截圖失敗不影響判定 */ }
+  if (mode === "once") {
+    check("stale-html(舊 HTML 只出現一次)· 自救重整後畫面救回來了",
+      (probe?.nodes ?? 0) > 20 && (probe?.textLen ?? 0) > 20 && (probe?.painted ?? 0) > 0,
+      `nodes=${probe?.nodes} painted=${probe?.painted} HTML 請求=${htmlRequests}`);
+    check("stale-html(舊 HTML 只出現一次)· 真的有重新抓過 HTML(不是碰巧沒壞)", htmlRequests >= 2, `HTML 請求=${htmlRequests}`);
+  } else {
+    check("stale-html(HTML 永遠是舊的)· 停在看得懂的錯誤畫面,不是白畫面", !!probe?.hasBootFail,
+      `nodes=${probe?.nodes} textLen=${probe?.textLen} HTML 請求=${htmlRequests}`);
+    check("stale-html(HTML 永遠是舊的)· 只自救一次,沒有無限重載", htmlRequests <= 4, `HTML 請求=${htmlRequests}`);
+  }
+  staleHtmlMode = "off";
+  await cdp.send("Target.closeTarget", { targetId });
+}
+
+/**
+ * 打包產物的靜態體檢 —— 不用開瀏覽器就能擋掉的低級錯誤。
+ * `_headers` 是白畫面根因修復的第一道(HTML no-store);自救腳本則必須真的活在
+ * head 裡、且排在 vite 注入的 module script 之前(曾經因為註解裡寫了 head 結束標籤,
+ * 害 vite 把 module script 注入到註解內部,整包 app 直接不載入)。
+ */
+function distStaticCheck(): void {
+  const headersPath = join(distDir, "_headers");
+  const hasHeaders = existsSync(headersPath);
+  check("dist/_headers · 有被 vite 從 public/ 複製進去", hasHeaders);
+  if (hasHeaders) {
+    // `_headers` 的區塊格式:一行路徑,下一行縮排的 header
+    const headerLines = readFileSync(headersPath, "utf8").split(/\r?\n/);
+    const rule = (path: string) => {
+      const at = headerLines.findIndex((line) => line.trim() === path);
+      return at < 0 ? "" : (headerLines[at + 1] ?? "").trim();
+    };
+    check("dist/_headers · HTML 設成 no-store", rule("/") === "Cache-Control: no-store", rule("/"));
+    check("dist/_headers · /index.html 也 no-store", rule("/index.html") === "Cache-Control: no-store", rule("/index.html"));
+    check("dist/_headers · 雜湊資產維持長快取", rule("/assets/*.js").includes("immutable"), rule("/assets/*.js"));
+  }
+  const html = readFileSync(join(distDir, "index.html"), "utf8");
+  const stripped = html.replace(/<!--[\s\S]*?-->/g, "");
+  const moduleAt = stripped.indexOf('<script type="module"');
+  const inlineAt = stripped.indexOf("__rhBootOk");
+  check("dist/index.html · 白畫面自救腳本有進打包產物", inlineAt >= 0);
+  check("dist/index.html · vite 的 module script 沒有被注入到註解裡", moduleAt >= 0);
+  check("dist/index.html · 自救腳本排在 module script 之前(否則會跟載入失敗搶跑)",
+    inlineAt >= 0 && moduleAt >= 0 && inlineAt < moduleAt, `inline@${inlineAt} module@${moduleAt}`);
+  check("dist/index.html · 自救腳本在 head 區塊內", inlineAt >= 0 && inlineAt < stripped.indexOf("<body"));
+}
+
 let crashed: unknown = null;
 try {
+  distStaticCheck();
   await selfCheck();
+  await staleHtmlCheck("once");
+  await staleHtmlCheck("always");
   for (const c of CASES) await runCase(c);
 } catch (e) {
   crashed = e;

@@ -1,0 +1,27 @@
+# 靜態資產的快取政策(Cloudflare Workers static assets 的 _headers)
+#
+# 🔴 2026-08-18 線上白畫面事故的根因修復:
+#   wrangler.toml 的 [assets] directory = "./dist" 每次部署都會**刪掉上一版的雜湊資產**,
+#   而 iOS「加到主畫面」的 standalone 模式會抓著快取的 index.html 不放
+#   (平台預設只給 `public, max-age=0, must-revalidate`,standalone 冷啟動並不可靠地遵守)。
+#   ⇒ 舊 HTML 去要已經被刪掉的 /assets/index-XXXX.js ⇒ 404 ⇒ 整頁白畫面。
+#   所以 HTML 一律 no-store;內容雜湊過的 JS/CSS 才給長快取(它們是 immutable)。
+#
+# ⚠️ 這個檔案是「宣告式的第二道」:官方文件明講 _headers **不套用在 Worker 程式產生的回應**,
+#    而本專案所有請求都先進 worker/index.ts 再 fallthrough 到 env.ASSETS。
+#    真正保證生效的是 worker/index.ts 的 assetCacheControl(),兩邊必須寫成同一套值。
+
+/
+  Cache-Control: no-store
+/index.html
+  Cache-Control: no-store
+
+# Vite 產物:檔名帶 content hash,改了內容就換檔名,可以放心長快取
+/assets/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+# 非雜湊的美術素材(public/assets/limezu/**):換圖要能傳得下去,只快取一天
+/assets/limezu/*
+  Cache-Control: public, max-age=86400

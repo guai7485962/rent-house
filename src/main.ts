@@ -38,3 +38,7 @@ app.config.errorHandler = (err, _instance, info) => {
   reportError(`${(err as Error)?.message ?? err}(${info})`);
 };
 app.mount("#app");
+
+// 告訴 index.html 的白畫面自救腳本「這次開機成功了」,把 sessionStorage 的自救旗標清掉。
+// (旗標只允許自動重整一次;沒清掉的話下次真的載入失敗就會直接跳錯誤畫面而不自救)
+(window as unknown as { __rhBootOk?: () => void }).__rhBootOk?.();

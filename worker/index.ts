@@ -464,6 +464,7 @@ function clampCtx(raw: unknown): NarrateCtx {
 export const _internal = {
   sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel,
   narrateProviderOrder, providerEvent, providerArcUpdate, extractWorkersAiText, systemPrompt: SYSTEM,
+  assetCacheControl,
 };
 
 /** Gemini(Google AI Studio 免費層)—— 原生 fetch,強制 JSON 輸出;429 退避後重試一次。
@@ -768,11 +769,52 @@ async function handleNarrate(req: Request, env: Env): Promise<Response> {
   return Response.json({ error: parseOnly ? "parse_failed" : "upstream", detail: errors.join(" | ").slice(0, 500) }, { status: 502 });
 }
 
+/**
+ * 靜態資產的快取政策 —— 2026-08-18 線上白畫面事故的根因修復。
+ *
+ * 事故機制:`wrangler.toml` 的 `[assets] directory = "./dist"` 每次部署都會**刪掉上一版的
+ * 雜湊資產**;iOS「加到主畫面」的 standalone 模式又會抓著快取的 `index.html` 不放
+ * (平台預設只給 `public, max-age=0, must-revalidate`,冷啟動並不可靠地遵守)。
+ * ⇒ 舊 HTML 去要已被刪掉的 `/assets/index-XXXX.js` ⇒ 404 ⇒ 整頁白畫面(console 只有一條 404)。
+ *
+ * 這裡與 `public/_headers` 是同一套值的兩道防線,**改一邊就要改另一邊**:
+ * - `_headers` 是宣告式的,實測(wrangler 4.124 local dev)在 `env.ASSETS.fetch()` 這條
+ *   fallthrough 上確實生效;但官方文件明講它**不套用在 Worker 程式自己產生的回應**。
+ * - 這個函式跑在所有回應的最後一關,順便補掉 `_headers` 補不到的一個坑:
+ *   `_headers` 會把 `/assets/*.js` 的規則**一併套到該路徑的 404 上** —— 已實測。
+ *   也就是說,被刪掉的舊雜湊檔會回一個「快取一年」的 404,白畫面因此變成永久性的。
+ *   所以非 2xx 一律 `no-store`。
+ */
+const HASHED_ASSET = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/;
+
+/** 回傳該路徑應有的 Cache-Control;null = 維持平台預設。純函式,給 worker-test 直接驗。 */
+function assetCacheControl(pathname: string, contentType: string | null, status: number): string | null {
+  // 404/500 絕對不能被快取:被刪掉的舊雜湊檔就是靠這條不會把白畫面釘死一年
+  if (status >= 300 && status !== 304) return "no-store";
+  // HTML 一律不進快取 —— 它是唯一知道「這一版的 JS 叫什麼名字」的檔案
+  if (pathname === "/" || pathname.endsWith(".html") || (contentType ?? "").includes("text/html")) return "no-store";
+  // Vite 產物帶 content hash,改內容就換檔名 ⇒ immutable
+  if (HASHED_ASSET.test(pathname)) return "public, max-age=31536000, immutable";
+  // 非雜湊的美術素材(public/assets/limezu/**):換圖要傳得下去,只快取一天
+  if (pathname.startsWith("/assets/limezu/")) return "public, max-age=86400";
+  return null;
+}
+
+function withCacheControl(res: Response, pathname: string): Response {
+  const want = assetCacheControl(pathname, res.headers.get("content-type"), res.status);
+  if (!want || res.headers.get("cache-control") === want) return res;
+  const headers = new Headers(res.headers);
+  headers.set("cache-control", want);
+  // 204/304 不得帶 body,重建時要傳 null
+  const body = res.status === 204 || res.status === 304 ? null : res.body;
+  return new Response(body, { status: res.status, statusText: res.statusText, headers });
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/api/narrate" && req.method === "POST") return handleNarrate(req, env);
     if (url.pathname === "/api/invite" && req.method === "POST") return handleInvite(req, env);
-    return env.ASSETS.fetch(req);
+    return withCacheControl(await env.ASSETS.fetch(req), url.pathname);
   },
 };

@@ -4,11 +4,12 @@
  * - guardRequest:非同源 403、body 過大 413、正常放行
  * - clampCtx:陣列條數/字串長度/數值範圍夾值,亂資料不炸
  * - parseResult:抽出 JSON、diary 截長、壞資料 → null
+ * - assetCacheControl:靜態資產快取政策(2026-08-18 線上白畫面事故的根因修復)
  */
 const { _internal } = await import("../worker/index");
 const {
   sameOrigin, guardRequest, clampCtx, buildPrompt, parseResult, chooseGeminiModel,
-  narrateProviderOrder, providerEvent, extractWorkersAiText, systemPrompt,
+  narrateProviderOrder, providerEvent, extractWorkersAiText, systemPrompt, assetCacheControl,
 } = _internal;
 
 let pass = 0;
@@ -294,6 +295,33 @@ check("parseResult:observation 物件透傳", (() => {
   return !!r && typeof r.observation === "object" && (r.observation as any)?.nudge?.mood === -2;
 })());
 check("parseResult:observation 非物件 → null", parseResult('{"diary":"今天。","observation":"文字"}')?.observation === null);
+
+
+// --- assetCacheControl:2026-08-18 線上白畫面事故的根因修復 ---
+// 每次部署都會刪掉上一版的雜湊資產,而裝置手上的舊 index.html 還指著它們。
+// HTML 一旦被快取就會拿舊檔名去要 404 ⇒ 白畫面。這組斷言鎖住三件事:
+// HTML 永不進快取、雜湊資產長快取、**任何非 2xx 都不得被快取**
+// (`_headers` 會把 /assets/*.js 的長快取一併套到該路徑的 404 上 —— 已在 wrangler dev 實測)。
+const HTML = "text/html; charset=utf-8";
+check("快取:/ 的 HTML 一律 no-store", assetCacheControl("/", HTML, 200) === "no-store");
+check("快取:/index.html 一律 no-store", assetCacheControl("/index.html", HTML, 200) === "no-store");
+check("快取:SPA fallback(路徑不像 HTML 但回 text/html)也 no-store",
+  assetCacheControl("/room/3", HTML, 200) === "no-store");
+check("快取:vite 雜湊 JS 長快取 immutable",
+  assetCacheControl("/assets/index-BfmIduG_.js", "text/javascript", 200) === "public, max-age=31536000, immutable");
+check("快取:vite 雜湊 CSS 長快取 immutable",
+  assetCacheControl("/assets/index-DAnlY3CN.css", "text/css", 200) === "public, max-age=31536000, immutable");
+check("快取:🔴 被刪掉的舊雜湊檔回 404 時必須 no-store(否則白畫面會被釘死一年)",
+  assetCacheControl("/assets/index-D4sCRrHP.js", "text/plain", 404) === "no-store");
+check("快取:任何 5xx 也不得被快取", assetCacheControl("/assets/index-BfmIduG_.js", "text/javascript", 500) === "no-store");
+check("快取:304 維持原本的政策(不是錯誤,不能一律 no-store)",
+  assetCacheControl("/assets/index-BfmIduG_.js", null, 304) === "public, max-age=31536000, immutable");
+check("快取:非雜湊美術素材只快取一天(換圖要傳得下去)",
+  assetCacheControl("/assets/limezu/floors.png", "image/png", 200) === "public, max-age=86400");
+check("快取:沒指定的檔案(favicon 等)維持平台預設(null)",
+  assetCacheControl("/favicon.svg", "image/svg+xml", 200) === null);
+check("快取:沒帶雜湊的 /assets/*.js 不給長快取",
+  assetCacheControl("/assets/main.js", "text/javascript", 200) === null);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

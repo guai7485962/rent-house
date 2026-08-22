@@ -16,30 +16,27 @@
 
 ## 現在狀態(2026-08-22)
 
-- **三角關係(吃醋)批已 commit,尚未 push**(基準 `ab3a845`,細節見工作日誌/`docs/待辦.md`):
-  新增 `unrequitedSuitors()`,唯一過濾條件同既有 `canRomance()`,零新持久化欄位、零新 RNG。
-  `npm test` 113、balance 零漂移、`smoke:save` 49/0,`SAVE_VERSION` 仍 10;本批不 push。
-- **與 `origin/main` 同步(`9dc163e`);G/H 六批已逐批 push 並各自完成 production 部署驗證**
-  (`f141c77`～`9dc163e`——一次只推一批、線上確認才推下一批;08-18 回退的程式碼零改寫原樣重上,
-  內容見下節「近期已部署基線」)
-- **線上佐證**:六批 bundle 依序 `index-BHVS8hCr`→`-JEKBnvTK`→`-CGKSTaqe`→`-DoJbeh1M`→`-C2ZoWzg7`→`-DC6XAvpG`
-  (715,548→727,590 bytes),每批都搜到該批的新識別字(`game_pair` ×8、`first_kiss`、`scuffle` ×6、
-  `narrateStatus`、`AbortController` ×2 …);全程 200、`no-store` 持續生效。⚠️ `deferredRunToken`／
-  `scufflePushOffset` 命中 0 是**識別字最小化改名**所致、不是缺件;H 批 worker 端因同源守衛**無法外部驗證**
-- 本機驗證(**每批獨立跑完才提交**):`npm test` 110→111→111→111→111→**112**、typecheck(app + worker)、
-  `build`、`balance-test` **六批零漂移未 `--update`**、**`smoke:save` 六批全部 49/0**;`SAVE_VERSION` 仍 10
+- **與 `origin/main` 同步(`dd805bd`),三角關係(吃醋)系統已部署上線並完成 production 部署驗證**:
+  bundle 由 `-DC6XAvpG` 換成 **`index-KAOr6hB_.js`**(728,470 bytes),線上逐項驗到玩家可見中文文案
+  「暗戀落空」×1、「眼睜睜看著」×2(不會被最小化改名,是可靠佐證);`unrequitedSuitors` 命中 0
+  是**識別字最小化改名**所致、非缺件,同 `scufflePushOffset` 等前例;回應 200、`no-store` 持續生效。
+- **G/H 六批(`f141c77`～`9dc163e`)之前已逐批 push 並各自完成 production 部署驗證**(一次只推一批、
+  線上確認才推下一批;08-18 回退的程式碼零改寫原樣重上,內容見下節「近期已部署基線」)
+- 本機驗證(中控已核對):`npm test` **113/113**、typecheck(app+worker)、`build` 全綠、
+  `balance-test` **零漂移未 `--update`**、`smoke:save` **49/0**;`SAVE_VERSION` 仍 10
 
 ## 近期已部署基線
 
-- **G 批 互動目錄 18 → 28**:不稀釋的主池/次池抽籤(既有 18 種觸發率變 0.000%、零新 RNG)、租客雙人繪製管線
-  (4 pose + 3 fx,`became_couple` 改告白演出)、日常/友誼 6 種 + 戀愛線 4 種(全 `pool:"extra"`、不進 AI
-  白名單;🔴 安全靠 `tier` 的 `rel.romantic`——只可能經含成年 + 取向雙檢的 `canBecomeCouple()` 建立——
-  四種再一致掛 `both_adult` 雙保險)
+- **G 批 互動目錄 18 → 28**:不稀釋的主池/次池抽籤(既有 18 種觸發率變 0.000%、零新 RNG)、租客雙人繪製
+  管線(4 pose + 3 fx,`became_couple` 改告白演出)、日常/友誼 6 種 + 戀愛線 4 種(全 `pool:"extra"`、不進
+  AI 白名單;🔴 安全靠 `tier` 的 `rel.romantic`——只可能經 `canBecomeCouple()` 建立,四種再一致掛 `both_adult`)
 - **H 批 AI 日記卡死修復**:`narrateDay()` 45s 逾時 + `deferredRun` 8 分鐘 watchdog + 四個靜默退出改留標籤 + `safeNarrateCtx()` 降級 + `narrateStatus()` 唯讀診斷
 - **I 批 白畫面根因修復**(`2689311`,與 G/H 六批的程式碼無關):部署刪舊雜湊資產 + iOS standalone 抓著快取的舊 `index.html` ⇒ 404;修法(`no-store` + 自救腳本)見 `docs/系統總覽.md` 地雷紀錄
-- **F 批 打架看得見**(`c90f3ff`～`bdc6c8e`)門檻 50/22 + `scuffle` 演出 + 並肩走位;**咖啡廳聚會／AI context
-  ／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`);**分區與常客**(`f56ef3b`／`05cc2ea`)四區機能差異(§4.10)+
-  跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78
+- **F 批 打架看得見**(`c90f3ff`～`bdc6c8e`)門檻 50/22+`scuffle`演出+並肩走位;咖啡廳聚會／AI context／鍵
+  消毒(`8296ed9`／`11a3d9a`／`04f65fe`);分區與常客(`f56ef3b`／`05cc2ea`)四區+跨日常客。⚠️ A 批唯一會咬存檔:雇 4 人以上且吧台仍贈品那座 ⇒ 產能 104→78
+- **三角關係(吃醋)**:`unrequitedSuitors()` 零新持久化狀態即時推導,安全性繼承既有 `canRomance()`(與
+  `canBecomeCouple`／`affairThird` 共用把關函式,`affairThird()` 同步重構);落選者一次性反應(固定文案
+  +既有 heartbreak fx、零新 RNG)
 - **更早**:咖啡廳 P1～P4b(逐客結帳、排隊/店員、庫存/研發/成長曲線、收支分頁與可收合面板)、店貓辣椒、
   月度事件鏈 3→8、姓名池 20→72、職業 15→24、職業目標 8→14、本地劇情種子 10→16 條支線、送養合照即時重畫
 
@@ -53,6 +50,9 @@
   過」紀錄,見 `docs/設計檢討與優化.md` §10-2b)。同輪順帶看 A 批產能 nerf(104→78)、常客升格節奏、劇情弧
   多樣性、C 批聚會頻率(`CAFE_GATHER_CHANCE` 單一常數好調)、D 批會不會「蓋台」(降級開關是
   `lineHash("cafe-ctx|day") % N` 每日輪一位,單行改動、未做)
+- 🔴 **三角關係實玩觀察重點**:① 落選者固定文案會不會顯得重複(刻意取捨,犧牲多樣性換零漂移,太單調
+  可再開一批加變化但會使 balance 快照漂移、需另外審核);② AI 會不會自己從既有「與 X 曖昧」背景資料
+  寫出單戀情節(AI context 本批未擴充);③ 只在「B 選定對象」那刻反應一次,無持續性吃醋(刻意限縮)
 - 長線衝突項:壓力門檻改成相對各自基準線(`stress >= baselines(rt).stress - 10`),要先把 `baselines()`
   抽出共用模組解掉循環 import
 - 其餘可選項(依 `docs/待辦.md`,🔴 項目一律先問使用者):牛奶／寵物鮮食建議常備量 24 對開張期菜單過高

@@ -36,6 +36,9 @@ export interface EncounterResult {
   tone: "friendly" | "romantic" | "conflict";
   /** 只有自然社交擲骰造成的口角為 true；分手等劇情衝突不占每日自然衝突額度。 */
   naturalConflict: boolean;
+  /** became_couple 當下,同時對 a 或 b 抱有曖昧的落選者 id(去重,不含新伴侶雙方)。
+   *  純暫態回傳值,不落存檔;只有呼叫端傳入 getTenant 時才會計算(見 EncounterOptions.getTenant)。 */
+  rivals?: string[];
 }
 
 /** 全部關係(pairKey → Relationship),reactive 供 UI 讀 */
@@ -97,6 +100,32 @@ export function canBecomeCouple(a: Tenant, b: Tenant): boolean {
   const aPartner = romanticPartnerId(a.id);
   const bPartner = romanticPartnerId(b.id);
   return (!aPartner || aPartner === b.id) && (!bPartner || bPartner === a.id);
+}
+
+/** targetId 尚未有正式伴侶時,同時對其抱有曖昧(rel>=75 且 canRomance)的所有現任租客 id。
+ *  純函式、零副作用;affairThird() 的第三人判定與吃醋落選者判定共用同一個原語。
+ *  安全性是結構性的:唯一過濾條件是 canRomance()——與 canBecomeCouple/affairThird 共用同一把關函式,
+ *  不是另外寫一份規則。未成年或取向不合的租客,rel.value 再高也不會出現在回傳陣列裡。
+ *  第三人只能是現任租客:資料源頭是 relationships,其 key 只含曾互動過的租客 id;呼叫端一律傳
+ *  getTenant = (id) => state.runtimes[id]?.tenant。已搬走的租客在 removeTenantRelations() 時就被
+ *  清出 relationships,不會出現;咖啡廳熟客存在完全獨立的 cafe.ts 常客層,從未寫入 relationships。 */
+export function unrequitedSuitors(
+  targetId: string,
+  getTenant: (id: string) => Tenant | undefined,
+  excludeIds: string[] = [],
+): string[] {
+  const target = getTenant(targetId);
+  if (!target) return [];
+  const out: string[] = [];
+  for (const [key, rel] of Object.entries(relationships)) {
+    if (rel.romantic) continue;
+    const [aId, bId] = key.split("|");
+    const otherId = aId === targetId ? bId : bId === targetId ? aId : null;
+    if (!otherId || excludeIds.includes(otherId)) continue;
+    const other = getTenant(otherId);
+    if (other && rel.value >= 75 && canRomance(target, other)) out.push(otherId);
+  }
+  return out;
 }
 
 /** 夾值調整兩人關係值(AI 事件用:拉近/疏遠) */
@@ -313,6 +342,9 @@ export interface EncounterOptions {
   allowConflict?: boolean;
   /** 0~1；只折抵噪音相性造成的自然口角壓力，由 tick 從房間隔音決定性注入。 */
   noiseMitigation?: number;
+  /** by id 取回 Tenant(呼叫端注入,避免 social 依賴 store)。
+   *  提供時才會在 became_couple 當下計算 EncounterResult.rivals(三角關係落選者)。 */
+  getTenant?: (id: string) => Tenant | undefined;
 }
 
 export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}): EncounterResult {
@@ -382,6 +414,13 @@ export function encounter(a: Tenant, b: Tenant, options: EncounterOptions = {}):
 
   // 在一起(canRomance = 雙方成年 + 取向相容)
   if (!rel.romantic && rel.value >= 75 && canBecomeCouple(a, b) && comp >= 0) {
+    if (options.getTenant) {
+      const getTenant = options.getTenant;
+      res.rivals = [
+        ...unrequitedSuitors(a.id, getTenant, [b.id]),
+        ...unrequitedSuitors(b.id, getTenant, [a.id]),
+      ].filter((id, i, arr) => arr.indexOf(id) === i); // 去重
+    }
     setCouple(a.id, b.id, true, a, b);
     res.milestone = "became_couple";
     res.importance = "major";

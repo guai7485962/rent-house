@@ -21,6 +21,7 @@ const {
   encounter,
   tierLabel,
   relationshipProgressHint,
+  unrequitedSuitors,
 } = await import("../src/sim/social");
 const { state, makeRuntime } = await import("../src/sim/gameState");
 const { affairPass } = await import("../src/sim/drama");
@@ -131,6 +132,41 @@ relationships[pairKey(A.id, B.id)] = { value: 80, romantic: true, cohabitOffered
 relationships[pairKey(A.id, C.id)] = { value: 95, romantic: true, cohabitOffered: false };
 pruneRomanceIntegrity((id) => roster[id]);
 check("無同居時保留最高關係戀情", getRel(A.id, C.id)?.romantic === true && getRel(A.id, B.id)?.romantic === false);
+
+// ── 三角關係(吃醋)批:unrequitedSuitors() 安全把關與 became_couple 的 rivals ──
+const getTenant = (id: string) => roster[id];
+
+// 1) 兩位現任租客同時單戀 B(rel>=75 且 canRomance)→ 去重回傳,不含 B 自己、不含 romantic 邊
+clearRels();
+relationships[pairKey(A.id, B.id)] = { value: 80, romantic: false, cohabitOffered: false };
+relationships[pairKey(D.id, B.id)] = { value: 76, romantic: false, cohabitOffered: false };
+relationships[pairKey(A.id, D.id)] = { value: 90, romantic: true, cohabitOffered: false }; // 情侶邊不算單戀
+const suitorsOfB = unrequitedSuitors(B.id, getTenant, []);
+check("兩位現任租客同時單戀 B → 回傳去重長度 2", suitorsOfB.length === 2 && suitorsOfB.includes(A.id) && suitorsOfB.includes(D.id), `got=${suitorsOfB}`);
+check("單戀者陣列不含 B 自己、不含 romantic 邊", !suitorsOfB.includes(B.id));
+
+// 2) 未成年/取向不合的候選人不會出現在回傳陣列(複用 F:異性但取向不互相符合)
+relationships[pairKey(A.id, F.id)] = { value: 100, romantic: false, cohabitOffered: false };
+const suitorsOfA = unrequitedSuitors(A.id, getTenant, []);
+check("取向不合(F)高關係值也不會出現在單戀者陣列", !suitorsOfA.includes(F.id));
+
+// 3) became_couple 觸發時,EncounterResult.rivals 正確列出排除新伴侶後的落選者 id
+clearRels();
+const X = mk("triangle_x", "阿翔", "male");
+const Y = mk("triangle_y", "小雨", "female");
+const Z = mk("triangle_z", "小柔", "female"); // 對 X 單戀,新伴侶敲定後落選
+const W = mk("triangle_w", "阿凱", "male");   // 對 Y 單戀,新伴侶敲定後落選
+const roster2: Record<string, Tenant> = { ...roster, [X.id]: X, [Y.id]: Y, [Z.id]: Z, [W.id]: W };
+const getTenant2 = (id: string) => roster2[id];
+relationships[pairKey(X.id, Y.id)] = { value: 76, romantic: false, cohabitOffered: false };
+relationships[pairKey(X.id, Z.id)] = { value: 80, romantic: false, cohabitOffered: false };
+relationships[pairKey(Y.id, W.id)] = { value: 82, romantic: false, cohabitOffered: false };
+Math.random = () => 0.5;
+const coupleRes = encounter(X, Y, { getTenant: getTenant2 });
+Math.random = originalRandom;
+check("三角關係批:became_couple 如常觸發(不搶跑、不覆寫既有判定)", coupleRes.milestone === "became_couple");
+const rivals = coupleRes.rivals ?? [];
+check("rivals 列出雙方落選者且不含新伴侶自己", rivals.length === 2 && rivals.includes(Z.id) && rivals.includes(W.id) && !rivals.includes(X.id) && !rivals.includes(Y.id), `rivals=${rivals}`);
 
 console.log(`\n=== 結果:${pass} 通過 / ${fail} 失敗 ===`);
 if (fail > 0) process.exit(1);

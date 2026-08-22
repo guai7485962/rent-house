@@ -22,6 +22,7 @@ import {
   gameDayIndex,
   notify,
   pushSocialLog,
+  pushMemory,
   applySocialEffect,
   roomOfTenant,
   canStartCohabit,
@@ -1431,6 +1432,7 @@ export function socialPass(skip: Set<string> = new Set()) {
         gameMs: state.gameMs,
         allowConflict: conflictsToday < 2,
         noiseMitigation: noiseConflictMitigation(A.tenant, B.tenant),
+        getTenant: (id) => state.runtimes[id]?.tenant,
       });
       if (res.naturalConflict) {
         conflictsToday += 1;
@@ -1465,6 +1467,17 @@ export function socialPass(skip: Set<string> = new Set()) {
       if (res.milestone === "became_couple") {
         notify(`${A.tenant.name} 和 ${B.tenant.name} 在一起了 ❤️`);
         unlock("first_love");
+        // 三角關係:曾同時對 A 或 B 抱有曖昧的落選者,在這一刻反應一次(§吃醋批,不做持續性掃描)。
+        for (const rivalId of res.rivals ?? []) {
+          const rival = state.runtimes[rivalId];
+          if (!rival || rival.pendingEvent || rival.tenant.visualState === "away") continue;
+          const rs = rival.tenant.stats;
+          rs.stress = clamp(rs.stress + 4, 0, 100);
+          rs.mood = clamp(rs.mood - 3, 0, 100);
+          pushMemory(rival.tenant, "[暗戀落空]", `眼睜睜看著${B.tenant.name}和${A.tenant.name}在一起了,只能把這份心意收起來。`, "ai_event");
+          pushSocialLog(rival, `💔 眼睜睜看著 ${B.tenant.name}和${A.tenant.name}在一起了，只能把這份心意收起來`, "notable");
+          if (rival.targetTile) spawnFx("heartbreak", rival.targetTile.c, rival.targetTile.r, 15000);
+        }
       }
       if (res.milestone === "became_best_friends") {
         const label = listRelationships((id) => state.runtimes[id]?.tenant)

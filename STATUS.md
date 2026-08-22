@@ -14,16 +14,18 @@
 
 ---
 
-## 現在狀態(2026-08-20)
+## 現在狀態(2026-08-22)
 
+- **三角關係(吃醋)批已 commit,尚未 push**(基準 `ab3a845`,細節見工作日誌/`docs/待辦.md`):
+  新增 `unrequitedSuitors()`,唯一過濾條件同既有 `canRomance()`,零新持久化欄位、零新 RNG。
+  `npm test` 113、balance 零漂移、`smoke:save` 49/0,`SAVE_VERSION` 仍 10;本批不 push。
 - **與 `origin/main` 同步(`9dc163e`);G/H 六批已逐批 push 並各自完成 production 部署驗證**
-  (`f141c77`／`bfcd35a`／`2ec6239`／`8e0a8b0`／`c499ac4`／`9dc163e`——一次只推一批、線上確認過才推下一批)。
-  08-18 被回退的程式碼**零改寫原樣重上**,內容見下節「近期已部署基線」
+  (`f141c77`～`9dc163e`——一次只推一批、線上確認才推下一批;08-18 回退的程式碼零改寫原樣重上,
+  內容見下節「近期已部署基線」)
 - **線上佐證**:六批 bundle 依序 `index-BHVS8hCr`→`-JEKBnvTK`→`-CGKSTaqe`→`-DoJbeh1M`→`-C2ZoWzg7`→`-DC6XAvpG`
   (715,548→727,590 bytes),每批都搜到該批的新識別字(`game_pair` ×8、`first_kiss`、`scuffle` ×6、
-  `narrateStatus`、`AbortController` ×2 …);全程 200、`index.html` 的 `Cache-Control` 全程維持 `no-store`
-  (I 批快取修復持續生效)。⚠️ `deferredRunToken`／`scufflePushOffset` 命中 0 是**識別字最小化改名**所致、不是
-  缺件;H 批的 worker 端因 `/api/narrate` 有同源守衛,**無法從外部驗證**
+  `narrateStatus`、`AbortController` ×2 …);全程 200、`no-store` 持續生效。⚠️ `deferredRunToken`／
+  `scufflePushOffset` 命中 0 是**識別字最小化改名**所致、不是缺件;H 批 worker 端因同源守衛**無法外部驗證**
 - 本機驗證(**每批獨立跑完才提交**):`npm test` 110→111→111→111→111→**112**、typecheck(app + worker)、
   `build`、`balance-test` **六批零漂移未 `--update`**、**`smoke:save` 六批全部 49/0**;`SAVE_VERSION` 仍 10
 
@@ -33,10 +35,8 @@
   (4 pose + 3 fx,`became_couple` 改告白演出)、日常/友誼 6 種 + 戀愛線 4 種(全 `pool:"extra"`、不進 AI
   白名單;🔴 安全靠 `tier` 的 `rel.romantic`——只可能經含成年 + 取向雙檢的 `canBecomeCouple()` 建立——
   四種再一致掛 `both_adult` 雙保險)
-- **H 批 AI 日記卡死修復**:`narrateDay()` fetch 45s 逾時 + `deferredRun` 8 分鐘 stale watchdog + 四個靜默
-  退出改留標籤 + `safeNarrateCtx()` 降級 + `rentDebug.narrateStatus()` 唯讀診斷
-- **I 批 白畫面根因修復**(`2689311`,與 G/H 六批的程式碼無關):部署刪掉上一版雜湊資產 + iOS standalone
-  抓著快取的舊 `index.html` ⇒ 404;修法(`no-store` + 自救腳本)見 `docs/系統總覽.md` 地雷紀錄
+- **H 批 AI 日記卡死修復**:`narrateDay()` 45s 逾時 + `deferredRun` 8 分鐘 watchdog + 四個靜默退出改留標籤 + `safeNarrateCtx()` 降級 + `narrateStatus()` 唯讀診斷
+- **I 批 白畫面根因修復**(`2689311`,與 G/H 六批的程式碼無關):部署刪舊雜湊資產 + iOS standalone 抓著快取的舊 `index.html` ⇒ 404;修法(`no-store` + 自救腳本)見 `docs/系統總覽.md` 地雷紀錄
 - **F 批 打架看得見**(`c90f3ff`～`bdc6c8e`)門檻 50/22 + `scuffle` 演出 + 並肩走位;**咖啡廳聚會／AI context
   ／鍵消毒**(`8296ed9`／`11a3d9a`／`04f65fe`);**分區與常客**(`f56ef3b`／`05cc2ea`)四區機能差異(§4.10)+
   跨日常客(§4.11)。⚠️ A 批是唯一會咬既有存檔的改動(已核可):雇 4 人以上且吧台仍是贈品那座 ⇒ 產能 104→78

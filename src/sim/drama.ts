@@ -5,7 +5,7 @@
  * - 被撞見(maybeWitness 由 interactions 在 🔞 互動觸發後呼叫):第三位租客撞見,三方尷尬。
  * 全部走既有安全機制:夾值、記憶標籤接 AI、冷戰接 conflicts、冷卻用 interactionCooldowns。
  */
-import { relationships, getRel, pairKey, canRomance, isBestFriend, tierLabel, setCouple, adjustRelationship, adjustTension } from "./social";
+import { relationships, getRel, pairKey, isBestFriend, tierLabel, setCouple, adjustRelationship, adjustTension, unrequitedSuitors } from "./social";
 import { state, clamp, notify, pushMemory, pushSocialLog, type TenantRuntime } from "./gameState";
 import { startFeud } from "./conflicts";
 import { endCohabitOnBreakup } from "./tenancy";
@@ -22,17 +22,12 @@ const WITNESS_CHANCE = 0.15;
 
 const rtOf = (id: string) => state.runtimes[id];
 
-/** 劈腿條件:cheater 有伴,卻和第三人(非伴侶)曖昧值 ≥75 且互有好感 */
+/** 劈腿條件:cheater 有伴,卻和第三人(非伴侶)曖昧值 ≥75 且互有好感。
+ *  與吃醋落選者判定共用同一個把關原語 unrequitedSuitors()(social.ts),行為不變、去除重複判準。 */
 function affairThird(cheaterId: string, partnerId: string): TenantRuntime | null {
-  const cheater = rtOf(cheaterId);
-  if (!cheater) return null;
-  for (const rt of Object.values(state.runtimes)) {
-    const cId = rt.tenant.id;
-    if (cId === cheaterId || cId === partnerId) continue;
-    const rel = getRel(cheaterId, cId);
-    if (rel && !rel.romantic && rel.value >= 75 && canRomance(cheater.tenant, rt.tenant)) return rt;
-  }
-  return null;
+  if (!rtOf(cheaterId)) return null;
+  const thirdId = unrequitedSuitors(cheaterId, (id) => state.runtimes[id]?.tenant, [partnerId])[0];
+  return thirdId ? rtOf(thirdId) : null;
 }
 
 /** 修羅場:分手 + 心碎/怒氣演出 + 三方記憶 + 全樓八卦 + 分手冷戰 + 同居拆夥 */

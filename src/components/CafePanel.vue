@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 import { CAFE_INGREDIENTS } from "../content/cafeIngredients";
+import { CAFE_FURNITURE_ZONE, CAFE_ZONE_INFO, type CafePlacementZone } from "../content/cafeZoneGuide";
+import { getDef } from "../furniture/catalog";
 import {
   buyCafeUpgrade,
   advanceCafeResearch,
@@ -161,11 +163,21 @@ const openSections = reactive({
   regulars: false,
   adoption: adoptGuests.value.length > 0,
   rent: rentGuests.value.length > 0,
+  zones: false,
 });
 type CafeSectionId = keyof typeof openSections;
 function toggleSection(id: CafeSectionId) {
   openSections[id] = !openSections[id];
 }
+
+/** 分區小抄用的家具分組(依 room):資料只有一份(`CAFE_FURNITURE_ZONE`),這裡只是換個視圖。 */
+const zoneFurnitureGroups = computed(() => {
+  const groups = {} as Record<CafePlacementZone, { defId: string; name: string }[]>;
+  for (const [defId, rule] of Object.entries(CAFE_FURNITURE_ZONE)) {
+    (groups[rule.room] ??= []).push({ defId, name: getDef(defId).name });
+  }
+  return groups;
+});
 watch(() => adoptGuests.value.length, (n, prev) => { if (n > prev) openSections.adoption = true; });
 watch(() => rentGuests.value.length, (n, prev) => { if (n > prev) openSections.rent = true; });
 
@@ -852,6 +864,35 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             </article>
             </template>
           </section>
+
+          <!-- 🔴 分區小抄:提醒玩家「擺對區才有機能」,資料只讀 content/cafeZoneGuide.ts 這一份真相來源 -->
+          <section class="card zones-card">
+            <button class="section-head" :class="{ collapsed: !openSections.zones }" :aria-expanded="openSections.zones" @click="toggleSection('zones')">
+              <div><span class="kicker">ZONES</span><h3>分區小抄</h3></div>
+              <span class="zone-count">5 區</span>
+              <span class="chev" aria-hidden="true">▾</span>
+            </button>
+            <template v-if="openSections.zones">
+            <div class="zone-legend">
+              <div v-for="(info, room) in CAFE_ZONE_INFO" :key="room" class="zone-row">
+                <span class="zone-dot" :style="{ background: info.color }"></span>
+                <b>{{ info.emoji }} {{ info.label }}</b>
+                <small>{{ info.desc }}</small>
+              </div>
+            </div>
+            <div class="zone-furniture">
+              <div v-for="(items, room) in zoneFurnitureGroups" :key="room" class="zone-furn-group">
+                <span class="zone-furn-head">{{ CAFE_ZONE_INFO[room].emoji }} {{ CAFE_ZONE_INFO[room].label }}</span>
+                <span class="zone-furn-list">{{ items.map((i) => i.name).join("、") }}</span>
+              </div>
+              <div class="zone-furn-group">
+                <span class="zone-furn-head">🎈 純氛圍</span>
+                <span class="zone-furn-list">菜單板／桌／兩張椅——不分區,隨便擺都算氛圍分</span>
+              </div>
+            </div>
+            <p class="alert good">擺錯區還是拿得到氛圍分(療癒+品味),只是拿不到專屬機能——不是完全沒用,只是少了那一項加成。</p>
+            </template>
+          </section>
         </template>
       </div>
     </section>
@@ -902,7 +943,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .storage-badge.over { color: #ff9f6b; font-weight: 700; }
 .storage-meter { display: grid; gap: 4px; margin: 6px 0 2px; }
 .storage-meter small { color: var(--text-dim); font-size: 10.5px; }
-.capacity, .balance, .count, .research-count, .ticket, .regular-summary { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.capacity, .balance, .count, .research-count, .ticket, .regular-summary, .zone-count { margin-left: auto; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 /* 🔴 B 批:常客列。純文字 + emoji(同認養卡/租屋卡),不做頭像元件。 */
 .regular-row { padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(217,167,120,0.28); background: rgba(217,167,120,0.06); }
 .regular-row + .regular-row { margin-top: 7px; }
@@ -1048,6 +1089,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .rent-inquiry + .rent-inquiry { margin-top: 8px; }
 .rent-count { background: rgba(143,123,255,0.18); color: #cdbcff; }
 .accept.rent-accept { color: #17132c; background: #b5a8f4; }
+/* 🔴 分區小抄:五區色卡 + 依區分組的家具清單,資料只讀 content/cafeZoneGuide.ts */
+.zone-legend { display: flex; flex-direction: column; gap: 6px; }
+.zone-row { display: flex; align-items: baseline; gap: 7px; }
+.zone-row b { flex: none; font-size: 11.5px; }
+.zone-row small { min-width: 0; color: var(--text-dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zone-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; }
+.zone-furniture { display: flex; flex-direction: column; gap: 5px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+.zone-furn-group { display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; line-height: 1.5; }
+.zone-furn-head { flex: none; color: var(--text-dim); }
+.zone-furn-list { min-width: 0; }
 
 @media (max-width: 390px) {
   .body { padding-left: 11px; padding-right: 11px; }

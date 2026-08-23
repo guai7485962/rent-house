@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { CATALOG, isShopListed, venueOf, type FurnCategory, type FurnVenue } from "../furniture/catalog";
+import { CAFE_FURNITURE_ZONE, CAFE_ZONE_INFO } from "../content/cafeZoneGuide";
 import { tierChipText, tierOf } from "../furniture/tier";
 import { INTERACTIONS } from "../sim/interactions";
 import { state, startPlacing } from "../store";
@@ -93,6 +94,10 @@ function buy(defId: string) {
 function attrs(d: (typeof CATALOG)[number]) {
   return Object.entries(d.attributes).filter(([, v]) => v);
 }
+/** 咖啡廳家具的「該擺哪區」提示 —— 資料來自 `content/cafeZoneGuide.ts`,三個 UI 落點共用同一份。 */
+function zoneTag(defId: string) {
+  return CAFE_FURNITURE_ZONE[defId] ?? null;
+}
 </script>
 
 <template>
@@ -134,6 +139,10 @@ function attrs(d: (typeof CATALOG)[number]) {
                 <span v-for="[k, v] in attrs(d)" :key="k" class="a">{{ ATTR_LABEL[k] ?? k }}{{ v! > 0 ? "+" : "" }}{{ v }}</span>
                 <span v-for="n in unlocks(d.id)" :key="n" class="u">💞 {{ n }}</span>
                 <span v-if="d.effectHint" class="effect">🐾 {{ d.effectHint }}</span>
+                <span
+                  v-if="zoneTag(d.id)" class="zone"
+                  :style="{ borderColor: CAFE_ZONE_INFO[zoneTag(d.id)!.room].color }"
+                >{{ zoneTag(d.id)!.emoji }} 需擺在{{ zoneTag(d.id)!.label }}</span>
               </div>
             </div>
             <button class="buy" :disabled="state.money < d.price" @click="buy(d.id)">
@@ -206,6 +215,7 @@ function attrs(d: (typeof CATALOG)[number]) {
 .a { font-size: 10px; color: var(--good); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; }
 .u { font-size: 10px; color: #f0a8c6; border: 1px solid #d9548a; border-radius: 999px; padding: 0 6px; }
 .effect { font-size: 10px; color: #9ddfc4; border: 1px solid #4f9b7d; border-radius: 999px; padding: 0 6px; }
+.zone { font-size: 10px; color: #f0c674; border: 1px solid; border-radius: 999px; padding: 0 6px; }
 .buy {
   background: linear-gradient(135deg, var(--accent), #ff9440); color: #2b1a05;
   font-weight: 700; font-size: 12.5px; border-radius: 8px; padding: 8px 12px; white-space: nowrap;

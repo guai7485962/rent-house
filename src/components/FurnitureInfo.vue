@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { getDef, type FurnCategory } from "../furniture/catalog";
+import { CAFE_FURNITURE_ZONE } from "../content/cafeZoneGuide";
 import { rotatedFootprint, type FurnitureRotation } from "../furniture/rotation";
 import { tierChipText, tierOf } from "../furniture/tier";
 import { furnitureAt } from "../sim/placements";
@@ -13,6 +14,10 @@ const def = computed(() => getDef(props.defId));
 const isMemorial = computed(() => furnitureAt(props.c, props.r)?.memorial === true);
 const refund = computed(() => Math.round(def.value.price / 2));
 const footprint = computed(() => rotatedFootprint(def.value, props.rotation));
+// 分區提示 —— 這件家具「該擺哪」與「目前在哪」是否一致(資料來自 content/cafeZoneGuide.ts)
+const zoneRule = computed(() => CAFE_FURNITURE_ZONE[props.defId] ?? null);
+const currentRoom = computed(() => furnitureAt(props.c, props.r)?.room ?? null);
+const zoneOk = computed(() => !!zoneRule.value && currentRoom.value === zoneRule.value.room);
 
 const CAT_LABEL: Record<FurnCategory, string> = {
   sleep: "睡眠", work: "工作", av: "影音", seating: "座椅",
@@ -42,6 +47,12 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
         <span v-if="def.social" class="social">社交點</span>
         <span v-if="def.effectHint" class="effect">{{ isMemorial ? "🎁" : "🐾" }} {{ def.effectHint }}</span>
       </div>
+
+      <p v-if="zoneRule" class="zone-note" :class="{ ok: zoneOk }">
+        {{ zoneOk
+          ? `✅ 已在正確分區(${zoneRule.label}),加成生效`
+          : `⚠️ 目前位置沒有加成,建議搬到${zoneRule.label}(${zoneRule.emoji})` }}
+      </p>
 
       <p v-if="def.promptHints.length" class="hint">「{{ def.promptHints[0] }}」</p>
 
@@ -80,6 +91,9 @@ const attrs = computed(() => Object.entries(def.value.attributes).filter(([, v])
 .social { font-size: 11px; color: var(--accent-2); border: 1px solid var(--accent-2); border-radius: 999px; padding: 1px 8px; }
 .effect { font-size: 11px; color: #9ddfc4; border: 1px solid #4f9b7d; border-radius: 999px; padding: 1px 8px; }
 .hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; margin-bottom: 12px; }
+.zone-note { font-size: 12px; line-height: 1.5; margin: 4px 0 10px; padding: 6px 10px; border-radius: 8px; }
+.zone-note.ok { color: #9ddfc4; background: rgba(79,155,125,0.12); border: 1px solid #4f9b7d; }
+.zone-note:not(.ok) { color: #ffb37a; background: rgba(232,101,122,0.1); border: 1px solid #c98a4a; }
 
 .actions { display: flex; gap: 8px; }
 .cancel { flex: 0.7; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 0; font-size: 13.5px; }

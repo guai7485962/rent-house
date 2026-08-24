@@ -453,6 +453,10 @@ export function sanitizeCafeState(raw: unknown, gameMs: number): CafeState {
       restockCost: Math.max(0, finiteOr(entry.restockCost, 0)),
       // A 批:舊檔沒有這欄 ⇒ 0(排到放棄的人次只是紀錄,不進任何金流算式)。
       abandoned: Math.max(0, Math.trunc(finiteOr(entry.abandoned, 0))),
+      // 🔴 可見性批次:當日「想上門卻做不出來」的人次。additive 選填欄位,
+      // 舊檔沒有 ⇒ 0(前例:`missedBy` / `abandoned` / `restocked`)⇒ **SAVE_VERSION 維持 10**。
+      // 補 0 是冪等且決定性的:再消毒一次仍然是同一個值。
+      turnedAway: Math.max(0, Math.trunc(finiteOr(entry.turnedAway, 0))),
     }) satisfies CafeSalesDay);
   const guests = (Array.isArray(raw.guests) ? raw.guests : [])
     .map(sanitizeCafeGuest)

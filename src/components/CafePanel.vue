@@ -8,8 +8,14 @@ import {
   advanceCafeResearch,
   availableCafeResearch,
   avgTicket,
+  cafeAmbianceFull,
   cafeAmbianceMultiplier,
+  cafeBottleneck,
+  cafeBottleneckAdvice,
   cafeCapability,
+  cafeCrowd,
+  cafeInvestOutlook,
+  cafeTypicalBase,
   CAFE_AMBIANCE_FULL_POINTS,
   CAFE_AMBIANCE_SWING,
   cafeIngredientMenuUse,
@@ -62,6 +68,8 @@ import {
   placeCafeStarterSet,
 } from "../sim/placements";
 import { cafePetVisitEndHour } from "../floor/petAgents";
+import { weatherForDay } from "../sim/weather";
+import { weekdayOf } from "../sim/week";
 import { acceptCafeGuestApplicant } from "../sim/recruit";
 import { addMoney, gameDayIndex, permanentHousePetEntries, state } from "../store";
 import type { CafeGuest, CafeRegular } from "../types";
@@ -191,6 +199,68 @@ const ambiancePoints = computed(() => cafeAmbiancePoints());
 const ambianceMultiplier = computed(() => cafeAmbianceMultiplier(ambiancePoints.value));
 const cafeFurnitureCount = computed(() =>
   getPlacements().filter((p) => (CAFE_PLACEMENT_REGIONS as readonly string[]).includes(p.room)).length);
+/** 🔴 氛圍是否吃滿:面板與商店共用 `cafeAmbianceFull()`,任何一處都不准手寫常數比較。 */
+const ambianceFull = computed(() => cafeAmbianceFull(ambiancePoints.value));
+/** 吃滿之後**多出來**的點數;剛好踩在門檻上時是 0(文案要換一句,不能寫「多出來的 0 點」)。 */
+const ambianceOverflow = computed(() => Math.max(0, ambiancePoints.value - CAFE_AMBIANCE_FULL_POINTS));
+
+// ---------------------------------------------------------------------------
+// 🔴 可見性批次:想上門 vs 做得出來
+//
+// 主數字一律是「一般日」(天氣＝星期＝1.0)。當日值會被天氣(0.7~1.15)與星期
+// (0.9~1.25)推到 ±38% 之間跳,玩家週一看到「買招牌沒用」、週六看到「有用」,
+// 面板的可信度就沒了。當日值只放小字,讓玩家知道今天是旺是淡。
+//
+// `base` **不存進 state**:它是 popularity + signLevel + ambiancePoints 的純函式,
+// 零 RNG、reactive ⇒ 玩家搬一張椅子,這裡立刻跟著動。
+// ---------------------------------------------------------------------------
+const typicalBase = computed(() => cafeTypicalBase({
+  signLevel: capability.value.signLevel,
+  popularity: state.cafe.popularity,
+  ambiancePoints: ambiancePoints.value,
+}));
+const todayCrowd = computed(() => cafeCrowd({
+  weather: weatherForDay(currentDay.value),
+  weekday: weekdayOf(state.gameMs),
+  signLevel: capability.value.signLevel,
+  capacity: capability.value.capacity,
+  popularity: state.cafe.popularity,
+  outdoorSeats: capability.value.outdoorSeats,
+  ambiancePoints: ambiancePoints.value,
+}));
+const bottleneck = computed(() => cafeBottleneck({ base: typicalBase.value, capability: capability.value }));
+const bottleneckAdvice = computed(() => cafeBottleneckAdvice(bottleneck.value, capability.value, typicalBase.value));
+
+/**
+ * 過去 7 個遊戲日「因為做不出來而沒接到」的人。
+ *
+ * ⚠️ `turnedAway ⊇ abandoned`:排到放棄的是其中真的走進店裡排過隊的那一小撮
+ * (每小時要溢出超過 `CAFE_ABANDON_QUEUE_TOLERANCE` 位才會有人排),其餘的人在門口
+ * 看一眼就走。所以「沒接到 96 人／排到放棄 0 人」是正確的,文案必須交代這件事。
+ */
+const turnawayWindow = computed(() => {
+  const rows = state.cafe.sales.slice(-CAFE_SALES_WINDOW_DAYS);
+  const sum = rows.reduce((n, row) => n + Math.max(0, row.turnedAway ?? 0), 0);
+  const abandoned = rows.reduce((n, row) => n + Math.max(0, row.abandoned ?? 0), 0);
+  return {
+    days: rows.length,
+    sum,
+    abandoned,
+    avg: rows.length > 0 ? Math.round(sum / rows.length) : 0,
+  };
+});
+
+/** 投資卡的 chip:文字一律由 `cafeInvestOutlook()` 產,template 不寫死任何一句。 */
+const investOutlook = (id: string) => cafeInvestOutlook(id, {
+  upgrades: state.cafe.upgrades,
+  seats: seatCount.value,
+  extraStaff: state.cafe.extraStaff,
+  stations: serviceStations.value,
+  popularity: state.cafe.popularity,
+  ambiancePoints: ambiancePoints.value,
+  standingOrders: state.cafe.standingOrders,
+  petComfortPoints: cafePetComfortPoints(),
+});
 const activeResearch = computed(() => state.cafe.research ? getCafeResearch(state.cafe.research.id) : undefined);
 const researchDaysLeft = computed(() => cafeResearchDaysLeft(state.cafe, currentDay.value));
 const researchProgress = computed(() => {
@@ -505,18 +575,47 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
           <section class="card status-card">
             <button class="section-head" :class="{ collapsed: !openSections.today }" :aria-expanded="openSections.today" @click="toggleSection('today')">
               <div><span class="kicker">TODAY</span><h3>營運觀察</h3></div>
-              <span class="capacity">產能 {{ capability.capacity }} 單</span>
+              <span class="capacity">想上門 {{ typicalBase }} · 產能 {{ capability.capacity }}</span>
               <span class="chev" aria-hidden="true">▾</span>
             </button>
             <template v-if="openSections.today">
+            <!--
+              🔴 可見性批次的主角:落差三格。主數字一律「一般日」(天氣＝星期＝1.0),
+              當日值只放小字 —— 否則玩家週一與週六會看到互相矛盾的結論。
+            -->
+            <div class="gap-grid">
+              <div>
+                <span>想上門</span><b>{{ typicalBase }} 人</b>
+                <small>一般日・今天 {{ todayCrowd.base }}</small>
+              </div>
+              <div>
+                <span>做得出來</span><b>{{ capability.capacity }} 單</b>
+                <small>產能上限</small>
+              </div>
+              <div :class="bottleneck.turnedAway > 0 ? 'miss' : 'ok'">
+                <span>沒接到</span><b>{{ bottleneck.turnedAway }} 人</b>
+                <small>{{ bottleneck.turnedAway > 0 ? "每天" : "產能吃得下" }}</small>
+              </div>
+            </div>
+            <p class="alert" :class="bottleneck.kind === 'demand' ? 'good' : 'warn'">{{ bottleneckAdvice }}</p>
+            <p v-if="turnawayWindow.sum > 0" class="alert bad">
+              📉 過去 {{ turnawayWindow.days }} 天有 <b>{{ turnawayWindow.sum }} 位</b>客人因為做不出來而沒接到（平均 {{ turnawayWindow.avg }} 人／日），其中 {{ turnawayWindow.abandoned }} 位是真的排進隊伍才轉身離開的。這些人不會出現在營收，也不會出現在銷售排行 —— 產能夠了，他們就是錢。
+            </p>
+            <p v-else-if="turnawayWindow.days > 0" class="alert good">
+              ✓ 過去 {{ turnawayWindow.days }} 天沒有人因為產能不足而落空。
+            </p>
             <div class="status-grid">
               <div><span>熱銷品</span><b>{{ hotItem }}</b></div>
               <div><span>最近營收</span><b>{{ latest ? money(latest.revenue) : "尚無資料" }}</b></div>
               <div><span>一樓家具</span><b>{{ cafeFurnitureCount }} 件</b></div>
               <div><span>氛圍加成</span><b>客流 ×{{ ambianceMultiplier.toFixed(2) }}</b></div>
             </div>
-            <p class="alert" :class="ambiancePoints > 0 ? 'good' : 'warn'">
-              🪑 氛圍 {{ ambiancePoints }} / {{ CAFE_AMBIANCE_FULL_POINTS }} 點（一樓家具的舒適＋風格總和，滿點客流 +{{ Math.round(CAFE_AMBIANCE_SWING * 100) }}%）。
+            <!-- 🔴 氛圍吃滿之後多買的家具對客流是 0。不講,玩家就會繼續買下去。 -->
+            <p v-if="ambianceFull" class="alert warn">
+              🪑 氛圍 {{ ambiancePoints }} / {{ CAFE_AMBIANCE_FULL_POINTS }} 點 —— <b>已達上限，客流 ×{{ (1 + CAFE_AMBIANCE_SWING).toFixed(2) }} 不會再往上</b>。<template v-if="ambianceOverflow > 0">多出來的 {{ ambianceOverflow }} 點對客流沒有作用，</template><template v-else>再多擺一件對客流也不會有作用，</template>還想買家具的話挑<b>有機能</b>的：點餐吧台／濃縮咖啡機（擺吧台區 → 服務位）、貨架／木箱／冷藏櫃（擺後場 → 庫存）、椅子與圓桌（→ 席次）、貓跳台／軟墊（擺寵物區 → 認養）。
+            </p>
+            <p v-else class="alert" :class="ambiancePoints > 0 ? 'good' : 'warn'">
+              🪑 氛圍 {{ ambiancePoints }} / {{ CAFE_AMBIANCE_FULL_POINTS }} 點（一樓家具的舒適＋風格總和）—— 目前客流 ×{{ ambianceMultiplier.toFixed(2) }}，再加 {{ CAFE_AMBIANCE_FULL_POINTS - ambiancePoints }} 點就吃滿 +{{ Math.round(CAFE_AMBIANCE_SWING * 100) }}%。
             </p>
             <!-- 🔴 A 批:地板分區的第二條機能。擺對區(寵物區)的貓跳台／軟墊才算進來。 -->
             <p class="alert" :class="petComfort > 0 ? 'good' : 'warn'">
@@ -524,7 +623,8 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 → 認養詢問 {{ petIntentWeights.adopt }}%、寵物在一樓待到 {{ petStayEndHour }}:00</template><template v-else>
                 （把貓跳台或軟墊擺進<b>寵物區</b>才算數，擺主廳只有氛圍分）</template>。
             </p>
-            <p v-if="latest && latest.guests >= capability.capacity" class="alert warn">⚙️ 最近一次已滿載，可考慮增加設備。</p>
+            <!-- 舊的那句含糊提示已由上方 cafeBottleneckAdvice() 取代:它只說「滿載」,
+                 沒說滿的是席次、吧台還是人手,而三者的解法完全不同。 -->
             <p v-if="predictedShortages.length" class="alert bad">⚠️ 依最近客流預估會缺：{{ predictedShortages.join("、") }}</p>
             <p v-else-if="latest" class="alert good">✓ 目前庫存足以應付最近一次的客流。</p>
             <p v-else class="empty">完成第一次日結後，這裡會顯示熱銷品與缺貨預估。</p>
@@ -765,6 +865,16 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                   <strong v-else>${{ item.price.toLocaleString() }}</strong>
                 </div>
                 <p>{{ item.effect }}</p>
+                <!--
+                  🔴 「這一項買下去會怎樣」。文字**全部**來自 cafeInvestOutlook(),
+                  template 不寫死任何一句 —— 它用差分(再呼叫一次真的 cafeCapability()
+                  與 cafeTypicalBase())算出來,所以文案不可能與公式漂開。
+                  刻意**不加 CSS transition**:跨界線時 chip 翻面是真的狀態改變,不是抖動。
+                -->
+                <span
+                  v-if="!state.cafe.upgrades.includes(item.id) && investOutlook(item.id).text"
+                  class="outlook" :class="investOutlook(item.id).tone"
+                >{{ investOutlook(item.id).text }}</span>
                 <button
                   v-if="!state.cafe.upgrades.includes(item.id)"
                   class="secondary"
@@ -964,6 +1074,17 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .status-grid div { min-width: 0; padding: 8px 9px; border-radius: 9px; background: rgba(255,255,255,0.025); }
 .status-grid span { display: block; color: var(--text-dim); font-size: 10px; }
 .status-grid b { display: block; margin-top: 2px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 🔴 落差三格:想上門 / 做得出來 / 沒接到。三欄等寬,直式手機 360px 也塞得下
+   (每格最窄約 108px,數字用 tabular-nums 不會因位數跳動而換行)。 */
+.gap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+.gap-grid div { min-width: 0; padding: 8px 7px; border-radius: 9px; background: rgba(255,255,255,0.03); border: 1px solid var(--line); }
+.gap-grid span { display: block; color: var(--text-dim); font-size: 10px; }
+.gap-grid b { display: block; margin-top: 2px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gap-grid small { display: block; margin-top: 1px; color: var(--text-dim); font-size: 9.5px; line-height: 1.3; }
+.gap-grid .miss { border-color: rgba(232,101,122,0.5); background: rgba(232,101,122,0.09); }
+.gap-grid .miss b { color: #ffacb7; }
+.gap-grid .ok { border-color: rgba(83,196,126,0.45); background: rgba(83,196,126,0.08); }
+.gap-grid .ok b { color: #b9f6ce; }
 .alert { margin: 8px 0 0; padding: 7px 9px; border-radius: 8px; font-size: 10.8px; line-height: 1.45; }
 .alert.warn { color: #ffd98a; background: rgba(181,135,46,0.11); }
 .alert.bad { color: #ffacb7; background: rgba(232,101,122,0.1); }
@@ -1030,6 +1151,15 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .upgrade-head strong, .owned-label { margin-left: auto; color: var(--accent); font-size: 11.5px; white-space: nowrap; }
 .owned-label { color: var(--good); }
 .upgrade p { margin: 5px 0 8px; color: var(--text-dim); font-size: 10.5px; line-height: 1.45; }
+/* 🔴 投資 chip:綠 = 現在買就有數字、橘 = 買了不會變成錢、紫 = 真實內容但不進營收。
+   刻意**沒有 transition**:跨界線時翻面是真的狀態改變(§9-2),不該演成漸變動畫。 */
+.outlook {
+  display: block; margin: 0 0 8px; padding: 6px 8px; border-radius: 8px;
+  font-size: 10.3px; line-height: 1.45; border: 1px solid transparent;
+}
+.outlook.good { color: #b9f6ce; background: rgba(83,196,126,0.1); border-color: rgba(83,196,126,0.34); }
+.outlook.blocked { color: #ffd08a; background: rgba(200,140,50,0.12); border-color: rgba(200,140,50,0.4); }
+.outlook.note { color: #d9c2ff; background: rgba(150,110,220,0.12); border-color: rgba(150,110,220,0.36); }
 .secondary { width: 100%; padding: 7px; color: #ffd6a3; background: rgba(255,180,94,0.1); border: 1px solid rgba(255,180,94,0.55); font-size: 11.5px; }
 .active-research { padding: 11px; border: 1px solid rgba(113,207,145,0.38); border-radius: 11px; background: linear-gradient(135deg, rgba(71,149,100,0.11), rgba(255,180,94,0.06)); }
 .active-research-head { display: flex; align-items: center; gap: 10px; }

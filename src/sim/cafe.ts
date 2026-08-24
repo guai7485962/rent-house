@@ -1220,6 +1220,386 @@ export function cafeCrowd(input: CafeCrowdInput): CafeCrowdResult {
   return { base, guests, weatherMultiplier, weekdayMultiplier, popularityMultiplier, ambianceMultiplier, cappedByCapacity: base > capacity };
 }
 
+// ===========================================================================
+// 7b. 🔴 可見性批次:把「想上門 vs 做得出來」的落差攤開(2026-08-25)
+//
+// 使用者實玩回報「投資與研發都沒有效果、家具可有可無」。唯讀調查的結論是:
+// 他的店被**服務位 = 1** 卡死(產能 36 單/日),而想上門的人有 66~100 位 ⇒
+// 三級招牌 + 戶外座位($225,000)的邊際效益在數學上是**精確的 0**;
+// 氛圍超出 60 點上限的 31 點(≈$28,000 的家具)也是 0;
+// 而每天約 64 位客人在資料層無聲蒸發,畫面上完全沒有信號
+// (放棄門檻是每小時 8 人,他每小時只溢出 5.8 ⇒ 一位都不會演出「排到放棄」)。
+//
+// **玩家不是買錯東西,是遊戲沒有告訴他被什麼卡住。** 本節五支純函式就是把它攤開。
+//
+// ## 本節的三條界線
+//
+// 1. **全部是純函式**:席次／服務位／氛圍點／寵物舒適點都是擺放狀態,一律由 caller
+//    餵參數進來(慣例同 `CafeCapabilityContext` 與 `CafeCrowdInput.ambiancePoints`)。
+// 2. **不被任何 sim pass 呼叫**,只有 `CafePanel.vue` 與 `FurnitureShop.vue` 用
+//    ⇒ 對 `scripts/balance-snapshot.json` 天然零漂移。
+// 3. **文案由函式產生,不寫死在 template**:面板上的每一句話都是算式本身的輸出,
+//    「文案與公式各自漂開」在結構上不可能發生。`cafe-bottleneck-test.ts` 有斷言把關。
+//
+// ## 為什麼主數字是「一般日」而不是「今天」
+//
+// 當日客流會被天氣(0.7~1.15)與星期(0.9~1.25)推到 ±38% 之間跳。玩家週一看到
+// 「買招牌沒用」、週六看到「有用」,會直接推翻整個面板的可信度。兩張表的加權平均
+// 分別是 0.99 與 1.021,取 1.0 的長期誤差約 1% —— 主數字用它,當日值只放小字。
+// ---------------------------------------------------------------------------
+
+/** 「一般日」用的天氣:`CAFE_WEATHER_MULTIPLIER` 裡係數恰為 1.0 的那一格。 */
+export const CAFE_TYPICAL_WEATHER: WeatherId = "cloudy";
+
+/**
+ * 一般日想上門的人數(天氣與星期都當 1.0,戶外座位不計 —— 它只在晴天生效)。
+ *
+ * 🔴 **這支不是第二份算式,它就是 `cafeCrowd()` 本身。**
+ *
+ * 中控拍板「不重構 `cafeCrowd()`」(那是 sim 熱路徑,改取整順序就會讓平衡快照漂移),
+ * 所以本函式不抄一份乘法,而是**直接呼叫 `cafeCrowd()`**,只把兩個係數壓成 1:
+ *
+ * - **天氣**:`CAFE_TYPICAL_WEATHER`(陰天)的係數本來就恰好是 1.0,直接餵。
+ * - **星期**:七格裡沒有 1.0(1.25 / 0.9 / 1.05),沒得挑。但 `cafeCrowd()` 對
+ *   `signLevel` **不取整**(`Math.max(0, finiteOr(...))`),而 raw 對 signLevel 是線性的
+ *   ⇒ 把等級先除以該格的係數再餵進去,乘回來與「星期係數 = 1」在數學上完全等價。
+ *   浮點尾差(相對誤差 ~1e-15、絕對 ~1e-13)由 `cafeCrowd()` 內原本就有的
+ *   `quantize()`(toFixed(6))吸收,遠低於 5e-7 的取整邊界。
+ *
+ * ⇒ 兩式不可能漂開,因為只有一式。`cafe-bottleneck-test.ts` 仍然逐週日反覆驗這條等價。
+ */
+export function cafeTypicalBase(input: {
+  signLevel: number;
+  popularity: number;
+  ambiancePoints?: number;
+}): number {
+  return typicalCrowdBase(input.signLevel, input.popularity, input.ambiancePoints);
+}
+
+/**
+ * 內部版:允許**非整數**的等級。戶外座位那條差分要用「等級 × (1 + 晴天加成)」
+ * 把 +15% 折算回等級軸上,才不會多做一次獨立的取整(那又會變成第二份算式)。
+ */
+function typicalCrowdBase(signLevel: number, popularity: number, ambiancePoints?: number): number {
+  const level = Math.max(0, finiteOr(signLevel, 1));
+  const weekday = 0;
+  const normalizer = CAFE_WEEKDAY_MULTIPLIER[weekday];
+  return cafeCrowd({
+    weather: CAFE_TYPICAL_WEATHER,
+    weekday,
+    signLevel: level / normalizer,
+    // 只要 base,不要被產能夾:給一個絕不可能被撞到的天花板。
+    capacity: Number.MAX_SAFE_INTEGER,
+    popularity,
+    outdoorSeats: false,
+    ambiancePoints,
+  }).base;
+}
+
+/**
+ * 氛圍是否已經吃滿 `CAFE_AMBIANCE_FULL_POINTS`。
+ *
+ * 🔴 **面板、商店 banner、商店每張卡的 chip 三處共用這一支**,任何一處都不准手寫
+ * `>= 60`(`cafe-bottleneck-test.ts` 掃兩個 SFC 的原始碼把關)。三個落點各自寫一次
+ * 判定,就是三個各自會過期的常數。
+ */
+export function cafeAmbianceFull(points: number): boolean {
+  return Math.max(0, finiteOr(points, 0)) >= CAFE_AMBIANCE_FULL_POINTS;
+}
+
+/** 現在真正卡住產能的那條腿。 */
+export type CafeBottleneckKind = "demand" | "seats" | "stations" | "staff" | "both";
+
+export interface CafeBottleneck {
+  kind: CafeBottleneckKind;
+  /** 一般日做不出來、因此接不到的人數 = `max(0, base − capacity)`。 */
+  turnedAway: number;
+  /** 產能還剩多少沒被用到 = `max(0, capacity − base)`。 */
+  headroom: number;
+  /**
+   * `base >= capacity` ⇒ **招牌與戶外座位買了不會變成錢**。
+   * 這就是使用者花了 $225,000 卻「沒有效果」的那個精確 0,
+   * `cafeInvestOutlook()` 的 blocked 判定與本欄位是同一個判斷式。
+   */
+  crowdBlocked: boolean;
+}
+
+/**
+ * binding constraint:客流、席次、吧台寬度、人手,現在是哪一個在擋。
+ *
+ * 判定順序刻意這樣排:
+ * 1. `base < capacity` ⇒ `demand` —— 產能吃得下,現在缺的是客人。
+ * 2. 席次腿比人力腿短 ⇒ `seats`。
+ * 3. 人力腿短,且**有人領薪水卻站不上吧台**(`idleStaff > 0`)⇒ `stations`
+ *    —— 玩家要買的是吧台不是人,這兩者的解法完全不同,分不清就會繼續花錯錢。
+ * 4. 人力腿短且大家都站得上吧台 ⇒ `staff`。
+ * 5. 兩條腿一樣長 ⇒ `both`(只補一邊產能一單都不會動)。
+ *
+ * `seatCapacity === null`(caller 沒餵席次)時席次不可能是瓶頸,退回 3/4 判定 ——
+ * 慣例同 `cafeCapability()` 的「省略 = 不知道,不是 0」。
+ */
+export function cafeBottleneck(input: { base: number; capability: CafeCapability }): CafeBottleneck {
+  const cap = input.capability;
+  const base = Math.max(0, Math.trunc(finiteOr(input.base, 0)));
+  const capacity = Math.max(0, Math.trunc(finiteOr(cap.capacity, 0)));
+  const turnedAway = Math.max(0, base - capacity);
+  const headroom = Math.max(0, capacity - base);
+  const crowdBlocked = base >= capacity;
+  const kind: CafeBottleneckKind = (() => {
+    if (base < capacity) return "demand";
+    const seatCapacity = cap.seatCapacity;
+    if (seatCapacity !== null) {
+      if (seatCapacity < cap.staffCapacity) return "seats";
+      if (seatCapacity === cap.staffCapacity) return "both";
+    }
+    return cap.idleStaff > 0 ? "stations" : "staff";
+  })();
+  return { kind, turnedAway, headroom, crowdBlocked };
+}
+
+/**
+ * TODAY 卡那一句「你現在被什麼卡住」。五段互斥,與 `cafeBottleneck()` 共用同一份判定。
+ *
+ * 文案裡的強調一律用「」而不是 markdown 的 `**`:這些字串是直接塞進 `<p>` 的純文字,
+ * 星號會原樣顯示在畫面上。
+ */
+export function cafeBottleneckAdvice(b: CafeBottleneck, cap: CafeCapability, base: number): string {
+  const safeBase = Math.max(0, Math.trunc(finiteOr(base, 0)));
+  const capacity = Math.max(0, Math.trunc(finiteOr(cap.capacity, 0)));
+  const lead = `一般日約 ${safeBase} 人想上門,你做得出 ${capacity} 單`;
+  const seatCapacity = cap.seatCapacity;
+  switch (b.kind) {
+    case "demand":
+      return `🍰 ${lead} —— 現在吃得下所有客人,還剩 ${b.headroom} 單的餘裕。`
+        + "想再賺,該做的是把人叫來:升招牌或加戶外座位,這時候買最划算。";
+    case "seats":
+      return `🪑 ${lead},卡在「席次」。椅子和圓桌換算的內用量只有 ${seatCapacity ?? capacity} 單,`
+        + `店員那邊做得出 ${cap.staffCapacity} 單。到商店買幾張咖啡廳椅或小圓桌擺進主廳,`
+        + `每張 +${CAFE_SEAT_TURNOVER} 單／日。`;
+    case "stations":
+      return `🧑‍🍳 ${lead},卡在「吧台寬度」。服務位 ${cap.stations ?? 1} 個,`
+        + `${cap.staffCount} 位店員裡只有 ${cap.activeStaff} 位站得上吧台,`
+        + `另外 ${cap.idleStaff} 位薪水照付卻做不了事。在「吧台區」再擺一座點餐吧台`
+        + "(每格 +1 服務位),或把濃縮咖啡機也放進吧台區(tech 3 = +1),他們就能上工。"
+        // 🔴 §9-5 的特例:開張贈品本來就給 3 個服務位,`stations === 1` 只會出現在
+        // 玩家把吧台賣掉/搬走,或舊存檔。那是最容易「雇了人卻沒有用」的形狀,必須點名。
+        + (cap.stations === 1
+          ? "你的「吧台區」現在沒有點餐吧台,所以只剩收銀口那一個服務位 —— 雇再多人也只有一位做得了事。"
+          : "");
+    case "staff":
+      return `👥 ${lead},卡在「人手」。${cap.staffCount} 位店員都站得上吧台了,`
+        + `一人一天 ${cap.cupsPerStaff} 杯就是上限。到下面的「人力」雇一位`
+        + `(−$${CAFE_STAFF_WAGE}／日)就多 ${cap.cupsPerStaff} 單`
+        + (seatCapacity === null ? "。" : `;席次還撐得住 ${seatCapacity} 單,不必急著買椅子。`);
+    case "both":
+    default:
+      return `⚖️ ${lead},「席次與人力剛好一樣緊」(${seatCapacity ?? capacity} 單／${cap.staffCapacity} 單),`
+        + "只補一邊不會變多。椅子和人各加一點,產能才會真的往上走。";
+  }
+}
+
+/**
+ * 🔴 寵物在一樓待到幾點的**純算式鏡像**。
+ *
+ * 本尊 `cafePetVisitEndHour()` 住在 `src/floor/petAgents.ts`(渲染層,會讀 store),
+ * 本檔 import 它就等於把 state 拉進純函式層 ⇒ 只能鏡像一份。
+ * `cafe-bottleneck-test.ts` 逐點比對兩支在 comfort 0~40 的輸出必須完全相同,
+ * 任何一邊被改動都會立刻紅。
+ */
+export const CAFE_PET_STAY_BASE_HOUR = 16;
+export const CAFE_PET_STAY_MAX_HOUR = 19;
+export const CAFE_PET_STAY_HOURS_PER_COMFORT = 4;
+
+export function cafePetStayEndHour(petComfort: unknown): number {
+  const comfort = Math.max(0, Math.trunc(finiteOr(petComfort, 0)));
+  return Math.min(
+    CAFE_PET_STAY_MAX_HOUR,
+    CAFE_PET_STAY_BASE_HOUR + Math.floor(comfort / CAFE_PET_STAY_HOURS_PER_COMFORT),
+  );
+}
+
+/** good = 現在買就有數字;blocked = 買了不會變成錢(先解決別的);note = 真實內容但不影響營收。 */
+export type CafeInvestTone = "good" | "blocked" | "note";
+
+export interface CafeInvestOutlook {
+  id: string;
+  tone: CafeInvestTone;
+  /** 以現在這間店算,買下去每天多做幾單。差分,不是查表。 */
+  extraOrders: number;
+  text: string;
+}
+
+export interface CafeInvestOutlookContext {
+  upgrades: readonly string[];
+  seats: number;
+  extraStaff: number;
+  stations: number;
+  popularity: number;
+  ambiancePoints: number;
+  standingOrders: Record<string, number>;
+  petComfortPoints: number;
+}
+
+/**
+ * 每一項投資「以現在的店算,買了會怎樣」。
+ *
+ * 🔴 **一律用差分,絕不查表**:
+ * ```
+ * extraOrders = min(baseAfter, capacityAfter) − min(baseBefore, capacityBefore)
+ * ```
+ * 兩側都**再呼叫一次真的 `cafeCapability()` / `cafeTypicalBase()`**,只是把 id 加進
+ * 「假設已買」的清單。這樣文案永遠不可能與公式漂開 —— 它就是公式本身。
+ *
+ * 招牌那條「精確 0」的條件正是 `base >= capacity`,與 `cafeBottleneck().crowdBlocked`
+ * 同一個判斷式;差分自然而然會算出 0,不需要任何特例。
+ */
+export function cafeInvestOutlook(id: string, ctx: CafeInvestOutlookContext): CafeInvestOutlook {
+  const def = getCafeUpgrade(id);
+  const owned = Array.isArray(ctx.upgrades) ? [...ctx.upgrades] : [];
+  const none = (tone: CafeInvestTone, text: string): CafeInvestOutlook => ({ id, tone, extraOrders: 0, text });
+  if (!def) return none("note", "");
+  if (owned.includes(def.id)) return none("note", "✓ 已經投資過了");
+  if (def.requires && !owned.includes(def.requires)) {
+    return none("note", `🔒 需先完成「${getCafeUpgrade(def.requires)?.name ?? def.requires}」`);
+  }
+
+  const geometry = { seats: ctx.seats, extraStaff: ctx.extraStaff, stations: ctx.stations };
+  const capNow = cafeCapability(owned, geometry);
+  const capNext = cafeCapability([...owned, def.id], geometry);
+  const popularity = ctx.popularity;
+  const ambiancePoints = ctx.ambiancePoints;
+  const baseNow = cafeTypicalBase({ signLevel: capNow.signLevel, popularity, ambiancePoints });
+  const baseNext = cafeTypicalBase({ signLevel: capNext.signLevel, popularity, ambiancePoints });
+  const ordersNow = Math.min(baseNow, capNow.capacity);
+  const diff = (base: number, capacity: number) => Math.max(0, Math.min(base, capacity) - ordersNow);
+  const extraOrders = diff(baseNext, capNext.capacity);
+  const neck = cafeBottleneck({ base: baseNow, capability: capNow });
+  const price = `$${def.price.toLocaleString("en-US")}`;
+
+  if ((CAFE_SIGNBOARD_IDS as readonly string[]).includes(def.id)) {
+    return extraOrders > 0
+      ? { id, tone: "good", extraOrders, text: `✓ 以現在的店算:每天大約多做 ${extraOrders} 單` }
+      : {
+        id,
+        tone: "blocked",
+        extraOrders,
+        text: `⚠️ 客流已經超過產能(${baseNow} 人想上門／做得出 ${capNow.capacity} 單),`
+          + "再多叫人來也吃不下 —— 先解決產能,這塊招牌才會變成錢",
+      };
+  }
+
+  if (def.id === CAFE_UPGRADE_IDS.outdoorSeats) {
+    // 戶外只在晴天 +15% 客流,不動產能。折算回等級軸上再走同一條差分,
+    // 才不會為了它多做一次獨立的取整(那就變成第二份算式了)。
+    const sunnyBase = typicalCrowdBase(capNow.signLevel * (1 + CAFE_OUTDOOR_SUNNY_BONUS), popularity, ambiancePoints);
+    const sunnyExtra = diff(sunnyBase, capNext.capacity);
+    return sunnyExtra > 0
+      ? { id, tone: "good", extraOrders: sunnyExtra, text: `✓ 只在晴天生效(約四成的日子):晴天大約多做 ${sunnyExtra} 單` }
+      : {
+        id,
+        tone: "blocked",
+        extraOrders: 0,
+        text: `⚠️ 它只在晴天 +${Math.round(CAFE_OUTDOOR_SUNNY_BONUS * 100)}% 客流,`
+          + `而你連平常日的客人都吃不完 —— 先加產能,這 ${price} 才有著力點`,
+      };
+  }
+
+  if (def.id === CAFE_UPGRADE_IDS.secondMachine) {
+    // 順序有意義:產能已經吃得下所有客人時,「先加寬吧台」是錯的建議
+    // (加寬了也只是做出更多沒人買的杯子),所以 demand 那條先判。
+    if (extraOrders === 0 && neck.kind === "demand") {
+      return {
+        id,
+        tone: "blocked",
+        extraOrders: 0,
+        text: `⚠️ 一般日只有 ${baseNow} 人想上門,你已經做得出 ${capNow.capacity} 單 —— `
+          + "多出來的杯子沒有客人可賣。先升招牌或加戶外座位把人叫來,這台機器才有事做",
+      };
+    }
+    if (capNow.idleStaff > 0) {
+      return {
+        id,
+        tone: "blocked",
+        extraOrders,
+        text: `⚠️ 它加的是「每位站得上吧台的店員 +${CAFE_MACHINE_CUPS_BONUS} 杯」,`
+          + `你現在只有 ${capNow.activeStaff} 位上得了工 ⇒ 只多 ${extraOrders} 單。`
+          + `先加寬吧台讓另外 ${capNow.idleStaff} 位上工,同一筆錢的效益大得多`,
+      };
+    }
+    if (extraOrders === 0 && (neck.kind === "seats" || neck.kind === "both")) {
+      return {
+        id,
+        tone: "blocked",
+        extraOrders: 0,
+        text: `⚠️ 產能現在卡在席次(${capNow.seatCapacity ?? capNow.capacity} 單),多做出來的杯子沒地方坐 —— 先加椅子`,
+      };
+    }
+    if (extraOrders === 0) {
+      return {
+        id,
+        tone: "blocked",
+        extraOrders: 0,
+        text: `⚠️ 以現在的店算,買了每天一單都不會多(想上門 ${baseNow} 人／做得出 ${capNow.capacity} 單)`
+          + " —— 先把真正卡住的那一項解掉",
+      };
+    }
+    return {
+      id,
+      tone: "good",
+      extraOrders,
+      text: `✓ ${capNow.activeStaff} 位店員各 +${CAFE_MACHINE_CUPS_BONUS} 杯 ⇒ 每天多做 ${extraOrders} 單`,
+    };
+  }
+
+  if (def.id === CAFE_UPGRADE_IDS.coldStorage) {
+    // 🔴 §9-4 已知取捨:用 `standingOrders` 當「打烊後剩下的庫存」是**上界**
+    // (真的會賣掉一些),所以文案寫「最多」。blocked 那一側是嚴格正確的:
+    // 常備量本身就進不了損耗門檻,實際庫存只會更低。對帳走真的 `applySpoilage()`。
+    const orders = ctx.standingOrders ?? {};
+    const stock: Record<string, number> = {};
+    for (const item of CAFE_INGREDIENTS) stock[item.id] = Math.max(0, Math.trunc(finiteOr(orders[item.id], 0)));
+    const spoiledNow = applySpoilage(stock, capNow.spoilage).totalSpoiled;
+    const spoiledNext = applySpoilage(stock, capNext.spoilage).totalSpoiled;
+    const maxPerishable = CAFE_INGREDIENTS
+      .filter((item) => item.perishable)
+      .reduce((best, item) => Math.max(best, stock[item.id] ?? 0), 0);
+    return spoiledNow <= 0
+      ? {
+        id,
+        tone: "blocked",
+        extraOrders: 0,
+        text: `⚠️ 你的生鮮常備量最高 ${maxPerishable} 單位,以這個量算每天壞 0 單位`
+          + `(免損耗額度 ${SPOILAGE_FREE_UNITS} 單位,超出的部分還湊不滿一單位)`
+          + " ⇒ 這項暫時用不到。等常備量真的拉高了再回來買",
+      }
+      : {
+        id,
+        tone: "good",
+        extraOrders: 0,
+        text: `✓ 以你的常備量算,現在最多每天壞 ${spoiledNow} 單位;買了會降到 ${spoiledNext} 單位`,
+      };
+  }
+
+  if (def.id === CAFE_UPGRADE_IDS.petTower) {
+    // 🔴 `intent` 完全不參與結帳(見本檔 `cafeIntentWeights()` 的註解)⇒ 它就是不賺錢。
+    // 但**不要寫得像勸退**:認養是真實內容,只是它的回報不是錢。
+    const comfortNow = cafePetComfort(ctx.petComfortPoints, owned);
+    const comfortNext = cafePetComfort(ctx.petComfortPoints, [...owned, def.id]);
+    const adoptNow = cafeIntentWeights(comfortNow, capNow.signLevel).adopt;
+    const adoptNext = cafeIntentWeights(comfortNext, capNow.signLevel).adopt;
+    return {
+      id,
+      tone: "note",
+      extraOrders: 0,
+      text: `🐈 不影響營收 —— 它買的是認養:認養詢問 ${adoptNow}% → ${adoptNext}%,`
+        + `寵物在一樓待到 ${cafePetStayEndHour(comfortNext)}:00(現在 ${cafePetStayEndHour(comfortNow)}:00)。`
+        + "想把咖啡廳的貓送進租客家裡,這是唯一的加速器。",
+    };
+  }
+
+  return none("note", "");
+}
+
 // ---------------------------------------------------------------------------
 // 8. 客單價(設計文件 §5.5)
 // ---------------------------------------------------------------------------
@@ -1460,7 +1840,7 @@ export function nextCafePopularity(
  */
 export const CAFE_LOG_PREFIX = "🥐";
 
-export type CafeDailyLineKind = "shortage" | "underfunded" | "spoilage" | "storage";
+export type CafeDailyLineKind = "shortage" | "underfunded" | "spoilage" | "storage" | "turnaway";
 
 export interface CafeDailyLineInput {
   kind: CafeDailyLineKind;
@@ -1470,6 +1850,11 @@ export interface CafeDailyLineInput {
   subject: string;
   /** 補不滿時實際補到的比例 0~1;其他 kind 忽略。 */
   fulfillment?: number;
+  /**
+   * `turnaway` 專用:今天大約有幾個人因為做不出來而沒接到。
+   * 寫法比照 `underfunded` 拿 `fulfillment` 的分支 —— 選填、其他 kind 一律忽略。
+   */
+  count?: number;
 }
 
 /** FNV-1a 32-bit,與 `cafeGuests.ts` 同一套:穩定、快速、零 RNG。 */
@@ -1518,6 +1903,24 @@ const STORAGE_LINES = [
 ];
 
 /**
+ * 🔴 可見性批次:**做不出來所以沒接到的人**。
+ *
+ * 這一則服務的正是使用者的抱怨:每天六十幾位客人在資料層無聲蒸發,而放棄門檻
+ * (`CAFE_ABANDON_QUEUE_TOLERANCE = 8`/小時)沒踩到 ⇒ 畫面上一位「排到放棄」都沒有,
+ * 玩家完全收不到信號。日誌是最後一道能讓它被看見的管道。
+ *
+ * **不扣聲譽、不碰金流**(那條已經由「排到放棄」在罰了),而且節流壓得很緊:
+ * 只在缺貨與損耗都沒話講的日子、只在「沒接到 ≥ 接到」的日子、且只在 `day % 7 === 5`
+ * ⇒ **每遊戲週最多一則**,並與賣出(0)、老樣子(3)兩則錯開。
+ */
+const TURNAWAY_LINES = [
+  (n: number) => `打烊後數了數:今天有大約 ${n} 個人推開門、看了看排隊的長度,又把門帶上了。`,
+  (n: number) => `門口的風鈴今天響得特別勤,但其中大約 ${n} 次只是有人探頭進來、發現位子和吧台都滿了就走。`,
+  (n: number) => `隔壁的老闆笑說今天看到不少人在你店門口站一下就走 —— 大約 ${n} 個。店太小了,不是東西不好。`,
+  (n: number) => `晚上盤點時才意識到:今天做得出來的每一杯都賣掉了,而外面還有大約 ${n} 個人沒排到。`,
+];
+
+/**
  * 把日結的旗標組成一句敘事(**含前綴**)。純函式:同樣的 `day` + `kind` + `subject`
  * 永遠得到同一句,選句用 `lineHash()` 而非 `Math.random()`。
  */
@@ -1527,12 +1930,18 @@ export function cafeDailyLine(input: CafeDailyLineInput): string {
   const pool = input.kind === "shortage" ? SHORTAGE_LINES
     : input.kind === "underfunded" ? UNDERFUNDED_LINES
       : input.kind === "storage" ? STORAGE_LINES
-        : SPOILAGE_LINES;
+        : input.kind === "turnaway" ? TURNAWAY_LINES
+          : SPOILAGE_LINES;
   const index = lineHash(`cafe|${input.kind}|${day}|${subject}`) % pool.length;
   if (input.kind === "underfunded") {
     // 0 成與 10 成都不成句(真的補到 10 成就不會走到這條路徑),夾在 1~9。
     const pct = Math.min(9, Math.max(1, Math.round(finiteOr(input.fulfillment, 0) * 10)));
     return `${CAFE_LOG_PREFIX} ${(pool as typeof UNDERFUNDED_LINES)[index](subject, pct)}`;
+  }
+  if (input.kind === "turnaway") {
+    // 「0 個人沒排到」不成句(那天根本不會推這則),下界夾 1。
+    const count = Math.max(1, Math.trunc(finiteOr(input.count, 1)));
+    return `${CAFE_LOG_PREFIX} ${(pool as typeof TURNAWAY_LINES)[index](count)}`;
   }
   return `${CAFE_LOG_PREFIX} ${(pool as typeof SHORTAGE_LINES)[index](subject)}`;
 }

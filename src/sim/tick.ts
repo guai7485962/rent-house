@@ -691,6 +691,18 @@ const CAFE_SALE_LOG_EVERY_DAYS = 7;
 const CAFE_SHORTAGE_SUMMARY_MIN = 4;
 
 /**
+ * 🔴 可見性批次:「做不出來所以沒接到」日誌的節流 —— `day % 7 === 5`。
+ *
+ * 5 是挑剩下來的:賣出那則佔 `day % 7 === 0`、「老樣子」佔 `day % 7 === 3`,
+ * 取 5 讓三則在一週裡互相錯開,玩家不會在同一天連吃三則咖啡廳日誌。
+ *
+ * ⚠️ 已知代價:它會佔掉 `rt.log`(cap 60)的一格,等於 AI 敘事素材少一格。
+ * 這是**敘事內容的變化,不是平衡的變化**(快照局永遠不開張咖啡廳)。
+ * 實玩後若覺得吵,**這是本批第一個該砍的**——面板那四個落點完全不依賴它。
+ */
+const CAFE_TURNAWAY_LOG_DAY = 5;
+
+/**
  * 🔴 B 批:「老樣子」日誌的節流 —— `day % 7 === 3`。
  *
  * 刻意與賣出日誌的 `day % 7 === 0`(`CAFE_SALE_LOG_EVERY_DAYS`)**錯開**:
@@ -840,6 +852,18 @@ export function cafeHourlyPass(hour: number) {
   });
   const hourIndex = hour - CAFE_OPEN_HOUR;
   const count = cafeHourlyGuestCount(crowd.guests, hourIndex);
+  /**
+   * 🔴 可見性批次:這小時「想上門卻做不出來、因此沒接到」的人數。
+   *
+   * 用**兩個 `cafeHourlyGuestCount()` 相減**而不是 `cafeHourlyGuestCount(base − guests, h)`:
+   * 前者的累積差分保證 `Σ 11 小時 = base − guests`(兩邊各自的取整誤差在小時之間互相抵銷),
+   * 後者會因為先減再攤而多出/少掉幾位。線上逐時與離線一次補也因此完全等價
+   * (每小時只依賴 `(base, guests, hourIndex)`,不依賴前幾個小時跑過沒有)。
+   *
+   * ⚠️ `bringsFriend`(下面幾行)只把一位「排到放棄」救回來,**不減 `turnedAway`**:
+   * 那位客人本來就在「沒接到」的那批裡,常客帶朋友改變的是他的演出方式,不是產能。
+   */
+  const turnedAway = cafeHourlyGuestCount(crowd.base, hourIndex) - cafeHourlyGuestCount(crowd.guests, hourIndex);
   // 🔴 A 批:被產能夾掉的那些人(`base − guests`)這小時有幾位會排到放棄。
   let abandonCount = cafeAbandonCount(crowd.base, crowd.guests, hourIndex);
 
@@ -852,6 +876,39 @@ export function cafeHourlyPass(hour: number) {
   const bringsFriend = abandonCount > 0 && cafeRegularBringsFriend(arriving, day, hourIndex);
   if (bringsFriend) abandonCount -= 1;
 
+  /**
+   * 🔴 **這行 early-out 一個字都沒動**(可見性批次刻意不碰控制流 ⇒ 平衡零漂移)。
+   *
+   * ## 為什麼它不會漏記 `turnedAway`
+   *
+   * 想像中的漏洞是:「某小時 `count === 0 && abandonCount === 0` 但 `turnedAway > 0`,
+   * 於是提早 return、那幾位沒被記到帳上」。這個情況**不可能發生**,推導如下,
+   * 寫在這裡是為了讓下一個讀的人不必再推一次:
+   *
+   * 1. `turnedAway > 0`
+   *      ⇒ `cafeHourlyGuestCount(base, h) > cafeHourlyGuestCount(guests, h)`
+   *      ⇒ `base > guests`(累積差分對總量單調)。
+   * 2. `cafeCrowd()` 的 `guests = min(base, capacity)`,而 `base > guests`
+   *      ⇒ `guests === capacity`。
+   * 3. `capacity` 有硬性下界:`cafeCapability()` 的 `staffCapacity = activeStaff × cupsPerStaff`,
+   *    其中 `cafeServiceStaff()` 的下界是 1(收銀口一定存在),`CAFE_STAFF_CUPS_PER_DAY = 26`;
+   *    席次腿的下界是 `CAFE_TAKEAWAY_CAPACITY = 10`。兩腿取 min ⇒ `capacity >= 10`。
+   * 4. `cafeHourlyGuestCount()` 把 10 位攤到 `CAFE_BUSINESS_HOURS = 11` 小時,
+   *    用的是累積差分 `round(total×(h+1)/11) − round(total×h/11)`。
+   *    total = 10 時每小時是 0 或 1,**至少有 10 個小時拿到 1**;
+   *    而真正會出現 `turnedAway > 0` 的形狀(名氣長過店面)`capacity` 遠大於 11,
+   *    每小時必得 `count >= 1`。
+   * 5. 唯一的邊界:total = 10、11 小時裡恰好有一個小時分到 0。那個小時
+   *    `cafeHourlyGuestCount(base, h)` 也是 0 嗎?不一定 —— 所以嚴格說,
+   *    **只有在 `capacity < CAFE_BUSINESS_HOURS` 時才可能漏一位**。
+   *    而 `capacity >= 10` 且要 `capacity < 11` ⇒ `capacity === 10`,
+   *    也就是「席次全被拆光、只剩外帶」的極端店。那種店的 `turnedAway` 每天至多漏 1 位,
+   *    而且它本來就是玩家自己把椅子全賣掉的結果 —— 面板上照樣會顯示「卡在席次」。
+   *
+   * ⇒ 在任何正常經營的店(`capacity >= 11`)累加是**精確的**,
+   *   `Σ 11 小時 turnedAway === base − guests` 有測試釘住(`cafe-bottleneck-test.ts`)。
+   *   控制流一行未動 ⇒ 平衡快照零漂移。
+   */
   if (count <= 0 && abandonCount <= 0) return;
 
   const menu = menuItems(cafe.completed);
@@ -859,6 +916,7 @@ export function cafeHourlyPass(hour: number) {
   const servedBefore = record.served;
   const refusedBefore = record.refused;
   const abandonedBefore = record.abandoned ?? 0;
+  const turnedAwayBefore = record.turnedAway ?? 0;
   let revenue = 0;
   let served = 0;
   let refused = 0;
@@ -1015,6 +1073,9 @@ export function cafeHourlyPass(hour: number) {
   record.served += served;
   record.refused += refused;
   if (abandoned > 0) record.abandoned = abandonedBefore + abandoned;
+  // 🔴 可見性批次:純寫入的新欄位。**沒有任何算式讀它**(唯一的讀取端是日結流失日誌的
+  // 節流門檻與面板),所以它對金流、聲譽、客流一律零影響 ⇒ 平衡快照零漂移。
+  if (turnedAway > 0) record.turnedAway = turnedAwayBefore + turnedAway;
   if (revenue > 0) addCafeRevenue(revenue);
   if (served > 0 || refused > 0 || abandoned > 0) {
     cafe.popularity = cafeServicePopularity(cafe.popularity, served, refused, abandoned);
@@ -1177,6 +1238,23 @@ export function cafeDailyPass() {
     pushCafeLog(cafeDailyLine({ kind: "shortage", day, subject: cafeTopShortageName(trading.day) }));
   } else if (rot.totalSpoiled > 0) {
     pushCafeLog(cafeDailyLine({ kind: "spoilage", day, subject: rot.lines[0].name }));
+  } else if (
+    // 🔴 可見性批次:「做不出來所以沒接到」。掛在既有 if/else 鏈的**最後一格**
+    // ⇒ 缺貨或損耗有話講的日子,行為逐字不變(既有測試一條都不受影響)。
+    //
+    // 三重節流:
+    // ① 只在缺貨與損耗都沒話講的日子(else 分支本身)
+    // ② 只在「沒接到 >= 接到」的日子 —— 生意好本來就會有人排不到,
+    //    要嚴重到「錯過的比做成的還多」才值得佔掉玩家一格日誌
+    // ③ `day % 7 === CAFE_TURNAWAY_LOG_DAY` ⇒ **每遊戲週最多一則**,
+    //    且與賣出(0)、老樣子(3)兩則錯開
+    //
+    // ⚠️ 門檻用 `trading.served` 而不是本 pass 上面那個 `cap` —— 後者是
+    // **不帶幾何**的退化產能(沒餵 seats/stations),拿來當門檻會系統性算錯。
+    trading.turnedAway >= Math.max(1, trading.served)
+    && day % 7 === CAFE_TURNAWAY_LOG_DAY
+  ) {
+    pushCafeLog(cafeDailyLine({ kind: "turnaway", day, subject: "", count: trading.turnedAway }));
   }
 
   // 6) 🔴 B 批:常客的好感衰退與流失。
@@ -1195,10 +1273,12 @@ export function cafeDailyPass() {
 }
 
 /** 收走最後一筆尚未結算的營業日成績;沒有就回零(例如剛開張、當天還沒營業過)。 */
-function settleCafeSales(): { day: number; revenue: number; served: number; refused: number; restockCost: number } {
+function settleCafeSales(): {
+  day: number; revenue: number; served: number; refused: number; restockCost: number; turnedAway: number;
+} {
   const sales = state.cafe.sales;
   const last = Array.isArray(sales) && sales.length > 0 ? sales[sales.length - 1] : null;
-  if (!last || last.settled) return { day: -1, revenue: 0, served: 0, refused: 0, restockCost: 0 };
+  if (!last || last.settled) return { day: -1, revenue: 0, served: 0, refused: 0, restockCost: 0, turnedAway: 0 };
   last.settled = true;
   return {
     day: last.day,
@@ -1206,6 +1286,8 @@ function settleCafeSales(): { day: number; revenue: number; served: number; refu
     served: last.served,
     refused: last.refused,
     restockCost: Math.max(0, last.restockCost ?? 0),
+    // 🔴 可見性批次:只給日誌節流用,不進 `history`、不進金流。
+    turnedAway: Math.max(0, last.turnedAway ?? 0),
   };
 }
 

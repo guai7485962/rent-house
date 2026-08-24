@@ -4,6 +4,8 @@ import { CATALOG, isShopListed, venueOf, type FurnCategory, type FurnVenue } fro
 import { CAFE_FURNITURE_ZONE, CAFE_ZONE_INFO } from "../content/cafeZoneGuide";
 import { tierChipText, tierOf } from "../furniture/tier";
 import { INTERACTIONS } from "../sim/interactions";
+import { cafeAmbianceFull, CAFE_AMBIANCE_FULL_POINTS, CAFE_AMBIANCE_SWING } from "../sim/cafe";
+import { cafeAmbiancePoints } from "../sim/placements";
 import { state, startPlacing } from "../store";
 
 /** 這件家具會解鎖哪些互動(§10-6 地點條件即玩法 → 商店裡就是賣點) */
@@ -98,6 +100,32 @@ function attrs(d: (typeof CATALOG)[number]) {
 function zoneTag(defId: string) {
   return CAFE_FURNITURE_ZONE[defId] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// 🔴 可見性批次:氛圍吃滿之後,再買家具對客流是 0。
+//
+// 使用者的店氛圍 91 點(上限 60),超出的 31 點 ≈ $28,000 的家具對客流**沒有作用**。
+// 商店這一側必須講,否則玩家會在這裡繼續花錢買同一個 0。
+//
+// 判定共用 `cafeAmbianceFull()`(面板也是同一支),**這裡不准手寫常數比較**。
+// 🔴 絕不能讓玩家誤以為家具完全沒用:有機能的家具(吧台/咖啡機/貨架/椅子/貓跳台)
+// 即使氛圍滿了機能照常,所以 chip 分兩種文案。
+//
+// ⚠️ 已知取捨:提示**只在咖啡廳分頁顯示**。三樓沙發搬進一樓仍然會加氛圍分,
+// 但租屋分頁不提示 —— 換來的是不打擾租屋購物情境。
+// ---------------------------------------------------------------------------
+const ambiancePoints = computed(() => cafeAmbiancePoints());
+const ambianceFull = computed(() => cafeAmbianceFull(ambiancePoints.value));
+/** 這條提示只在「咖啡廳分頁 + 已開張 + 氛圍吃滿」三個條件同時成立時出現。 */
+const cafeAmbianceNotice = computed(() => venue.value === "cafe" && state.cafe.open && ambianceFull.value);
+/** 這件家具有沒有加氛圍分(沒有的話講氛圍上限對它毫無意義)。 */
+function hasAmbianceValue(d: (typeof CATALOG)[number]) {
+  return !!(d.attributes.cozy || d.attributes.style);
+}
+/** 這件家具除了好看之外還有沒有機能(分區機能或席次)。 */
+function hasFunction(d: (typeof CATALOG)[number]) {
+  return d.id in CAFE_FURNITURE_ZONE || !!d.seat;
+}
 </script>
 
 <template>
@@ -119,6 +147,11 @@ function zoneTag(defId: string) {
       </div>
 
       <div class="room-pick">選好家具後,回到地圖點一格擺放。</div>
+
+      <!-- 🔴 氛圍吃滿:再買家具不會變出更多客人,但機能仍然有效。只在咖啡廳分頁出現。 -->
+      <div v-if="cafeAmbianceNotice" class="ambiance-full">
+        ☕ 你的<b>氛圍已經吃滿 {{ CAFE_AMBIANCE_FULL_POINTS }} 點</b>，客流加成已是上限 ×{{ (1 + CAFE_AMBIANCE_SWING).toFixed(2) }} —— 再買家具不會變出更多客人，但<b>機能仍然有效</b>：吧台區的吧台／咖啡機開服務位，後場的貨架放得下更多貨，椅子與圓桌就是席次，寵物區的貓跳台換認養。
+      </div>
 
       <div v-if="note" class="note">{{ note }}</div>
 
@@ -143,6 +176,10 @@ function zoneTag(defId: string) {
                   v-if="zoneTag(d.id)" class="zone"
                   :style="{ borderColor: CAFE_ZONE_INFO[zoneTag(d.id)!.room].color }"
                 >{{ zoneTag(d.id)!.emoji }} 需擺在{{ zoneTag(d.id)!.label }}</span>
+                <!-- 氛圍已滿:有機能的家具照常有用,純氛圍的只剩外觀。兩種文案不可混為一談。 -->
+                <span v-if="cafeAmbianceNotice && hasAmbianceValue(d)" class="capped">
+                  🎈 {{ hasFunction(d) ? "氛圍已滿，機能照常" : "氛圍已滿，這件只影響外觀" }}
+                </span>
               </div>
             </div>
             <button class="buy" :disabled="state.money < d.price" @click="buy(d.id)">
@@ -196,6 +233,14 @@ function zoneTag(defId: string) {
   border-radius: 8px; padding: 4px 8px; font-size: 12.5px; margin-left: 4px;
 }
 .note { margin: 4px 16px; font-size: 12px; color: var(--accent); }
+/* 氛圍上限提示:整段可換行,不設 nowrap —— 直式手機 360px 下會排成四、五行。 */
+.ambiance-full {
+  margin: 8px 16px 2px; padding: 8px 10px; border-radius: 9px;
+  background: rgba(200,140,50,0.12); border: 1px solid rgba(200,140,50,0.4);
+  color: #ffd08a; font-size: 11px; line-height: 1.5;
+}
+.ambiance-full b { color: #ffe0ae; }
+.capped { font-size: 10px; color: #ffd08a; border: 1px solid rgba(200,140,50,0.5); border-radius: 999px; padding: 0 6px; }
 
 .list { overflow-y: auto; padding: 6px 16px 20px; }
 .cat { font-size: 11px; color: var(--text-dim); margin: 12px 0 4px; letter-spacing: 1px; }

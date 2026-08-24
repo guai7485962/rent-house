@@ -274,6 +274,21 @@ export interface CafeSalesDay {
    * 只是紀錄與敘事素材,**不進任何金流算式**——放棄的人從來沒被收過錢。
    */
   abandoned?: number;
+  /**
+   * 🔴 可見性批次:當日**想上門卻做不出來、因此沒接到**的人次
+   * (選填;舊存檔沒有 ⇒ `sanitizeCafeState` 補 0,`SAVE_VERSION` 維持 10)。
+   *
+   * = Σ 每小時 `cafeHourlyGuestCount(crowd.base, h) − cafeHourlyGuestCount(crowd.guests, h)`。
+   *
+   * ⚠️ **`turnedAway` ⊇ `abandoned`**:排到放棄的人是「沒接到」裡**真的走進店裡排過隊**
+   * 的那一小撮(每小時要溢出超過 `CAFE_ABANDON_QUEUE_TOLERANCE = 8` 位才會有人排),
+   * 其餘的人是在門口看一眼就走。所以面板出現「沒接到 96 人／排到放棄 0 人」是正確的,
+   * 不是 bug —— 文案必須把這件事講清楚。
+   *
+   * 與 `abandoned` 同樣**不進任何金流算式**:他們本來就不在 `crowd.guests` 裡。
+   * 唯一讀它的地方是日結流失日誌的節流門檻。
+   */
+  turnedAway?: number;
 }
 
 /**

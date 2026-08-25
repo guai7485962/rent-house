@@ -23,7 +23,8 @@
   A 賠 B」不會誤扣房東資金。規則事件的內部 `money` 不受影響。
 - 驗證:`npm test` **115/115**、typecheck、`build`、`smoke:save` **49/0** 全綠；
   `balance-test` **零漂移未 `--update`**。無 UI／RNG／規則事件變更，`SAVE_VERSION` 維持 10。
-- `origin/main` 基線為 `1559504`；本批在本機、尚未 push／deploy。
+- **已部署**：功能 commit `b721fb0` 已 push 至 `origin/main`；GitHub CI `32910353922` 與 Cloudflare
+  Workers Build `154cdf84-57b0-4d51-8216-ee0dc961b231` 均成功，正式 bundle 已驗到 `landlordMoney`／`aiSchema`。
 - 咖啡廳第三層研發與可見性批次已在主線；詳細數據見 `docs/咖啡廳經營玩法-重設計.md` §9～10。
 
 ## 近期已部署基線

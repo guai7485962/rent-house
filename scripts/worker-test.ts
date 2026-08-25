@@ -188,7 +188,15 @@ check("prompt 會列出既有永久成長避免重複", buildPrompt(clampCtx({ n
 check("prompt 含跨租客 rel 推力指引", systemPrompt.includes('"rel"') && systemPrompt.includes("delta") && systemPrompt.includes("系統會擋下越界的推力"));
 
 // --- 雙人劇情弧 ---
-check("prompt 含雙人弧開弧與推進指引", systemPrompt.includes("雙人弧") && systemPrompt.includes('"with":"鄰居名"') && systemPrompt.includes("他自己的視角"));
+check("prompt 含雙人弧開弧與房東第三人稱推進指引", systemPrompt.includes("雙人弧") && systemPrompt.includes('"with":"鄰居名"') && systemPrompt.includes("仍由房東以第三人稱") && !systemPrompt.includes("他自己的視角"));
+check("prompt 鎖定房東代理權與可執行選項", systemPrompt.includes("玩家始終扮演房東")
+  && systemPrompt.includes("租客一律用姓名")
+  && systemPrompt.includes("房東能執行的具體行動")
+  && systemPrompt.includes("要求 A 賠償 B"));
+check("prompt 只允許 landlordMoney 異動房東帳本", systemPrompt.includes("landlordMoney")
+  && systemPrompt.includes('不得輸出舊欄位 "money"')
+  && systemPrompt.includes('label 或 hint 必須明寫「房東」')
+  && systemPrompt.includes("租客彼此的賠償、借款或物品損失一律填 0"));
 check("clampCtx:arc.with 截 ≤24、缺省 null", (() => {
   const withArc = clampCtx({ name: "a", arc: { theme: "合寫小說", stage: 2, maxStage: 4, summary: "s", with: "陳".repeat(99) } });
   const soloArc = clampCtx({ name: "a", arc: { theme: "獨自的線", stage: 1, maxStage: 3, summary: "s" } });

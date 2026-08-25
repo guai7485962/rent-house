@@ -27,6 +27,17 @@
 5. 錢、驅逐、正式戀愛轉變(couple/breakup)**仍只走玩家拍板的 event**;
    自動通道只碰情緒類數值與行為,守住「房東才有代理權」的邊界。
 
+### 房東視角與帳本邊界(2026-08-26)
+
+- 玩家始終是房東。`diary`、`event` 與 `observation.reason` 都以房東可觀察／得知／介入的角度敘述，
+  租客只用第三人稱；雙人弧也不能切換成其中一位租客的第一人稱。
+- `event.description` 交代房東收到的情況與待決定事項；每個 choice 都是房東能執行、且主詞與對象清楚的行動。
+  例如 A 弄壞 B 的東西時，應寫「要求 A 賠償 B／請雙方協商／由房東先行墊付」，不能只寫「賠錢／不賠錢」。
+- AI 原始輸出只有 `effect.landlordMoney` 能映射到內部 `EventEffect.money`；舊的 raw `effect.money` 一律忽略。
+  租客間賠償、借款或物品損失不會代扣房東帳本；非零 `landlordMoney` 的 choice 文案若未明寫「房東」，整個事件拒收。
+- 這是 additive 的 AI 契約版本 `aiSchema:2`，不改規則事件、RNG 或 `SAVE_VERSION`。載入時會淘汰無版本的舊 AI
+  待決事件，避免更新後仍顯示舊視角或再扣一次舊金流；新 AI 事件與規則事件照常跨 session 保留。
+
 ## 三、三層設計
 
 ### 第一層:每日情緒微調 statNudge——「日記寫什麼,人就受影響」

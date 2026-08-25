@@ -47,6 +47,8 @@ export interface EventDef {
   choices: EventChoiceDef[];
   /** 是否為 AI 依當前處境即時生成(給 UI 標示) */
   ai?: boolean;
+  /** AI 事件原始欄位契約版本；載入時淘汰舊視角／舊 money 契約的待決事件 */
+  aiSchema?: number;
   /** 事件牽涉的第二位鄰居(AI 跨租客事件) */
   withId?: string;
   withName?: string;
@@ -154,7 +156,9 @@ function cleanEffect(v: unknown, hasOther: boolean, expectedNames: string[]): Ev
     satisfaction: clampNum(e.satisfaction, -25, 25),
     wellbeing: clampNum(e.wellbeing, -25, 25),
     energy: clampNum(e.energy, -25, 25),
-    money: clampNum(e.money, -5000, 2000),
+    // AI 邊界只接受明確命名的房東帳本欄位。舊的 raw `money` 可能其實是
+    // 租客間賠償／損失，忽略它可避免選項誤扣房東資金；內部規則事件仍使用 EventEffect.money。
+    money: clampNum(e.landlordMoney, -5000, 2000),
     // evict 一律不開放給 AI(忽略)
   };
   const mem = cleanMemory(e.memory, expectedNames);
@@ -194,6 +198,8 @@ function cleanEffect(v: unknown, hasOther: boolean, expectedNames: string[]): Ev
  * roster(名字→租客 id):用來解析事件牽涉的第二位鄰居 `with`;對不上就丟棄跨租客效果。
  */
 const FORBIDDEN_EVENT_ACTION = /驅逐|趕走|退租/u;
+/** 沒寫誰負責、會把受害租客的付款決定錯交給玩家的含糊按鈕。 */
+const AMBIGUOUS_PAYMENT_CHOICE = /^(?:要|不要|不|先)?(?:賠錢|賠償|付錢|付款|支付|出錢)$/u;
 
 /** 「收養租客」是弱模型常見的角色錯置；收養寵物本身仍是合法事件。 */
 function adoptsTenant(text: string, tenantNames: string[]): boolean {
@@ -222,15 +228,24 @@ export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>, o
   const withId = roster && withName && roster[withName] ? roster[withName] : undefined;
   const hasOther = !!withId;
 
+  let ambiguousLandlordMoney = false;
   const choices: EventChoiceDef[] = r.choices
     .slice(0, 3)
     .filter((c) => c && typeof c === "object" && typeof (c as Record<string, unknown>).label === "string")
     .map((c, i) => {
       const cc = c as Record<string, unknown>;
-      return { id: `ai${i}`, label: cleanText(cc.label, 40), hint: cleanText(cc.hint, 60), effect: cleanEffect(cc.effect, hasOther, expectedNames) };
+      const label = cleanText(cc.label, 40);
+      const hint = cleanText(cc.hint, 60);
+      const rawEffect = (cc.effect && typeof cc.effect === "object" ? cc.effect : {}) as Record<string, unknown>;
+      // 非零房東金流必須在玩家看得到的選項文案明說「房東」，否則整個事件拒收。
+      // 這道機械防線防止模型把「租客賠錢」誤標成房東支出。
+      if (clampNum(rawEffect.landlordMoney, -5000, 2000) !== 0 && !`${label}${hint}`.includes("房東")) {
+        ambiguousLandlordMoney = true;
+      }
+      return { id: `ai${i}`, label, hint, effect: cleanEffect(cc.effect, hasOther, expectedNames) };
     })
     .filter((choice) => !!choice.label);
-  if (choices.length < 2) return null;
+  if (choices.length < 2 || ambiguousLandlordMoney || choices.some((choice) => AMBIGUOUS_PAYMENT_CHOICE.test(choice.label))) return null;
 
   const description = cleanText(r.description, 200);
   const narrativeFields = [title, description, ...choices.flatMap((choice) => [
@@ -244,7 +259,7 @@ export function sanitizeAiEvent(raw: unknown, roster?: Record<string, string>, o
   const mentionedOthers = otherNames.filter((name) => narrativeFields.some((text) => text.includes(name)));
   if (mentionedOthers.some((name) => name !== withName)) return null;
 
-  const ev: EventDef = { id: "ai_event", title, description, choices, ai: true };
+  const ev: EventDef = { id: "ai_event", title, description, choices, ai: true, aiSchema: 2 };
   if (hasOther) {
     ev.withId = withId;
     ev.withName = withName;

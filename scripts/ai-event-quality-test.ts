@@ -1,5 +1,14 @@
 /** AI 房東抉擇品質回歸：鎖住玩家截圖中的簡體、驅逐、收養租客與掛錯人物案例。 */
-import { sanitizeAiEvent } from "../src/sim/events";
+const mem: Record<string, string> = {};
+(globalThis as any).localStorage = {
+  getItem: (key: string) => mem[key] ?? null,
+  setItem: (key: string, value: string) => { mem[key] = value; },
+  removeItem: (key: string) => { delete mem[key]; },
+};
+
+const { sanitizeAiEvent } = await import("../src/sim/events");
+const { decide, state } = await import("../src/store");
+const { compatiblePendingEvent, load, save, SAVE_KEY } = await import("../src/sim/persistence");
 
 let pass = 0;
 let fail = 0;
@@ -69,6 +78,94 @@ const validCrossTenant = sanitizeAiEvent({
   ],
 }, roster, owner);
 check("姓名一致性：owner + with 的正常跨租客事件保留", validCrossTenant?.withId === "tenant_lin");
+
+const tenantCompensation = sanitizeAiEvent({
+  title: "物品損壞",
+  description: "房東從監視器看到陳家豪弄壞林小婕的音響，需要決定如何協調。",
+  with: "林小婕",
+  choices: [
+    { label: "要求陳家豪賠償", hint: "由租客自行負擔", effect: { money: -1200, rel: { delta: -2 } } },
+    { label: "請雙方先協商", hint: "房東暫不代墊", effect: {} },
+  ],
+}, roster, owner);
+check("租客間賠償：舊 raw money 不得扣到房東帳本", tenantCompensation?.choices[0].effect.money === 0,
+  JSON.stringify(tenantCompensation));
+if (tenantCompensation) {
+  const a = state.runtimes.tenant_chen_engineer;
+  const b = state.runtimes.tenant_lin_asmr;
+  const before = { money: state.money, ledger: state.ledger.length, aWallet: a.wallet, bWallet: b.wallet };
+  a.pendingEvent = tenantCompensation;
+  decide(a.tenant.id, "ai0", tenantCompensation.choices[0].label);
+  check("租客間賠償端到端：房東帳本與雙方租客錢包都不變", state.money === before.money
+    && state.ledger.length === before.ledger && a.wallet === before.aWallet && b.wallet === before.bWallet,
+    JSON.stringify({ before, after: { money: state.money, ledger: state.ledger.length, aWallet: a.wallet, bWallet: b.wallet } }));
+}
+
+const landlordAdvance = sanitizeAiEvent({
+  title: "漏水搶修",
+  description: "房東接到陳家豪與林小婕通報公共管線漏水，需要決定是否先墊付搶修費。",
+  with: "林小婕",
+  choices: [
+    { label: "由房東先行墊付", hint: "立即安排搶修", effect: { landlordMoney: -1200 } },
+    { label: "先向廠商詢價", hint: "暫不動用房東資金", effect: {} },
+  ],
+}, roster, owner);
+check("房東明確支出：landlordMoney 才能異動內部 money", landlordAdvance?.choices[0].effect.money === -1200,
+  JSON.stringify(landlordAdvance));
+if (landlordAdvance) {
+  const a = state.runtimes.tenant_chen_engineer;
+  const b = state.runtimes.tenant_lin_asmr;
+  const before = { money: state.money, ledger: state.ledger.length, aWallet: a.wallet, bWallet: b.wallet };
+  a.pendingEvent = landlordAdvance;
+  decide(a.tenant.id, "ai0", landlordAdvance.choices[0].label);
+  const txn = state.ledger[state.ledger.length - 1];
+  check("房東墊付端到端：只扣房東一次並留下 event 帳務，租客錢包不變", state.money === before.money - 1200
+    && state.ledger.length === before.ledger + 1 && txn?.category === "event" && txn.amount === -1200
+    && a.wallet === before.aWallet && b.wallet === before.bWallet,
+    JSON.stringify({ before, after: { money: state.money, ledger: state.ledger.length, txn, aWallet: a.wallet, bWallet: b.wallet } }));
+}
+
+const ambiguousPayer = sanitizeAiEvent({
+  title: "物品賠償",
+  description: "房東看到陳家豪弄壞林小婕的物品，需要決定如何處理。",
+  with: "林小婕",
+  choices: [
+    { label: "賠錢", hint: "把損失補回來", effect: { landlordMoney: -1200 } },
+    { label: "不賠錢", hint: "暫時不處理", effect: {} },
+  ],
+}, roster, owner);
+check("含糊付款人：landlordMoney 文案未明寫房東就拒絕整個事件", ambiguousPayer === null);
+
+const tenantViewPayment = sanitizeAiEvent({
+  title: "物品賠償",
+  description: "房東看到陳家豪弄壞林小婕的物品，需要決定如何協調。",
+  with: "林小婕",
+  choices: [
+    { label: "賠錢", hint: "把損失補回來", effect: { money: -1200 } },
+    { label: "不賠錢", hint: "暫時不處理", effect: {} },
+  ],
+}, roster, owner);
+check("租客視角按鈕：即使沒有有效 landlordMoney，賠錢／不賠錢仍拒收", tenantViewPayment === null);
+
+check("存檔相容：舊 AI 待決事件淘汰，新契約與規則事件保留",
+  compatiblePendingEvent({ ai: true, id: "legacy_ai" }) === null
+  && compatiblePendingEvent(landlordAdvance) === landlordAdvance
+  && compatiblePendingEvent({ id: "sick" })?.id === "sick");
+
+if (landlordAdvance) {
+  const tenantId = "tenant_chen_engineer";
+  save();
+  const legacySave = JSON.parse(mem[SAVE_KEY]);
+  legacySave.runtimes[tenantId].pendingEvent = { ...landlordAdvance, aiSchema: undefined };
+  mem[SAVE_KEY] = JSON.stringify(legacySave);
+  const oldDropped = load() && state.runtimes[tenantId].pendingEvent === null;
+
+  state.runtimes[tenantId].pendingEvent = landlordAdvance;
+  save();
+  state.runtimes[tenantId].pendingEvent = null;
+  const currentRestored = load() && state.runtimes[tenantId].pendingEvent?.aiSchema === 2;
+  check("存檔載入端到端：舊 AI pending 淘汰，aiSchema 2 pending 跨 session 保留", oldDropped && currentRestored);
+}
 
 const petAdoption = sanitizeAiEvent({
   title: "浪貓的去留",

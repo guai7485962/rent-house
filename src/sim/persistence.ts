@@ -28,6 +28,18 @@ export const SAVE_KEY = "rent_house_save_v1";
 export const SAVE_VERSION = 10;
 
 /**
+ * 2026-08-26 前的 AI 待決事件仍可能使用租客視角，且 internal money 無法再辨識原始付款人。
+ * 新事件帶 aiSchema=2；舊 AI 事件在載入時保守丟棄，規則事件與新 AI 事件原樣保留。
+ */
+export function compatiblePendingEvent<T>(event: T): T | null {
+  if (event && typeof event === "object") {
+    const e = event as { ai?: unknown; aiSchema?: unknown };
+    if (e.ai === true && e.aiSchema !== 2) return null;
+  }
+  return event ?? null;
+}
+
+/**
  * 逐版升級表:key = 來源版本,函式回傳「升一版後」的存檔(記得把 v 改成 key+1)。
  */
 const MIGRATIONS: Record<number, (s: any) => any> = {
@@ -345,7 +357,7 @@ export function load(): boolean {
           ? { ...entry, text: sanitizeDiaryText(entry.text, [loadedTenant.name]) || entry.text }
           : entry),
         lastSeenMs: saved.lastSeenMs,
-        pendingEvent: saved.pendingEvent,
+        pendingEvent: compatiblePendingEvent(saved.pendingEvent),
         decisions: saved.decisions,
         targetTile: saved.targetTile,
         activityPose: null,

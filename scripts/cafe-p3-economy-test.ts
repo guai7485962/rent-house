@@ -32,7 +32,7 @@ const {
 } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
 const { CAFE_RESEARCH_IDS } = await import("../src/content/cafeResearch");
-const { cafeSeatSpots, placeCafeStarterSet, placements } = await import("../src/sim/placements");
+const { addPlacement, cafeSeatSpots, placeCafeStarterSet, placements } = await import("../src/sim/placements");
 import type { CafeSalesDay } from "../src/types";
 
 let pass = 0;
@@ -254,8 +254,26 @@ try {
     }
     return net / days;
   };
+  // 🔴 2026-08-25(第三層研發):這兩個情境**必須在同一個庫存上限下**比較。
+  // 加入第七種原料(精品生豆)之後,建議常備量合計 334 單位、備貨過量情境 370 單位,
+  // 而後場空著時 `cafeStorageCapacity()` 的底量只有 360 ⇒ **只有備貨過量那一邊**
+  // 會被上限夾住、生鮮被削掉一截 ⇒ 兩邊差的不只是「多備 50%」,還多了「有沒有撞到
+  // 庫存天花板」這個第二變因,量到的 $87 是兩個效果相減後的殘值,不是損耗經濟學。
+  // 補上後場貨架(上限 920)讓兩邊都放得下,這條才回到單一變因。
+  // ⚠️ 這不是把門檻放寬:$100 的門檻一格沒動,動的是「兩組只准差一件事」。
+  const storageKit = [
+    { defId: "cafe_stock_shelf", c: 1, r: 48 },
+    { defId: "cafe_stock_shelf", c: 4, r: 48 },
+  ];
+  for (const item of storageKit) {
+    addPlacement({ defId: item.defId, room: "cafe_back", c: item.c, r: item.r, rotation: 0 });
+  }
   const preciseNet = measure(suggestedStandingOrders());
   const overNet = measure(over);
+  for (const item of storageKit) {
+    const index = placements.list.findIndex((p) => p.defId === item.defId && p.c === item.c && p.r === item.r);
+    if (index >= 0) placements.list.splice(index, 1);
+  }
   console.log(`   · 開張期日淨利:補貨精準 $${preciseNet.toFixed(0)} / 備貨過量 $${overNet.toFixed(0)}`);
   check("🔴 端到端:補貨精準是賺錢的(開店不是陷阱)", preciseNet > 0, `$${preciseNet.toFixed(0)}`);
   check("備貨過量與精準備貨的差距 > $100/日(不是誤差等級的差別)",
@@ -347,7 +365,7 @@ try {
     return out.orders.milk === CAFE_SUGGEST_MIN_SERVINGS;
   })(), `min=${CAFE_SUGGEST_MIN_SERVINGS}`);
   check("建議量一律非負整數", Object.values(suggested.orders).every((n) => Number.isInteger(n) && n >= 0));
-  check("建議量的鍵涵蓋全部六種原料(面板逐格填得滿)",
+  check("建議量的鍵涵蓋全部七種原料(面板逐格填得滿)",
     CAFE_INGREDIENTS.every((item) => typeof suggested.orders[item.id] === "number"));
   check("只看最近 7 個遊戲日(更早的尖峰不算數)", (() => {
     const long: CafeSalesDay[] = [day(0, { [coffee.id]: 999 })];

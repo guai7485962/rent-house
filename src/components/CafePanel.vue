@@ -191,8 +191,20 @@ watch(() => rentGuests.value.length, (n, prev) => { if (n > prev) openSections.r
 
 const predictedDemand = computed(() => dailyDemand(latest.value?.guests ?? 0));
 const predictedSupply = computed(() => consumeStock(state.cafe.stock, predictedDemand.value));
-const predictedShortages = computed(() => predictedSupply.value.shortages.map((id) =>
-  CAFE_INGREDIENTS.find((item) => item.id === id)?.name ?? id));
+/**
+ * 🔴 只警告「目前菜單真的用得到」的原料(2026-08-25 修)。
+ *
+ * `dailyDemand()` 是照 `CafeIngredient.perGuest` 對**全部**原料一律估的,
+ * 它不知道菜單上有什麼。第七種原料「精品生豆」上線後這個落差就現形了:
+ * 還沒研發第三層的玩家(菜單上沒有任何一道用得到它、庫存自然是 0)
+ * 每天都會看到「⚠️ 依最近客流預估會缺:精品生豆」——叫玩家去買一個買了也用不到的東西。
+ *
+ * 唯一事實來源仍然是 `CafeMenuItem.recipe`(見 `content/cafeIngredients.ts` 檔頭),
+ * 所以這裡直接用 `cafeIngredientMenuUse()` 濾掉「菜單上沒人用」的原料。
+ */
+const predictedShortages = computed(() => predictedSupply.value.shortages
+  .filter((id) => cafeIngredientMenuUse(id, cafeMenu.value).length > 0)
+  .map((id) => CAFE_INGREDIENTS.find((item) => item.id === id)?.name ?? id));
 const currentDay = computed(() => gameDayIndex());
 // 氛圍加成的讀取面:placements 是 reactive,搬動/賣出家具後這兩個數字會立刻跟著動。
 const ambiancePoints = computed(() => cafeAmbiancePoints());
@@ -655,7 +667,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               <small>已投入 ${{ state.cafe.research.invested.toLocaleString() }} · 進度 {{ researchProgress }}%</small>
             </article>
 
-            <p v-if="!remainingResearch.length && !state.cafe.research" class="research-complete">🏆 前兩層研發已全部完成</p>
+            <p v-if="!remainingResearch.length && !state.cafe.research" class="research-complete">🏆 研發已全部完成</p>
             <div v-else-if="!state.cafe.research" class="research-list">
               <article v-for="item in remainingResearch" :key="item.id" class="research-item" :class="{ locked: !availableResearchIds.has(item.id) }">
                 <div class="research-item-head">
@@ -690,7 +702,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                 <strong>${{ item.price }}</strong>
               </div>
             </div>
-            <p class="menu-note">完成 2／5 項第二層研發時，平均客單會提升到 $37／$38。</p>
+            <p class="menu-note">平均客單 = 目前菜單標價的平均。第三層研發（$58～64 的高價品）要先把招牌升級才解得開。</p>
             </template>
           </section>
 

@@ -1,8 +1,8 @@
-/** CAFE-16：研發樹前兩層、前置條件、純交易與遊戲日倒數。 */
+/** CAFE-16：研發樹三層、前置條件、純交易與遊戲日倒數。 */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CAFE_UPGRADE_IDS } from "../src/content/cafeUpgrades";
+import { CAFE_SIGNBOARD_IDS, CAFE_UPGRADE_IDS } from "../src/content/cafeUpgrades";
 import { defaultCafe } from "../src/sim/gameState";
 import {
   advanceCafeResearch,
@@ -33,19 +33,43 @@ let randomCalls = 0;
 Math.random = () => { randomCalls++; return originalRandom(); };
 
 try {
-  // 1. 資料樹：三個根、七個直接子項，第三層不偷跑。
+  // 1. 資料樹：三個根、七個直接子項，加上 2026-08-25 補進來的第三層三項。
   const ids = CAFE_RESEARCH.map((item) => item.id);
   const names = CAFE_RESEARCH.map((item) => item.name);
-  check("前兩層共有 10 個研發節點且 id 不重複", CAFE_RESEARCH.length === 10 && new Set(ids).size === 10);
-  check("第一層 3 項、第二層 7 項", CAFE_RESEARCH.filter((item) => item.level === 1).length === 3
-    && CAFE_RESEARCH.filter((item) => item.level === 2).length === 7);
+  check("三層共有 13 個研發節點且 id 不重複", CAFE_RESEARCH.length === 13 && new Set(ids).size === 13);
+  check("第一層 3 項、第二層 7 項、第三層 3 項", CAFE_RESEARCH.filter((item) => item.level === 1).length === 3
+    && CAFE_RESEARCH.filter((item) => item.level === 2).length === 7
+    && CAFE_RESEARCH.filter((item) => item.level === 3).length === 3);
   check("三個第一層方向完整", ["基礎沖煮", "烘焙", "寵物餐點"].every((name) => names.includes(name)));
-  check("第三層不在 CAFE-16", ["季節限定豆", "造型拿鐵（貓掌）", "下午茶套餐"].every((name) => !names.includes(name)));
+  // 🔴 這條在 2026-08-25 由「第三層不在 CAFE-16」**反轉**過來:第三層已經上線。
+  check("第三層三項都在", ["季節限定豆", "造型拿鐵", "下午茶套餐"].every((name) => names.includes(name)));
   check("每項成本與天數都是正整數", CAFE_RESEARCH.every((item) => Number.isInteger(item.cost) && item.cost > 0
     && Number.isInteger(item.days) && item.days > 0));
   check("每項都有菜單品名與效果說明", CAFE_RESEARCH.every((item) => item.menuItem.trim() && item.effect.trim()));
   check("第二層各有一個有效第一層前置", CAFE_RESEARCH.filter((item) => item.level === 2).every((item) =>
     item.requiresResearch.length === 1 && CAFE_RESEARCH.some((parent) => parent.id === item.requiresResearch[0] && parent.level === 1)));
+  check("第三層各有一個有效第二層前置", CAFE_RESEARCH.filter((item) => item.level === 3).every((item) =>
+    item.requiresResearch.length === 1 && CAFE_RESEARCH.some((parent) => parent.id === item.requiresResearch[0] && parent.level === 2)));
+  // 🔴 第三層的門檻**刻意放在招牌前置**($30,000/$60,000/$110,000)而不是研發費:
+  //    研發費固定 $3,000,是「整包 60 天回本」反推出來的上限。招牌閘門同時保證
+  //    開張期(招牌 Lv1)一項第三層都碰不到,而且每升一級招牌就恰好多開一項高價品。
+  check("🔴 每一項第三層都以一塊招牌為前置(門檻在招牌,不在研發費)", (() => {
+    const signs: string[] = [...CAFE_SIGNBOARD_IDS];
+    const tier3 = CAFE_RESEARCH.filter((item) => item.level === 3);
+    const gates = tier3.map((item) => item.requiresUpgrades.filter((id) => signs.includes(id)));
+    return tier3.length === 3
+      && gates.every((g) => g.length === 1)
+      && new Set(gates.map((g) => g[0])).size === 3;  // 三項各佔一級,不重複
+  })(), CAFE_RESEARCH.filter((i) => i.level === 3).map((i) => `${i.name}:${i.requiresUpgrades.join("/")}`).join(" "));
+  check("🔴 研發費固定 $3,000/項(門檻由招牌承擔;調高會讓第三層永遠回不了本)",
+    CAFE_RESEARCH.filter((item) => item.level === 3).every((item) => item.cost === 3_000 && item.days === 6));
+  // 🔴 第三層的價值全在客單價 ⇒ 售價必須明顯高於前兩層的整個區間。
+  check("🔴 三項第三層的售價都高於前兩層的最高價", (() => {
+    const lower = CAFE_RESEARCH.filter((item) => item.level < 3).map((item) => item.menuPrice);
+    return CAFE_RESEARCH.filter((item) => item.level === 3)
+      .every((item) => item.menuPrice > Math.max(...lower));
+  })(), `前兩層最高 $${Math.max(...CAFE_RESEARCH.filter((i) => i.level < 3).map((i) => i.menuPrice))}`
+    + ` / 第三層 ${CAFE_RESEARCH.filter((i) => i.level === 3).map((i) => "$" + i.menuPrice).join(",")}`);
   check("只有生日蛋糕標示特殊事件", CAFE_RESEARCH.filter((item) => "specialEvent" in item && item.specialEvent).map((item) => item.id).join()
     === CAFE_RESEARCH_IDS.petBirthdayCake);
   check("冷萃需要大型冷藏、生日蛋糕需要貓跳台", getCafeResearch(CAFE_RESEARCH_IDS.coldBrew)?.requiresUpgrades.includes(CAFE_UPGRADE_IDS.coldStorage) === true

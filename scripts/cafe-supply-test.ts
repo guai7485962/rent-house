@@ -54,8 +54,12 @@ try {
   // 這裡不再釘死具體數字——單價本來就是會跟著配方一起調的平衡旋鈕,釘數字只會逼人
   // 每次調平衡就順手改測試。要釘的是**不變式**:配方成本必須撐得起 45～60% 的毛利帶,
   // 那條由 `cafe-per-guest-test.ts` 逐品項把關。這裡只釘價格結構本身的合理性。
-  check("原料 id 一個都沒變(舊存檔的 standingOrders / stock 才轉得過來)",
-    ids.join() === "coffee_bean,milk,flour,butter,cat_can,pet_fresh", ids.join());
+  // 🔴 這條守的是**append-only**,不是「永遠六種」:舊存檔的 standingOrders / stock
+  // 是照 id 取值的,只要既有 id 與**順序**一格不動就轉得過來(補貨配額依宣告序)。
+  check("既有六種原料的 id 與順序一格未動(舊存檔的 standingOrders / stock 才轉得過來)",
+    ids.slice(0, 6).join() === "coffee_bean,milk,flour,butter,cat_can,pet_fresh", ids.join());
+  check("新原料只能 append 在最後面(2026-08-25 第三層:精品生豆)",
+    ids.length === 7 && ids[6] === "specialty_bean", ids.join());
   check("生鮮的建議常備量都在零損耗水位內(偷懶路線必須維持可行)",
     CAFE_INGREDIENTS.filter((item) => item.perishable)
       .every((item) => Math.floor((item.defaultStandingOrder - SPOILAGE_FREE_UNITS) * SPOILAGE_RATE) === 0),
@@ -87,7 +91,8 @@ try {
 
   const FULL_COST = CAFE_INGREDIENTS.reduce((sum, item) => sum + item.defaultStandingOrder * item.unitPrice, 0);
   // 整櫃成本是回歸基準值,不是設計目標:改了單價/常備量就該一起改這裡並確認差異合理。
-  check("建議常備量的整櫃進貨成本為 1444", FULL_COST === 1444, `= ${FULL_COST}`);
+  // 2026-08-25:1444 → 1780,差額 $336 = 新增的精品生豆 24 單位 × $14(第三層研發用料)。
+  check("建議常備量的整櫃進貨成本為 1780", FULL_COST === 1780, `= ${FULL_COST}`);
 
   const rich = restockPlan(orders, {}, 100_000);
   check("錢夠時補滿到常備量", CAFE_INGREDIENTS.every((item) => rich.stock[item.id] === item.defaultStandingOrder));

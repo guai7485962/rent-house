@@ -1632,7 +1632,8 @@ export interface CafeMenuItem {
   name: string;
   price: number;
   track: CafeResearchTrack;
-  level: 0 | 1 | 2;
+  /** 0 = 開張即有的基礎品項;1~3 = 研發解鎖品所屬的研發層。 */
+  level: 0 | 1 | 2 | 3;
   audience: CafeMenuAudience;
   source: "base" | "research";
   researchId?: string;
@@ -1679,16 +1680,37 @@ export const CAFE_BASE_MENU_ITEMS = [
  * | 本日配方咖啡 | $36 | $16 | 55.6% |
  * | 今日手沖單品 | $42 | $20 | 52.4% |
  * | 經典拉花拿鐵 | $40 | $19 | 52.5% |
- * | 慢萃冰咖啡 | $39 | $20 | 48.7% |
- * | 每日磅蛋糕 | $38 | $19 | 50.0% |
- * | 奶油司康 | $38 | $19 | 50.0% |
+ * | 慢萃冰咖啡 | $41 | $20 | 51.2% |
+ * | 每日磅蛋糕 | $43 | $19 | 55.8% |
+ * | 奶油司康 | $41 | $19 | 53.7% |
  * | 貓咪造型餅乾 | $37 | $16 | 56.8% |
  * | 基礎寵物餐 | $38 | $17 | 55.3% |
  * | 寵物友善點心 | $38 | $16 | 57.9% |
  * | 寵物生日蛋糕 | $42 | $21 | 50.0% |
+ * | 季節限定單品豆 | $64 | $32 | 50.0% |
+ * | 貓掌造型拿鐵 | $58 | $28 | 51.7% |
+ * | 午後茶點套餐 | $62 | $30 | 51.6% |
  *
  * `baseWeight` 一律低於同 track 的基礎品項:新品是「多一個選擇」,
  * 不是「把舊品項洗掉」——研發的價值在客單價與客群廣度,不在排擠。
+ *
+ * ## 🔴 2026-08-25:慢萃 / 磅蛋糕 / 司康的三筆調價(只動價、不動配方)
+ *
+ * 這三項的毛利原本**恰好都是 $19**,而基礎菜單(招牌美式 $18 / 烘焙小點 $20 /
+ * 寵物小點 $20,依 baseWeight 50/30/20 加權)的加權毛利**也恰好是 $19.00**
+ * ⇒ 把它們加進菜單對「加權毛利/客」的貢獻在**數學上精確是 0**:
+ * 玩家花 $12,500 研發完這三項,曲線一格都不動。這是 bug 不是設計。
+ *
+ * 修法是調價而不是改配方:改配方會讓既有存檔的常備量、後場容量與損耗全部要重算,
+ * 而調價只動 `content/cafeResearch.ts` 的一個數字。三者調完仍在 45~60% 毛利帶內。
+ * 回歸釘子在 `cafe-per-guest-test.ts`:**不准有任何品項的毛利等於基礎加權毛利**。
+ *
+ * ## 第三層的配方為什麼全部吃精品生豆
+ *
+ * 三項都要撐起 $58~64 的售價又守住 45~60% 毛利 ⇒ 需要 $28~32 的料錢。
+ * 用既有原料堆的話配方要 12~16 單位/份,每客平均用料 3.90 → 4.30(+10%),
+ * 名店期常備量會頂破後場 920 上限 ⇒ 天天缺貨。改吃 $14/單位的精品生豆之後
+ * 每客用料 3.90 → **3.91**,庫存腿一格不動(推導見 `content/cafeIngredients.ts`)。
  */
 export const CAFE_RESEARCH_RECIPES: Record<string, { recipe: CafeRecipe; baseWeight: number }> = {
   [CAFE_RESEARCH_IDS.basicBrewing]: { recipe: { coffee_bean: 4 }, baseWeight: 26 },
@@ -1701,6 +1723,13 @@ export const CAFE_RESEARCH_RECIPES: Record<string, { recipe: CafeRecipe; baseWei
   [CAFE_RESEARCH_IDS.petMeals]: { recipe: { cat_can: 2, pet_fresh: 1 }, baseWeight: 14 },
   [CAFE_RESEARCH_IDS.petTreat]: { recipe: { cat_can: 1, pet_fresh: 2 }, baseWeight: 12 },
   [CAFE_RESEARCH_IDS.petBirthdayCake]: { recipe: { pet_fresh: 3, flour: 2 }, baseWeight: 8 },
+  // 🔴 第三層(2026-08-25)。漏登記任何一筆都會靜默變成「空配方 + 零熱門度」
+  //    ⇒ 那道菜永遠不會被點到,不報錯。`cafe-per-guest-test.ts` 有斷言擋。
+  //    `baseWeight: 20` 低於同 track 的基礎品項(coffee 50 / bakery 30),
+  //    20/336 ≈ 6% 點單率,對「季節限定 / 拍照款 / 套餐」是合理的比例。
+  [CAFE_RESEARCH_IDS.seasonalBean]: { recipe: { specialty_bean: 2, coffee_bean: 1 }, baseWeight: 20 },
+  [CAFE_RESEARCH_IDS.pawLatte]: { recipe: { specialty_bean: 1, coffee_bean: 2, milk: 2 }, baseWeight: 20 },
+  [CAFE_RESEARCH_IDS.afternoonTea]: { recipe: { specialty_bean: 1, flour: 2, butter: 1 }, baseWeight: 20 },
 };
 
 /** 配方成本 = Σ 單位數 × 進貨單價。未知原料 id 一律當 0(不會憑空多出成本)。 */
@@ -1733,10 +1762,14 @@ export function cafeItemMargin(item: Pick<CafeMenuItem, "recipe" | "price">): nu
  *
  * 🔴 **誠實記錄**:抬高這個常數**本身不會讓咖啡廳多賺一毛錢**。
  * P1 之後營收是逐位顧客照 `item.price` 真的結出來的(`checkoutCafeOrder()`),
- * `avgTicket()` 只是面板上的顯示值與這道防呆的量尺。現行菜單(3 個基礎品 +
- * 10 個研發品,售價 $34~$42)的平均就是 $38,離 $55 還有很大的餘裕 ——
- * 那個餘裕要等第三層研發真的加進 `content/cafeResearch.ts` 才會被用掉。
+ * `avgTicket()` 只是面板上的顯示值與這道防呆的量尺。P4a 當時的菜單(3 個基礎品 +
+ * 10 個研發品,售價 $34~$42)平均是 $38,離 $55 還有很大的餘裕 ——
  * P4a 因此**不靠加價**達成 §4.7 的成長曲線,而是靠招牌分級 + 席次/員工產能。
+ *
+ * **2026-08-25 那個餘裕終於被用掉了**:第三層研發($58~64 三項)+ 三筆調價之後,
+ * 完整菜單 16 項的平均是 $43.13。夾值**仍然沒有生效**,而且刻意留著沒動 ——
+ * 16 項的 8,192 種 completed 組合裡平均最高只到 $49(只研發三項第三層時),
+ * 距離 $55 還有一格。它繼續當「日後誤加 $200 品項」的防呆,不是收益護欄。
  */
 export const CAFE_MAX_AVG_TICKET = 55;
 
@@ -1781,8 +1814,15 @@ export function menuItems(completed: readonly string[] = []): CafeMenuItem[] {
  * 日後誰在 `content/cafeResearch.ts` 誤加一個 $200 的品項,平均也不會衝破 $55。
  *
  * 沒有研發時 = 三個基礎品項 `(34 + 36 + 38) / 3` = **$36**,與 `CAFE_BASE_TICKET`
- * 完全一致(既有行為不變);完整前兩層 13 項的平均 = $38.15 → **$38**,
- * 與舊里程碑表的終點也一致。⇒ 這次改寫對現有存檔的顯示值零位移。
+ * 完全一致(既有行為不變)。
+ *
+ * 2026-08-25(第三層 + 三筆調價)後:完整 16 項的平均 = $43.13 → **$43**
+ * (第三層上線前是 13 項 $38.15 → $38)。這是**刻意的平衡改動**,不是位移:
+ * 名店期缺口 100% 來自客單價,而 $55 的夾值至今仍未生效(16 項的任何子集最高只到 $49)。
+ *
+ * ⚠️ 本函式維持**未加權平均**。改成依 `baseWeight` 加權會讓既有存檔的顯示值
+ * 從 $38 掉到 $37,而且與帳本的相符程度沒有變好(帳本本來就是逐位顧客結的)。
+ * 列為後續選項,不在本批。
  */
 export function avgTicket(completed: readonly string[] = []): number {
   const menu = menuItems(completed);

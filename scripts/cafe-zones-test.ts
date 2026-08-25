@@ -94,9 +94,13 @@ try {
   layout([]);
   check("空店的後場收納為 0、容量退回底量", cafeBackStoragePoints() === 0
     && cafeStorageCapacity(cafeBackStoragePoints()) === 360 && CAFE_STORAGE_BASE === 360);
-  check("底量 360 高於建議常備量總和 310 ⇒ 開張期玩家永遠碰不到上限", (() => {
+  // 🔴 2026-08-25:第七種原料(精品生豆 24 單位)上線後總和由 310 → **334**,
+  //    底量 360 的餘裕從 50 單位縮到 **26 單位**。護欄本身沒變(開張期不准撞到上限),
+  //    但這裡把數字寫死是刻意的:再加一種原料就會把底量吃穿,那時必須連底量一起重訂,
+  //    而不是讓「開張期天天被庫存上限夾住」悄悄上線。
+  check("底量 360 高於建議常備量總和 334 ⇒ 開張期玩家永遠碰不到上限", (() => {
     const suggested = Object.values(orders).reduce((sum, units) => sum + units, 0);
-    return suggested === 310 && suggested < CAFE_STORAGE_BASE
+    return suggested === 334 && suggested < CAFE_STORAGE_BASE
       && restockPlan(orders, {}, RICH, { capacity: cafeStorageCapacity(0) }).capped === false;
   })());
 

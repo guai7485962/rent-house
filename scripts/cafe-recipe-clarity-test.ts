@@ -243,6 +243,11 @@ try {
   check("面板的常備量有讀 cafeIngredientMenuUse(原料 → 品項)",
     panel.includes("cafeIngredientMenuUse") && panel.includes("ingredientUse(item.id)"));
   check("面板的常備量有顯示「害幾單做不出來」", panel.includes("cafeIngredientShortageBlame") && panel.includes("order-blame"));
+  // 🔴 2026-08-25:`dailyDemand()` 是照 perGuest 對**全部**原料估的,不看菜單。
+  //    第七種原料(精品生豆)上線後,還沒研發第三層的玩家會被告知「會缺精品生豆」——
+  //    叫他去買一個買了也用不到的東西。缺貨預估必須先過一次菜單。
+  check("🔴 缺貨預估只警告菜單真的用得到的原料(不叫玩家買用不到的東西)",
+    /predictedShortages[\s\S]{0,600}?cafeIngredientMenuUse/.test(panel));
   check("🔴 常備量輸入的上限不再低於內建建議值(咖啡豆 130)",
     /MAX_STANDING_ORDER\s*=\s*(\d+)/.test(panel)
     && Number(panel.match(/MAX_STANDING_ORDER\s*=\s*(\d+)/)![1])

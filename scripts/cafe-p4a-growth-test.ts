@@ -10,7 +10,11 @@
  * 5. **客單價硬上限防呆仍在**,而且 `cafe.open` 閘門與零 RNG 一如既往。
  *
  * 🔴 成長曲線的**數值**(四階段淨利、佔淨租金比例)由 `scripts/cafe-growth-sim.ts`
- * 量測與列印;本檔只斷言**必須成立的那兩條**:名店期能超過淨租金、過度擴張會虧。
+ * 量測與列印;本檔只斷言**必須成立的那幾條**:名店期能超過淨租金、設備仍然回得了本、
+ * 招牌不是萬靈丹(產能腿夾得住)、過度擴張會虧。
+ *
+ * ⚠️ 2026-08-25(第三層研發)改寫了其中一條,理由寫在該條旁邊——
+ * 「只買招牌的名店期到不了淨租金」的前提被新的設計目標推翻了。
  */
 const mem: Record<string, string> = {};
 (globalThis as any).localStorage = {
@@ -29,7 +33,7 @@ const {
   fireCafeStaff, hireCafeStaff, menuItems, openCafe, suggestedStandingOrders, suggestStandingOrdersFromSales,
   avgTicket,
   CAFE_FIXED_COST, CAFE_MACHINE_CUPS_BONUS, CAFE_MAX_AVG_TICKET, CAFE_MAX_EXTRA_STAFF,
-  CAFE_MAX_SIGN_LEVEL, CAFE_OPENING_COST, CAFE_SEAT_TURNOVER, CAFE_SIGNBOARD_IDS,
+  CAFE_MAX_SIGN_LEVEL, CAFE_OPENING_COST, CAFE_SEAT_TURNOVER, CAFE_SIGNBOARD_IDS, CAFE_UPGRADES,
   CAFE_STAFF_CUPS_PER_DAY, CAFE_STAFF_WAGE, CAFE_TAKEAWAY_CAPACITY, CAFE_UPGRADE_IDS,
 } = await import("../src/sim/cafe");
 const { CAFE_RESEARCH_IDS } = await import("../src/content/cafeResearch");
@@ -347,17 +351,48 @@ try {
   // 這**不是退化,是「第二台咖啡機」在新產能公式下變成名店期的必需品**:
   // 它加的是「每位員工的杯數」,5 位員工就是 +50 杯,直接解開產能腿的上限。
   // 所以要驗的是「全額投資的咖啡廳能不能取代收租」,而不是「半套設備能不能」。
+  const KIT = [CAFE_UPGRADE_IDS.secondMachine, CAFE_UPGRADE_IDS.outdoorSeats, CAFE_UPGRADE_IDS.coldStorage];
+  const KIT_PRICE = KIT.reduce((sum, id) => sum + (CAFE_UPGRADES.find((u) => u.id === id)?.price ?? 0), 0);
   const flagshipFull = measureStage({
-    upgrades: [...CAFE_SIGNBOARD_IDS, CAFE_UPGRADE_IDS.secondMachine, CAFE_UPGRADE_IDS.outdoorSeats,
-      CAFE_UPGRADE_IDS.coldStorage],
+    upgrades: [...CAFE_SIGNBOARD_IDS, ...KIT],
     seats: 32, extraStaff: 4, completed: Object.values(CAFE_RESEARCH_IDS),
   });
   console.log(`   · 名店期(全設備) $${flagshipFull.toFixed(0)}/日 = 淨租金的 ${(flagshipFull / DESIGN_NET_RENT * 100).toFixed(0)}%`);
   check("🔴 名店期(全額投資)日淨利超過淨租金(咖啡廳真的可以取代收租)",
     flagshipFull > DESIGN_NET_RENT, `$${flagshipFull.toFixed(0)} vs $${DESIGN_NET_RENT.toFixed(0)}`);
-  // 只買招牌的名店期到不了 —— 明確釘住這件事,免得日後有人以為「買招牌就好」。
-  check("只買招牌的名店期**到不了**淨租金(設備不是可選配,是成長的一部分)",
-    flagship < DESIGN_NET_RENT, `$${flagship.toFixed(0)}`);
+
+  // =========================================================================
+  // 🔴 「設備不是可選配」的護欄（2026-08-25 改寫，說明必讀）
+  // =========================================================================
+  // 這裡原本是「只買招牌的名店期**到不了**淨租金」。第三層研發上線後那條**必然翻掉**
+  // ——名店期客單價由 $37.4 拉到 $42.4，只買招牌就到 115%。那不是退化，是本批的
+  // 設計目標本身（中控訂的「名店期預設 105~115% 淨租金」）。
+  //
+  // 但原本那條想守的東西沒有消失:**設備必須仍然是成長的一部分,不能變成裝飾**。
+  // 舊寫法是用「到不了淨租金」這條**絕對線**去表達它,而那條線已經被目標推翻了。
+  // 改成兩條各自釘住一件事,兩條都不是把數字放寬:
+  //
+  //   (1) 設備的**日增益必須撐得起它自己的價錢**。這條直接綁在真實售價
+  //       ($58,000)上,而不是綁在一個手挑的比值——設備漲價或效果被削弱,
+  //       回本天數會立刻跑出設計帶,測試就會叫。上界 250 天 = 「還值得買」;
+  //       下界 60 天 = 「不是無腦按鈕」(招牌自己的設計帶是 56/102/175 天)。
+  //   (2) 招牌**不是萬靈丹**:光把招牌升到 Lv4、席次與人力停在開張期的水準,
+  //       仍然到不了淨租金。這是舊護欄那句話真正想講的產能腿約束,
+  //       只是把「不投資設備」換成「不投資產能」——因為現在真正夾住玩家的是後者。
+  const kitGain = flagshipFull - flagship;
+  const kitPayback = kitGain > 0 ? KIT_PRICE / kitGain : Infinity;
+  console.log(`   · 設備三件($${KIT_PRICE.toLocaleString()})的日增益 $${kitGain.toFixed(0)} ⇒ 回本 ${kitPayback.toFixed(0)} 天`);
+  check("🔴 設備仍然是成長的一部分:三件設備的日增益能在 60~250 天內回本(不是裝飾也不是無腦按鈕)",
+    kitPayback > 60 && kitPayback < 250,
+    `$${KIT_PRICE.toLocaleString()} / $${kitGain.toFixed(0)}/日 = ${kitPayback.toFixed(0)} 天`);
+  const signOnlyNoCapacity = measureStage({
+    upgrades: [...CAFE_SIGNBOARD_IDS], seats: 6, extraStaff: 0, completed: Object.values(CAFE_RESEARCH_IDS),
+  });
+  console.log(`   · 招牌 Lv4 但席次 6 / 零額外員工:$${signOnlyNoCapacity.toFixed(0)}/日`
+    + ` = 淨租金的 ${(signOnlyNoCapacity / DESIGN_NET_RENT * 100).toFixed(0)}%`);
+  check("🔴 招牌不是萬靈丹:升到 Lv4 但席次/人力停在開張期 ⇒ 仍到不了淨租金(產能腿夾得住)",
+    signOnlyNoCapacity < DESIGN_NET_RENT,
+    `$${signOnlyNoCapacity.toFixed(0)} vs $${DESIGN_NET_RENT.toFixed(0)}`);
   check("🔴 過度擴張會虧:成長期的客流雇 4 個人 ⇒ 日淨利為負",
     overreach < 0, `$${overreach.toFixed(0)}`);
   // ⚠️ 原本這裡斷言「多雇 3 人**剛好**吃掉 3 份日薪」。`CAFE_STAFF_CUPS_PER_DAY`

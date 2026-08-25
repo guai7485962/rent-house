@@ -142,8 +142,24 @@ const SIGN_LV3 = [...SIGN_LV2, CAFE_UPGRADE_IDS.signboardLv3];
 const SIGN_LV4 = [...SIGN_LV3, CAFE_UPGRADE_IDS.signboardLv4];
 
 const ROOTS = [CAFE_RESEARCH_IDS.basicBrewing, CAFE_RESEARCH_IDS.baking, CAFE_RESEARCH_IDS.petMeals];
-const SIX = [...ROOTS, CAFE_RESEARCH_IDS.pourOver, CAFE_RESEARCH_IDS.scone, CAFE_RESEARCH_IDS.petTreat];
+/**
+ * 🔴 2026-08-25(第三層研發上線)重訂階段的研發進度。
+ *
+ * 舊清單是 3 / 6 / 10 項,那是「第三層還不存在」時代的手挑組合。第三層的
+ * `requiresUpgrades` 是**招牌等級**,所以每個階段解得開的東西不再是選擇題:
+ *
+ * - 成長期(招牌 Lv2)= 三個根 + 手沖單品 + 季節限定豆 = **5 項**
+ * - 成熟期(招牌 Lv3)= 再加 拿鐵拉花 + 造型拿鐵 + 司康 = **8 項**
+ * - 名店期(招牌 Lv4)= 全部 **13 項**
+ *
+ * 這不是搬球門:內容是招牌閘門的唯一解,不是挑的。舊的 3 / 6 兩列仍然照印
+ * (`LEGACY_STAGES`),讓 diff 看得出「多少是調價、多少是第三層」。
+ */
+const GROWTH = [...ROOTS, CAFE_RESEARCH_IDS.pourOver, CAFE_RESEARCH_IDS.seasonalBean];
+const MATURE = [...GROWTH, CAFE_RESEARCH_IDS.latteArt, CAFE_RESEARCH_IDS.pawLatte, CAFE_RESEARCH_IDS.scone];
 const ALL = Object.values(CAFE_RESEARCH_IDS);
+/** 舊階段清單(3 / 6 項),只當對照組印出來,不是設計目標。 */
+const LEGACY_SIX = [...ROOTS, CAFE_RESEARCH_IDS.pourOver, CAFE_RESEARCH_IDS.scone, CAFE_RESEARCH_IDS.petTreat];
 
 /** 名店期玩家會把五項永久投資都買齊,不會只買招牌。 */
 const FULL_KIT = [
@@ -163,8 +179,8 @@ interface Stage {
 
 const STAGES: Stage[] = [
   { label: "開張期 Lv1", upgrades: [], seats: 6, extraStaff: 0, completed: [], target: 98 },
-  { label: "成長期 Lv2", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: ROOTS, target: 430 },
-  { label: "成熟期 Lv3", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: SIX, target: 900 },
+  { label: "成長期 Lv2", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: GROWTH, target: 430 },
+  { label: "成熟期 Lv3", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: MATURE, target: 900 },
   { label: "名店期 Lv4", upgrades: SIGN_LV4, seats: 32, extraStaff: 4, completed: ALL, target: 1620 },
   // 🔴 第五條虧損管道:成長期的客流,卻雇了 4 個人。
   { label: "⚠️ 過度擴張", upgrades: SIGN_LV2, seats: 12, extraStaff: 4, completed: ROOTS, target: -426 },
@@ -172,6 +188,15 @@ const STAGES: Stage[] = [
   // (Lv4 的實際客流撐不到 5 人份產能),而名店期玩家也不會只買招牌。
   { label: "· 名店期 +3 人", upgrades: SIGN_LV4, seats: 32, extraStaff: 3, completed: ALL, target: null },
   { label: "· 名店期全設備", upgrades: [...SIGN_LV4, ...FULL_KIT], seats: 32, extraStaff: 3, completed: ALL, target: null },
+];
+
+/**
+ * 🔴 舊階段清單的對照組(3 / 6 項研發)。條件與上面的成長/成熟期**完全相同**,
+ * 只有 `completed` 不一樣 ⇒ 兩兩相減就是「第三層值多少」,不會混進別的變因。
+ */
+const LEGACY_STAGES: Stage[] = [
+  { label: "舊·成長期 3 研發", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: ROOTS, target: 430 },
+  { label: "舊·成熟期 6 研發", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: LEGACY_SIX, target: 900 },
 ];
 
 function run(stage: Stage, extraCounters = 0, backStorage = false) {
@@ -337,6 +362,20 @@ printTable("A", "現行擺放:只有開張贈品那座吧台(服務位 3)、後�
 printTable("B", "只補吧台:買到「服務位 >= 店員數」,其餘條件完全相同(每座吧台 $16,000)", staffed);
 printTable("C", "吧台 + 後場儲物:再加備品貨架 ×2 + 進貨木箱 ×1(storage 14 ⇒ 庫存上限 920,$13,600)", stocked);
 
+// 🔴 舊階段清單(3 / 6 項研發)的對照:與【C】完全相同的擺設,只有 completed 不同。
+const legacy = LEGACY_STAGES.map((stage) =>
+  run(stage, countersNeededFor(cafeStaffCount(stage.extraStaff)), true));
+printTable("C-舊", "對照組:【C】的擺設不變,研發進度改回第三層上線前的 3 / 6 項(差額 = 第三層值多少)", legacy);
+console.log("\n【C vs C-舊】第三層在中段值多少(同席次/同人力/同招牌,只差研發進度)");
+for (const [i, row] of legacy.entries()) {
+  const now = stocked[i + 1];
+  console.log(`  ${row.stage.label.padEnd(16)} $${row.net.toFixed(0)}(${(row.net / DESIGN_NET_RENT * 100).toFixed(0)}%)`
+    + ` → ${now.stage.label}(${now.stage.completed.length} 研發) $${now.net.toFixed(0)}`
+    + `(${(now.net / DESIGN_NET_RENT * 100).toFixed(0)}%)`
+    + `  Δ +$${(now.net - row.net).toFixed(0)}`
+    + `;客單價 $${row.ticket.toFixed(1)} → $${now.ticket.toFixed(1)}`);
+}
+
 console.log("\n【D】對照(設計目標 / 現行實測:服務位不足 / 只補吧台 / 吧台+後場儲物)");
 console.log("階段".padEnd(14) + "  設計目標    現行實測(佔靶)      只補吧台(佔靶)    吧台+後場(佔靶)  吧台差 只補吧台Δ  加後場Δ");
 for (let i = 0; i < 4; i++) {
@@ -356,6 +395,40 @@ for (let i = 0; i < 4; i++) {
     + `${(`+${b.extraCounters - a.extraCounters} 座`).padStart(8)}`
     + `${delta(b.net - a.net).padStart(10)}`
     + `${delta(c.net - b.net).padStart(10)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 🔴 第三層逐項回本:單一變因(只抽掉那一項研發,其餘完全相同)
+//
+// 設計約束是「在**它自己解得開的那一階段**要在 60 天內回本」。整包比較看不出
+// 哪一項在拖後腿,所以這裡一項一項抽掉再量一次,差額就是那一項的日邊際。
+// ---------------------------------------------------------------------------
+
+const TIER3_CASES: { id: string; name: string; cost: number; stage: Stage; base: Row }[] = [
+  { id: CAFE_RESEARCH_IDS.seasonalBean, name: "季節限定豆", cost: 3_000, stage: STAGES[1], base: stocked[1] },
+  { id: CAFE_RESEARCH_IDS.pawLatte, name: "造型拿鐵", cost: 3_000, stage: STAGES[2], base: stocked[2] },
+  { id: CAFE_RESEARCH_IDS.afternoonTea, name: "下午茶套餐", cost: 3_000, stage: STAGES[3], base: stocked[3] },
+];
+
+console.log("\n=== 第三層逐項回本(在它自己解得開的那一階段;單一變因:只抽掉那一項)===");
+console.log("項目".padEnd(12) + "階段".padEnd(14) + "  研發費   有它的淨利   抽掉後   日邊際   回本天數  客單價變化");
+for (const c of TIER3_CASES) {
+  const without = run(
+    { ...c.stage, completed: c.stage.completed.filter((id) => id !== c.id) },
+    countersNeededFor(cafeStaffCount(c.stage.extraStaff)), true,
+  );
+  const delta = c.base.net - without.net;
+  const payback = delta > 0 ? c.cost / delta : Infinity;
+  console.log(
+    c.name.padEnd(10)
+    + c.stage.label.padEnd(12)
+    + `${("$" + c.cost.toLocaleString()).padStart(8)}`
+    + `${("+$" + c.base.net.toFixed(0)).padStart(13)}`
+    + `${("+$" + without.net.toFixed(0)).padStart(10)}`
+    + `${("+$" + delta.toFixed(1)).padStart(9)}`
+    + `${(Number.isFinite(payback) ? payback.toFixed(1) + " 天" : "永遠不回本").padStart(11)}`
+    + `   $${without.ticket.toFixed(1)} → $${c.base.ticket.toFixed(1)}`,
   );
 }
 

@@ -67,14 +67,14 @@ try {
   // 一、菜單配方與毛利帶(設計文件 §4.1)
   // =========================================================================
   const fullMenu = menuItems(ALL_RESEARCH);
-  check("完整菜單 = 3 個基礎品項 + 10 個研發品項", fullMenu.length === 13);
+  check("完整菜單 = 3 個基礎品項 + 13 個研發品項(2026-08-25 第三層上線後)", fullMenu.length === 16);
   check("每個品項都有非空配方(空配方 = 無本生意)",
     fullMenu.every((item) => Object.keys(item.recipe).length > 0),
     fullMenu.filter((i) => Object.keys(i.recipe).length === 0).map((i) => i.id).join(","));
   check("每個品項都有正的基礎熱門度(0 = 永遠不會被點到)",
     fullMenu.every((item) => item.baseWeight > 0),
     fullMenu.filter((i) => !(i.baseWeight > 0)).map((i) => i.id).join(","));
-  check("配方只用得到現有六種原料(不會憑空引用不存在的料)",
+  check("配方只用得到現有七種原料(不會憑空引用不存在的料)",
     fullMenu.every((item) => Object.keys(item.recipe).every((id) => CAFE_INGREDIENTS.some((ing) => ing.id === id))));
   check("配方用量都是正整數", fullMenu.every((item) =>
     Object.values(item.recipe).every((units) => Number.isInteger(units) && (units as number) > 0)));
@@ -91,9 +91,26 @@ try {
       .map(([id, units]) => `${CAFE_INGREDIENTS.find((ing) => ing.id === id)!.name}×${units}`).join(" + ");
     console.log(`     · ${item.name.padEnd(8)} $${String(item.price).padStart(2)}  ${formula.padEnd(28)} 成本 $${String(cost).padStart(2)}  毛利 ${(margin * 100).toFixed(1)}%`);
   }
-  check("🔴 13 個品項的毛利全部落在 45～60%", marginsOk);
+  check("🔴 16 個品項的毛利全部落在 45～60%", marginsOk);
   check("三個基礎品項的配方與售價對得上毛利帶",
     CAFE_BASE_MENU_ITEMS.every((item) => cafeItemMargin(item) >= 0.45 && cafeItemMargin(item) <= 0.6));
+
+  // =========================================================================
+  // 🔴 「精確 0」的回歸釘子(2026-08-25)
+  // =========================================================================
+  // 病史:冷萃($39)、磅蛋糕($38)、司康($38)三項的**毛利額**恰好都是 $19,
+  // 而基礎菜單依 baseWeight 50/30/20 加權出來的毛利**也恰好是 $19.00**。
+  // 加權平均的性質:加進一個等於現行平均的樣本,平均一格不動
+  // ⇒ 玩家花 $12,500 研發完這三項,曲線在數學上**精確**沒有變化,而且不報錯。
+  // 這條釘子直接擋住未來再犯:任何品項的毛利額都不准落在基礎加權毛利上。
+  const baseWeighted = CAFE_BASE_MENU_ITEMS.reduce((sum, item) =>
+    sum + item.baseWeight * (item.price - cafeItemCost(item)), 0)
+    / CAFE_BASE_MENU_ITEMS.reduce((sum, item) => sum + item.baseWeight, 0);
+  const deadItems = fullMenu.filter((item) => Math.abs((item.price - cafeItemCost(item)) - baseWeighted) < 0.5);
+  console.log(`   基礎菜單的加權毛利 = $${baseWeighted.toFixed(2)}/客`);
+  check("🔴 沒有任何品項的毛利恰好等於基礎菜單的加權毛利(等於 = 研發它對曲線的貢獻精確為 0)",
+    deadItems.length === 0,
+    deadItems.map((i) => `${i.name} 毛利 $${i.price - cafeItemCost(i)}`).join(","));
   check("cafeItemCost 對未知原料回 0、不產生 NaN",
     cafeItemCost({ recipe: { not_a_thing: 5 } as any }) === 0 && cafeItemMargin({ recipe: {}, price: 0 }) === 0);
 

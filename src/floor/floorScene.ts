@@ -21,6 +21,7 @@ import {
 import type { Agent } from "./agents";
 import type { PairPose } from "./pairSession";
 import {
+  guestAlpha,
   guestDrawX,
   guestDrawY,
   guestSeated,
@@ -208,6 +209,16 @@ export function composeFloor(ctx: Ctx, frame: number, agents?: Agent[], marks?: 
 
 /** CAFE-08：顧客沿用四方向人物骨架，但外觀直接讀 CafeGuest snapshot，不查 TenantRuntime。 */
 export function drawGuest(ctx: Ctx, agent: GuestAgent) {
+  // 🔴 第 2 層兜底的視覺交代:走不出去的顧客原地淡出,不是憑空消失(見 `guestAlpha()`)。
+  const alpha = guestAlpha(agent);
+  if (alpha <= 0) return;
+  const prevAlpha = ctx.globalAlpha;
+  if (alpha < 1) ctx.globalAlpha = prevAlpha * alpha;
+  drawGuestBody(ctx, agent);
+  if (alpha < 1) ctx.globalAlpha = prevAlpha;
+}
+
+function drawGuestBody(ctx: Ctx, agent: GuestAgent) {
   const appearance = agent.guest.appearance;
   const palette = guestPalette(appearance);
   const x = guestDrawX(agent);

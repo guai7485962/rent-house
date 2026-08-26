@@ -178,20 +178,36 @@ const CAFE_PLACEMENT_REGION_SET: ReadonlySet<string> = new Set(CAFE_PLACEMENT_RE
  *    顧客才會照原本的偏好序坐在桌邊,而不是被擠去 fallback 掃描的角落。
  * 3. 每件椅子的 interact 站立格都留空,`routine.standingTile()` 第一輪就命中。
  *
+ * ### 🔴 2026-08-26 重排:席位不可以是死巷,也不可以壓在人龍上
+ *
+ * 舊擺法(左側兩桌貼著 c1 的牆)實測出兩個結構性缺陷,是顧客互卡的加重因子:
+ *
+ * - **一格寬死巷席位**:`(3,44)` 的可走鄰格只有 `(4,44)`、`(1,45)` 的 stand `(1,46)`
+ *   只有 `(1,47)` —— 那一格被任何人站住,裡面的人就完全出不來(連讓路都做不到)。
+ * - **stand 壓在人龍上**:`(4,43)`／`(4,45)` 是兩張側面椅的唯一 stand,卻正好是隊伍
+ *   第 4、6 個位置 ⇒ 排隊排到 4 人就同時堵死三個席位。
+ *
+ * 新擺法把三組桌椅拉開到「每個 stand 都有 ≥2 個可走鄰格、且都不在 `cafeQueueTiles()` 上」。
+ * **不靠眼睛判斷**:`scripts/cafe-guest-agent-test.ts` 用 `cafeSeatSpots()` 逐席實測鄰格數
+ * 與人龍交集,擺法退化會直接紅燈。
+ *
+ * ⚠ 只影響**新開的局**:既有存檔的家具位置不會變(那是玩家的擺設,不該動),
+ * 舊檔靠第 1~3 層(繞路看得見卡住的人、脫困逾時、人龍避開出入口)獲得改善。
+ *
  * 座標的合法性不靠人工保證:`placeCafeStarterSet()` 一律過 `canPlaceFree()`,
  * `scripts/cafe-furniture-test.ts` 也逐件重驗。
  */
 export const CAFE_STARTER_PLACEMENTS: readonly { defId: string; c: number; r: number }[] = [
   { defId: "cafe_counter", c: 3, r: 38 },      // 點餐吧台(cafe_counter 區)
-  { defId: "cafe_table", c: 2, r: 43 },        // 左側第一桌
-  { defId: "cafe_chair_front", c: 1, r: 43 },
-  { defId: "cafe_chair_side", c: 3, r: 43 },
-  { defId: "cafe_table", c: 2, r: 45 },        // 左側第二桌
-  { defId: "cafe_chair_front", c: 1, r: 45 },
-  { defId: "cafe_chair_side", c: 3, r: 45 },
+  { defId: "cafe_table", c: 4, r: 43 },        // 主廳雙人桌(讓開 c3 的人龍)
+  { defId: "cafe_chair_side", c: 5, r: 43 },
+  { defId: "cafe_chair_front", c: 4, r: 45 },
   { defId: "cafe_table", c: 11, r: 36 },       // 靠樓梯側的窗邊桌
   { defId: "cafe_chair_front", c: 10, r: 36 },
   { defId: "cafe_chair_side", c: 12, r: 36 },
+  { defId: "cafe_table", c: 11, r: 39 },       // 靠樓梯側第二桌
+  { defId: "cafe_chair_front", c: 10, r: 39 },
+  { defId: "cafe_chair_side", c: 12, r: 39 },
 ];
 
 /**
@@ -517,16 +533,51 @@ export function cafeStaffSpots(): SeatTile[] {
 export const CAFE_QUEUE_MAX_DEPTH = 14;
 
 /**
+ * 🔴 第 3 層(2026-08-26):人龍**不可以壓在座位的出入口上**。
+ *
+ * 實測過的災情:開張贈品的人龍是 `(3,40) (3,41) (3,42) (4,43) (4,44) (4,45) …`,
+ * 而 `(4,43)`／`(4,45)` 正好是兩張側面椅的唯一 `stand`、`(4,44)` 是圓桌席死巷的唯一咽喉
+ * ⇒ 隊伍排到 4 人就同時堵死三個席位,後面要入座的人只能跟排隊的人互頂。
+ *
+ * 回傳「要避開的格」= 所有席位的 `stand` + 死巷席位(可走鄰格只有一個)的那個咽喉。
+ * 依 `placements.version` 快取:`cafeQueueTiles()` 每幀都被呼叫,不能每次重算席次。
+ */
+let _queueAvoid: ReadonlySet<string> | null = null;
+let _queueAvoidV = -1;
+function queueAvoidTiles(walkable: (c: number, r: number) => boolean): ReadonlySet<string> {
+  if (_queueAvoid !== null && _queueAvoidV === placements.version) return _queueAvoid;
+  const avoid = new Set<string>();
+  for (const spot of cafeSeatSpots()) {
+    avoid.add(`${spot.stand.c},${spot.stand.r}`);
+    const around = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+      .map(([dc, dr]) => ({ c: spot.stand.c + dc, r: spot.stand.r + dr }))
+      .filter((tile) => walkable(tile.c, tile.r));
+    // 一格寬死巷:唯一那個鄰格被人站住 = 這個席位對外斷線,連讓路都做不到。
+    if (around.length === 1) avoid.add(`${around[0].c},${around[0].r}`);
+  }
+  _queueAvoid = avoid;
+  _queueAvoidV = placements.version;
+  return avoid;
+}
+
+/**
  * 🔴 P4b:吧台前的**排隊格**,由點餐位往顧客側一路延伸(設計文件 §4.9)。
  *
  * 回傳序就是隊伍順序(第 0 格最靠近吧台)。走不通就往旁邊讓一道並沿用新的那道,
  * 所以玩家在動線上擺了桌子,隊伍會繞過去而不是斷掉。**純表現層**:排隊不改任何
  * 結帳/薪資/產能運算,它只是把「已經發生的產能吃緊」畫成一條看得見的人龍。
+ *
+ * 兩條 2026-08-26 才補上的硬規則(見 `queueAvoidTiles()`):
+ * 1. **優先避開席位出入口**——真的沒有別的格可站才會用(退化成舊行為,不會斷隊)。
+ * 2. **不排進後場**(`cafe_back`,r48-50)——那是員工動線,而且視覺上隊伍會穿牆進倉庫。
  */
 export function cafeQueueTiles(limit: number): SeatTile[] {
   const max = Math.max(0, Math.min(CAFE_QUEUE_MAX_DEPTH * 2, Math.trunc(Number.isFinite(limit) ? limit : 0)));
   if (max === 0) return [];
+  const grid = buildGrid();
   const walkable = cafeWalkable();
+  const inHall = (c: number, r: number) => walkable(c, r) && grid[r]?.[c] !== "cafe_back";
+  const avoid = queueAvoidTiles(walkable);
   const counterSpots = cafeCounterSpots();
   const counter = cafeCounterPlacement();
   const head = counterSpots[0];
@@ -538,18 +589,15 @@ export function cafeQueueTiles(limit: number): SeatTile[] {
   const out: SeatTile[] = [];
   for (let depth = 1; out.length < max && depth <= CAFE_QUEUE_MAX_DEPTH; depth++) {
     const line = axis.frontLine + axis.step * depth;
-    let placed = false;
-    for (const candidate of [lane, lane + 1, lane - 1, lane + 2, lane - 2]) {
-      const tile = axis.vertical ? { c: candidate, r: line } : { c: line, r: candidate };
-      const key = `${tile.c},${tile.r}`;
-      if (used.has(key) || !walkable(tile.c, tile.r)) continue;
-      used.add(key);
-      out.push(tile);
-      lane = candidate; // 讓過去之後就沿用新的那一道,隊伍才是連續的一條線
-      placed = true;
-      break;
-    }
-    if (!placed) break;
+    const candidates = [lane, lane + 1, lane - 1, lane + 2, lane - 2]
+      .map((candidate) => (axis.vertical ? { c: candidate, r: line } : { c: line, r: candidate }))
+      .filter((tile) => !used.has(`${tile.c},${tile.r}`) && inHall(tile.c, tile.r));
+    // 先挑不擋席位出入口的;真的一格都沒有才退回舊行為(有人龍總比斷掉好)。
+    const tile = candidates.find((t) => !avoid.has(`${t.c},${t.r}`)) ?? candidates[0];
+    if (!tile) break;
+    used.add(`${tile.c},${tile.r}`);
+    out.push(tile);
+    lane = axis.vertical ? tile.c : tile.r; // 讓過去之後就沿用新的那一道,隊伍才是連續的一條線
   }
   return out;
 }

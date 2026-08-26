@@ -62,6 +62,34 @@ export const GUEST_REFUSED_SECONDS = 2.4;
 export const GUEST_WALK_TIMEOUT_SECONDS = 14;
 
 /**
+ * 🔴 2026-08-26:停滯多久就算「卡住」(現實秒)。
+ *
+ * 只有**正常通過中**的人可以在別人的繞路地圖上隱形;超過這個門檻沒換過格的人一律現形
+ * (見 `detourGrid()` 的地雷註解)。門檻必須同時滿足兩件事:
+ *
+ * - **大於一步的時間**(`TILE / SPEED` = 16 / 40 = 0.4 秒),否則走得好好的人也會被當障礙,
+ *   `findPath` 會大量回 null ⇒ 為了解 2-cycle 反而讓正常通行也塞住。
+ * - **大於重算週期** `REPATH_AFTER_BLOCKED_SECONDS`(0.8 秒),否則被擋一次就現形,
+ *   等同「所有排隊中的人都是障礙」。
+ */
+export const GUEST_STALL_SECONDS = 1.5;
+
+/** 正面對撞後多久由其中一方側身讓路(現實秒)。短於重算週期 ⇒ 先讓路再談繞路。 */
+export const GUEST_YIELD_SECONDS = 0.5;
+
+/**
+ * 🔴 第 2 層安全網:`seated` / `leaving` 完全沒有進展多久就啟動兜底(現實秒)。
+ *
+ * 用「幾秒沒換過格」而不是「進入階段幾秒」——走得慢的人(店裡人多、要繞遠路)不該被誤判,
+ * 真的動不了的人才會觸發。玩家用家具把已入座的顧客砌牆關起來也走這條
+ * (`canPlaceFree()` 沒有可達性檢查,玩家真的做得到)。
+ */
+export const GUEST_STUCK_GIVEUP_SECONDS = 12;
+
+/** 走不出去的顧客原地淡出的秒數。**不可以是 0** —— 憑空消失正是本次要修掉的症狀。 */
+export const GUEST_FADE_SECONDS = 1.2;
+
+/**
  * 🔴 A 批:排隊排到放棄的秒數(現實秒)。
  *
  * 只作用在**模擬層已經判定會放棄**的顧客(`guest.order.abandoned`)——這裡不做任何
@@ -115,6 +143,19 @@ export interface GuestAgent {
   seatSpot: CafeSeatSpot | null;
   /** 下一格被別人擋住而原地等了多久(現實秒);超過門檻就繞路。 */
   stuckT: number;
+  /**
+   * 🔴 距離上次**真的換格**過了幾現實秒(有走位目標時才累加;換格與換階段歸零)。
+   *
+   * 這一格是第 1 層的核心:`moving` 只說明「他抱著一條路徑」,卡死的人 `moving` 永遠是
+   * `true`;`stallT` 才分得出「正在通過」與「原地打轉」。渲染層 runtime,不入存檔。
+   */
+  stallT: number;
+  /** 正面對撞時側身讓路的暫時目的地;非 null = 這一步是讓路,不是走向 target。 */
+  yieldTile: Tile | null;
+  /** 🔴 第 2 層:走不到座位,退化成站著用餐(不再嘗試入座,但照樣待到 `leavesMs`)。 */
+  standingMeal: boolean;
+  /** 🔴 第 2 層:走不出去而原地淡出已經過的秒數(0 = 沒在淡出)。 */
+  fadeT: number;
 }
 
 /**
@@ -197,6 +238,10 @@ export function syncGuestAgents(
         queueT: 0,
         seatSpot,
         stuckT: 0,
+        stallT: 0,
+        yieldTile: null,
+        standingMeal: false,
+        fadeT: 0,
       } satisfies GuestAgent;
     });
 }
@@ -244,6 +289,9 @@ function enterPhase(agent: GuestAgent, phase: GuestAgentPhase) {
   agent.path = [];
   agent.moving = false;
   agent.stuckT = 0;
+  agent.stallT = 0;
+  agent.yieldTile = null;
+  if (phase === "leaving") agent.fadeT = 0;
 }
 
 /**
@@ -301,9 +349,22 @@ function assignCounterStations(agents: GuestAgent[], serviceSlots: number, block
 /** 目前階段的走位目標;`null` = 站著不動(演出中)。 */
 function targetFor(agent: GuestAgent): Tile | null {
   if (agent.phase === "entering") return agent.queueTile ?? agent.counterTile;
-  if (agent.phase === "seated") return agent.seatSpot?.stand ?? null;
+  // 🔴 第 2 層:放棄座位的人不再有走位目標 —— 他站在原地把飲料喝完(不是消失)。
+  if (agent.phase === "seated") return agent.standingMeal ? null : agent.seatSpot?.stand ?? null;
   if (agent.phase === "leaving") return agent.entryTile;
   return null;
+}
+
+/**
+ * 🔴 第 2 層:顧客此刻的不透明度(1 = 正常;< 1 = 走不出去、正在原地淡出)。
+ *
+ * 逾時的兜底**不可以是「原地消失」**——那正是修這個 bug 之前的症狀(資料層
+ * `cafeGuestPass()` 把人清掉,玩家看到顧客在畫面中央憑空不見)。淡出至少讓玩家看得出
+ * 「這個人離開了」,而且淡出點通常就是他被卡住的地方,等於把問題畫給玩家看。
+ */
+export function guestAlpha(agent: GuestAgent): number {
+  if (agent.fadeT <= 0) return 1;
+  return Math.max(0, 1 - agent.fadeT / GUEST_FADE_SECONDS);
 }
 
 /** 顧客實際被畫出來的位置(坐在椅子上時是椅子格,其餘是他站的格)。 */
@@ -392,19 +453,60 @@ export function tickGuestAgents(
       case "refused":
         if (agent.phaseT >= GUEST_REFUSED_SECONDS) enterPhase(agent, "leaving");
         break;
+      // 🔴 第 2 層安全網(2026-08-26):`seated` / `leaving` 以前是 `default: break`,
+      // 完全沒有脫困逾時 ⇒ 被鎖住的人只能等資料層 `cafeGuestPass()` 原地清掉。
+      case "seated": {
+        const stand = agent.seatSpot?.stand;
+        const atSeat = !!stand && agent.c === stand.c && agent.r === stand.r;
+        // 走不到座位(被人堵死、被玩家用家具砌牆關住、findPath 回 null…)⇒ 站著用餐。
+        // 他照樣待到 `leavesMs` 才走,帳本與演出都不變,只是沒坐下。
+        if (!atSeat && !agent.standingMeal && agent.stallT >= GUEST_STUCK_GIVEUP_SECONDS) {
+          agent.standingMeal = true;
+          agent.view = "front";
+          agent.goal = null;
+          agent.path = [];
+          agent.moving = false;
+          agent.stallT = 0;
+        }
+        break;
+      }
+      case "leaving": {
+        // 走不出去 ⇒ 原地淡出(不是瞬間不見)。淡完才 departed,資料層照舊收尾。
+        if (agent.fadeT > 0 || agent.stallT >= GUEST_STUCK_GIVEUP_SECONDS) {
+          agent.fadeT += Math.max(0, dt);
+          agent.moving = false;
+          if (agent.fadeT >= GUEST_FADE_SECONDS) {
+            agent.phase = "departed";
+            agent.hidden = true;
+            occupied.delete(tileKey(agent));
+            continue;
+          }
+        }
+        break;
+      }
       default:
         break;
     }
 
     if (isPerforming(agent.phase)) continue; // 站著演出,不走路
+    if (agent.fadeT > 0) continue; // 淡出中:站著不動,淡完由上面的計時收尾
 
     const target = targetFor(agent);
     if (!target) {
-      // 座位被拆了之類的意外:原地待著,時間到再走(不穿牆、不瞬移)
+      // 座位被拆了 / 放棄入座之類的情況:原地待著,時間到再走(不穿牆、不瞬移)
       agent.moving = false;
+      agent.stallT = 0;
       continue;
     }
+    if (agent.yieldTile && agent.c === agent.yieldTile.c && agent.r === agent.yieldTile.r) {
+      // 讓路走完了 ⇒ 解除讓路狀態,下面重新規劃回原本目標的路。
+      agent.yieldTile = null;
+      agent.goal = null;
+      agent.path = [];
+      agent.moving = false;
+    }
     if (reached(agent, target)) {
+      agent.stallT = 0;
       if (agent.phase === "leaving") {
         agent.phase = "departed";
         agent.hidden = true;
@@ -417,13 +519,21 @@ export function tickGuestAgents(
       continue;
     }
 
-    if (!sameTile(agent.goal, target)) {
+    agent.stallT += Math.max(0, dt); // 還沒到目標 ⇒ 停滯計時往前走(真的換格才歸零)
+
+    if (!agent.yieldTile && !sameTile(agent.goal, target)) {
       agent.goal = { ...target };
-      // 卡太久 ⇒ 這次改用「把站著不動的人也當障礙」的地圖重算,真的繞過去。
-      const grid = agent.stuckT > 0 ? detourGrid(blocked, agents, agent, target) : blocked;
-      const path = grid[target.r]?.[target.c] === false
+      // 卡太久 ⇒ 這次改用「把不動的人與卡住的人都當障礙」的地圖重算,真的繞過去。
+      const detour = agent.stuckT > 0 || agent.stallT >= GUEST_STALL_SECONDS;
+      const grid = detour ? detourGrid(blocked, agents, agent, target) : blocked;
+      let path = grid[target.r]?.[target.c] === false
         ? findPath({ c: agent.c, r: agent.r }, target, grid)
         : null;
+      // 繞不過去(整條路都被人塞住)就退回原本的地圖:寧可再等一次讓路,也不要直接放棄——
+      // 「找不到路 ⇒ 站著不動」在人多時會退化成另一種卡死。
+      if (!path && detour && blocked[target.r]?.[target.c] === false) {
+        path = findPath({ c: agent.c, r: agent.r }, target, blocked);
+      }
       agent.path = path && path.length > 1 ? path.slice(1) : [];
       agent.moving = agent.path.length > 0;
       agent.stuckT = 0;
@@ -434,12 +544,30 @@ export function tickGuestAgents(
     if (!agent.moving || !next) continue;
     const nextKey = tileKey(next);
     const occupant = occupied.get(nextKey);
-    if ((occupant && occupant !== agent) || reservedSteps.has(nextKey) || blockedCells.has(nextKey)) {
+    const byAgent = !!occupant && occupant !== agent;
+    if (byAgent || reservedSteps.has(nextKey) || blockedCells.has(nextKey)) {
       agent.stuckT += Math.max(0, dt);
+      // 🔴 第 1 層:正面對撞(雙方的下一步互為對方腳下那格)⇒ **決定性**地由 id 字典序
+      // 大的那位側身讓路。零 `Math.random()`:同一批輸入永遠是同一個人先退,
+      // 不會出現「有時候會卡有時候不會」這種最難查的症狀。
+      if (byAgent && agent.stuckT >= GUEST_YIELD_SECONDS && facesOff(agent, occupant!)
+        && agent.guest.id.localeCompare(occupant!.guest.id) > 0) {
+        const side = sidestepFor(agent, occupant!, blocked, occupied, reservedSteps, blockedCells);
+        if (side) {
+          agent.yieldTile = side;
+          agent.path = [side];
+          agent.goal = null;
+          agent.moving = true;
+          agent.stuckT = 0;
+          agent.stallT = 0;
+          continue;
+        }
+      }
       if (agent.stuckT >= REPATH_AFTER_BLOCKED_SECONDS) {
         agent.goal = null; // 下一幀重算(帶繞路),不要抱著走不通的舊路徑等下去
         agent.path = [];
         agent.moving = false;
+        agent.yieldTile = null;
       }
       continue;
     }
@@ -460,8 +588,10 @@ export function tickGuestAgents(
       agent.py = ny;
       agent.path.shift();
       occupied.set(nextKey, agent);
+      agent.stallT = 0; // 真的換格了 ⇒ 他在通過,不是在打轉
       agent.moving = agent.path.length > 0;
-      if (!agent.moving) {
+      // 讓路的那一步走完不算「抵達目標」——不然側身一格就會被當成走到吧台/走到門口。
+      if (!agent.moving && !agent.yieldTile) {
         if (agent.phase === "leaving") {
           agent.phase = "departed";
           agent.hidden = true;
@@ -482,7 +612,18 @@ export function tickGuestAgents(
   }
 }
 
-/** 把「站著不動的其他顧客」也標成障礙的暫時地圖(目標格本身永遠保持可走)。 */
+/**
+ * 把「擋著路的其他顧客」標成障礙的暫時地圖(目標格本身永遠保持可走)。
+ *
+ * 🔴 **地雷(2026-08-26 修)**:這裡以前寫的是 `… || other.moving` —— 把**所有正在移動的人**
+ * 排除在障礙之外。而卡死中的顧客 `moving` 永遠是 `true`(他抱著一條走不通的路徑)
+ * ⇒ **互相卡住的兩個人在彼此的繞路地圖上是隱形的**,每 0.8 秒重算一次都得到同一條
+ * 穿過對方的路,兩人原地互指到天荒地老(實測連跑 3000 秒不解開)。
+ *
+ * 但也**不可以把所有 `moving` 的人都當障礙**:那樣連正常通過的人都是障礙,
+ * `findPath` 會大量回 null,為了解 2-cycle 反而讓正常通行也塞住。
+ * 分界線是 `stallT`(幾秒沒真的換過格):正在通過的人隱形,原地打轉的人現形。
+ */
 function detourGrid(
   blocked: boolean[][],
   agents: readonly GuestAgent[],
@@ -491,11 +632,48 @@ function detourGrid(
 ): boolean[][] {
   const grid = blocked.map((row) => [...row]);
   for (const other of agents) {
-    if (other === self || other.hidden || other.phase === "departed" || other.moving) continue;
+    if (other === self || other.hidden || other.phase === "departed") continue;
+    if (other.moving && other.stallT < GUEST_STALL_SECONDS) continue; // 正常通過中 ⇒ 隱形
     if (other.c === target.c && other.r === target.r) continue;
     if (grid[other.r]) grid[other.r][other.c] = true;
   }
   return grid;
+}
+
+/** 正面對撞:對方的下一步正好是我腳下這格(2-cycle 的判定)。 */
+function facesOff(self: GuestAgent, other: GuestAgent): boolean {
+  const step = other.path[0];
+  return !!step && step.c === self.c && step.r === self.r;
+}
+
+/**
+ * 側身讓路要走的那一格;沒有可退的空間回 `null`(交給繞路與第 2 層兜底)。
+ *
+ * 掃描序固定(下、上、右、左,同 `findPath` 的 `dirs`)⇒ 決定性。優先挑**不在對方剩餘
+ * 路徑上**的格,否則讓完路馬上又擋在同一個人前面。
+ */
+function sidestepFor(
+  self: GuestAgent,
+  other: GuestAgent,
+  blocked: boolean[][],
+  occupied: ReadonlyMap<string, GuestAgent>,
+  reserved: ReadonlySet<string>,
+  blockedCells: ReadonlySet<string>,
+): Tile | null {
+  const onOtherPath = new Set(other.path.map(tileKey));
+  const free = (tile: Tile) => {
+    const key = tileKey(tile);
+    if (blocked[tile.r]?.[tile.c] !== false) return false;
+    if (occupied.has(key) || reserved.has(key) || blockedCells.has(key)) return false;
+    return !(tile.c === other.c && tile.r === other.r);
+  };
+  const around: Tile[] = [
+    { c: self.c, r: self.r + 1 }, { c: self.c, r: self.r - 1 },
+    { c: self.c + 1, r: self.r }, { c: self.c - 1, r: self.r },
+  ];
+  return around.find((tile) => free(tile) && !onOtherPath.has(tileKey(tile)))
+    ?? around.find((tile) => free(tile))
+    ?? null;
 }
 
 /**

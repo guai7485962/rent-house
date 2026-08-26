@@ -87,6 +87,45 @@ for (let h = 0; h < HOURS; h++) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 🔴 咖啡廳顧客走位(2026-08-26 補上)
+//
+// 這一段以前**完全不存在**:本檔只 import 租客層的 `createAgents/tickAgents`,
+// `floor/guestAgents.ts` 一行都沒跑到 —— 顧客互相卡死(gridlock)因此活到玩家回報。
+// 現在整批進場的情境(觸發門檻以上)跟租客走位共用同一份 issues 與「無異常」判定。
+// ---------------------------------------------------------------------------
+const { placeCafeStarterSet, cafeSeatSpots, cafeQueueTiles } = await import("../src/sim/placements");
+const { runCafeCrowd, describeCafeCrowd, CAFE_CROWD_CASES } = await import("./cafe-crowd-sim");
+const { currentBlocked } = await import("../src/floor/pathfind");
+
+placeCafeStarterSet(); // 開張贈品 = 預設店面;既有存檔的擺法另由第 1~3 層兜底
+console.log(`\n=== 咖啡廳顧客走位(整批進場)===`);
+for (const scenario of CAFE_CROWD_CASES) {
+  const result = runCafeCrowd(scenario);
+  console.log(`  ${describeCafeCrowd(result)}`);
+  for (const agent of result.stuck) {
+    issues.push({
+      when: "咖啡廳", tenant: agent.guest.name,
+      msg: `顧客未走到目標(${result.label},卡在 ${agent.c},${agent.r} phase=${agent.phase})`,
+    });
+  }
+}
+
+// 席位幾何:死巷席位與「人龍壓在座位出入口上」是互卡的兩個結構性加重因子。
+const walkableAt = (c: number, r: number) => currentBlocked()[r]?.[c] === false;
+const queueKeys = new Set(cafeQueueTiles(14).map((tile) => `${tile.c},${tile.r}`));
+for (const spot of cafeSeatSpots()) {
+  const neighbours = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+    .filter(([dc, dr]) => walkableAt(spot.stand.c + dc, spot.stand.r + dr)).length;
+  if (neighbours < 2) {
+    issues.push({ when: "咖啡廳", tenant: `席位(${spot.seat.c},${spot.seat.r})`, msg: `到達格是一格寬死巷(可走鄰格 ${neighbours})` });
+  }
+  if (queueKeys.has(`${spot.stand.c},${spot.stand.r}`)) {
+    issues.push({ when: "咖啡廳", tenant: `席位(${spot.seat.c},${spot.seat.r})`, msg: `到達格被人龍佔用(${spot.stand.c},${spot.stand.r})` });
+  }
+}
+console.log(`  席位 ${cafeSeatSpots().length} 個、人龍 ${queueKeys.size} 格:出入口與死巷檢查完成`);
+
 // --- 健全性報告 ---
 console.log(`\n=== 檢查結果 ===`);
 console.log(`總移動次數:${totalMoves}`);
@@ -94,7 +133,7 @@ for (const rt of Object.values(state.runtimes)) {
   console.log(`  ${rt.tenant.name}:未讀 ${unreadCount(rt.tenant.id)} / log ${rt.log.length} 筆`);
 }
 if (issues.length === 0) {
-  console.log("✅ 無異常:每個非外出時段的租客都走到了目標家具。");
+  console.log("✅ 無異常:每個非外出時段的租客都走到了目標家具,咖啡廳顧客也全員抵達。");
 } else {
   console.log(`⚠ 發現 ${issues.length} 筆異常:`);
   for (const i of issues.slice(0, 20)) console.log(`  [${i.when}] ${i.tenant}:${i.msg}`);

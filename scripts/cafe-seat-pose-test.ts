@@ -21,7 +21,7 @@ const { CATALOG, getDef } = await import("../src/furniture/catalog");
 const { nextRotation } = await import("../src/furniture/rotation");
 const {
   getPlacements, placementFootprint, placementRotation, placementInteract,
-  removePlacementAt, placeCafeStarterSet, furnitureAt,
+  removePlacementAt, placeCafeStarterSet, furnitureAt, CAFE_STARTER_PLACEMENTS,
 } = await import("../src/sim/placements");
 const { setFurniturePose, applyHour } = await import("../src/sim/tick");
 const { CAFE_FIRST_DAY, cafeSitHourForDay, routineSlot, resolveTarget } = await import("../src/sim/routine");
@@ -346,19 +346,22 @@ const render = (agent: any) => {
 const cupFills = (fills: any[], px: number, py: number) =>
   fills.filter((f) => f.color === CUP_PORCELAIN && f.w === 3 && f.h === 3 && f.x === px + 9 && f.y === py + 9);
 
-// 坐在贈品組的正面椅上(1,43)
-const seatedFills = render(fakeAgent(1, 43, "at_cafe", "sit"));
+// 坐在贈品組的正面椅上(座標一律查 CAFE_STARTER_PLACEMENTS,擺法改了也不會鬧鬼)
+const starterChair = CAFE_STARTER_PLACEMENTS.find((p) => p.defId === "cafe_chair_front")!;
+const CH_C = starterChair.c;
+const CH_R = starterChair.r;
+const seatedFills = render(fakeAgent(CH_C, CH_R, "at_cafe", "sit"));
 check("🔴 renderer:at_cafe 坐姿畫了咖啡杯(白瓷杯身像素落在腹前)",
-  cupFills(seatedFills, 1 * TILE, 43 * TILE).length === 1);
+  cupFills(seatedFills, CH_C * TILE, CH_R * TILE).length === 1);
 check("renderer:咖啡杯有咖啡液面(不是白色方塊)",
   seatedFills.some((f) => f.color === CUP_COFFEE && f.w === 3 && f.h === 1));
-const standingFills = render(fakeAgent(1, 43, "at_cafe", null));
+const standingFills = render(fakeAgent(CH_C, CH_R, "at_cafe", null));
 check("renderer:at_cafe 站姿(咖啡廳沒座位時)也拿著杯子",
   standingFills.some((f) => f.color === CUP_PORCELAIN && f.w === 3 && f.h === 3));
-const idleFills = render(fakeAgent(1, 43, "idle", "sit"));
+const idleFills = render(fakeAgent(CH_C, CH_R, "idle", "sit"));
 check("🔴 renderer:非 at_cafe 的坐姿完全不畫杯子",
   idleFills.every((f) => f.color !== CUP_PORCELAIN && f.color !== CUP_COFFEE));
-const walkingFills = render({ ...fakeAgent(1, 43, "at_cafe", null), moving: true, path: [{ c: 1, r: 42 }] });
+const walkingFills = render({ ...fakeAgent(CH_C, CH_R, "at_cafe", null), moving: true, path: [{ c: CH_C, r: CH_R - 1 }] });
 check("renderer:還在走路(下樓途中)不畫杯子",
   walkingFills.every((f) => f.color !== CUP_PORCELAIN));
 
@@ -368,9 +371,9 @@ const emptyFloorFills = render(fakeAgent(6, 43, "at_cafe", "sit"));
 check("renderer:空地板上的 at_cafe 坐姿補了一張咖啡廳椅",
   emptyFloorFills.some((f) => f.color === CAFE_CHAIR_BACK && f.x === 6 * TILE + 2 && f.y === 43 * TILE + 2),
   `furnitureAt=${JSON.stringify(furnitureAt(6, 43))}`);
-const onChairFills = render(fakeAgent(1, 43, "at_cafe", "sit"));
+const onChairFills = render(fakeAgent(CH_C, CH_R, "at_cafe", "sit"));
 check("renderer:已經坐在真椅子上時不重複補椅子",
-  !onChairFills.some((f) => f.color === CAFE_CHAIR_BACK && f.x === 1 * TILE + 2 && f.y === 43 * TILE + 2));
+  !onChairFills.some((f) => f.color === CAFE_CHAIR_BACK && f.x === CH_C * TILE + 2 && f.y === CH_R * TILE + 2));
 const idleEmptyFloorFills = render(fakeAgent(6, 43, "idle", "sit"));
 check("renderer:非 at_cafe 的坐姿不會憑空長出椅子(三樓行為不變)",
   !idleEmptyFloorFills.some((f) => f.color === CAFE_CHAIR_BACK));

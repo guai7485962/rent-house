@@ -275,7 +275,9 @@ check("未開張時客流公式的氛圍輸入恆為 0 ⇒ 乘數 1.0",
       (p: any) => p.defId === "cafe_cat_tower" && p.c === 11 && p.r === 44));
 
   // 佔住某個贈品座標 → 該件跳過,其餘照補(逐格重疊檢查生效)
-  const blocking = [{ defId: "cafe_table", room: "cafe_floor", c: 2, r: 43, rotation: 0 }];
+  // 佔位座標一律查贈品清單本身:擺法重排(2026-08-26)過一次,寫死座標會讓這條悄悄失效。
+  const starterTable = CAFE_STARTER_PLACEMENTS.find((p) => p.defId === "cafe_table")!;
+  const blocking = [{ defId: "cafe_table", room: "cafe_floor", c: starterTable.c, r: starterTable.r, rotation: 0 }];
   const blocked = migrateSave({ v: 6, cafe: { open: true }, placements: blocking });
   check("玩家佔住贈品座標 → 只跳過該件,不覆蓋也不整組放棄",
     blocked != null

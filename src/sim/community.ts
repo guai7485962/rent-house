@@ -722,7 +722,16 @@ export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
   {
     // 平日打烊後:自己人留在店裡收尾兼閒聊(吧台前)
     id: "cafe_afterhours",
-    need: 3,
+    // need 從 3 降到 2:種子局只有兩位租客,need=3 讓這兩件事件**在種子局永遠不可能觸發**
+    // (`rollCafeGathering()` 的 `present.length >= e.need` 直接濾掉)⇒ 玩家從沒看過。
+    // 週末場也一起降,否則週末會兩邊都失格(平日場被 `when` 擋、週末場被 `need` 擋),
+    // 白白少掉一週 2/7 的機會。`community.ts` 的 `parts.length < ev.need` 讀的是 `ev.need`,
+    // 會自動跟著走,不必另外改。
+    // ⚠️ 已知風險(本批不修,見 docs/待辦.md):`scheduledCommunityPass()` 會 filter 掉
+    //    `pendingEvent` 的人。need=2 時,兩人中任一人在演出當下被掛上待決事件,整場**靜默取消**,
+    //    而冷卻早在 `scheduleCommunityEvent()` 就蓋章了 ⇒ 白燒 3 個遊戲日冷卻。
+    //    修法要動到既有 lounge/rooftop 事件的冷卻語意,超出本批範圍。
+    need: 2,
     cooldownDays: 3,
     when: () => !isWeekend(state.gameMs),
     scene: { hour: CAFE_GATHER_HOUR, title: "打烊後的咖啡廳", venue: "cafe", layout: "table", fx: "chat" },
@@ -738,8 +747,9 @@ export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
   },
   {
     // 週末打烊後:整層樓下樓包場(座位區中央)
+    // need 2:理由與取消風險同上面的 `cafe_afterhours`。
     id: "cafe_weekend_night",
-    need: 3,
+    need: 2,
     cooldownDays: 3,
     when: () => isWeekend(state.gameMs),
     scene: { hour: CAFE_GATHER_HOUR, title: "週末包場的自家咖啡廳", venue: "cafe", layout: "cluster", fx: "hearts" },

@@ -17,8 +17,10 @@ const { TENANT_VISUAL_STATES } = await import("../src/types");
 const { OBSERVATION_LINES } = await import("../src/content/observationLines");
 const routinesJson = (await import("../data/routines.json", { with: { type: "json" } })).default as any;
 const {
-  CAFE_FIRST_DAY, CAFE_SIT_GAP_DAYS, cafeSitHourForDay, routineSlot, resolveTarget,
+  CAFE_FIRST_DAY, CAFE_SIT_GAP_DAYS, CAFE_SIT_WINDOW_DAYS,
+  cafeSitHourForDay, laundryHourForDay, routineSlot, resolveTarget,
 } = await import("../src/sim/routine");
+const { placeCafeStarterSet, getPlacements } = await import("../src/sim/placements");
 const { applyHour } = await import("../src/sim/tick");
 const { buildGrid } = await import("../src/floor/map");
 const { state, roomOfTenant } = await import("../src/store");
@@ -86,7 +88,7 @@ for (let day = CAFE_FIRST_DAY; day < CAFE_FIRST_DAY + 30; day++) {
     if (routineSlot(id, hour).state === "at_cafe") closedHits++;
   }
 }
-check("閘門一:咖啡廳未開張時,第 14～43 遊戲日一律不觸發", closedHits === 0, `hits=${closedHits}`);
+check("閘門一:咖啡廳未開張時,CAFE_FIRST_DAY 起算 30 個遊戲日一律不觸發", closedHits === 0, `hits=${closedHits}`);
 
 // ---------------------------------------------------------------------------
 // 4) 閘門二之後 + 已開張 → 真的會觸發
@@ -104,12 +106,71 @@ check("每位租客在 30 個遊戲日內都至少下樓一次", new Set(hits.ma
 check("每人每個遊戲日最多只有一個 at_cafe 時段",
   new Set(hits.map((h) => `${h.id}|${h.day}`)).size === hits.length);
 check("觸發時段落在營業時間內(10～19 點)", hits.every((h) => h.hour >= 10 && h.hour <= 19));
-check("下樓頻率符合 CAFE_SIT_GAP_DAYS(每人相鄰兩次至少相隔 5 個遊戲日)", ids.every((id) => {
-  const days = hits.filter((h) => h.id === id).map((h) => h.day).sort((a, b) => a - b);
-  return days.every((d, i) => i === 0 || d - days[i - 1] >= CAFE_SIT_GAP_DAYS);
+/** 某位租客在掃描區間內的下樓日,切成「連續日」的段落 */
+const runsOf = (id: string): number[][] => {
+  const days = [...new Set(hits.filter((h) => h.id === id).map((h) => h.day))].sort((a, b) => a - b);
+  const runs: number[][] = [];
+  for (const d of days) {
+    const last = runs[runs.length - 1];
+    if (last && d === last[last.length - 1] + 1) last.push(d);
+    else runs.push([d]);
+  }
+  return runs;
+};
+// 舊斷言是「相鄰兩次至少相隔 GAP 天」,`CAFE_SIT_WINDOW_DAYS >= 2` 後必然為紅(週期內會連續下樓)。
+// 改驗真正的週期不變式:每 GAP 天一段、每段恰好連續 WINDOW 天。頭尾兩段可能被掃描區間截斷,只驗中間。
+check(`下樓節奏符合 GAP=${CAFE_SIT_GAP_DAYS}/WINDOW=${CAFE_SIT_WINDOW_DAYS}(每 GAP 天一段、每段連續 WINDOW 天)`,
+  ids.every((id) => {
+    const inner = runsOf(id).slice(1, -1);
+    if (inner.length < 2) return false;
+    if (!inner.every((r) => r.length === CAFE_SIT_WINDOW_DAYS)) return false;
+    return inner.every((r, i) => i === 0 || r[0] - inner[i - 1][0] === CAFE_SIT_GAP_DAYS);
+  }), ids.map((id) => `${id}:${JSON.stringify(runsOf(id))}`).join(" "));
+// 舊斷言鎖在 CAFE_FIRST_DAY 當天,`WINDOW > 1` 下同一天全樓下樓本來就允許 ⇒ 語意變脆。
+// 改成更穩的相位陳述:掃描區間內至少有一天不是全樓都下樓。
+check("相位錯開:不是每一天全樓都下樓", (() => {
+  for (let day = CAFE_FIRST_DAY; day < CAFE_FIRST_DAY + 30; day++) {
+    if (new Set(hits.filter((h) => h.day === day).map((h) => h.id)).size < ids.length) return true;
+  }
+  return false;
+})());
+
+// ---------------------------------------------------------------------------
+// 4b) 🔴 同框釘子(本批核心產出):兩位租客真的會同日同小時一起在咖啡廳
+// ---------------------------------------------------------------------------
+// 為什麼需要釘子:閘門曾是 `(day + hash) % GAP === 0`,兩人同一天下樓 ⟺ `GAP | (hash 差)`,
+// 而種子局兩人的雜湊差 = 394,033,487 = 73 × 5,397,719(兩者皆質數)⇒ 任何合理 GAP 都是 0%,**永遠**。
+// 再加上選時段曾是 `candidates[hash % len]`(把陳釘在 13:00、林釘在 17:00)⇒ 連同小時都不可能。
+// 這兩件事**缺一不可**:WINDOW 調回 1、或時段改回 `hash % len`,同框率都立刻歸零。
+check("🔴 CAFE_SIT_WINDOW_DAYS >= 2(=1 時與舊式 `% GAP === 0` 逐位元等價 ⇒ 同框率恆為 0)",
+  CAFE_SIT_WINDOW_DAYS >= 2, `WINDOW=${CAFE_SIT_WINDOW_DAYS}`);
+const coPresentDays: number[] = [];
+for (let day = CAFE_FIRST_DAY; day < CAFE_FIRST_DAY + 30; day++) {
+  const byHour = new Map<number, Set<string>>();
+  for (const h of hits.filter((x) => x.day === day)) {
+    if (!byHour.has(h.hour)) byHour.set(h.hour, new Set());
+    byHour.get(h.hour)!.add(h.id);
+  }
+  if ([...byHour.values()].some((s) => s.size >= 2)) coPresentDays.push(day);
+}
+check("🔴 同框:30 個遊戲日內至少有一天,兩位以上租客同日同小時一起在咖啡廳",
+  coPresentDays.length > 0, `同框日=${JSON.stringify(coPresentDays)}`);
+
+// ---------------------------------------------------------------------------
+// 4c) 洗衣(4 日週期)× 下樓週期的相位耦合
+// ---------------------------------------------------------------------------
+check("下樓時段一定讓開當天的洗衣時段",
+  hits.every((h) => laundryHourForDay(h.id, h.day) !== h.hour));
+// GAP 與洗衣同為 4 日週期 ⇒ 相位一旦對齊,某位租客可能**每一次**下樓都被洗衣擠開、
+// 永遠退到第二偏好。種子局實測無影響(陳的洗衣在 21:00,不在 10～19 內),此釘子防未來調參。
+check("相位耦合:沒有租客的每一次下樓都撞上營業時段內的洗衣", ids.every((id) => {
+  const days = [...new Set(hits.filter((h) => h.id === id).map((h) => h.day))];
+  const clash = days.filter((d) => {
+    const l = laundryHourForDay(id, d);
+    return l !== null && l >= 10 && l <= 19;
+  });
+  return clash.length < days.length;
 }));
-check("相位錯開:CAFE_FIRST_DAY 當天不會全樓一起下樓",
-  hits.filter((h) => h.day === CAFE_FIRST_DAY).length < ids.length);
 
 // ---------------------------------------------------------------------------
 // 5) 決定性 + 零 RNG
@@ -178,6 +239,33 @@ applyHour(vrt, victim.hour, false);
 check("既有行為不變:壓力 ≥95 的崩潰偏離仍然覆蓋咖啡廳時段",
   vrt.tenant.visualState === "crying", vrt.tenant.visualState);
 vrt.tenant.stats.stress = 40;
+
+// ---------------------------------------------------------------------------
+// 9) 座位避讓:租客不會固定跟顧客擠同一張椅子
+// ---------------------------------------------------------------------------
+// 新局的一樓沒有任何座位家具 ⇒ `cafeSeatTarget()` 走「大廳地板格 + 虛擬 placement」那條
+// (顧客也全外帶,不可能撞格)。先擺上開店起始家具,才驗得到真正的席位分配。
+// ⚠️ 本段會改動全域 placements,務必留在檔案最後。
+placeCafeStarterSet();
+const cafeSeats = getPlacements().filter((p) => p.room.startsWith("cafe")
+  && ["cafe_chair_front", "cafe_chair_side", "cafe_table"].includes(p.defId));
+check("前置:開店起始家具擺出了 2 張以上的一樓座位", cafeSeats.length >= 2, `seats=${cafeSeats.length}`);
+state.cafe.guests.length = 0;
+const before = resolveTarget("cafe", roomOfTenant(ids[0]))!;
+check("前置:有座位家具時,租客坐的是真的座位家具", cafeSeats.some((p) => p.c === before.placement.c && p.r === before.placement.r),
+  JSON.stringify(before.placement));
+// 塞一位假顧客坐在租客本來要坐的那格
+state.cafe.guests.push({ id: "test_guest", seatTile: { c: before.placement.c, r: before.placement.r } } as any);
+const after = resolveTarget("cafe", roomOfTenant(ids[0]))!;
+check("座位避讓:顧客已佔的席位,租客會改坐別張(不再決定性撞同一格)",
+  after.placement.c !== before.placement.c || after.placement.r !== before.placement.r,
+  `before=${before.placement.c},${before.placement.r} after=${after.placement.c},${after.placement.r}`);
+// 全客滿時退回原行為(疊著坐總比找不到目標格、被吞成 idle 好)
+state.cafe.guests.length = 0;
+for (const p of cafeSeats) state.cafe.guests.push({ id: `g_${p.c}_${p.r}`, seatTile: { c: p.c, r: p.r } } as any);
+check("座位全客滿時退回原行為(仍回得到一個席位,不會回 null)",
+  !!resolveTarget("cafe", roomOfTenant(ids[0])));
+state.cafe.guests.length = 0;
 
 console.log(`\n結果:${pass} 通過 / ${fail} 失敗`);
 if (fail > 0) process.exit(1);

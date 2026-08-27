@@ -263,12 +263,24 @@ check("🔴 整合:租客真的坐下了(不再是站姿)", vrt.activityPose ===
 check("整合:坐姿落在一樓咖啡廳",
   !!vrt.activityTile && String(grid[vrt.activityTile.r]?.[vrt.activityTile.c]).startsWith("cafe"),
   JSON.stringify(vrt.activityTile));
-check("整合:贈品組的第一個座位是小圓桌 ⇒ 坐在桌前(surface=chair)",
-  vrt.activitySurface === "chair", String(vrt.activitySurface));
-const seatDefUsed = resolveTarget("cafe" as any, roomOfTenant(victim!.id))!.placement.defId;
-check("整合:走位挑到的確實是標了 seat 的家具", seatIds.has(seatDefUsed), seatDefUsed);
+const seatUsed = resolveTarget("cafe" as any, roomOfTenant(victim!.id))!.placement;
+check("整合:走位挑到的確實是標了 seat 的家具", seatIds.has(seatUsed.defId), seatUsed.defId);
+// 2026-08-27:租客改成「避開顧客已佔的席位、再依 roomId 雜湊散開坐」,不再固定取贈品組第一件
+// (原斷言寫死「第一個座位是小圓桌 ⇒ surface=chair」,散開後就假不成立了)。
+// 改成由**實際挑中的家具**推期望值,下面兩段再各自把兩個分支釘死。
+const expectSurface = seatUsed.defId === "cafe_table" ? "chair" : "furniture";
+check(`整合:坐姿表面與挑到的家具一致(${seatUsed.defId} ⇒ surface=${expectSurface})`,
+  vrt.activitySurface === expectSurface, String(vrt.activitySurface));
 
-// 只留椅子、拆掉所有小圓桌 → 改成跨坐到椅子本格
+// 只留小圓桌、拆掉所有咖啡廳椅 → 一定坐在桌前(補回上面不再固定的 surface=chair 分支)
+for (const p of getPlacements().filter((x) => x.defId.startsWith("cafe_chair"))) removePlacementAt(p.c, p.r);
+applyHour(vrt, victim!.hour, false);
+check("只剩小圓桌時:坐在桌前(surface=chair)",
+  vrt.activityPose === "sit" && vrt.activitySurface === "chair",
+  `${vrt.activityPose}/${vrt.activitySurface}`);
+
+// 把椅子擺回來(小圓桌還在 ⇒ 贈品組只會補上缺的椅子),再只留椅子、拆掉所有小圓桌
+placeCafeStarterSet();
 for (const p of getPlacements().filter((x) => x.defId === "cafe_table")) removePlacementAt(p.c, p.r);
 applyHour(vrt, victim!.hour, false);
 check("拆掉所有小圓桌後:改成跨坐在咖啡廳椅本格(surface=furniture)",

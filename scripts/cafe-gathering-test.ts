@@ -36,7 +36,7 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`❌ ${name} ${detail}`); }
 };
 
-// 湊滿 4 位在場租客(need 最高的咖啡廳事件是 3 人)
+// 湊滿 4 位在場租客(咖啡廳事件的 need 已降到 2,週末場最多選 4 人入鏡,湊滿才驗得到 select 上限)
 if (!state.occupancy.r303) moveIn("r303", generateApplicants("r303")[0]);
 if (!state.occupancy.r304) moveIn("r304", generateApplicants("r304")[0]);
 for (const rt of Object.values(state.runtimes)) {

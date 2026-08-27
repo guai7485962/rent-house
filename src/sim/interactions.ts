@@ -1014,8 +1014,13 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
   const roomId = roomOfTenant(aId) ?? roomOfTenant(bId);
   if (!hasStandingStage(def, roomId)) return false;
   if (!gateOk(def.gate, A, B)) return false; // 劇情前提 AI 也不可越權(如 both_adult)
+  // 🔴 `at_cafe` 的人在**一樓**,不算「這間房裡的第三人」——
+  //    不排除的話會錯誤擋掉同居情侶的 privacy 互動(而且他還是掛在自己房間的 roomOfTenant 上)。
+  //    這是傳送 bug 三條路徑的第二條(另兩條:本檔 `interactionsPass()` 的分組、
+  //    `tick.ts` 的 VISIT_UNAVAILABLE_STATES)。
   const thirdPresent = Object.values(state.runtimes).some(
-    (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
+    (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && rt.tenant.visualState !== "at_cafe"
+      && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );
   const furniture = furnitureSetOf(def.location === "lounge" ? "lounge" : roomId);
   if (def.adult) {
@@ -1047,6 +1052,20 @@ export function interactionsPass(): Set<string> {
   const loungeGroup: TenantRuntime[] = [];
   for (const rt of Object.values(state.runtimes)) {
     if (rt.tenant.visualState === "away" || rt.pendingEvent) continue;
+    // 🔴 `at_cafe`:人在**一樓**,不能併進「自己套房」那一組。
+    //    否則他會被挑中演房內互動,而 `performInteraction()` → `startPairSession()` 登記的
+    //    session tile 在 `floor/agents.ts` 的 `group?.tile ?? ses?.tile ?? rt?.activityTile`
+    //    裡**排在 activityTile 前面** ⇒ sprite 被從咖啡廳拉回樓上(傳送 bug 的第三條路徑;
+    //    另外兩條:本檔 `forceInteraction()` 的 thirdPresent、`tick.ts` 的 VISIT_UNAVAILABLE_STATES)。
+    //
+    // 本批**刻意不做「咖啡廳第三分組」**:`runGroup()` 的
+    // `INTERACTIONS.filter(def => def.location === location)` 在 location === "cafe" 時
+    // 回傳**空陣列** ⇒ 沒有一整套咖啡廳互動內容的話,完整修法的可見效果是零(蓋一條沒有車的路)。
+    // 而「打烊後聚會」(`community.ts` 的 cafe_afterhours / cafe_weekend_night)本來就是
+    // 完整的咖啡廳雙人演出(走位/文案/好感 +2/心情 +4/壓力 −5)。
+    // 👉 指路牌:同框率已達 25%(種子局)～50%(4 人局),**補一套 location === "cafe" 的文案池
+    //    即可啟用第三分組**,把這行 continue 換成 cafeGroup.push(rt)。
+    if (rt.tenant.visualState === "at_cafe") continue;
     if (rt.inLounge) {
       loungeGroup.push(rt);
       continue;

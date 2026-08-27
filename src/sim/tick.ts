@@ -139,6 +139,12 @@ const LEISURE_STATES = new Set<TenantVisualState>(["idle", "reading", "watching_
 const VISIT_UNAVAILABLE_STATES = new Set<TenantVisualState>([
   "away", "sleeping_on_bed", "sleeping_on_couch", "showering", "using_toilet",
   "washing_at_sink", "taking_bath", "waiting_for_bathroom", "crying",
+  // 🔴 `at_cafe`:人在**一樓**,不在自己房裡,不能被選成串門子的主人。
+  //    少了這條,`roomVisitPass()` 下面會把他的 `visualState` 改回 idle、`targetTile`
+  //    設回房間 ⇒ sprite 從咖啡廳**憑空瞬移到樓上**,而那一小時的日誌還寫著「在一樓咖啡廳」。
+  //    這是同一個傳送 bug 的三條路徑之一,另外兩條在 `interactions.ts`
+  //    (`interactionsPass()` 的分組、`forceInteraction()` 的 thirdPresent)——只補一條仍會傳送。
+  "at_cafe",
 ]);
 const ACTIVE_BATHROOM_STATES = new Set<TenantVisualState>(["showering", "using_toilet", "washing_at_sink", "taking_bath"]);
 /** 在 applyHour 原時序先擲骰，等全員作息確定後才實際配對。 */

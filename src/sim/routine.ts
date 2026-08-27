@@ -205,19 +205,45 @@ export function laundryHourForDay(tenantId: string, day: number): number | null 
  *    它同時也是 CAFE-22(`tick.cafeDailyPass()`)採用的零漂移論證 —— 開張要玩家花錢,
  *    無頭的 balance 快照局永遠不會開張。
  * 2. `CAFE_FIRST_DAY` 是 CAFE-20 規格明令的閘門,擋的是**另一件事**:
- *    快照窗只有 10 個遊戲日,第 14 天起才可能觸發 ⇒ 就算哪天有人讓快照局開張咖啡廳
+ *    快照窗只有 10 個遊戲日,第 11 天起才可能觸發 ⇒ 就算哪天有人讓快照局開張咖啡廳
  *    (例如日後給 balance-test 加場景、或存檔升級路徑預設 open),日數閘門仍然頂得住。
  *    本項是全案漂移風險最高的一項(唯一新增 visualState、會改 `rt.log` 的 visualState 欄位
  *    與每小時 statDeltas),值得雙保險。單獨任一道都足以零漂移,兩道是 AND。
  */
-export const CAFE_FIRST_DAY = 14;
+/**
+ * 🔴 **不得小於 11**。快照窗是第 0～9 遊戲日,11 是「仍嚴格大於快照窗」的最小值,
+ * 三個測試檔(`cafe-at-cafe-test.ts`／`cafe-seat-pose-test.ts`／`cafe-venue-effect-test.ts`)
+ * 都硬性斷言 `CAFE_FIRST_DAY > 10`。從 14 降到 11 是為了讓新局早三個遊戲日看得到人下樓。
+ */
+export const CAFE_FIRST_DAY = 11;
 
 /** 每位租客約每幾個遊戲日下樓坐一次(相位由 stableTenantHash 錯開) */
-export const CAFE_SIT_GAP_DAYS = 5;
+export const CAFE_SIT_GAP_DAYS = 4;
 
 /**
- * 候選時段(依偏好排序)。上下界對齊 `tick.ts` 的 `CAFE_OPEN_HOUR`(10)/
- * `CAFE_CLOSE_HOUR`(20)——刻意**複製常數而不 import**:`tick.ts` 已經 import 本檔,
+ * 每個週期內連續下樓幾天(`(day + hash) % GAP < WINDOW`)。
+ *
+ * 🔴 **`WINDOW >= 2` 是「兩位租客同框」的必要條件,不要調回 1。**
+ * `WINDOW === 1` 時本式與舊式 `(day + hash) % GAP === 0` **逐位元等價**:兩人同一天
+ * 下樓 ⟺ `GAP | (hash(A) − hash(B))`,而種子局兩人的雜湊差是
+ * `394,033,487 = 73 × 5,397,719`(兩者皆質數)⇒ 任何合理的 GAP 都整除不了
+ * ⇒ 同框率**恆為 0%,永遠**。把週期拉成「連續 WINDOW 天」才讓不同相位的人產生交集。
+ * (`cafe-at-cafe-test.ts` 有直接釘子:WINDOW >= 2 且種子局 30 日內至少同框一次。)
+ */
+export const CAFE_SIT_WINDOW_DAYS = 2;
+
+/**
+ * 候選時段,**依偏好排序,實際就取首項**(見 `cafeSitHourForDay()` 的 `candidates[0]`)。
+ *
+ * 🔴 這裡曾經是註解寫「依偏好排序」、程式卻做 `candidates[hash % len]` 的均勻挑,
+ * 結果是**每位租客被釘死在互不相同的固定小時**(種子局:陳 13:00、林 17:00)
+ * ⇒ 就算同一天下樓也永遠不同小時。改成取首項後,`CAFE_SIT_HOURS[0] = 14` 成為
+ * 大多數作息原型的共同可用時段,同框才可能發生。**不要改回 `hash % len`。**
+ * 變化度改由三個來源提供:各作息原型的可用時段不同(夜班型的首選會落在 18:00)、
+ * 洗衣時段排除、以及 `CAFE_SIT_WINDOW_DAYS` 造成的「連兩天」節奏。
+ *
+ * 上下界對齊 `tick.ts` 的 `CAFE_OPEN_HOUR`(10)/`CAFE_CLOSE_HOUR`(20)
+ * ——刻意**複製常數而不 import**:`tick.ts` 已經 import 本檔,
  * 反向 import 會讓兩個模組互相在求值期等待。真正的營業時段判斷仍在 tick.ts,
  * 這裡只是「不要挑到打烊時段」的保守子集。
  */
@@ -241,23 +267,28 @@ export function cafeSitHourForDay(tenantId: string, day: number): number | null 
   const table = ROUTINES[tenantId];
   if (!table || day < 0) return null;
   const hash = stableTenantHash(tenantId);
-  if ((day + hash) % CAFE_SIT_GAP_DAYS !== 0) return null;
+  // 週期內的**連續 WINDOW 天**都下樓(不是只有相位 0 那一天)。
+  // 🔴 WINDOW 調回 1 會退化成舊式 `% GAP === 0`,同框率立刻歸零 —— 見 CAFE_SIT_WINDOW_DAYS。
+  if ((day + hash) % CAFE_SIT_GAP_DAYS >= CAFE_SIT_WINDOW_DAYS) return null;
   // 洗衣時段優先(既有行為):同一小時撞上時讓開,否則 decideState 的洗衣覆寫會把
   // at_cafe 擠成 effectState,而 `EFFECT` 表沒有 at_cafe ⇒ 那一小時的數值效果會被抹掉。
+  // ⚠️ 洗衣是 4 日週期、本閘門也是 4 日週期 ⇒ 兩者相位一旦對齊就會**每次都**排除同一小時。
+  //    種子局實測無影響(陳的洗衣在 21:00,不在 10～19 內),`cafe-at-cafe-test.ts` 有釘子。
   const laundry = laundryHourForDay(tenantId, day);
   const candidates = CAFE_SIT_HOURS.filter((hour) => {
     if (hour === laundry) return false;
     const st = table[hour]?.state;
     return !!st && !CAFE_SIT_SKIP_STATES.has(st);
   });
-  return candidates.length ? candidates[hash % candidates.length] : null;
+  // 🔴 真的取首項(見 CAFE_SIT_HOURS 的註解)。不要改回 `candidates[hash % candidates.length]`。
+  return candidates.length ? candidates[0] : null;
 }
 
 /** 兩道閘門 + pendingEvent + 時段命中,全部成立才回 true */
 function cafeSitActive(tenantId: string, hour: number): boolean {
   if (!game.cafe?.open) return false;                   // 閘門一:咖啡廳沒開張
   const day = gameDayIndex();
-  if (day < CAFE_FIRST_DAY) return false;               // 閘門二:新局前 14 個遊戲日
+  if (day < CAFE_FIRST_DAY) return false;               // 閘門二:新局前 11 個遊戲日
   if (game.runtimes[tenantId]?.pendingEvent) return false;
   return cafeSitHourForDay(tenantId, day) === hour;
 }
@@ -276,9 +307,25 @@ const CAFE_ROOMS = new Set(["cafe_floor", "cafe_counter", "cafe_pet", "cafe_back
  * `at_cafe` 不是睡眠狀態 ⇒ 乘數恆為 1)。虛擬 placement 不進 `placements` 清單,
  * 不擋路、不算舒適度、不進存檔。
  */
-function cafeSeatTarget(): { tile: Tile; placement: Placement } | null {
-  const seat = getPlacements().find((p) => CAFE_ROOMS.has(p.room) && CAFE_SEAT_DEF_IDS.includes(p.defId));
-  if (seat) {
+function cafeSeatTarget(roomId: string | null): { tile: Tile; placement: Placement } | null {
+  const seats = getPlacements().filter((p) => CAFE_ROOMS.has(p.room) && CAFE_SEAT_DEF_IDS.includes(p.defId));
+  if (seats.length) {
+    // 避開顧客已佔的席位。原本兩邊都取「第一張」(這裡 `.find()`、顧客的 `tick.claimSeat()`
+    // 也從前往後掃)⇒ 撞格是**決定性的、每次都同一格**,玩家會當成 bug 回報。
+    // 顧客席位在模擬層就配好了(`state.cafe.guests[].seatTile`,tick.ts 的 `spawnGuest`),
+    // 讀它就能避開,不必跨層 import floor/guestAgents。零 RNG、決定性。
+    // ⚠️ 已知不完備(本批不修,見 docs/待辦.md):`applyHour` 迴圈先於 `cafeHourlyPass`,
+    //    所以「**新到的顧客**被分到租客已坐的那格」這個反方向仍可能發生。完整雙向修法要讓
+    //    `claimSeat()` 也跳過租客席位,但那會改變**內用席次容量語意**(席次少一張 ⇒ 更多外帶
+    //    ⇒ 動到營收平衡)。單向修法已消掉「固定同一格」這個最刺眼的情況。
+    const taken = new Set(
+      (game.cafe?.guests ?? [])
+        .filter((g) => g.seatTile)
+        .map((g) => `${g.seatTile!.c},${g.seatTile!.r}`),
+    );
+    const free = seats.filter((p) => !taken.has(`${p.c},${p.r}`));
+    const pool = free.length ? free : seats;           // 全客滿就退回原行為(疊著坐總比站著好)
+    const seat = pool[stableTenantHash(roomId ?? "cafe") % pool.length]; // 不同租客散開坐
     const tile = standingTile(seat);
     if (tile) return { tile, placement: seat };
   }
@@ -300,7 +347,7 @@ function cafeSeatTarget(): { tile: Tile; placement: Placement } | null {
  */
 export function resolveTarget(role: Role, roomId: string | null, state?: TenantVisualState): { tile: Tile; placement: Placement } | null {
   if (role === "out") return null;
-  if (role === "cafe") return cafeSeatTarget(); // CAFE-20:錨在一樓,不查自房家具
+  if (role === "cafe") return cafeSeatTarget(roomId); // CAFE-20:錨在一樓,不查自房家具(roomId 只用來把不同租客散到不同席位)
   const kinds = STATE_KINDS[state ?? "idle"] ?? ROLE_KINDS[role];
 
   // 咖啡廳室內可作為活動目的地，但不代表住宅舒適度的共用設施。

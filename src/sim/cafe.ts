@@ -1330,12 +1330,21 @@ export interface CafeBottleneck {
  * 判定順序刻意這樣排:
  * 1. `base < capacity` ⇒ `demand` —— 產能吃得下,現在缺的是客人。
  * 2. 席次腿比人力腿短 ⇒ `seats`。
- * 3. 人力腿短,且**有人領薪水卻站不上吧台**(`idleStaff > 0`)⇒ `stations`
+ * 3. 人力腿短,而且**吧台已經站滿**(`staffCount >= stations`)⇒ `stations`
  *    —— 玩家要買的是吧台不是人,這兩者的解法完全不同,分不清就會繼續花錯錢。
- * 4. 人力腿短且大家都站得上吧台 ⇒ `staff`。
+ * 4. 人力腿短且**吧台還有空位**(`staffCount < stations`)⇒ `staff` ——
+ *    只有這時候新雇的人才真的有位子站,「雇一位多 N 單」才是真話。
  * 5. 兩條腿一樣長 ⇒ `both`(只補一邊產能一單都不會動)。
  *
- * `seatCapacity === null`(caller 沒餵席次)時席次不可能是瓶頸,退回 3/4 判定 ——
+ * 🔴 第 3 條的條件**不可以**寫成 `idleStaff > 0`。`idleStaff = staffCount − activeStaff`
+ * 而 `activeStaff = min(staffCount, stations)` ⇒ 剛好站滿(`staffCount === stations`,
+ * 例如成熟期典型的 3 店員 / 3 服務位)時 `idleStaff` 是 **0**,判定會掉進 `staff`,
+ * 於是叫玩家去雇一位;但新人站不上吧台,產能一單不動,只是每天白付 `CAFE_STAFF_WAGE`。
+ * 要等玩家真的浪費過錢、`idleStaff` 變成 1 之後,遊戲才肯改口說「你缺的是吧台」——
+ * **用「已經浪費了」當判定條件,等於只在玩家犯錯之後才給正確建議。**
+ *
+ * `seatCapacity === null`(caller 沒餵席次)時席次不可能是瓶頸,退回 3/4 判定;
+ * 同理 `stations === null`(caller 沒餵吧台幾何)時吧台不可能是瓶頸,退回 `staff` ——
  * 慣例同 `cafeCapability()` 的「省略 = 不知道,不是 0」。
  */
 export function cafeBottleneck(input: { base: number; capability: CafeCapability }): CafeBottleneck {
@@ -1352,7 +1361,9 @@ export function cafeBottleneck(input: { base: number; capability: CafeCapability
       if (seatCapacity < cap.staffCapacity) return "seats";
       if (seatCapacity === cap.staffCapacity) return "both";
     }
-    return cap.idleStaff > 0 ? "stations" : "staff";
+    // 「省略 = 不知道,不是 0」:沒餵吧台幾何時 activeStaff 不受限 ⇒ 雇人真的有用 ⇒ staff。
+    const stations = cap.stations;
+    return stations !== null && cap.staffCount >= stations ? "stations" : "staff";
   })();
   return { kind, turnedAway, headroom, crowdBlocked };
 }
@@ -1377,16 +1388,27 @@ export function cafeBottleneckAdvice(b: CafeBottleneck, cap: CafeCapability, bas
         + `店員那邊做得出 ${cap.staffCapacity} 單。到商店買幾張咖啡廳椅或小圓桌擺進主廳,`
         + `每張 +${CAFE_SEAT_TURNOVER} 單／日。`;
     case "stations":
+      // 兩個變體共用同一個 kind,差別只在「錢已經白付了沒有」:
+      // `idleStaff === 0` 是**剛好站滿**(3 店員 / 3 服務位那種),這時候還沒有人白領薪水,
+      // 但也已經不能再加人了 —— 必須先把「加寬吧台是加人的前置」講清楚,
+      // 否則玩家會照著舊的「人手」那句去多請一個站不上吧台的人,白付 $CAFE_STAFF_WAGE／日。
       return `🧑‍🍳 ${lead},卡在「吧台寬度」。服務位 ${cap.stations ?? 1} 個,`
-        + `${cap.staffCount} 位店員裡只有 ${cap.activeStaff} 位站得上吧台,`
-        + `另外 ${cap.idleStaff} 位薪水照付卻做不了事。在「吧台區」再擺一座點餐吧台`
-        + "(每格 +1 服務位),或把濃縮咖啡機也放進吧台區(tech 3 = +1),他們就能上工。"
+        + (cap.idleStaff > 0
+          ? `${cap.staffCount} 位店員裡只有 ${cap.activeStaff} 位站得上吧台,`
+            + `另外 ${cap.idleStaff} 位薪水照付卻做不了事。在「吧台區」再擺一座點餐吧台`
+            + "(每格 +1 服務位),或把濃縮咖啡機也放進吧台區(tech 3 = +1),他們就能上工。"
+          : `${cap.staffCount} 位店員剛好把它站滿了。這時候就算在下面的「人力」再加一位,`
+            + `他也沒有位子站 —— 產能一單都不會多,只是每天白付 $${CAFE_STAFF_WAGE}。`
+            + "要先在「吧台區」再擺一座點餐吧台(每格 +1 服務位),或把濃縮咖啡機也放進吧台區"
+            + "(tech 3 = +1);吧台加寬了,多出來的那個位子才有人做得了事。")
         // 🔴 §9-5 的特例:開張贈品本來就給 3 個服務位,`stations === 1` 只會出現在
         // 玩家把吧台賣掉/搬走,或舊存檔。那是最容易「雇了人卻沒有用」的形狀,必須點名。
         + (cap.stations === 1
           ? "你的「吧台區」現在沒有點餐吧台,所以只剩收銀口那一個服務位 —— 雇再多人也只有一位做得了事。"
           : "");
     case "staff":
+      // 這一段只有在 `staffCount < stations`(吧台還有空位)時才到得了,
+      // 所以「雇一位就多 N 單」是真話 —— 新人一定站得上吧台。
       return `👥 ${lead},卡在「人手」。${cap.staffCount} 位店員都站得上吧台了,`
         + `一人一天 ${cap.cupsPerStaff} 杯就是上限。到下面的「人力」雇一位`
         + `(−$${CAFE_STAFF_WAGE}／日)就多 ${cap.cupsPerStaff} 單`

@@ -37,7 +37,7 @@ const {
   cafeStaffCount, cafeTypicalBase,
   CAFE_AMBIANCE_FULL_POINTS, CAFE_AMBIANCE_SWING, CAFE_BUSINESS_HOURS, CAFE_CROWD_PER_SIGN_LEVEL,
   CAFE_MACHINE_CUPS_BONUS, CAFE_OUTDOOR_SUNNY_BONUS, CAFE_POPULARITY_MAX, CAFE_POPULARITY_SWING,
-  CAFE_SEAT_TURNOVER, CAFE_STAFF_CUPS_PER_DAY, CAFE_TAKEAWAY_CAPACITY, CAFE_TYPICAL_WEATHER,
+  CAFE_SEAT_TURNOVER, CAFE_STAFF_CUPS_PER_DAY, CAFE_STAFF_WAGE, CAFE_TAKEAWAY_CAPACITY, CAFE_TYPICAL_WEATHER,
   CAFE_UPGRADE_IDS, CAFE_WEATHER_MULTIPLIER, CAFE_WEEKDAY_MULTIPLIER, SPOILAGE_FREE_UNITS,
 } = await import("../src/sim/cafe");
 const { CAFE_INGREDIENTS } = await import("../src/content/cafeIngredients");
@@ -134,10 +134,10 @@ try {
   check("kind=seats:席次腿(2 席)比人力腿(5 人)短",
     cafeBottleneck({ base: bigBase, capability: capSeats }).kind === "seats",
     `seat=${capSeats.seatCapacity} staff=${capSeats.staffCapacity}`);
-  check("kind=stations:人力腿短,而且有人領薪水卻站不上吧台(服務位 1)",
+  check("kind=stations:人力腿短,而且吧台已經站滿(5 人 / 服務位 1,已經有人白領薪水)",
     cafeBottleneck({ base: bigBase, capability: capStations }).kind === "stations",
     `idle=${capStations.idleStaff}`);
-  check("kind=staff:人力腿短但大家都站得上吧台(服務位 9 > 2 人)",
+  check("kind=staff:人力腿短而且吧台還有空位(2 人 / 服務位 9 ⇒ 新人真的站得上)",
     cafeBottleneck({ base: bigBase, capability: capStaff }).kind === "staff",
     `idle=${capStaff.idleStaff}`);
   check("kind=both:兩條腿一樣長", (() => {
@@ -186,6 +186,40 @@ try {
     const kind = cafeBottleneck({ base: bigBase, capability: cap }).kind;
     return cap.seatCapacity === null && kind === "stations";
   })());
+  check("caller 沒餵吧台幾何(stations === null)時吧台不可能是瓶頸,退回 staff", (() => {
+    const cap = cafeCapability([], { seats: 999, extraStaff: 4 });
+    const kind = cafeBottleneck({ base: bigBase, capability: cap }).kind;
+    return cap.stations === null && cap.idleStaff === 0 && kind === "staff";
+  })());
+
+  // --- 🔴 回歸鎖:「剛好站滿」不是人手問題(2026-08-28) ---
+  // 舊判定寫 `idleStaff > 0 ? "stations" : "staff"`,而 idleStaff = staffCount − min(staffCount, stations)
+  // ⇒ staffCount === stations 時 idleStaff 恆為 0 ⇒ 掉進 staff,叫玩家「雇一位就多 26 單」。
+  // 但新人站不上吧台,產能一單不動,實測 Δ = −$260/日。只有在玩家已經浪費過錢
+  // (idleStaff 變 1)之後,遊戲才肯講真話。條件必須是「吧台站滿」,不是「已經浪費了」。
+  const capFull = capOf(999, 3, 3); // 成熟期典型佈置:3 店員 / 3 服務位
+  check("🔴 回歸:staffCount === stations(3/3)⇒ kind 必須是 stations,不是 staff",
+    capFull.idleStaff === 0 && capFull.activeStaff === capFull.staffCount
+    && cafeBottleneck({ base: bigBase, capability: capFull }).kind === "stations",
+    `kind=${cafeBottleneck({ base: bigBase, capability: capFull }).kind} idle=${capFull.idleStaff}`);
+  check("🔴 回歸:staffCount === stations 的每一種形狀(1/1 ~ 6/6)都是 stations",
+    [1, 2, 3, 4, 5, 6].every((n) =>
+      cafeBottleneck({ base: bigBase, capability: capOf(999, n, n) }).kind === "stations"),
+    [1, 2, 3, 4, 5, 6].map((n) =>
+      `${n}/${n}=${cafeBottleneck({ base: bigBase, capability: capOf(999, n, n) }).kind}`).join(" "));
+  check("🔴 回歸:kind === staff ⇔ 吧台真的還有空位(staffCount < stations);掃 1~6 人 × 1~9 服務位",
+    (() => {
+      const bad: string[] = [];
+      for (let staff = 1; staff <= 6; staff++) {
+        for (let stations = 1; stations <= 9; stations++) {
+          const cap = capOf(999, staff, stations);
+          const kind = cafeBottleneck({ base: bigBase, capability: cap }).kind;
+          const wantStaff = cap.staffCount < stations;
+          if ((kind === "staff") !== wantStaff) bad.push(`${staff}人/${stations}位=${kind}`);
+        }
+      }
+      return bad.length === 0;
+    })());
   check("壞資料的 base 不生 NaN", (() => {
     const b = cafeBottleneck({ base: Number.NaN, capability: capSeats });
     return Number.isInteger(b.turnedAway) && Number.isInteger(b.headroom) && b.turnedAway === 0;
@@ -216,7 +250,40 @@ try {
   })());
   check("五段文案都是純文字(不含 markdown 的 ** —— 它會原樣顯示在畫面上)",
     [adviceOf(20, capOf(999, 5, 9)), adviceOf(bigBase, capSeats), adviceOf(bigBase, capStations),
-      adviceOf(bigBase, capStaff)].every((line) => !line.includes("**")));
+      adviceOf(bigBase, capStaff), adviceOf(bigBase, capFull)].every((line) => !line.includes("**")));
+
+  // --- 🔴 回歸鎖(文案側):剛好站滿時絕不可以叫玩家去雇人 ---
+  /** `staff` 那段「去雇一位」的指紋。出現在剛好站滿的店上,就是在叫玩家白付薪水。 */
+  const HIRE_DIRECTIVE = "到下面的「人力」雇一位";
+  check("🔴 回歸:staffCount === stations 的文案不得叫玩家雇人(連「雇」字都不該出現)", (() => {
+    const line = adviceOf(bigBase, capFull);
+    return !line.includes(HIRE_DIRECTIVE) && !line.includes("雇")
+      && !line.includes("卡在「人手」");
+  })(), adviceOf(bigBase, capFull));
+  check("🔴 回歸:剛好站滿的文案要講明「先加寬吧台,否則新人上不了工」", (() => {
+    const line = adviceOf(bigBase, capFull);
+    return line.includes("卡在「吧台寬度」") && line.includes("剛好把它站滿")
+      && line.includes("沒有位子站") && line.includes("點餐吧台")
+      && line.includes(`白付 $${CAFE_STAFF_WAGE}`);
+  })(), adviceOf(bigBase, capFull));
+  check("🔴 回歸:idleStaff === 0 時不出現「另外 0 位薪水照付」這種空話",
+    !adviceOf(bigBase, capFull).includes("另外 0 位")
+    && !adviceOf(bigBase, capFull).includes("薪水照付"));
+  check("🔴 回歸:任何 kind === stations 的形狀都不含雇人指令(掃 1~6 人 × 1~9 服務位)", (() => {
+    const bad: string[] = [];
+    for (let staff = 1; staff <= 6; staff++) {
+      for (let stations = 1; stations <= 9; stations++) {
+        const cap = capOf(999, staff, stations);
+        if (cafeBottleneck({ base: bigBase, capability: cap }).kind !== "stations") continue;
+        if (adviceOf(bigBase, cap).includes(HIRE_DIRECTIVE)) bad.push(`${staff}人/${stations}位`);
+      }
+    }
+    return bad.length === 0;
+  })());
+  check("idleStaff > 0 的舊變體一個字都沒變(還是點名有人白領薪水)",
+    adviceOf(bigBase, capStations).includes("另外 4 位薪水照付卻做不了事")
+    && adviceOf(bigBase, capStations).includes("他們就能上工"),
+    adviceOf(bigBase, capStations));
 
   // =========================================================================
   // 三、cafeInvestOutlook():核心不變式
@@ -738,6 +805,7 @@ try {
     CAFE_STAFF_CUPS_PER_DAY === 26 && CAFE_SEAT_TURNOVER === 5 && CAFE_TAKEAWAY_CAPACITY === 10
     && CAFE_CROWD_PER_SIGN_LEVEL === 22 && CAFE_MACHINE_CUPS_BONUS === 10
     && CAFE_AMBIANCE_SWING === 0.2 && CAFE_BUSINESS_HOURS === 11
+    && CAFE_STAFF_WAGE === 260
     && cafeStaffCount(0) === 1);
 } finally {
   Math.random = originalRandom;

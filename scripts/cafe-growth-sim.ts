@@ -29,6 +29,19 @@
  *    把「想上門 vs 做得出來 vs 進得完」三件事拆開;
  * 4. 名店期補一段**天花板分解**:離設計目標的缺口各由客流/客單價/成本結構佔多少。
  *
+ * 🔴 **2026-08-28 基準對帳批次**(只動本腳本與文件,`src/` 一行未動):
+ *
+ * 1. **客單價階梯重訂**。設計表 §4.7 的 $36/$41/$47/$53 與 `avgTicket()` 是**同一個量**
+ *    ——**未加權**的菜單標價平均(給玩家看的顯示值);但營收是逐位顧客照 `baseWeight`
+ *    50/30/20 **加權**賣出的。拿前者訂目標、拿後者對帳,從第一天起就是蘋果對橘子。
+ *    本腳本新增「客單價階梯」與「天花板掃描」兩段,把兩個量並排印出來。
+ * 2. **階段目標重算**。新目標 = 設計客流 × **可達加權**客單價 × (1 − 原料率) − 固定 − 薪資。
+ *    `Stage.oldTarget` 保留原設計值,表格兩欄並印 ⇒ 球門調整看得見。
+ * 3. **基準納入設備**(【E】)。原本四階段的 `upgrades` **只有招牌、零設備**,
+ *    低估了真實體驗。新增【E】表,依**回本天數**逐階段納入設備(證據見「設備逐項回本」段)。
+ *    🔴【A】【B】【C】、`⚠️ 過度擴張` 與 `LEGACY_STAGES` **一格未動**——
+ *    它們是既有對照組(設計配置、第五條虧損管道、第三層單一變因),動了就對不回去。
+ *
  * 只印數字、不斷言 ⇒ 與 `cafe-opening-sim.ts` 一樣**刻意不列入回歸集**
  * (成長曲線的硬性護欄改由 `cafe-p4a-growth-test.ts` 斷言)。
  *   npx tsx scripts/cafe-growth-sim.ts
@@ -43,10 +56,12 @@ const mem: Record<string, string> = {};
 const { state, defaultCafe, GAME_START } = await import("../src/sim/gameState");
 const { cafeDailyPass, cafeHourlyPass, cafeRestockPass, CAFE_OPEN_HOUR, CAFE_CLOSE_HOUR } = await import("../src/sim/tick");
 const {
-  cafeCapability, cafeStaffCount, cafeStaffWage, menuItems, suggestedStandingOrders, suggestStandingOrdersFromSales,
+  cafeCapability, cafeStaffCount, cafeStaffWage, menuItems, avgTicket,
+  suggestedStandingOrders, suggestStandingOrdersFromSales,
   applySpoilage, cafeStorageCapacity,
-  CAFE_FIXED_COST, CAFE_MAX_AVG_TICKET, CAFE_UPGRADE_IDS, CAFE_RESEARCH_IDS,
+  CAFE_FIXED_COST, CAFE_MAX_AVG_TICKET, CAFE_UPGRADES, CAFE_UPGRADE_IDS, CAFE_RESEARCH_IDS,
 } = await import("../src/sim/cafe");
+const { CAFE_RESEARCH } = await import("../src/content/cafeResearch");
 const {
   placements, addPlacement, placeCafeStarterSet, cafeSeatSpots, cafeAmbiancePoints,
   cafeServiceStations, cafeBackStoragePoints,
@@ -173,30 +188,51 @@ interface Stage {
   seats: number;
   extraStaff: number;
   completed: string[];
-  /** 設計文件 §4.7 的目標日淨利;`null` = 設計表沒有這一列(本腳本補的對照組)。 */
+  /**
+   * 設計文件 §4.7 的目標日淨利;`null` = 設計表沒有這一列(本腳本補的對照組)。
+   *
+   * 🔴 **2026-08-28 起這裡放的是「修正後」的目標**(推導見下方「階段目標重算」段):
+   * 原設計值的客單價欄是**未加權**的量,而淨利是加權算的 ⇒ 目標本身就不可達。
+   */
   target: number | null;
+  /** 原設計值(2026-08-04 §4.7 那張表),只當對照印出來,**不要拿來當門檻**。 */
+  oldTarget: number | null;
 }
 
+/**
+ * 🔴 **2026-08-28 重訂 `target`**。舊值 98 / 430 / 900 / 1620 的客單價欄
+ * ($36/$41/$47/$53)是未加權平均,而淨利是 `baseWeight` 加權算的 ⇒ $47 / $53
+ * **任何前置合法的研發組合都做不到**(掃描結果見下方「客單價天花板掃描」)。
+ * 新值 = 設計客流 × 該階段**可達加權**客單價 × (1 − 實測原料率) − 固定 − 薪資,
+ * **客流欄一格未動**(實測 24.5 / 49.4 / 74.8 / 118.3 vs 設計 26 / 48 / 75 / 110)。
+ *
+ * ⚠️ 目標下修**不代表玩家收入變多**:本批一個遊戲數值都沒動。
+ */
 const STAGES: Stage[] = [
-  { label: "開張期 Lv1", upgrades: [], seats: 6, extraStaff: 0, completed: [], target: 98 },
-  { label: "成長期 Lv2", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: GROWTH, target: 430 },
-  { label: "成熟期 Lv3", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: MATURE, target: 900 },
-  { label: "名店期 Lv4", upgrades: SIGN_LV4, seats: 32, extraStaff: 4, completed: ALL, target: 1620 },
-  // 🔴 第五條虧損管道:成長期的客流,卻雇了 4 個人。
-  { label: "⚠️ 過度擴張", upgrades: SIGN_LV2, seats: 12, extraStaff: 4, completed: ROOTS, target: -426 },
+  { label: "開張期 Lv1", upgrades: [], seats: 6, extraStaff: 0, completed: [], target: 124, oldTarget: 98 },
+  { label: "成長期 Lv2", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: GROWTH, target: 398, oldTarget: 430 },
+  { label: "成熟期 Lv3", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: MATURE, target: 765, oldTarget: 900 },
+  { label: "名店期 Lv4", upgrades: SIGN_LV4, seats: 32, extraStaff: 4, completed: ALL, target: 1051, oldTarget: 1620 },
+  // 🔴 第五條虧損管道:成長期的客流,卻雇了 4 個人。**這一列刻意不重訂目標也不加設備**:
+  // 它是「同客流卻多雇 3 人」的單一變因診斷,動了就與成長期那一列對不起來。
+  { label: "⚠️ 過度擴張", upgrades: SIGN_LV2, seats: 12, extraStaff: 4, completed: ROOTS, target: -426, oldTarget: -426 },
   // 以下兩列設計表沒有,是 P4a 補的診斷:設計表的 +4 人其實**多雇了一個**
   // (Lv4 的實際客流撐不到 5 人份產能),而名店期玩家也不會只買招牌。
-  { label: "· 名店期 +3 人", upgrades: SIGN_LV4, seats: 32, extraStaff: 3, completed: ALL, target: null },
-  { label: "· 名店期全設備", upgrades: [...SIGN_LV4, ...FULL_KIT], seats: 32, extraStaff: 3, completed: ALL, target: null },
+  { label: "· 名店期 +3 人", upgrades: SIGN_LV4, seats: 32, extraStaff: 3, completed: ALL, target: null, oldTarget: null },
+  { label: "· 名店期全設備", upgrades: [...SIGN_LV4, ...FULL_KIT], seats: 32, extraStaff: 3, completed: ALL, target: null, oldTarget: null },
 ];
 
 /**
  * 🔴 舊階段清單的對照組(3 / 6 項研發)。條件與上面的成長/成熟期**完全相同**,
  * 只有 `completed` 不一樣 ⇒ 兩兩相減就是「第三層值多少」,不會混進別的變因。
+ *
+ * 🔴 2026-08-28:這兩列的**設定與目標值都刻意不動**(擺設、人力、招牌、`target` 全部照舊)。
+ * 它們屬於「第三層上線前」那個年代,拿當年的設計值當標尺才對得起來;
+ * 而且上面四階段一旦加了設備,這裡也加就不再是單一變因了。
  */
 const LEGACY_STAGES: Stage[] = [
-  { label: "舊·成長期 3 研發", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: ROOTS, target: 430 },
-  { label: "舊·成熟期 6 研發", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: LEGACY_SIX, target: 900 },
+  { label: "舊·成長期 3 研發", upgrades: SIGN_LV2, seats: 12, extraStaff: 1, completed: ROOTS, target: 430, oldTarget: 430 },
+  { label: "舊·成熟期 6 研發", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: LEGACY_SIX, target: 900, oldTarget: 900 },
 ];
 
 function run(stage: Stage, extraCounters = 0, backStorage = false) {
@@ -320,9 +356,118 @@ console.log(`設計靶(§4.7 四房滿租):$52,000/月 ÷ 30 − 管理費 $650 
 console.log(`種子局實測靶:日租金 $${dailyRent} − 管理費 $${dailyUpkeep} = **淨租金 $${seedNetRent}/日**`);
 console.log(`固定開銷 $${CAFE_FIXED_COST}/日(已含首位店員);額外員工每人 −$260/日\n`);
 
+// ---------------------------------------------------------------------------
+// 🔴 客單價:兩個量,不是一個量(2026-08-28)
+//
+// 設計表 §4.7 的客單價欄與 `avgTicket()` 都是**未加權**的菜單標價平均 —— 那是
+// 面板上給玩家看的顯示值。但營收是逐位顧客照 `baseWeight`(50/30/20 打底)加權
+// 賣出的 ⇒ 真正決定淨利的是**加權**平均。兩個數字都對,只是不同量;
+// 拿未加權訂目標、拿加權對帳,從第一天起就是蘋果對橘子。
+// ---------------------------------------------------------------------------
+
+/** 依 `baseWeight` 加權的菜單均價 —— 錢是照這個量賺的。 */
+function weightedTicket(completed: readonly string[]): number {
+  const menu = menuItems(completed);
+  const weight = menu.reduce((sum, item) => sum + item.baseWeight, 0);
+  if (weight <= 0) return 0;
+  return menu.reduce((sum, item) => sum + item.price * item.baseWeight, 0) / weight;
+}
+/** 未加權(= `avgTicket()` 夾值前的原始平均),給玩家看的那個量。 */
+function plainTicket(completed: readonly string[]): number {
+  const menu = menuItems(completed);
+  return menu.length === 0 ? 0 : menu.reduce((sum, item) => sum + item.price, 0) / menu.length;
+}
+
+const TICKET_LADDER: { label: string; completed: string[]; design: number }[] = [
+  { label: "開張期 Lv1", completed: [], design: 36 },
+  { label: "成長期 Lv2", completed: GROWTH, design: 41 },
+  { label: "成熟期 Lv3", completed: MATURE, design: 47 },
+  { label: "名店期 Lv4", completed: ALL, design: 53 },
+];
+
+console.log("=== 客單價階梯:未加權(畫面顯示)vs 加權(拿來算錢)===");
+console.log("階段".padEnd(14) + "品數  原設計值  未加權  avgTicket()   加權  加權 vs 原設計值");
+for (const row of TICKET_LADDER) {
+  const weighted = weightedTicket(row.completed);
+  console.log(
+    row.label.padEnd(12)
+    + `${String(menuItems(row.completed).length).padStart(4)}`
+    + `${("$" + row.design).padStart(10)}`
+    + `${("$" + plainTicket(row.completed).toFixed(2)).padStart(8)}`
+    + `${("$" + avgTicket(row.completed)).padStart(13)}`
+    + `${("$" + weighted.toFixed(2)).padStart(7)}`
+    + `${((weighted / row.design - 1) * 100).toFixed(1).padStart(12)}%`,
+  );
+}
+
+// 天花板掃描:16 品的所有 completed 子集,但**只算前置合法的那些**。
+// 設計文件 §10.6 第 2 條寫的「8,192 組合最高 $49」把前置不合法的組合也算進去了
+// (那個最大值是「只研發三項第三層、其它一項都不做」,而三項第三層各自都有研發前置)。
+const RESEARCH_REQ = new Map<string, readonly string[]>(
+  CAFE_RESEARCH.map((research) => [research.id, research.requiresResearch]),
+);
+let bestPlain = { value: -1, set: [] as string[] };
+let bestWeighted = { value: -1, set: [] as string[] };
+let legalSets = 0;
+for (let mask = 0; mask < (1 << ALL.length); mask++) {
+  const set = ALL.filter((_, index) => (mask & (1 << index)) !== 0);
+  const owned = new Set(set);
+  if (!set.every((id) => (RESEARCH_REQ.get(id) ?? []).every((need) => owned.has(need)))) continue;
+  legalSets++;
+  const plain = plainTicket(set);
+  const weighted = weightedTicket(set);
+  if (plain > bestPlain.value) bestPlain = { value: plain, set };
+  if (weighted > bestWeighted.value) bestWeighted = { value: weighted, set };
+}
+console.log(`\n=== 客單價天花板掃描(${1 << ALL.length} 種 completed 子集,其中前置合法 ${legalSets} 種)===`);
+console.log(`  可達**未加權**最大 $${bestPlain.value.toFixed(2)}(${bestPlain.set.length} 項研發)`
+  + ` ⇒ 設計表的成熟期 $47 / 名店期 $53 **任何合法組合都到不了**`);
+console.log(`  可達**加權**最大   $${bestWeighted.value.toFixed(2)}(${bestWeighted.set.length} 項研發;`
+  + `全 13 項解鎖反而只有 $${weightedTicket(ALL).toFixed(2)} —— 寵物線與低價第二層把加權均價稀釋掉)`);
+console.log(`  夾值 CAFE_MAX_AVG_TICKET = $${CAFE_MAX_AVG_TICKET} 仍然沒有生效,繼續只當「誤加 $200 品項」的防呆`);
+
+// ---------------------------------------------------------------------------
+// 階段目標重算:設計客流 × 可達加權客單價 × (1 − 原料率) − 固定 − 薪資
+//
+// 🔴 三個輸入的來源必須寫清楚,讀者要能自己複算:
+//   - 設計客流:§4.7 原表,**一格未動**(實測本來就精準命中,不是缺口所在)
+//   - 可達加權客單價:上面那張階梯表的「加權」欄(該階段招牌閘門唯一解得開的研發集合)
+//   - 原料率:【C】(吧台 + 後場儲物)那一組的實測 `進貨 / 營收`
+// ---------------------------------------------------------------------------
+
+const TARGET_INPUTS = [
+  { label: "開張期 Lv1", guests: 26, ticket: 35.4, materialRate: 0.463, wage: 0 },
+  { label: "成長期 Lv2", guests: 48, ticket: 39.9, materialRate: 0.463, wage: 260 },
+  { label: "成熟期 Lv3", guests: 75, ticket: 41.4, materialRate: 0.467, wage: 520 },
+  { label: "名店期 Lv4", guests: 110, ticket: 42.3, materialRate: 0.471, wage: 1040 },
+];
+
+console.log("\n=== 階段目標重算(設計客流 × 可達加權客單價 × (1 − 原料率) − 固定 − 薪資)===");
+console.log("階段".padEnd(14) + "設計客流  加權客單價   日營收   原料率  固定+薪資   修正目標  原設計值   差");
+for (const [index, input] of TARGET_INPUTS.entries()) {
+  const revenue = input.guests * input.ticket;
+  const cost = CAFE_FIXED_COST + input.wage;
+  const net = revenue * (1 - input.materialRate) - cost;
+  const old = STAGES[index].oldTarget ?? 0;
+  console.log(
+    input.label.padEnd(12)
+    + `${String(input.guests).padStart(8)}`
+    + `${("$" + input.ticket.toFixed(1)).padStart(11)}`
+    + `${("$" + revenue.toFixed(0)).padStart(9)}`
+    + `${((input.materialRate * 100).toFixed(1) + "%").padStart(9)}`
+    + `${("−$" + cost).padStart(11)}`
+    + `${("+$" + net.toFixed(0)).padStart(11)}`
+    + `${("+$" + old).padStart(10)}`
+    + `${((net - old >= 0 ? "+$" : "−$") + Math.abs(net - old).toFixed(0)).padStart(8)}`,
+  );
+}
+console.log("⚠️ 目標下修**不代表玩家收入變多** —— 本批一個遊戲數值都沒動,");
+console.log("   變的只是「拿什麼跟什麼比」。原本的客單價欄量的是畫面顯示值,不是拿來算錢的那個量。");
+console.log("   (原料率是四捨五入到 0.1% 的輸入值;與【C】實測 進貨/營收 的對照印在【C】表之後)");
+
 const HEADER = "階段".padEnd(14)
   + "席次 吧台 服務位/店員/上工 產能(席/員) 庫存上限/常備  日客流 沒接到  撲空 客單價    營收     進貨     薪資     固定"
-  + "   實測淨利  佔設計靶 佔種子局  設計值";
+  + "   實測淨利  佔設計靶 佔種子局 修正目標 原設計值";
 
 function printTable(title: string, note: string, rows: Row[]) {
   console.log(`\n【${title}】${note}`);
@@ -346,9 +491,15 @@ function printTable(title: string, note: string, rows: Row[]) {
       + `${((r.net >= 0 ? "+$" : "−$") + Math.abs(r.net).toFixed(0)).padStart(10)}`
       + `${((r.net / DESIGN_NET_RENT * 100).toFixed(0) + "%").padStart(9)}`
       + `${((r.net / seedNetRent * 100).toFixed(0) + "%").padStart(9)}`
-      + `${(r.stage.target === null ? "—" : (r.stage.target >= 0 ? "+$" : "−$") + Math.abs(r.stage.target)).padStart(9)}`,
+      + `${money(r.stage.target).padStart(9)}`
+      + `${money(r.stage.oldTarget).padStart(9)}`,
     );
   }
+}
+
+/** `null` = 設計表沒有這一列。 */
+function money(n: number | null): string {
+  return n === null ? "—" : (n >= 0 ? "+$" : "−$") + Math.abs(n);
 }
 
 // 【A】現行擺放:只有開張贈品那座吧台 ⇒ 服務位 3;後場空的 ⇒ 庫存上限 360(分區機能上線前的設定)
@@ -361,6 +512,11 @@ const stocked = STAGES.map((stage) => run(stage, countersNeededFor(cafeStaffCoun
 printTable("A", "現行擺放:只有開張贈品那座吧台(服務位 3)、後場空的(庫存上限 360)——分區機能上線前的腳本設定", current);
 printTable("B", "只補吧台:買到「服務位 >= 店員數」,其餘條件完全相同(每座吧台 $16,000)", staffed);
 printTable("C", "吧台 + 後場儲物:再加備品貨架 ×2 + 進貨木箱 ×1(storage 14 ⇒ 庫存上限 920,$13,600)", stocked);
+
+// 階段目標重算用的原料率是從這裡取的:對照一下四捨五入前後差多少(差 < $3/日)。
+console.log("原料率對照(階段目標重算的輸入 vs【C】實測 進貨/營收):"
+  + TARGET_INPUTS.map((input, index) => `${input.label.slice(0, 3)} ${(input.materialRate * 100).toFixed(1)}%`
+    + ` vs ${(stocked[index].restock / stocked[index].revenue * 100).toFixed(2)}%`).join(";"));
 
 // 🔴 舊階段清單(3 / 6 項研發)的對照:與【C】完全相同的擺設,只有 completed 不同。
 const legacy = LEGACY_STAGES.map((stage) =>
@@ -376,8 +532,8 @@ for (const [i, row] of legacy.entries()) {
     + `;客單價 $${row.ticket.toFixed(1)} → $${now.ticket.toFixed(1)}`);
 }
 
-console.log("\n【D】對照(設計目標 / 現行實測:服務位不足 / 只補吧台 / 吧台+後場儲物)");
-console.log("階段".padEnd(14) + "  設計目標    現行實測(佔靶)      只補吧台(佔靶)    吧台+後場(佔靶)  吧台差 只補吧台Δ  加後場Δ");
+console.log("\n【D】對照(**修正後**目標 / 現行實測:服務位不足 / 只補吧台 / 吧台+後場儲物)");
+console.log("階段".padEnd(14) + "  修正目標    現行實測(佔靶)      只補吧台(佔靶)    吧台+後場(佔靶)  吧台差 只補吧台Δ  加後場Δ");
 for (let i = 0; i < 4; i++) {
   const a = current[i];
   const b = staffed[i];
@@ -397,6 +553,87 @@ for (let i = 0; i < 4; i++) {
     + `${delta(c.net - b.net).padStart(10)}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// 🔴 設備逐項回本(2026-08-28):基準要不要納入設備,由**回本天數**決定
+//
+// §10.5 剛立的設計帶是 60~250 天。某件設備在該階段回本超過 250 天 ⇒ 不該算進
+// 「正常玩家會有的擺設」;低於 60 天則是「無腦按鈕」,值得記一筆但不排除。
+// 單一變因:【C】(吧台 + 後場儲物)為底,只多加那一件設備。
+// ---------------------------------------------------------------------------
+
+const EQUIPMENT_KIT = [
+  CAFE_UPGRADE_IDS.secondMachine, CAFE_UPGRADE_IDS.outdoorSeats,
+  CAFE_UPGRADE_IDS.coldStorage, CAFE_UPGRADE_IDS.petTower,
+];
+const upgradeById = new Map(CAFE_UPGRADES.map((item) => [item.id, item]));
+
+console.log("\n=== 設備逐項回本(【C】為底;單一變因:只加那一件)===");
+console.log("階段".padEnd(14) + "設備".padEnd(14) + "  售價     底淨利   加了之後   日邊際    回本天數  客流變化");
+for (let i = 0; i < 4; i++) {
+  const stage = STAGES[i];
+  const counters = countersNeededFor(cafeStaffCount(stage.extraStaff));
+  const base = stocked[i];
+  for (const id of EQUIPMENT_KIT) {
+    const def = upgradeById.get(id)!;
+    const withIt = run({ ...stage, upgrades: [...stage.upgrades, id] }, counters, true);
+    const marginal = withIt.net - base.net;
+    const payback = marginal > 0 ? def.price / marginal : Infinity;
+    console.log(
+      stage.label.padEnd(12) + def.name.padEnd(12)
+      + `${("$" + def.price.toLocaleString()).padStart(9)}`
+      + `${("+$" + base.net.toFixed(0)).padStart(10)}`
+      + `${("+$" + withIt.net.toFixed(0)).padStart(11)}`
+      + `${((marginal >= 0 ? "+$" : "−$") + Math.abs(marginal).toFixed(1)).padStart(10)}`
+      + `${(Number.isFinite(payback) ? payback.toFixed(1) + " 天" : "永不回本").padStart(12)}`
+      + `   ${base.guests.toFixed(1)} → ${withIt.guests.toFixed(1)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 【E】把上面那張回本表的結論套回基準:各階段納入「回本天數說得過去」的設備。
+//
+// 🔴 結論(2026-08-28 實測):**只有第二台咖啡機通過 250 天門檻**。
+//   - 第二台咖啡機:開張 243.5 天 / 成長 96.6 天 / 成熟 50.3 天 / 名店 82.0 天
+//   - 大型冷藏:成熟 20,000 天、名店 824 天(它只動損耗,而損耗本來就只有 $18~29/日)
+//   - 戶外座位:四個階段的日邊際都**精確是 0** —— 它加的是晴天「想上門」的人數,
+//     而四個階段都被產能夾住(`turnedAway` 3.6~22.2 人/日),多來的人一個都做不出來
+//   - 貓跳台與軟墊:日邊際 0(它動的是寵物停留與認養詢問,不進金流)
+//
+// **開張期刻意不納入**:243.5 天雖然勉強在設計帶內,但那個階段玩家剛付完開店費、
+// 拿不出 $18,000;而且開張期那一列同時是「備太多反而虧」的平衡錨(§4.7),
+// 給它加產能會動到錨本身。⇒ 開張期維持零設備。
+//
+// `⚠️ 過度擴張` 不進本表(它是「同客流多雇 3 人」的單一變因診斷);
+// `名店期全設備` 一格未動(它是「預設 vs 全設備」的對照組,§10.4 的代數論證靠它)。
+// ---------------------------------------------------------------------------
+
+const SECOND_MACHINE = CAFE_UPGRADE_IDS.secondMachine;
+const EQUIPPED_STAGES: Stage[] = [
+  { ...STAGES[0] },                                                          // 開張期:零設備(理由見上)
+  { ...STAGES[1], upgrades: [...SIGN_LV2, SECOND_MACHINE] },
+  { ...STAGES[2], upgrades: [...SIGN_LV3, SECOND_MACHINE] },
+  { ...STAGES[3], upgrades: [...SIGN_LV4, SECOND_MACHINE] },
+  { ...STAGES[5], upgrades: [...SIGN_LV4, SECOND_MACHINE] },
+  { ...STAGES[6] },                                                          // 名店期全設備:一格未動
+];
+
+const equipped = EQUIPPED_STAGES.map((stage) =>
+  run(stage, countersNeededFor(cafeStaffCount(stage.extraStaff)), true));
+printTable("E", "🔴 **本批起的真實體驗基準**:【C】再加該階段回本天數過關的設備(= 第二台咖啡機 $18,000;開張期零設備)", equipped);
+console.log("\n【E vs C】設備買下來的產能值多少(同席次/同人力/同招牌/同研發,只差設備)");
+for (const [i, row] of equipped.entries()) {
+  const baseIndex = i < 4 ? i : i + 1;
+  const before = stocked[baseIndex];
+  console.log(`  ${row.stage.label.padEnd(16)} $${before.net.toFixed(0)} → $${row.net.toFixed(0)}`
+    + `  Δ ${(row.net - before.net >= 0 ? "+$" : "−$")}${Math.abs(row.net - before.net).toFixed(0)}`
+    + `;客流 ${before.guests.toFixed(1)} → ${row.guests.toFixed(1)}`
+    + `;沒接到 ${before.turnedAway.toFixed(1)} → ${row.turnedAway.toFixed(1)}`
+    + `${row.stage.target === null ? "" : `;佔修正目標 ${(row.net / row.stage.target * 100).toFixed(0)}%`}`);
+}
+console.log("⚠️ 【E】高於修正目標的部分是**多花 $18,000 買來的產能**,而日淨利欄不含這筆資本支出。");
+console.log("   基準換了 ≠ 咖啡廳賺得比較多:本批一個遊戲數值都沒動。");
 
 // ---------------------------------------------------------------------------
 // 🔴 第三層逐項回本:單一變因(只抽掉那一項研發,其餘完全相同)
@@ -449,32 +686,40 @@ const materialRate = flagship.restock / flagship.revenue;
 const fixedAndWage = CAFE_FIXED_COST + flagship.wage;
 const netAtGuests = (g: number, t: number) => g * t * (1 - materialRate) - fixedAndWage;
 
-console.log(`\n=== 名店期天花板分解(以【C】吧台 + 後場儲物為基準:玩家買得到的都買了)===`);
-console.log(`設計目標 +$${target} / 實測 ${(flagship.net >= 0 ? "+$" : "−$")}${Math.abs(flagship.net).toFixed(0)}`
-  + ` ⇒ 缺口 $${(target - flagship.net).toFixed(0)}`);
+console.log(`\n=== 名店期天花板分解(以【C】吧台 + 後場儲物為基準:設計配置,不含設備)===`);
+console.log(`修正目標 +$${target} / 原設計值 +$${flagship.stage.oldTarget}`
+  + ` / 實測 ${(flagship.net >= 0 ? "+$" : "−$")}${Math.abs(flagship.net).toFixed(0)}`
+  + ` ⇒ 對修正目標的缺口 $${(target - flagship.net).toFixed(0)}`
+  + `、對原設計值的缺口 $${((flagship.stage.oldTarget ?? 0) - flagship.net).toFixed(0)}`);
+console.log(`🔴 下面這段分解對的是**原設計值** +$${flagship.stage.oldTarget} 與它的客單價 $${designTicket},`
+  + `目的是示範「$${designTicket} 這個數字不可達」,不是拿它當門檻。`);
 console.log(`實測結構:客流 ${flagship.guests.toFixed(1)}(設計 ${designGuests})`
   + ` × 客單價 $${flagship.ticket.toFixed(1)}(設計 $${designTicket})`
   + ` = 營收 $${flagship.revenue.toFixed(0)};原料佔營收 ${(materialRate * 100).toFixed(1)}%`
   + `;固定+薪資 $${fixedAndWage};損耗 ${flagship.spoiledUnits.toFixed(1)} 單位/日($${flagship.spoiledValue.toFixed(0)})`);
+const oldGap = (flagship.stage.oldTarget ?? 0) - flagship.net;
 const gapGuests = netAtGuests(designGuests, flagship.ticket) - flagship.net;
 const gapTicket = netAtGuests(flagship.guests, designTicket) - flagship.net;
 const gapBoth = netAtGuests(designGuests, designTicket) - flagship.net;
 console.log(`只把客流補到設計值 ${designGuests}:淨利 ${(flagship.net + gapGuests).toFixed(0)}`
-  + ` ⇒ 補回 $${gapGuests.toFixed(0)}(缺口的 ${(gapGuests / (target - flagship.net) * 100).toFixed(0)}%)`);
+  + ` ⇒ 補回 $${gapGuests.toFixed(0)}(舊缺口的 ${(gapGuests / oldGap * 100).toFixed(0)}%)`);
 console.log(`只把客單價補到設計值 $${designTicket}:淨利 ${(flagship.net + gapTicket).toFixed(0)}`
-  + ` ⇒ 補回 $${gapTicket.toFixed(0)}(缺口的 ${(gapTicket / (target - flagship.net) * 100).toFixed(0)}%)`);
+  + ` ⇒ 補回 $${gapTicket.toFixed(0)}(舊缺口的 ${(gapTicket / oldGap * 100).toFixed(0)}%)`);
 console.log(`兩者都補:淨利 ${(flagship.net + gapBoth).toFixed(0)}`
-  + ` ⇒ 補回 $${gapBoth.toFixed(0)}(缺口的 ${(gapBoth / (target - flagship.net) * 100).toFixed(0)}%)`
+  + ` ⇒ 補回 $${gapBoth.toFixed(0)}(舊缺口的 ${(gapBoth / oldGap * 100).toFixed(0)}%)`
   + `;交互項 $${(gapBoth - gapGuests - gapTicket).toFixed(0)}`);
 console.log(`殘差(成本結構:原料 ${(materialRate * 100).toFixed(1)}% + 固定 $${CAFE_FIXED_COST} + 薪資 $${flagship.wage})`
-  + `:$${(target - flagship.net - gapBoth).toFixed(0)}`);
+  + `:$${(oldGap - gapBoth).toFixed(0)}`);
 
 // 客單價那條腿的天花板:菜單本身,而不是 `CAFE_MAX_AVG_TICKET` 的夾值
 const fullMenu = menuItems(ALL);
 const menuMean = fullMenu.reduce((sum, item) => sum + item.price, 0) / fullMenu.length;
-console.log(`客單價天花板:全研發菜單 ${fullMenu.length} 品、均價 $${menuMean.toFixed(2)}、最高 $${Math.max(...fullMenu.map((i) => i.price))}`
-  + `;實測加權 $${flagship.ticket.toFixed(1)};夾值 CAFE_MAX_AVG_TICKET = $${CAFE_MAX_AVG_TICKET}`
-  + ` ⇒ 夾值**沒有生效**,餘裕 $${(CAFE_MAX_AVG_TICKET - menuMean).toFixed(2)}/杯(${((CAFE_MAX_AVG_TICKET / menuMean - 1) * 100).toFixed(0)}%)`);
+console.log(`客單價天花板:全研發菜單 ${fullMenu.length} 品、未加權均價 $${menuMean.toFixed(2)}(= avgTicket 的量)`
+  + `、加權均價 $${weightedTicket(ALL).toFixed(2)}(= 賺錢的量)、最高 $${Math.max(...fullMenu.map((i) => i.price))}`
+  + `;實測 $${flagship.ticket.toFixed(1)}`);
+console.log(`🔴 所以設計值 $${designTicket} 不可達:前置合法組合的**加權**上限只有 $${bestWeighted.value.toFixed(2)}`
+  + `、**未加權**上限只有 $${bestPlain.value.toFixed(2)} —— 連畫面顯示值都到不了 $${designTicket}。`
+  + `夾值 CAFE_MAX_AVG_TICKET = $${CAFE_MAX_AVG_TICKET} 從未生效。`);
 
 console.log(`\n🔴 名店期 > 100% 淨租金(設計靶 $${DESIGN_NET_RENT.toFixed(0)}):`
   + `照設計表 +4 人 ${flagship.net > DESIGN_NET_RENT ? "成立" : "不成立"}($${flagship.net.toFixed(0)});`

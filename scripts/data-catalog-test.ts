@@ -57,16 +57,22 @@ const roles = routineRoles("tenant_chen_engineer");
 check("角色反查:含 desk/bed/kitchen、不含 out", roles.includes("desk") && roles.includes("bed") && roles.includes("kitchen") && !roles.includes("out"));
 
 // --- 2. 事件目錄:優先序/門檻/{name} 代換 ---
-const base = { name: "測試員", stress: 30, satisfaction: 60, affinity: 60, wellbeing: 70, flags: [] as string[] };
+// 🔴 `neglect` 是 EventCtx 的**必填**欄位。漏掉的話 `ctx["neglect"]` 是 undefined、
+// `OPS[">="](undefined, 1)` 靜默回 false ⇒ 掛了 neglect 條件的 breakdown 會永遠不觸發,
+// 而且沒有任何錯誤訊息。這裡明確給 0(= 房東沒有虧待任何人的基準情境)。
+const base = { name: "測試員", stress: 30, satisfaction: 60, affinity: 60, wellbeing: 70, neglect: 0, flags: [] as string[] };
 check("平穩狀態 → 不觸發", rollEvent(base) === null);
-check("stress 90 → breakdown(最高優先)", rollEvent({ ...base, stress: 90, wellbeing: 20 })?.id === "breakdown");
+check("高壓 + 有虧待 → breakdown(最高優先)", rollEvent({ ...base, stress: 90, wellbeing: 20, neglect: 1 })?.id === "breakdown");
+// 反例:釘住「沒虧待就不崩潰」的資料契約。壓力純粹來自工作的租客不該被判成房東害的,
+// 而且要 fallthrough 到下一則(這裡 wellbeing 70/satisfaction 60/affinity 60 都不觸發 ⇒ null)。
+check("stress 95 但 neglect 0 → **不**觸發 breakdown", rollEvent({ ...base, stress: 95, neglect: 0 }) === null);
 const sickEv = rollEvent({ ...base, wellbeing: 28 });
 check("wellbeing 28 → sick", sickEv?.id === "sick");
 check("{name} 代換進標題", sickEv?.title === "測試員 生病了");
 check("satisfaction 29 → dissatisfied", rollEvent({ ...base, satisfaction: 29 })?.id === "dissatisfied");
 check("affinity 20 → grievance", rollEvent({ ...base, affinity: 20 })?.id === "grievance");
 check("sick 的 rest 選項帶 flag+hermit", sickEv?.choices.find((c) => c.id === "rest")?.effect.flag === "病中沒人管" && sickEv?.choices.find((c) => c.id === "rest")?.effect.directive?.id === "hermit");
-const stressEv = rollEvent({ ...base, stress: 95 });
+const stressEv = rollEvent({ ...base, stress: 95, neglect: 1 });
 check("breakdown 的 space 選項留下後續旗標", stressEv?.choices.find((c) => c.id === "space")?.effect.flag === "壓力自己扛");
 const dissatisfiedEv = rollEvent({ ...base, satisfaction: 20 });
 check("dissatisfied 的 promise 選項留下承諾旗標", dissatisfiedEv?.choices.find((c) => c.id === "promise")?.effect.flag === "答應改善房間");

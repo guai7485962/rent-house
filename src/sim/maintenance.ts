@@ -89,6 +89,51 @@ export function getBreakdownDef(defId: string): BreakdownDef | null {
   return BREAKDOWNS.find((b) => b.id === defId) ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// 虧待度(neglect):唯一一條「房東虧待房客」會**持續**推動數值的管道
+// ---------------------------------------------------------------------------
+
+/**
+ * 虧待度的設計上限。
+ *
+ * 🔴 **僅靠「故障拖延天數」就必須能到達上限**——旗標只是**加速器**,不得是到頂的
+ * 必要條件。原設計把上限訂在「拖延 4 分 + 旗標 2 分」,但那個旗標(`答應改善房間`)
+ * 的唯一來源是玩家在 `dissatisfied` 事件選 `promise`,而 `dissatisfied` 又要靠
+ * 虧待度到頂才觸發 ⇒ **循環相依**,三則事件的可達性證明會全部落空。
+ * `scripts/neglect-test.ts` 有一項專門釘住這條回歸鎖。
+ */
+export const NEGLECT_CAP = 6;
+
+/** 每小時的毫秒數 × 24(故障拖延天數用;`sinceMs` 記的是 `state.gameMs`) */
+const NEGLECT_DAY_MS = 24 * 3600 * 1000;
+
+/** 「答應改善房間」旗標:玩家親手按過的空頭支票,+2 只是讓他更快到頂 */
+const NEGLECT_PROMISE_FLAG = "答應改善房間";
+
+/**
+ * 這位租客目前累積的「虧待度」0~`NEGLECT_CAP`。
+ *
+ * 設計約束(逐條刻意,不得放寬):
+ * 1. **不含任何「什麼都沒做也會發生」的來源**——特別排除「多久沒送宵夜」「多久沒互動」。
+ *    每一分都來自玩家**收到過明確通知**(`notify`,見 `triggerBreakdown`)或**親手按過按鈕**。
+ * 2. **不新增任何存檔欄位**:`state.breakdowns[].sinceMs` 與 `rt.flags` 都已入檔,
+ *    `SAVE_VERSION` 不動。
+ * 3. **無虧待時恆等於 0**(所有掛載點都是 `f(neglect)` 且 `f(0)=0`)。
+ * 4. **可逆**:`repairBreakdown()` 之後立刻回 0。
+ */
+export function neglectPoints(rt: TenantRuntime): number {
+  const roomId = roomOfTenant(rt.tenant.id);
+  if (!roomId) return 0;
+  let n = 0;
+  const bd = state.breakdowns[roomId];
+  if (bd) {
+    const days = Math.floor(Math.max(0, state.gameMs - bd.sinceMs) / NEGLECT_DAY_MS);
+    n += Math.min(NEGLECT_CAP, days);
+  }
+  if (rt.flags.includes(NEGLECT_PROMISE_FLAG)) n += 2;
+  return Math.min(NEGLECT_CAP, n);
+}
+
 /** 這間房住的人(承租人 + 同居者) */
 function occupantsOf(roomId: string): TenantRuntime[] {
   return Object.values(state.runtimes).filter((rt) => roomOfTenant(rt.tenant.id) === roomId);
@@ -111,8 +156,22 @@ export function triggerBreakdown(roomId: string, defId?: string, rng: () => numb
   return true;
 }
 
+/**
+ * 虧待每日侵蝕的好感(每點虧待度、每遊戲日)。
+ *
+ * 🔴 `affinity` 是四條數值裡**唯一沒有回歸**的,所以它必須**每日小量**扣。
+ * 掛每小時等於 ×24,兩天就把好感歸零;而掛每日才對得上「及時修繕 +5(永久)」的
+ * 對稱面 —— 原本虧待免費、照顧單向加分,這一行就是把那個不對稱補平的地方。
+ */
+export const NEGLECT_AFFINITY_PER_DAY = 0.25;
+
 /** 每遊戲日呼叫:先算拖延懲罰(壞著的每一天都痛),再擲新故障 */
 export function maintenancePass(rng: () => number = Math.random) {
+  // 0) 虧待侵蝕好感:無虧待時 neglectPoints 恆為 0 ⇒ 這一段對舊局逐位元無影響
+  for (const rt of Object.values(state.runtimes)) {
+    const n = neglectPoints(rt);
+    if (n > 0) rt.tenant.stats.affinity = clamp(rt.tenant.stats.affinity - NEGLECT_AFFINITY_PER_DAY * n, 0, 100);
+  }
   // 1) 拖延懲罰:滿意度/心情持續掉 + 抱怨日誌(住戶不滿線會自然接到退租壓力)
   for (const [roomId, bd] of Object.entries(state.breakdowns)) {
     const def = getBreakdownDef(bd.defId);

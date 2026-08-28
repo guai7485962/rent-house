@@ -5,7 +5,8 @@
  * - energy 為資源:整體保持在 0~100 且會變動
  */
 import { state, debugStepHour, decide } from "../src/store";
-import { baselines } from "../src/sim/tick";
+import { baselines, stressWellbeingDrain } from "../src/sim/tick";
+import { neglectPoints } from "../src/sim/maintenance";
 import { roomComfort } from "../src/sim/comfort";
 
 let pass = 0;
@@ -43,17 +44,32 @@ check(`stress 從 0 升回(24h 最高 ${stressMax.toFixed(1)} > 3)`, stressMax >
 check("mood 仍在 0~100", lin.tenant.stats.mood >= 0 && lin.tenant.stats.mood <= 100);
 
 // --- 2. 高壓蛀健康(crying 迴圈維持高壓 → wellbeing 每小時流失) ---
+// 舊碼是 `stress >= 80 → −0.4` 的階梯,新碼是從 60 起的斜坡(96 時 −0.72)。
+// 斷言值刻意收緊到 `wb0 − 5`:舊階梯 12 小時最多只掉 4.8,**過不了這一條** ⇒
+// 這條測試對新斜坡才是有感的,不會像舊的 `−2` 那樣兩邊都過。
 chen.tenant.stats.stress = 96;
 chen.tenant.stats.wellbeing = 60;
 const wb0 = chen.tenant.stats.wellbeing;
 for (let i = 0; i < 12; i++) debugStepHour();
-check(`長期高壓後健康下降(${wb0} → ${chen.tenant.stats.wellbeing.toFixed(1)})`, chen.tenant.stats.wellbeing < wb0 - 2);
+check(`長期高壓後健康下降(${wb0} → ${chen.tenant.stats.wellbeing.toFixed(1)},新斜坡 96 ⇒ −0.72/h)`,
+  chen.tenant.stats.wellbeing < wb0 - 5);
+
+// --- 2b. 高壓斜坡的三個錨點(向後相容 + 連續性) ---
+check(`stress 80 的扣減仍恰為 0.4(舊階梯的向後相容錨點,實得 ${stressWellbeingDrain(80)})`,
+  stressWellbeingDrain(80) === 0.4);
+check(`stress 79 的扣減是 0.38(斜坡真的連續,不是階梯;實得 ${stressWellbeingDrain(79)})`,
+  stressWellbeingDrain(79) === 0.38);
+check("stress 60 以下不扣(一般作息不受影響)", stressWellbeingDrain(60) === 0 && stressWellbeingDrain(30) === 0);
 
 // --- 3. wellbeing 過低 → 生病事件 ---
+// ⚠️ 這裡依賴 `neglectPoints(chen) === 0`:`breakdown` 的 when 現在多了 `neglect >= 1`,
+// 而它在目錄裡的優先序高於 `sick`。若之後有人在這支測試前面種了故障或「答應改善房間」旗標,
+// 又把 stress 設高,生病事件就會被 breakdown 搶走。下面明確斷言前提,免得將來莫名其妙紅燈。
 chen.pendingEvent = null;
 chen.lastEventDay = -99;
 chen.tenant.stats.stress = 40;
 chen.tenant.stats.wellbeing = 15;
+check("(前提)此時陳家豪沒有任何虧待度 ⇒ breakdown 不會搶走 sick", neglectPoints(chen) === 0);
 debugStepHour();
 check("低健康觸發生病事件", chen.pendingEvent?.id === "sick");
 

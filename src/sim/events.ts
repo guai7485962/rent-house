@@ -63,6 +63,14 @@ export interface EventCtx {
   affinity: number;
   /** 身心健康(過低會觸發生病事件) */
   wellbeing: number;
+  /**
+   * 虧待度 0~6(`maintenance.neglectPoints`):房東「壞著沒修/空頭支票」累積了多久。
+   *
+   * 🔴 **必填**,不是選填。若做成選填,漏傳時 `ctx["neglect"]` 會是 `undefined`,
+   * `OPS[">="](undefined, 1)` 靜默回 `false` ⇒ 掛了 neglect 條件的事件**永遠不觸發**
+   * 而且沒有任何錯誤訊息。型別上強制,讓漏傳在編譯期就紅。
+   */
+  neglect: number;
   /** 事件連鎖伏筆旗標(requiresFlag 解鎖用;省略視為無) */
   flags?: string[];
 }
@@ -71,8 +79,8 @@ export interface EventCtx {
 // 規則事件目錄(data/events.json):載入時驗證,rollEvent 依序比對條件
 // ---------------------------------------------------------------------------
 
-type RuleStat = "stress" | "satisfaction" | "affinity" | "wellbeing";
-const RULE_STATS = new Set<RuleStat>(["stress", "satisfaction", "affinity", "wellbeing"]);
+type RuleStat = "stress" | "satisfaction" | "affinity" | "wellbeing" | "neglect";
+const RULE_STATS = new Set<RuleStat>(["stress", "satisfaction", "affinity", "wellbeing", "neglect"]);
 const OPS: Record<string, (a: number, b: number) => boolean> = {
   ">=": (a, b) => a >= b,
   "<=": (a, b) => a <= b,

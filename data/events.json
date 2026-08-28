@@ -1,9 +1,10 @@
 {
-  "$comment": "規則事件資料目錄(設計檢討 §5:加事件 = 改這份資料)。陣列順序 = 優先序(第一個條件全中的事件觸發)。when:全部條件成立才觸發,stat ∈ stress/satisfaction/affinity/wellbeing、op ∈ >=/<=/>/<。requiresFlag:租客身上要有該伏筆旗標才可能觸發(事件連鎖);consumesFlag=true 觸發時消耗旗標(不重複觸發)。title/description 的 {name} 會代換成租客名。effect 欄位同 EventEffect(directive 需為白名單 id)。",
+  "$comment": "規則事件資料目錄(設計檢討 §5:加事件 = 改這份資料)。陣列順序 = 優先序(第一個條件全中的事件觸發)。when:全部條件成立才觸發,stat ∈ stress/satisfaction/affinity/wellbeing/neglect、op ∈ >=/<=/>/<。neglect 是虧待度 0~6(maintenance.neglectPoints:壞著沒修的拖延天數 + 空頭支票旗標),掛它就等於要求「玩家真的做了(或沒做)什麼」。requiresFlag:租客身上要有該伏筆旗標才可能觸發(事件連鎖);consumesFlag=true 觸發時消耗旗標(不重複觸發)。title/description 的 {name} 會代換成租客名。effect 欄位同 EventEffect(directive 需為白名單 id)。",
   "events": [
     {
       "id": "breakdown",
-      "when": [{ "stat": "stress", "op": ">=", "value": 90 }],
+      "$comment": "stress 的 90 是舊值,實測從來碰不到(壓力平衡點落在 baselines() 基準下方約 20 點,四人滿房 60 日 × 5 種子的 max 只有 79)。新值 = 掛上虧待度之後 stressed/extreme 情境的實測上尾,normal 情境仍碰不到。第二條 neglect >= 1 有三個作用:把「玩家做了什麼」寫進資料契約、擋掉陳家豪開局 stress=88 的偽觸發、讓「壓力純粹來自工作」的租客不被誤判成崩潰。",
+      "when": [{ "stat": "stress", "op": ">=", "value": 72 }, { "stat": "neglect", "op": ">=", "value": 1 }],
       "title": "{name} 快撐不住了",
       "description": "監視器拍到 {name} 在房間中央來回踱步、掐著手臂——壓力似乎到了臨界點。你要介入嗎?",
       "choices": [
@@ -63,6 +64,7 @@
     },
     {
       "id": "dissatisfied",
+      "$comment": "🔴 `< 30` 一個數字都不准動:tick.ts 的不滿累積門檻是 `satisfaction < 25`,`30 > 25` 這個嚴格不等式是**設計契約**——警告事件必須先於退租倒數發生,玩家才有機會補救。要調手感請調 satisfaction.ts 的 NEGLECT_SATISFACTION_PER_POINT,不要動這裡。",
       "when": [{ "stat": "satisfaction", "op": "<", "value": 30 }],
       "title": "{name} 對房間不太滿意",
       "description": "{name} 私下抱怨房間少了他需要的東西,住得不太順心。再放著不管,可能會考慮搬走。",

@@ -71,7 +71,7 @@ import {
   menuItems,
   restockPlan,
 } from "./cafe";
-import { maintenancePass } from "./maintenance";
+import { maintenancePass, neglectPoints } from "./maintenance";
 import { tryFight, feudActive, feudPass, maybeFeudAfterConflict, avoidLounge } from "./conflicts";
 import { dramaPass } from "./drama";
 import { moveOut, graduateFarewell, endCohabitOnBreakup } from "./tenancy";
@@ -281,6 +281,40 @@ const HOMEOSTASIS_K = 0.06;
 /** 整潔朝自然水位回歸的比例(1.5%/h:非常慢,約一週才收斂;體現「慢變環境品質」) */
 const CLEANLINESS_K = 0.015;
 
+// ---------------------------------------------------------------------------
+// 虧待度(neglect)的三個槓桿倍率
+//
+// 🔴 **三條數值的槓桿倍率完全不同,絕不可用同一組常數。** 每條數值的回歸速度決定了
+//    「同樣一點虧待度」最後能造成多少位移:
+//      stress        回歸 6%/h   掛 `baselines()` ⇒ ×1
+//      wellbeing     回歸 1%/h   掛每小時增量     ⇒ ×100(掛 wbAnchor 只有 ×1,幅度不夠)
+//      satisfaction  回歸 20%/h  掛 `target`      ⇒ ×1(掛脈衝只有 ×0.21)
+//      affinity      **無回歸**   掛每日一次       ⇒ 永久累積(見 maintenance.ts)
+//    數值全部由 `scripts/event-freq-sim.ts` 的實測分布回填,不是設計文件裡的估算值。
+// ---------------------------------------------------------------------------
+
+/** 虧待度每一點推高多少壓力**基準**(n=6 ⇒ +12,把 normal 的 38 推到 50、stressed 的 58 推到 70) */
+const NEGLECT_STRESS_PER_POINT = 2;
+
+/** 虧待度每一點每小時侵蝕多少身心健康(回歸 1%/h ⇒ n=6 的均衡值位移約 −18) */
+const NEGLECT_WELLBEING_PER_POINT = 0.03;
+
+/**
+ * 長期高壓每小時蛀掉多少身心健康。
+ *
+ * 舊碼是 `stress >= 80 → −0.4` 的**階梯**。但實測壓力平衡點落在 `baselines()` 基準
+ * **下方約 20 點**(四人滿房 60 日 × 5 種子的 stress max 只有 79),這道階梯幾乎踩不到
+ * ⇒ `sick` 的 `wellbeing <= 28` 永遠走不到。改成從 60 起的線性斜坡:
+ *
+ *   - `stress = 80` 恰好仍是 **−0.4** ⇒ **向後相容錨點**(舊行為在那一點逐位元相同)
+ *   - `stress = 96` 是 −0.72(比舊的 −0.4 更兇,高壓真的會蛀出病來)
+ *   - `stress <= 60` 是 0(一般作息不受影響)
+ *
+ * 抽成具名純函式是為了讓 `stats-model-test.ts` 能直接把上面三個錨點釘死;
+ * 藏在 `applyStat` 裡的話,任何人改了斜率都不會有測試紅燈。
+ */
+export const stressWellbeingDrain = (stress: number): number => (stress > 60 ? 0.02 * (stress - 60) : 0);
+
 /**
  * 性格決定的心情/壓力基準值(homeostasis 的「回到哪」),再疊三個回饋:
  * - 社交(socialFulfillment 簡版):有戀人/朋友 → 心情基準↑;完全孤立 → ↓
@@ -334,6 +368,11 @@ export function baselines(
   const gdelta = communalBaselineDelta(communalQ ?? communalQuality());
   mood += gdelta.mood;
   stress += gdelta.stress;
+  // 虧待度(壞著沒修 / 空頭支票)推高**壓力基準**。
+  // 🔴 一定要掛基準,不能掛每小時增量:homeostasis 是 6%/h,掛增量等於位移 ×16.7 直接爆表;
+  //    而 `applyStat` 的不動點是 `base + d̄/K` ⇒ 唯一能把 stress 真正推上去的就是 `base` 本身。
+  //    無虧待時 `neglectPoints` 恆為 0 ⇒ 舊局/舊存檔的基準逐位元不變。
+  stress += NEGLECT_STRESS_PER_POINT * neglectPoints(rt);
   return { mood: clamp(mood, 10, 90), stress: clamp(stress, 10, 90) };
 }
 
@@ -353,13 +392,21 @@ function applyStat(rt: TenantRuntime, d: StatDeltas) {
   s.energy = clamp(s.energy + clampDelta(d.energy), 0, 100);
   // wellbeing 也給極弱回歸(1%/h),避免黏死 100;舒適房把回歸錨點微微墊高、髒/簡陋房下修
   const wbAnchor = 65 + comfortBaselineDelta(comfort).wellbeing + communalBaselineDelta(communalQ).wellbeing;
-  s.wellbeing = clamp(s.wellbeing + (wbAnchor - s.wellbeing) * 0.01 + clampDelta(d.wellbeing), 0, 100);
+  // 虧待度掛在**每小時增量**而不是 wbAnchor:anchor 的既有幅度只有 ±4,而回歸只有 1%/h ⇒
+  // 掛增量的位移是 ×100,掛 anchor 只有 ×1。無虧待時 neglect=0 ⇒ 這一項恆為 0。
+  const neglect = neglectPoints(rt);
+  s.wellbeing = clamp(
+    s.wellbeing + (wbAnchor - s.wellbeing) * 0.01 + clampDelta(d.wellbeing) - NEGLECT_WELLBEING_PER_POINT * neglect,
+    0,
+    100,
+  );
   // 整潔慢變環境品質:朝「收納決定的自然水位」極慢回歸(生活會變髒/收納常保整潔),
   // 再吃本小時活動增量(煮飯/洗澡等)。收納家具墊高基準 = 減緩衰減,不逼玩家一直打掃。
   const cleanBase = cleanlinessBaseline(roomId);
   rt.cleanliness = clamp(rt.cleanliness + (cleanBase - rt.cleanliness) * CLEANLINESS_K + clampDelta(d.cleanliness), 0, 100);
   // 後果迴路:長期高壓/精力透支會慢慢蛀掉身心健康(每小時小量,累積才會生病)
-  if (s.stress >= 80) s.wellbeing = clamp(s.wellbeing - 0.4, 0, 100);
+  const drain = stressWellbeingDrain(s.stress);
+  if (drain > 0) s.wellbeing = clamp(s.wellbeing - drain, 0, 100);
   if (s.energy < 20) s.wellbeing = clamp(s.wellbeing - 0.3, 0, 100);
 }
 
@@ -378,7 +425,7 @@ function applyMemoryDrift(rt: TenantRuntime) {
 function updateSatisfaction(rt: TenantRuntime, roomId: string | null) {
   const s = rt.tenant.stats;
   const nm = routineNeedsMet(rt.tenant.id, roomId);
-  const target = satisfactionTarget(s, nm);
+  const target = satisfactionTarget(s, nm, neglectPoints(rt));
   rt.satisfaction = clamp(rt.satisfaction + (target - rt.satisfaction) * 0.2, 0, 100);
 }
 
@@ -1342,14 +1389,19 @@ export function hourlyTick(live = false) {
     if (rt.satisfaction < 25) rt.unhappyHours += 1;
     else rt.unhappyHours = Math.max(0, rt.unhappyHours - 2);
 
-    // 觸發突發事件(每位租客冷卻 2 遊戲日,避免連發)
-    if (day - rt.lastEventDay >= 2) {
+    // 觸發突發事件(每位租客冷卻 4 遊戲日,避免連發)。
+    // 🔴 **刻意長於 AI 事件的 3 日**(`narration.ts:305`),而且兩者共用同一個 `lastEventDay`:
+    // 規則事件一活過來就會每 N 日燒掉一次事件槽,相等或更短會讓規則事件**餓死 AI 事件**。
+    // 副效果是 `breakdown` 的重播間隔也拉到 4 日 —— 那時壓力早已回到平衡點
+    // (0.94^96 = 0.0026),要不要重播純由「虧待度是否還在」決定 ⇒ 玩家修好就停,因果正確。
+    if (day - rt.lastEventDay >= 4) {
       const ev = rollEvent({
         name: rt.tenant.name,
         stress: rt.tenant.stats.stress,
         satisfaction: rt.satisfaction,
         affinity: rt.tenant.stats.affinity,
         wellbeing: rt.tenant.stats.wellbeing,
+        neglect: neglectPoints(rt),
         flags: rt.flags,
       });
       if (ev) {

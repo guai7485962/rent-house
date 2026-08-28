@@ -30,7 +30,7 @@
   【E】成熟期 +$765 → **+$1,123**、名店期 +$1,464。戶外座位四階段日邊際**精確是 $0**(產能夾住)已記
   入待辦。`⚠️ 過度擴張`/`LEGACY_STAGES`/`名店期全設備` 三組對照**一格未動**;§10.4 代數論證已重寫。
 - 驗證:`npm test` **116/116**、typecheck、build 全綠;`balance-test` **零漂移、未 `--update`**;沒動 `src/` ⇒ 免 `smoke:save`,`SAVE_VERSION` 不動。
-- 🔴 **咖啡廳建議層 bug 修復(`5c7ecbf`,本機 `origin/main` 已指向它;線上實玩驗收未做)**:
+- 🔴 **咖啡廳建議層 bug 修復(`5c7ecbf`,已 push、線上已驗證新文案;實玩驗收未做)**:
   `cafeBottleneck()` 用 `idleStaff > 0` 判定 ⇒ **剛好站滿**(3 店員 / 3 服務位)時掉進 `staff`,叫玩家
   白花 −$260/日雇站不上吧台的人。已改成 `staffCount >= stations` + 文案變體 + 7 條回歸鎖(零平衡影響)。
 

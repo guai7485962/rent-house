@@ -129,6 +129,7 @@ if (sel) {
 
 // --- communityPass 整合:冷卻不洗版 + 稀疏 ---
 for (const k of Object.keys(state.interactionCooldowns)) if (k.startsWith("community|")) delete state.interactionCooldowns[k];
+state.scheduledCommunityEvents.splice(0);
 let fired = 0;
 let laundryFires = 0;
 for (let day = 0; day < 40; day++) {
@@ -143,6 +144,23 @@ for (let day = 0; day < 40; day++) {
 }
 check("communityPass:40 天內有觸發社群事件", fired > 0, `fired=${fired}`);
 check("communityPass:稀疏(不是每天都觸發)", fired < 40, `fired=${fired}`);
+
+// 冷卻蓋章時刻的兩種語意(2026-08-28「靜默取消 + 白燒冷卻」修復)。
+// 上面這 40 天只跑 communityPass、**沒有**跑 scheduledCommunityPass ⇒ 排程型事件一場都沒演出:
+// - 有 scene ⇒ 只是排進待演隊列,**不可以**有冷卻章(章留給真正演出的那一刻);
+// - 無 scene ⇒ 當場 fire,「排程時蓋章」本來就等於「成功才蓋章」⇒ 語意與時間戳都不變。
+const stamped = (e: { id: string }) => state.interactionCooldowns[`community|${e.id}`] != null;
+const sceneEvents = COMMUNITY_EVENTS.filter((e) => !!e.scene);
+const plainEvents = COMMUNITY_EVENTS.filter((e) => !e.scene);
+check("冷卻語意:排程型(有 scene)事件在沒演出前一律沒有冷卻章",
+  sceneEvents.length > 0 && sceneEvents.every((e) => !stamped(e)),
+  sceneEvents.filter(stamped).map((e) => e.id).join(",") || "-");
+check("冷卻語意:非排程型(無 scene)事件維持當場 fire 就蓋章",
+  plainEvents.some(stamped), plainEvents.map((e) => e.id).join(","));
+check("重複排程防護:待演隊列裡每個事件 id 最多一筆",
+  new Set(state.scheduledCommunityEvents.map((e) => e.eventId)).size === state.scheduledCommunityEvents.length,
+  state.scheduledCommunityEvents.map((e) => e.eventId).join(","));
+state.scheduledCommunityEvents.splice(0);
 
 // 冷卻:剛觸發過的洗衣房事件,冷卻期內 select 仍在但 communityPass 不會重挑它(靠 onCooldown)
 state.interactionCooldowns["community|laundry"] = state.gameMs;

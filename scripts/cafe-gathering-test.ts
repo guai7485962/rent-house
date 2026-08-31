@@ -151,6 +151,79 @@ check("咖啡廳場地不隱藏 sprite(和 rooftop 的隱藏小舞台不同)",
 check("參與者都拿到聚會日誌(進 Feed)",
   scene?.actors.every((a) => (state.runtimes[a.tenantId]?.log ?? []).some((e) => e.importance === "notable")) === true);
 
+// ---------------------------------------------------------------------------
+// 5) 回歸鎖:need=2 的兩人場「靜默取消」時,冷卻不可以被白燒(docs/待辦.md 2026-08-27)
+//    排一場兩人聚會 → 讓其中一人帶 pendingEvent → 到點跑 scheduledCommunityPass()
+//    ⇒ 這場不演出,但事件必須仍然 eligible,且不會因此被排第二次。
+// ---------------------------------------------------------------------------
+clearGroupScene();
+state.cafe.open = true;
+clearCooldowns();
+state.scheduledCommunityEvents.splice(0);
+const cancelDay = new Date(state.gameMs);
+cancelDay.setHours(9, 0, 0, 0);
+state.gameMs = cancelDay.getTime();
+for (const rt of Object.values(state.runtimes)) { rt.tenant.visualState = "idle"; rt.pendingEvent = null; }
+
+check("回歸鎖:先排出一場咖啡廳聚會",
+  communityPass(scripted([0.9, 0.9, CAFE_GATHER_CHANCE - 0.05])) === true
+  && state.scheduledCommunityEvents.length === 1, `queued=${state.scheduledCommunityEvents.length}`);
+const cancelEntry = state.scheduledCommunityEvents[0];
+const cancelEv = CAFE_COMMUNITY_EVENTS.find((e) => e.id === cancelEntry.eventId)!;
+check("回歸鎖:排程當下不蓋冷卻章(章要留給真正的演出)",
+  state.interactionCooldowns[`community|${cancelEntry.eventId}`] === undefined,
+  String(state.interactionCooldowns[`community|${cancelEntry.eventId}`]));
+
+// 只留兩位參與者,並把其中一位掛上待決事件 ⇒ 演出當下 filter 掉 ⇒ 湊不到 need=2
+const cancelParts = cancelEntry.participantIds.slice(0, 2);
+cancelEntry.participantIds = cancelParts;
+state.runtimes[cancelParts[0]].pendingEvent = {
+  id: "test_pending", title: "測試待決", description: "",
+  choices: [{ id: "ok", label: "好", hint: "", effect: {} }],
+};
+
+state.gameMs = cancelEntry.dueGameMs;
+const cancelledPlays = scheduledCommunityPass(() => 0.5);
+check("回歸鎖①:兩人場有人帶待決事件 → 這場沒有演出", cancelledPlays === 0, `fired=${cancelledPlays}`);
+check("回歸鎖②:冷卻沒有被白燒(仍然沒有蓋章)",
+  state.interactionCooldowns[`community|${cancelEntry.eventId}`] === undefined,
+  String(state.interactionCooldowns[`community|${cancelEntry.eventId}`]));
+const cdMs = cancelEv.cooldownDays * 24 * 3600 * 1000;
+const lastStamp = state.interactionCooldowns[`community|${cancelEntry.eventId}`];
+check("回歸鎖②:onCooldown 為 false ⇒ 這件事仍然 eligible",
+  !(lastStamp != null && state.gameMs - lastStamp < cdMs));
+check("回歸鎖③:取消的那筆已從待演隊列移除(不會殘留成幽靈排程)",
+  state.scheduledCommunityEvents.length === 0, `queued=${state.scheduledCommunityEvents.length}`);
+
+// 取消後立刻重抽(仍是同一個遊戲日 ⇒ isWeekend 不變 ⇒ 抽得到同一條):
+// 冷卻沒被燒掉的具體證據就是「它還排得出來」。
+state.runtimes[cancelParts[0]].pendingEvent = null;
+const retried = communityPass(scripted([0.9, 0.9, CAFE_GATHER_CHANCE - 0.05]));
+check("回歸鎖:被取消的事件可以立刻重新排程(冷卻沒被燒掉)",
+  retried === true && state.scheduledCommunityEvents.length === 1
+  && state.scheduledCommunityEvents[0].eventId === cancelEntry.eventId,
+  `retried=${retried} queued=${state.scheduledCommunityEvents.length} id=${state.scheduledCommunityEvents[0]?.eventId}`);
+
+// 重複排程防護:待演隊列裡已經有同 id ⇒ 不得再排一次
+communityPass(scripted([0.9, 0.9, CAFE_GATHER_CHANCE - 0.05]));
+check("回歸鎖③:同一件事在待演期間不會被重複排程",
+  state.scheduledCommunityEvents.filter((e) => e.eventId === cancelEntry.eventId).length === 1,
+  `queued=${state.scheduledCommunityEvents.map((e) => e.eventId).join(",")}`);
+
+// 對照組:同一場真的演出成功時,冷卻章必須蓋下去(否則就變成永遠不冷卻了)
+const okEntry = state.scheduledCommunityEvents[0];
+state.gameMs = okEntry.dueGameMs;
+for (const rt of Object.values(state.runtimes)) rt.pendingEvent = null;
+clearGroupScene();
+check("回歸鎖:演出成功 → 這時才蓋冷卻章",
+  scheduledCommunityPass(() => 0.5) === 1
+  && state.interactionCooldowns[`community|${okEntry.eventId}`] != null,
+  String(state.interactionCooldowns[`community|${okEntry.eventId}`]));
+const okStamp = state.interactionCooldowns[`community|${okEntry.eventId}`];
+check("回歸鎖:冷卻章正規化到當天 00:00(與舊寫法在換日抽籤時逐位元同值 ⇒ 冷卻節奏零漂移)",
+  okStamp === new Date(new Date(state.gameMs).setHours(0, 0, 0, 0)).getTime(),
+  `stamp=${new Date(okStamp).toISOString()} gameMs=${new Date(state.gameMs).toISOString()}`);
+
 clearGroupScene();
 console.log(`\n結果:${pass} 通過 / ${fail} 失敗`);
 if (fail) process.exit(1);

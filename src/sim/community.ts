@@ -727,10 +727,9 @@ export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
     // 週末場也一起降,否則週末會兩邊都失格(平日場被 `when` 擋、週末場被 `need` 擋),
     // 白白少掉一週 2/7 的機會。`community.ts` 的 `parts.length < ev.need` 讀的是 `ev.need`,
     // 會自動跟著走,不必另外改。
-    // ⚠️ 已知風險(本批不修,見 docs/待辦.md):`scheduledCommunityPass()` 會 filter 掉
-    //    `pendingEvent` 的人。need=2 時,兩人中任一人在演出當下被掛上待決事件,整場**靜默取消**,
-    //    而冷卻早在 `scheduleCommunityEvent()` 就蓋章了 ⇒ 白燒 3 個遊戲日冷卻。
-    //    修法要動到既有 lounge/rooftop 事件的冷卻語意,超出本批範圍。
+    // ✅ 2026-08-28 已修:排程型事件的冷卻改成「演出成功才蓋章」(見 `stampCommunityCooldown()`)。
+    //    need=2 時兩人中任一人在演出當下被掛上待決事件,整場仍然取消,但**冷卻不再白燒**
+    //    ⇒ 隔天的 `communityPass()` 就能重抽同一件,玩家不會因為一次錯過而被靜音三天。
     need: 2,
     cooldownDays: 3,
     when: () => !isWeekend(state.gameMs),
@@ -747,7 +746,7 @@ export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
   },
   {
     // 週末打烊後:整層樓下樓包場(座位區中央)
-    // need 2:理由與取消風險同上面的 `cafe_afterhours`。
+    // need 2:理由與「湊不到人就取消、但冷卻不白燒」的處理同上面的 `cafe_afterhours`。
     id: "cafe_weekend_night",
     need: 2,
     cooldownDays: 3,
@@ -768,6 +767,43 @@ export const CAFE_COMMUNITY_EVENTS: CommunityEvent[] = [
 function onCooldown(id: string, days: number): boolean {
   const last = state.interactionCooldowns[`community|${id}`];
   return last != null && state.gameMs - last < days * 24 * 3600 * 1000;
+}
+
+/**
+ * 排程型(有 `scene`)事件演出成功後才蓋的冷卻章。
+ *
+ * 🔴 **為什麼要正規化到當天 00:00**,而不是直接寫 `state.gameMs`:
+ * 抽籤端 `communityPass()` 只在 `tick.ts` 的換日區塊(`d.getDate() !== prevDay`)呼叫,
+ * 也就是**每遊戲日的 00:00 整**;而 `GAME_START` 是整點,`gameMs` 每次只前進整整一小時
+ * ⇒ 舊寫法蓋下去的那個章,值必定**正好是當天的 00:00**。
+ * 演出時刻是 15/18/20/21 點,若改蓋 `state.gameMs` 就等於把章往後挪 15~21 小時,
+ * `state.gameMs - last < days*24h` 的比較會讓下一次可觸發日**整整晚一天**
+ * (例:cooldownDays=3 實質變成 4 日)—— 那是平衡改動,不是穩健性修復。
+ * 正規化成當天 00:00 後,蓋章的**值與舊寫法逐位元相同**,冷卻節奏零漂移。
+ * `cooldownDays` 本來就是「日」為單位,day-granular 也才是它真正的語意。
+ */
+function stampCommunityCooldown(id: string) {
+  const day = new Date(state.gameMs);
+  day.setHours(0, 0, 0, 0);
+  state.interactionCooldowns[`community|${id}`] = day.getTime();
+}
+
+/**
+ * 這件事是否已經排在待演隊列裡。
+ *
+ * 冷卻改成「演出才蓋章」之後,`onCooldown()` 在**排程 → 演出**的窗口內是 false
+ * ⇒ 少了這道閘,同一件事可能被排第二次(兩份演出、兩次效果)。
+ *
+ * 🔍 這個窗口實際有多長:`communityPass()` 只在換日區塊被呼叫(每遊戲日 00:00 一次),
+ * 而 `dueAtHour()` 把演出排在**同一天**的 15/18/20/21 點(都晚於 00:00 ⇒ 不會被推到隔天),
+ * `scheduledCommunityPass()` 又是**每遊戲小時**呼叫、且排在換日區塊**之前**
+ * ⇒ 正常時序下,抽籤當下待演隊列必定是空的,這道閘一次都不會真的擋到東西
+ * (`eligible` 集合不變 ⇒ `Math.floor(rng() * eligible.length)` 的結果不變 ⇒ balance 快照零漂移)。
+ * 它是給「呼叫時序被改動 / 腳本直接連呼 `communityPass()` / 存檔裡帶著待演項目載入」
+ * 這幾種情況的安全網,不是日常會走到的路徑。
+ */
+function isCommunityEventScheduled(id: string): boolean {
+  return state.scheduledCommunityEvents.some((entry) => entry.eventId === id);
 }
 
 function dueAtHour(hour: number): number {
@@ -808,7 +844,11 @@ export function scheduledCommunityPass(rng: Rng = Math.random): number {
       .map((id) => state.runtimes[id])
       // 演出本身就是這個時段的行程：即使一般作息原本是外出，也讓已答應參加的人回來入鏡。
       .filter((rt): rt is TenantRuntime => !!rt && !rt.pendingEvent);
+    // 湊不到人(例:need=2 的咖啡廳場,兩人中有一人被掛上待決事件)⇒ 這場取消。
+    // 🔴 取消時**不蓋冷卻章**:章在下一行、通過人數門檻之後才蓋 ⇒ 這件事隔天可以重抽,
+    //    玩家不會因為一次「什麼都沒發生」而被靜音整個冷卻期(docs/待辦.md 的靜默取消 + 白燒冷卻)。
     if (parts.length < ev.need) continue;
+    stampCommunityCooldown(ev.id);
     ev.fire(parts, rng);
     startGroupScene({
       id: `community:${ev.id}:${entry.dueGameMs}`,
@@ -845,14 +885,21 @@ export function communityPass(rng: Rng = Math.random): boolean {
 /** 既有的樓層社群事件抽籤(行為與抽出的 RNG 次序都與併入本函式前一致)。 */
 function rollCommunityEvent(present: TenantRuntime[], rng: Rng): boolean {
   if (rng() > 0.4) return false; // 不是每天都有事發生(稀疏、不洗版)
-  const eligible = COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays) && (!e.when || e.when()));
+  const eligible = COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays)
+    && !isCommunityEventScheduled(e.id) && (!e.when || e.when()));
   if (eligible.length === 0) return false;
   const ev = eligible[Math.floor(rng() * eligible.length)];
   const parts = ev.select(present, rng);
   if (!parts || parts.length < ev.need) return false;
-  if (ev.scene) scheduleCommunityEvent(ev, parts);
-  else ev.fire(parts, rng);
-  state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
+  if (ev.scene) {
+    // 排程型:現在只是**約好**,還沒演出 ⇒ 不蓋冷卻章。章由 `scheduledCommunityPass()`
+    // 在真的湊到人、真的開演時才蓋(重複排程改由 `isCommunityEventScheduled()` 擋)。
+    scheduleCommunityEvent(ev, parts);
+  } else {
+    // 非排程型:當場 fire ⇒「排程時蓋章」本來就等於「成功才蓋章」,語意不變、時間戳也不變。
+    ev.fire(parts, rng);
+    state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
+  }
   return true;
 }
 
@@ -864,14 +911,15 @@ function rollCommunityEvent(present: TenantRuntime[], rng: Rng): boolean {
  */
 function rollCafeGathering(present: TenantRuntime[], rng: Rng): boolean {
   if (!state.cafe.open) return false; // 天然閘門:沒開張的店不可能有人在裡面聚會
-  const eligible = CAFE_COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays) && (!e.when || e.when()));
+  const eligible = CAFE_COMMUNITY_EVENTS.filter((e) => present.length >= e.need && !onCooldown(e.id, e.cooldownDays)
+    && !isCommunityEventScheduled(e.id) && (!e.when || e.when()));
   if (eligible.length === 0) return false;
   if (rng() > CAFE_GATHER_CHANCE) return false;
   const ev = eligible[Math.floor(rng() * eligible.length)];
   const parts = ev.select(present, rng);
   if (!parts || parts.length < ev.need) return false;
+  // 咖啡廳事件全部帶 `scene` ⇒ 一律走排程,冷卻章同樣留給 `scheduledCommunityPass()` 蓋。
   scheduleCommunityEvent(ev, parts);
-  state.interactionCooldowns[`community|${ev.id}`] = state.gameMs;
   return true;
 }
 

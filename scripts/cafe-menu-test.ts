@@ -116,10 +116,23 @@ try {
   const DAY_MS = 24 * 3600 * 1000;
   const setDay = (day: number) => { state.gameMs = GAME_START.getTime() + day * DAY_MS; };
   const openStock = () => Object.fromEntries(CAFE_INGREDIENTS.map((item) => [item.id, item.defaultStandingOrder]));
+  /**
+   * 🔴 **這份 fixture 刻意不含戶外座位**(2026-09-02 移除)。
+   *
+   * 底下那條護欄「研發不是印鈔機:**產能腿不投資**,光靠研發到不了淨租金的一半」的
+   * 前提就是「不買產能」。戶外座位在 2026-09-02 之後**就是一件產能投資**
+   * (`cafeCapability()` 的 `outdoorCapacity`,加在 `min()` 外面),留著會讓護欄
+   * 量到的是「研發 + 一件產能投資」,前提自己破掉。
+   *
+   * 移除當下是**零漂移**、逐位元相同(移除前/後都是):
+   *   無研發 $326.214286/日、完整研發 $460.910714/日、客流 36.000000 → 36.000000 人/日。
+   * 因為當時戶外座位只走 `cafeCrowd()` 的晴天 +15% **需求端**加成,而這間店是
+   * 產能夾住的(客流固定 36.000000 = 天花板)⇒ 多叫來的人全被 `min()` 吃掉,
+   * 那個旗標在這裡一分錢都沒產生過。
+   */
   const matureUpgrades = [
     CAFE_UPGRADE_IDS.signboard,
     CAFE_UPGRADE_IDS.secondMachine,
-    CAFE_UPGRADE_IDS.outdoorSeats,
     CAFE_UPGRADE_IDS.coldStorage,
   ];
   const dailyRent = Object.values(state.runtimes)

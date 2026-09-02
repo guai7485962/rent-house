@@ -36,7 +36,8 @@ const {
   cafeCapability, cafeCrowd, cafeDailyLine, cafeHourlyGuestCount, cafeInvestOutlook, cafePetStayEndHour,
   cafeStaffCount, cafeTypicalBase,
   CAFE_AMBIANCE_FULL_POINTS, CAFE_AMBIANCE_SWING, CAFE_BUSINESS_HOURS, CAFE_CROWD_PER_SIGN_LEVEL,
-  CAFE_MACHINE_CUPS_BONUS, CAFE_OUTDOOR_SUNNY_BONUS, CAFE_POPULARITY_MAX, CAFE_POPULARITY_SWING,
+  CAFE_MACHINE_CUPS_BONUS, CAFE_OUTDOOR_CAPACITY, CAFE_OUTDOOR_SUNNY_BONUS,
+  CAFE_POPULARITY_MAX, CAFE_POPULARITY_SWING,
   CAFE_SEAT_TURNOVER, CAFE_STAFF_CUPS_PER_DAY, CAFE_STAFF_WAGE, CAFE_TAKEAWAY_CAPACITY, CAFE_TYPICAL_WEATHER,
   CAFE_UPGRADE_IDS, CAFE_WEATHER_MULTIPLIER, CAFE_WEEKDAY_MULTIPLIER, SPOILAGE_FREE_UNITS,
 } = await import("../src/sim/cafe");
@@ -321,25 +322,41 @@ try {
   check("Lv1 招牌的店在這個形狀下也已經 base >= capacity",
     blockedSignBase >= blockedSignCap.capacity, `base=${blockedSignBase} cap=${blockedSignCap.capacity}`);
 
+  /**
+   * 🔴 2026-09-02:**戶外座位已經從這條「精確 0」裡拿掉**。
+   *
+   * 它以前也在這張清單裡,而那是**把 bug 寫成了規格** —— 需求端道具在產能夾住的店裡
+   * 邊際為 0 是對的,但戶外座位本來就不該只是需求端道具(四個階段全被員工腿夾住 ⇒
+   * 它的日邊際精確是 $0,那正是使用者抱怨的「買了沒作用」)。現在它自帶產能
+   * (`CAFE_OUTDOOR_CAPACITY`,加在 `min()` 外面)⇒ 在這個形狀下**必須 > 0**,
+   * 由下面「兩種瓶頸都 +N」那組回歸鎖釘住。招牌那三塊留在這裡,它們的 0 是對的。
+   */
   const crowdItems = [CAFE_UPGRADE_IDS.signboard, CAFE_UPGRADE_IDS.signboardLv3,
-    CAFE_UPGRADE_IDS.signboardLv4, CAFE_UPGRADE_IDS.outdoorSeats];
-  check("🔴 base >= capacity ⇒ 三塊招牌與戶外座位的 extraOrders 精確等於 0,tone 一律 blocked", (() => {
+    CAFE_UPGRADE_IDS.signboardLv4];
+  check("🔴 base >= capacity ⇒ 三塊招牌的 extraOrders 精確等於 0,tone 一律 blocked", (() => {
     // 逐級解鎖 ⇒ 每一塊招牌都要用「已買到前一級」的清單問一次,才問得到它自己。
     const chain = [[] as string[], [CAFE_UPGRADE_IDS.signboard],
       [CAFE_UPGRADE_IDS.signboard, CAFE_UPGRADE_IDS.signboardLv3]];
-    const results = crowdItems.map((id, i) => cafeInvestOutlook(id, {
-      ...blockedSignCtx,
-      upgrades: id === CAFE_UPGRADE_IDS.outdoorSeats ? [] : chain[i],
-    }));
+    const results = crowdItems.map((id, i) => cafeInvestOutlook(id, { ...blockedSignCtx, upgrades: chain[i] }));
     return results.every((o) => o.extraOrders === 0 && o.tone === "blocked");
   })(), "這就是使用者抱怨的那個 0");
   check("招牌 blocked 的文案把兩個數字都攤出來(想上門 N／做得出 M)", (() => {
     const o = cafeInvestOutlook(CAFE_UPGRADE_IDS.signboard, blockedSignCtx);
     return o.text.includes(`${blockedSignBase} 人想上門`) && o.text.includes(`${blockedSignCap.capacity} 單`);
   })());
-  check("戶外座位 blocked 的文案講明「只在晴天」而且點出金額",
-    cafeInvestOutlook(CAFE_UPGRADE_IDS.outdoorSeats, blockedSignCtx).text.includes("晴天")
-    && cafeInvestOutlook(CAFE_UPGRADE_IDS.outdoorSeats, blockedSignCtx).text.includes("25,000"));
+  check("🔴 產能夾住的店:戶外座位不再是 0,而且文案講明它不搶店內位子/人手", (() => {
+    const o = cafeInvestOutlook(CAFE_UPGRADE_IDS.outdoorSeats, blockedSignCtx);
+    // 仍然是差分不是查表:被擋在門外的人不足 10 位時,多做的就只有那幾位。
+    const expected = Math.min(blockedSignBase, blockedSignCap.capacity + CAFE_OUTDOOR_CAPACITY)
+      - blockedSignCap.capacity;
+    return o.tone === "good" && o.extraOrders === expected && expected > 0
+      && o.text.includes("不跟店內搶位子也不搶人手");
+  })(), "以前這裡斷言的是「精確 0」——那是把 bug 寫成規格");
+  check("🔴 使用者那間店(招牌 Lv4、服務位 1、被擋掉幾十人)戶外座位整整 +10", (() => {
+    const o = cafeInvestOutlook(CAFE_UPGRADE_IDS.outdoorSeats, blockedCtx);
+    return o.tone === "good" && o.extraOrders === CAFE_OUTDOOR_CAPACITY
+      && blockedBase >= blockedCap.capacity + CAFE_OUTDOOR_CAPACITY;
+  })(), `base=${blockedBase} cap=${blockedCap.capacity}`);
 
   /** 產能吃得下的店:招牌買了會有數字。 */
   const roomyCtx = {
@@ -366,16 +383,61 @@ try {
       && o.extraOrders === Math.min(baseNext, roomyCap.capacity) - roomyBase
       && o.extraOrders > 0;
   })());
-  check("戶外座位 good 的 extraOrders 反映的是「晴天 +15%」那一段",
+  /**
+   * 🔴 需求端那條腿沒有被拿掉,只是不再是唯一的一條。
+   * 這間店是 **demand-bound**(base < capacity)⇒ 多出來的 10 格產能一般日沒人坐,
+   * `extraOrders`(一般日、每天都拿得到的保證值)必須是 **0**;
+   * 晴天 +15% 叫來的人才有事做,那個數字只出現在文案裡。
+   */
+  check("戶外座位在 demand-bound 的店:一般日 extraOrders = 0,晴天那段寫進文案",
     (() => {
       const o = cafeInvestOutlook(CAFE_UPGRADE_IDS.outdoorSeats, roomyCtx);
+      const nextCap = cafeCapability([CAFE_UPGRADE_IDS.outdoorSeats], {
+        seats: roomyCtx.seats, extraStaff: roomyCtx.extraStaff, stations: roomyCtx.stations,
+      });
       const sunny = cafeTypicalBase({
         signLevel: roomyCap.signLevel * (1 + CAFE_OUTDOOR_SUNNY_BONUS),
         popularity: roomyCtx.popularity,
         ambiancePoints: roomyCtx.ambiancePoints,
       });
-      return o.tone === "good" && o.extraOrders === Math.min(sunny, roomyCap.capacity) - roomyBase;
+      const sunnyExtra = Math.min(sunny, nextCap.capacity) - roomyBase;
+      return o.tone === "good" && o.extraOrders === 0 && sunnyExtra > 0
+        && o.text.includes(`晴天大約多做 ${sunnyExtra} 單`);
     })());
+
+  /**
+   * 🔴 **戶外產能必須在兩種瓶頸下都生效** —— 這正是它跟「加椅子」「雇人」不同的地方。
+   *
+   * 加椅子只解得了席次腿、雇人只解得了員工腿,兩者都會被另一條腿夾回去(那也正是
+   * 「讓戶外座位增加席次」這個修法會失敗的原因:席次腿在四個階段從來不是 binding)。
+   * 戶外區自帶座位又多半自取 ⇒ 它加在 `min()` 外面,**兩種瓶頸下都必須整整 +N**。
+   */
+  const outdoorLegs = [
+    { name: "席次受限", geo: { seats: 2, extraStaff: 6, stations: 8 } },
+    { name: "員工受限", geo: { seats: 200, extraStaff: 0, stations: 8 } },
+  ];
+  for (const leg of outdoorLegs) {
+    const before = cafeCapability([], leg.geo);
+    const after = cafeCapability([CAFE_UPGRADE_IDS.outdoorSeats], leg.geo);
+    const seatBound = (before.seatCapacity ?? Infinity) < before.staffCapacity;
+    check(`🔴 戶外產能在「${leg.name}」的店也整整 +${CAFE_OUTDOOR_CAPACITY}`,
+      (leg.name === "席次受限" ? seatBound : !seatBound)
+      && before.outdoorCapacity === 0 && after.outdoorCapacity === CAFE_OUTDOOR_CAPACITY
+      && after.capacity === before.capacity + CAFE_OUTDOOR_CAPACITY
+      // 兩條腿本身一格不動 —— 它加的不是席次也不是人手。
+      && after.seatCapacity === before.seatCapacity && after.staffCapacity === before.staffCapacity,
+      `seat=${before.seatCapacity} staff=${before.staffCapacity} `
+      + `cap ${before.capacity} -> ${after.capacity}`);
+  }
+  check("🔴 沒買戶外座位時 capacity 逐位元等於舊公式 min(席次腿, 員工腿)", (() => {
+    const grid = [{ seats: 2, extraStaff: 6, stations: 8 }, { seats: 200, extraStaff: 0, stations: 8 },
+      { seats: 40, extraStaff: 2, stations: 3 }, { seats: 12, extraStaff: 3, stations: 1 }];
+    return grid.every((geo) => {
+      const cap = cafeCapability([], geo);
+      return cap.outdoorCapacity === 0
+        && cap.capacity === Math.min(cap.seatCapacity ?? Infinity, cap.staffCapacity);
+    });
+  })());
 
   /** 吧台不夠寬的店:第二台咖啡機只加乘「站得上吧台」的人。 */
   const idleCtx = {
@@ -410,12 +472,19 @@ try {
       && o.extraOrders === cap.staffCount * CAFE_MACHINE_CUPS_BONUS;
   })());
 
-  check("🔴 全生鮮常備量 ≤ 24 ⇒ 大型冷藏 blocked(用真的 applySpoilage() 對帳,不手算)", (() => {
+  /**
+   * 🔴 2026-09-02:tone 從 `blocked` 改成 **`note`**。
+   *
+   * `blocked` 的語意是「買了不會變成錢,先解決別的」;但大型冷藏在這個常備量下
+   * **仍然**是冷萃研發的唯一前置 ⇒ 說它「用不到」是假的。它是保險 + 閘門:
+   * 保險沒出險本來就不該回本,閘門則永遠值錢。兩側文案都必須點名冷萃。
+   */
+  check("🔴 全生鮮常備量 ≤ 24 ⇒ 大型冷藏 note + 點名冷萃閘門(用真的 applySpoilage() 對帳,不手算)", (() => {
     const stock = ordersAt(24);
     const spoiled = applySpoilage(stock).totalSpoiled; // 真的跑一次損耗
     const o = cafeInvestOutlook(CAFE_UPGRADE_IDS.coldStorage, { ...roomyCtx, standingOrders: stock });
-    return spoiled === 0 && o.tone === "blocked" && o.extraOrders === 0
-      && o.text.includes(String(SPOILAGE_FREE_UNITS));
+    return spoiled === 0 && o.tone === "note" && o.extraOrders === 0
+      && o.text.includes(String(SPOILAGE_FREE_UNITS)) && o.text.includes("冷萃");
   })());
   check("常備量真的拉高(生鮮 60)⇒ 大型冷藏 good,而且兩個數字與 applySpoilage() 完全一致", (() => {
     const stock = ordersAt(60);
@@ -426,7 +495,9 @@ try {
     return before > 0 && after < before
       && o.tone === "good" && o.text.includes(`${before} 單位`) && o.text.includes(`${after} 單位`)
       // §9-4 已知取捨:用常備量估是上界 ⇒ 文案必須寫「最多」。
-      && o.text.includes("最多");
+      && o.text.includes("最多")
+      // 2026-09-02:good 這一側也要點名冷萃閘門。
+      && o.text.includes("冷萃");
   })(), `before=${applySpoilage(ordersAt(60)).totalSpoiled}`);
   check("生鮮清單非空(否則上面兩條是假通過)", perishableIds.length >= 3);
 
@@ -731,11 +802,19 @@ try {
     /\.outlook\s*\{[^}]*\}/.test(panel) && !/\.outlook[^{]*\{[^}]*transition/.test(panel));
   check("三種 tone 都有對應的 CSS",
     panel.includes(".outlook.good") && panel.includes(".outlook.blocked") && panel.includes(".outlook.note"));
-  check("cafeUpgrades.ts 的 effect 字串一個字都沒改(那是資料)", (() => {
+  /**
+   * 這條原本叫「effect 字串一個字都沒改」,用來證明**可見性批次**沒有偷改資料。
+   * 2026-09-02 的永久投資修正**刻意**改了其中兩句(戶外座位、大型冷藏),因為機制本身變了
+   * ⇒ 改成釘住**新的**字串,並額外釘住兩件事:
+   * ① 戶外的文案要把「不佔席次/不佔人手」講出來(那是 `min()` 外面那一項的玩家端說法);
+   * ② 冷藏的文案要點名冷萃閘門(玩家買之前得知道自己買到什麼)。
+   */
+  check("cafeUpgrades.ts 的 effect 字串就是現行這幾句(那是資料,改動要有意識)", (() => {
     const data = readSrc("src", "content", "cafeUpgrades.ts");
+    const outdoor = "騎樓自成一區：自帶座位、客人多半自取，不占店內席次也不占店員人手，"
+      + "每天穩定多做一批；晴天再多招來一些客人";
     return data.includes('effect: "基礎客流提高，租屋詢問更容易出現"')
-      && data.includes('effect: "晴天客流提高，雨天不生效"')
-      && data.includes('effect: "生鮮免損耗量提高，損耗率減半"')
+      && data.includes(`effect: "${outdoor}"`)
       && data.includes('effect: "寵物停留更久，認養詢問更容易出現"');
   })());
 

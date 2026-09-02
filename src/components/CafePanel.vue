@@ -40,6 +40,7 @@ import {
   CAFE_SALES_WINDOW_DAYS,
   CAFE_OPENING_COST,
   CAFE_UPGRADES,
+  CAFE_UPGRADE_IDS,
   consumeStock,
   dailyDemand,
   fireCafeStaff,
@@ -55,7 +56,8 @@ import {
 } from "../sim/cafe";
 import { removeCafeGuest } from "../sim/cafeGuests";
 import { isVacant, ROOM_APPEARANCE } from "../sim/gameState";
-import { acceptCafeGuestAdoption } from "../sim/pets";
+import { acceptCafeGuestAdoption, CAFE_GUEST_ADOPTION_DESTINATION } from "../sim/pets";
+import { MS_PER_GAME_HOUR } from "../sim/clock";
 import { save } from "../sim/persistence";
 import {
   CAFE_PLACEMENT_REGIONS,
@@ -129,6 +131,25 @@ const loadPercent = computed(() => (capability.value.capacity > 0
 /** 進度條轉紅的門檻:已經吃掉九成產能 ⇒ 畫面上的隊伍差不多也排起來了。 */
 const loadFull = computed(() => loadPercent.value >= 90);
 const adoptGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "adopt"));
+/**
+ * 🔴 2026-09-02 貓跳台可見性:**把「結果」秀出來**。
+ *
+ * 貓跳台($12,000)換到的是真實內容而不是營收(`intent` 完全不參與結帳),那是對的、
+ * 一個數值都不該動。缺的一直是**結果**:玩家看得到詢問率變高,卻永遠看不到「所以到底
+ * 送養了幾隻」—— 於是那筆錢在感受上仍然是白花的。
+ *
+ * 兩個數字都**從既有存檔欄位推**(`state.petHomes` 的送養名冊),
+ * **沒有新增任何存檔欄位、`SAVE_VERSION` 不動**:
+ * - 詢問件數只有「現在店裡幾位」拿得到(顧客是當日的、不入存檔)⇒ 誠實寫成「現在」;
+ * - 送養隻數是真的成果,近 30 天與累計都印。
+ */
+const CAFE_ADOPT_RECENT_DAYS = 30;
+const cafeAdoptedHomes = computed(() =>
+  state.petHomes.filter((entry) => entry.destination === CAFE_GUEST_ADOPTION_DESTINATION));
+const cafeAdoptedRecent = computed(() => {
+  const since = state.gameMs - CAFE_ADOPT_RECENT_DAYS * 24 * MS_PER_GAME_HOUR;
+  return cafeAdoptedHomes.value.filter((entry) => entry.leftMs >= since).length;
+});
 const rentGuests = computed(() => state.cafe.guests.filter((guest) => guest.intent === "rent"));
 /**
  * 🔴 B 批:常客名冊。**觀察物,不是決策卡** —— 沒有按鈕、不會過期,
@@ -261,6 +282,34 @@ const turnawayWindow = computed(() => {
     avg: rows.length > 0 ? Math.round(sum / rows.length) : 0,
   };
 });
+
+/**
+ * 🔴 2026-09-02:投資清單**只在 Vue 層分組**。
+ *
+ * `CAFE_UPGRADE_IDS` 的鍵名、值與宣告順序**一格都不能動**(存檔與 `cafeCapability()`
+ * 都吃它們),所以這裡不重排資料、只挑出要放進哪一組來 render。
+ *
+ * 分兩組的理由是玩家一直把它們當成同一種東西在比 CP 值,然後對「買了沒變多」失望:
+ * - **產能與客流**:買了會多做幾單,可以拿回本天數互比;
+ * - **內容與保險**:貓跳台換到的是真實內容(店貓送養的唯一管道,`intent` 不參與結帳)、
+ *   大型冷藏是保險 + 冷萃研發的閘門。它們**本來就不該用回本天數評價**,
+ *   放在同一排比較就一定顯得爛。
+ */
+const CAFE_UNLOCK_UPGRADE_IDS: readonly string[] = [CAFE_UPGRADE_IDS.petTower, CAFE_UPGRADE_IDS.coldStorage];
+const upgradeGroups = computed(() => [
+  {
+    key: "capacity",
+    title: "產能與客流",
+    note: "買了會多做幾單，chip 上的數字就是以現在這間店算出來的差分。",
+    items: CAFE_UPGRADES.filter((item) => !CAFE_UNLOCK_UPGRADE_IDS.includes(item.id)),
+  },
+  {
+    key: "unlock",
+    title: "內容解鎖與保險",
+    note: "不直接變成營收：打開新的研發線或新的故事，別拿回本天數跟上面那組比。",
+    items: CAFE_UPGRADES.filter((item) => CAFE_UNLOCK_UPGRADE_IDS.includes(item.id)),
+  },
+]);
 
 /** 投資卡的 chip:文字一律由 `cafeInvestOutlook()` 產,template 不寫死任何一句。 */
 const investOutlook = (id: string) => cafeInvestOutlook(id, {
@@ -869,8 +918,14 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
             </button>
             <template v-if="openSections.invest">
             <p class="section-note">一次性、不可退；購買後永久生效。目前資金 <b>${{ state.money.toLocaleString() }}</b>。</p>
+            <!--
+              🔴 分組只發生在這裡(Vue 層)。`CAFE_UPGRADE_IDS` 的鍵名/值/順序一格未動。
+            -->
+            <div v-for="group in upgradeGroups" :key="group.key" class="upgrade-group">
+            <h4 class="group-head">{{ group.title }}</h4>
+            <p class="section-note">{{ group.note }}</p>
             <div class="upgrade-list">
-              <article v-for="item in CAFE_UPGRADES" :key="item.id" class="upgrade" :class="{ owned: state.cafe.upgrades.includes(item.id) }">
+              <article v-for="item in group.items" :key="item.id" class="upgrade" :class="{ owned: state.cafe.upgrades.includes(item.id) }">
                 <div class="upgrade-head">
                   <b>{{ item.name }}</b>
                   <span v-if="state.cafe.upgrades.includes(item.id)" class="owned-label">✓ 已完成</span>
@@ -896,6 +951,7 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
                   {{ state.money < item.price ? "金錢不足" : `投資 −$${item.price.toLocaleString()}` }}
                 </button>
               </article>
+            </div>
             </div>
             </template>
           </section>
@@ -936,6 +992,15 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
               <span class="chev" aria-hidden="true">▾</span>
             </button>
             <template v-if="openSections.adoption">
+            <!--
+              🔴 認養「結果」行:貓跳台買到的是內容不是營收,所以要用**送養隻數**結案。
+              兩個數字都推自既有存檔(`state.petHomes`),沒有新增存檔欄位。
+            -->
+            <p class="alert" :class="cafeAdoptedHomes.length > 0 ? 'good' : 'note'">
+              💗 現在有 {{ adoptGuests.length }} 位客人來問認養 · 最近 {{ CAFE_ADOPT_RECENT_DAYS }} 天成功送養
+              <b>{{ cafeAdoptedRecent }}</b> 隻（累計 {{ cafeAdoptedHomes.length }} 隻）
+              <template v-if="!cafeAdoptedHomes.length"> —— 還沒有送出去過；貓跳台與軟墊拉高的是「有人來問」的機率，成交要靠你在這裡按下接受。</template>
+            </p>
             <p v-if="!adoptGuests.length" class="empty">目前沒有顧客詢問認養。</p>
             <article v-for="guest in adoptGuests" :key="guest.id" class="adoption">
               <div class="guest-line">
@@ -1101,6 +1166,8 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .alert.warn { color: #ffd98a; background: rgba(181,135,46,0.11); }
 .alert.bad { color: #ffacb7; background: rgba(232,101,122,0.1); }
 .alert.good { color: #b9f6ce; background: rgba(83,196,126,0.09); }
+/* 2026-09-02:認養結果行在「還沒送養過」時用中性的紫,不要用警示色 —— 那不是錯誤狀態。 */
+.alert.note { color: #d9c2ff; background: rgba(150,110,220,0.1); }
 .ghost { margin-left: auto; padding: 5px 8px; color: #cdbcff; background: rgba(143,123,255,0.1); border: 1px solid rgba(143,123,255,0.4); font-size: 10.5px; }
 .order-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-bottom: 7px; }
 .order-tools .ghost { margin-left: 0; }
@@ -1135,6 +1202,10 @@ const money = (value: number) => `${value < 0 ? "−" : ""}$${Math.abs(value).to
 .miss-total { font-weight: 700; }
 .miss-none { margin: 8px 0 0; color: var(--good); font-size: 10.8px; line-height: 1.45; }
 .order-list, .upgrade-list { display: flex; flex-direction: column; gap: 7px; }
+/* 2026-09-02:投資分組。標題只是分隔,不做成可收合(多一層收合會讓玩家找不到東西)。 */
+.upgrade-group + .upgrade-group { margin-top: 14px; }
+.group-head { margin: 0; font-size: 11.5px; letter-spacing: 0.04em; color: #e6e1f5; }
+.upgrade-group .section-note { margin-top: 3px; }
 .order-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 9px; background: rgba(255,255,255,0.025); }
 .order-row > span { min-width: 0; display: flex; flex-direction: column; }
 .order-row b { font-size: 12px; }

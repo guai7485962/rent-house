@@ -45,8 +45,12 @@ try {
     JSON.stringify(ids.slice(0, 5)) === JSON.stringify([
       "cafe_signboard", "cafe_second_machine", "cafe_outdoor_seats", "cafe_cold_storage", "cafe_pet_tower",
     ]), JSON.stringify(ids));
-  check("價格與設計文件一致(既有五項一毛未動)",
-    JSON.stringify(CAFE_UPGRADES.map((item) => item.price)) === JSON.stringify([30000, 18000, 25000, 15000, 12000, 60000, 110000]),
+  // 🔴 2026-09-02:大型冷藏 $15,000 → **$8,000**(唯一一次調價)。
+  // 它是「保險 + 閘門」不是產能:價值方差 $0~$99.5/日(5.5 倍)大於 §10.5 的回本帶寬
+  // 4.17 倍 ⇒ **純調價不可能讓兩端同時落在帶內**,所以判準改用「備貨過量情境」,
+  // $8,000 ⇒ 備貨過量回本 80 天。投資項不能變賣 ⇒ 無拆賣套利;舊存檔付過的價不受影響。
+  check("價格與設計文件一致(冷藏 2026-09-02 降價,其餘一毛未動)",
+    JSON.stringify(CAFE_UPGRADES.map((item) => item.price)) === JSON.stringify([30000, 18000, 25000, 8000, 12000, 60000, 110000]),
     JSON.stringify(CAFE_UPGRADES.map((item) => item.price)));
   // 2026-08-03 改寫:吧台($16,000)現在由開張免費附贈,玩家不必自己買,原斷言的前提已不成立。
   // 新校準改釘兩件事 ——

@@ -235,7 +235,18 @@ const LEGACY_STAGES: Stage[] = [
   { label: "舊·成熟期 6 研發", upgrades: SIGN_LV3, seats: 20, extraStaff: 2, completed: LEGACY_SIX, target: 900, oldTarget: 900 },
 ];
 
-function run(stage: Stage, extraCounters = 0, backStorage = false) {
+/**
+ * 🔴 2026-09-02:常備量倍率(`1` = 照建議量,完全等同舊行為)。
+ *
+ * 大型冷藏是**保險**,而保險的價值只有在「出險」時看得到 —— 照建議量備貨的人
+ * 一天壞不到一單位,它的日邊際結構上就趨近 0(不是沒接上)。要量它,唯一誠實的
+ * 情境是「玩家自己備太多」,所以這裡開一個倍率旋鈕把那個情境跑出來。
+ */
+const scaleOrders = (orders: Record<string, number>, mult: number) => (mult === 1
+  ? orders
+  : Object.fromEntries(Object.entries(orders).map(([id, n]) => [id, Math.max(0, Math.round(n * mult))])));
+
+function run(stage: Stage, extraCounters = 0, backStorage = false, stockMult = 1) {
   const seats = setSeats(stage.seats, extraCounters, backStorage);
   const stations = cafeServiceStations();
   const storage = cafeStorageCapacity(cafeBackStoragePoints());
@@ -243,8 +254,8 @@ function run(stage: Stage, extraCounters = 0, backStorage = false) {
   state.ledger.splice(0, state.ledger.length);
   Object.assign(state.cafe, defaultCafe(), {
     open: true,
-    standingOrders: suggestedStandingOrders(),
-    stock: suggestedStandingOrders(),
+    standingOrders: scaleOrders(suggestedStandingOrders(), stockMult),
+    stock: scaleOrders(suggestedStandingOrders(), stockMult),
     upgrades: stage.upgrades,
     completed: stage.completed,
     extraStaff: stage.extraStaff,
@@ -264,9 +275,9 @@ function run(stage: Stage, extraCounters = 0, backStorage = false) {
   for (let day = 0; day < WARMUP + DAYS; day++) {
     const measuring = day >= WARMUP;
     if (day % RESUGGEST_EVERY === 0) {
-      state.cafe.standingOrders = suggestStandingOrdersFromSales(
+      state.cafe.standingOrders = scaleOrders(suggestStandingOrdersFromSales(
         state.cafe.sales, menuItems(state.cafe.completed),
-      ).orders;
+      ).orders, stockMult);
     }
     const before = state.money;
     state.gameMs = GAME_START.getTime() + day * DAY_MS + (CAFE_OPEN_HOUR - 1) * HOUR_MS;
@@ -592,14 +603,63 @@ for (let i = 0; i < 4; i++) {
 }
 
 // ---------------------------------------------------------------------------
+// 🔴 大型冷藏的**兩個情境**(2026-09-02):它的判準不是 §10.5 的 60~250 產能帶
+//
+// 上面那張表用的是「常備量照建議」——而那正是它看起來像廢物的原因,不是 bug:
+// 損耗的天花板只有 $18.2/日(名店期),冷藏拿走的是那 100%($18.2 → $0.0)。
+// 根因是 §4.3.1「懶人路線必須零損耗」把 `SPOILAGE_FREE_UNITS = 23` 釘死成唯一解
+// ⇒ 照建議量備貨的人**本來就沒有損耗可以省**。
+//
+// 🔴 **純調價無解的證明**:它的價值方差是 $0 ~ 約 $100/日(數倍),而 §10.5 的
+// 回本帶寬只有 250/60 = **4.17 倍** ⇒ **任何單一售價都不可能讓兩端同時落在帶內**。
+// 所以判準改掉:大型冷藏用**「備貨過量情境」**判定(常備量 ×1.5),
+// 而「玩得好的人回本很久」是**正確的** —— 保險沒出險就是白買。
+// 兩個情境都印出來,免得日後有人只看到其中一欄就回頭調價。
+// ---------------------------------------------------------------------------
+
+const COLD_OVERSTOCK_MULT = 1.5;
+const coldDef = upgradeById.get(CAFE_UPGRADE_IDS.coldStorage)!;
+console.log(`\n=== 大型冷藏的兩個情境(它是保險 + 冷萃閘門,不是產能;售價 $${coldDef.price.toLocaleString()})===`);
+console.log("階段".padEnd(14) + "情境".padEnd(22) + " 底淨利   加了之後   日邊際    回本天數  損耗(單位/日)");
+for (let i = 0; i < 4; i++) {
+  const stage = STAGES[i];
+  const counters = countersNeededFor(cafeStaffCount(stage.extraStaff));
+  for (const [label, mult] of [["常備量照建議", 1], ["常備量 ×1.5(備太多)", COLD_OVERSTOCK_MULT]] as const) {
+    const base = run(stage, counters, true, mult);
+    const withIt = run({ ...stage, upgrades: [...stage.upgrades, coldDef.id] }, counters, true, mult);
+    const marginal = withIt.net - base.net;
+    const payback = marginal > 0 ? coldDef.price / marginal : Infinity;
+    console.log(
+      stage.label.padEnd(12) + label.padEnd(20)
+      + `${("+$" + base.net.toFixed(0)).padStart(9)}`
+      + `${("+$" + withIt.net.toFixed(0)).padStart(11)}`
+      + `${((marginal >= 0 ? "+$" : "−$") + Math.abs(marginal).toFixed(1)).padStart(10)}`
+      + `${(Number.isFinite(payback) ? payback.toFixed(1) + " 天" : "永不回本").padStart(12)}`
+      + `   ${base.spoiledUnits.toFixed(1)} → ${withIt.spoiledUnits.toFixed(1)}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 【E】把上面那張回本表的結論套回基準:各階段納入「回本天數說得過去」的設備。
 //
-// 🔴 結論(2026-08-28 實測):**只有第二台咖啡機通過 250 天門檻**。
-//   - 第二台咖啡機:開張 243.5 天 / 成長 96.6 天 / 成熟 50.3 天 / 名店 82.0 天
-//   - 大型冷藏:成熟 20,000 天、名店 824 天(它只動損耗,而損耗本來就只有 $18~29/日)
-//   - 戶外座位:四個階段的日邊際都**精確是 0** —— 它加的是晴天「想上門」的人數,
-//     而四個階段都被產能夾住(`turnedAway` 3.6~22.2 人/日),多來的人一個都做不出來
-//   - 貓跳台與軟墊:日邊際 0(它動的是寵物停留與認養詢問,不進金流)
+// 🔴 結論(**2026-09-02 永久投資修正後**重量):
+//   - 第二台咖啡機:開張 243.5 天 / 成長 96.6 天 / 成熟 50.3 天 / 名店 82.0 天(未動)
+//   - 戶外座位($25,000):**不再是 0** —— 它現在自帶 `CAFE_OUTDOOR_CAPACITY = 10` 的
+//     產能(加在 `min()` 外面,理由見 `cafe.ts` 該常數)⇒ 開張 252.8 / 成長 189.3 /
+//     成熟 150.4 / 名店 217.3 天。修改前四個階段的日邊際都**精確是 $0**:它加的是
+//     晴天「想上門」的人數,而四階段一路被員工腿夾住,多來的人一個都做不出來。
+//   - 大型冷藏($8,000,原 $15,000):照建議量備貨時仍然近乎 0(成熟 10,667 天、
+//     名店 439.6 天)—— 那是**正確的**,它是保險 + 冷萃閘門,判準改用「備貨過量情境」,
+//     見上方那張兩情境表。**不納入【E】**。
+//   - 貓跳台與軟墊:日邊際 0(它動的是寵物停留與認養詢問,不進金流)。
+//     那也是對的,它換到的是真實內容;本批只補「送養了幾隻」的可見性,一個數值都沒動。
+//
+// 🔴 **前提修正二(2026-08-28 的舊表基準是壞的)**:`menuItems()`(`src/sim/cafe.ts`)
+// 只看 `completed`,**完全不看 `requiresUpgrades`**。遊戲裡玩家點不開沒前置的研發
+// (`startCafeResearch()` 有擋),但本腳本是直接把 `completed = ALL` 塞進 state ⇒
+// 名店期那幾列**已經白拿了冷萃與寵物生日蛋糕的閘門價值**。所以上表量到的
+// 「大型冷藏/貓跳台 = 0」少算了它們的閘門那一半,不能只當成防損耗/認養的數字讀。
 //
 // **開張期刻意不納入**:243.5 天雖然勉強在設計帶內,但那個階段玩家剛付完開店費、
 // 拿不出 $18,000;而且開張期那一列同時是「備太多反而虧」的平衡錨(§4.7),

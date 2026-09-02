@@ -642,10 +642,44 @@ export const CAFE_STAFF_WAGE = 260;
  */
 export const CAFE_MAX_EXTRA_STAFF = 8;
 
+/**
+ * 🔴 戶外座位每日自帶的產能,**加在 `min(席次腿, 員工腿)` 的外面**(2026-09-02)。
+ *
+ * ### 為什麼它可以不受兩條腿夾 —— 這是設定,不是漏算
+ *
+ * 「產能加在 `min()` 外面」在數學上很突兀,看起來像繞過所有瓶頸的 bug。它成立的
+ * 唯一理由是這件投資在虛構層面買到的東西**跟店內是兩套資源**:
+ *
+ * - **戶外區自帶座位**(騎樓下的長凳與立桌是這 $25,000 的一部分)⇒ 不佔內用格,
+ *   所以**不吃席次腿**;
+ * - **戶外客人多半自取**(在窗口點完就端出去坐,不需要有人送餐、收桌、帶位)⇒
+ *   幾乎不佔吧台工時,所以**不吃員工腿**。
+ *
+ * 換句話說玩家買到的是「一塊不跟店內搶位子、也不搶人手的區域」,不是「+10 個數字」。
+ * 這段虛構同時寫在 `cafeUpgrades.ts` 的 `effect` 文案裡 —— 玩家看得到、程式讀得到,
+ * 兩邊都不要當成 bug 改掉。
+ *
+ * ### 為什麼要有這一條
+ *
+ * 改之前戶外座位只加**需求端**(晴天 +15% 客流),而咖啡廳四個階段
+ * (開張/成長/成熟/名店)的實際產能一路都是**員工腿** binding
+ * (26 / 52 / 78 / 130,席次腿 40 / 70 / 110 / 170 從來不是那個 min)
+ * ⇒ 多叫來的人一個都進不來,日邊際**精確是 $0**。這正是使用者說的「買了沒作用」。
+ * 加席次或加椅子的邊際同樣是 0(空間根本不是限制),所以修法只能是繞過 `min()`。
+ *
+ * **10 是這件事的旋鈕**:日後嫌名店期太強就從這裡調,不要回頭去動 `min()` 的形狀。
+ */
+export const CAFE_OUTDOOR_CAPACITY = 10;
+
 export interface CafeCapability {
   /** 招牌等級,無招牌 = 1,最高 `CAFE_MAX_SIGN_LEVEL`。 */
   signLevel: number;
-  /** 產能上限(當日客流的硬天花板)= `min(seatCapacity, staffCapacity)`。 */
+  /**
+   * 產能上限(當日客流的硬天花板)= `min(seatCapacity, staffCapacity) + outdoorCapacity`。
+   *
+   * 🔴 戶外那一段**刻意加在 `min()` 外面**(它自帶座位又自取,不吃店內兩條腿),
+   * 理由見 `CAFE_OUTDOOR_CAPACITY` 的註解。這不是漏了括號。
+   */
   capacity: number;
   /**
    * 席次那條腿。`null` = caller 沒告訴我們席次(面板、舊呼叫端)⇒ 這一輪不讓席次成為瓶頸。
@@ -660,8 +694,13 @@ export interface CafeCapability {
   cupsPerStaff: number;
   /** 額外員工的日薪合計(首位不計,他在 `CAFE_FIXED_COST` 裡)。 */
   dailyWage: number;
-  /** 有沒有戶外座位(只在晴天生效)。 */
+  /** 有沒有戶外座位。旗標本身餵給 `cafeCrowd()` 的晴天 +15% **需求**加成。 */
   outdoorSeats: boolean;
+  /**
+   * 戶外區自帶的**產能**(沒買 = 0),已經計入 `capacity`。
+   * 與 `outdoorSeats` 的晴天加成是**兩條腿**:這一條每天都在,那一條只在晴天。
+   */
+  outdoorCapacity: number;
   /** 直接餵給 `applySpoilage()` 的損耗參數。 */
   spoilage: SpoilageOptions;
   /**
@@ -729,6 +768,14 @@ export function cafeSeatCapacity(seats: unknown): number {
  * 招牌等級改成「數已買的招牌 id」而不是 P4a 之前的 `1 + (有招牌 ? 1 : 0)`:
  * 三個 id 逐級解鎖(`buyCafeUpgrade()` 擋前置),所以數量就是等級差。
  * 手改存檔只塞了 Lv4 也只會得到 Lv2 —— 少算不會多算,對玩家沒有便宜可佔。
+ *
+ * 🔴 **`capacity` 的形狀是 `min(席次腿, 員工腿) + 戶外`,不是三者一起 `min`,也不是漏了括號。**
+ * 戶外區在設定上**自帶座位**(不佔內用格)且**客人多半自取**(不佔吧台工時)⇒ 它跟店內
+ * 那兩條腿用的不是同一批資源,自然不該被它們夾。完整理由與量測見 `CAFE_OUTDOOR_CAPACITY`;
+ * 玩家端的說法寫在 `cafeUpgrades.ts` 戶外座位的 `effect` 文案裡,兩邊講的是同一件事。
+ *
+ * ⚠️ 天氣**不進本函式**:面板與所有既有呼叫端的慣例是「一般日」,把晴天穿進來會污染
+ * 全部呼叫端。晴天 +15% 的需求加成仍然只走 `cafeCrowd()`。
  */
 export function cafeCapability(
   upgrades: readonly string[] = [],
@@ -751,15 +798,19 @@ export function cafeCapability(
   const seatCapacity = context.seats === undefined || context.seats === null
     ? null
     : cafeSeatCapacity(context.seats);
+  const outdoorCapacity = owned.has(CAFE_UPGRADE_IDS.outdoorSeats) ? CAFE_OUTDOOR_CAPACITY : 0;
+  const indoorCapacity = seatCapacity === null ? staffCapacity : Math.min(seatCapacity, staffCapacity);
   return {
     signLevel,
-    capacity: seatCapacity === null ? staffCapacity : Math.min(seatCapacity, staffCapacity),
+    // 🔴 戶外加在 min() 外面 —— 見上方註解,不是漏括號。
+    capacity: indoorCapacity + outdoorCapacity,
     seatCapacity,
     staffCapacity,
     staffCount,
     cupsPerStaff,
     dailyWage: cafeStaffWage(context.extraStaff),
     outdoorSeats: owned.has(CAFE_UPGRADE_IDS.outdoorSeats),
+    outdoorCapacity,
     spoilage: cold
       ? { freeUnits: SPOILAGE_FREE_UNITS * CAFE_COLD_STORAGE_FREE_MULT, rate: SPOILAGE_RATE * CAFE_COLD_STORAGE_RATE_MULT }
       : {},
@@ -1511,19 +1562,46 @@ export function cafeInvestOutlook(id: string, ctx: CafeInvestOutlookContext): Ca
   }
 
   if (def.id === CAFE_UPGRADE_IDS.outdoorSeats) {
-    // 戶外只在晴天 +15% 客流,不動產能。折算回等級軸上再走同一條差分,
-    // 才不會為了它多做一次獨立的取整(那就變成第二份算式了)。
+    /**
+     * 戶外座位有**兩條腿**,而且要分開講給玩家聽:
+     * 1. **產能**(每天都在):`capNext.capacity` 已含 `CAFE_OUTDOOR_CAPACITY`,
+     *    因為戶外區自帶座位又多半自取 ⇒ 不吃店內的席次腿與員工腿。
+     * 2. **需求**(只在晴天):`cafeCrowd()` 的 +15%。折算回等級軸上再走**同一條**差分,
+     *    才不會為了它多做一次獨立的取整(那就變成第二份算式了)。
+     *
+     * `extraOrders` 回報的是**一般日**那一段(面板全部走「一般日」慣例),晴天那一段
+     * 放在文案裡 —— 一般日是玩家每天都拿得到的保證值,不該拿晴天去灌它。
+     * `sunnyExtra >= plainExtra` 恆成立(差分對 base 單調)。
+     */
     const sunnyBase = typicalCrowdBase(capNow.signLevel * (1 + CAFE_OUTDOOR_SUNNY_BONUS), popularity, ambiancePoints);
+    const plainExtra = diff(baseNow, capNext.capacity);
     const sunnyExtra = diff(sunnyBase, capNext.capacity);
-    return sunnyExtra > 0
-      ? { id, tone: "good", extraOrders: sunnyExtra, text: `✓ 只在晴天生效(約四成的日子):晴天大約多做 ${sunnyExtra} 單` }
-      : {
+    const sunnyTail = sunnyExtra > plainExtra ? `,晴天再多叫來一些人 ⇒ 約 ${sunnyExtra} 單` : "";
+    if (plainExtra > 0) {
+      return {
         id,
-        tone: "blocked",
-        extraOrders: 0,
-        text: `⚠️ 它只在晴天 +${Math.round(CAFE_OUTDOOR_SUNNY_BONUS * 100)}% 客流,`
-          + `而你連平常日的客人都吃不完 —— 先加產能,這 ${price} 才有著力點`,
+        tone: "good",
+        extraOrders: plainExtra,
+        text: `✓ 戶外區自帶座位、客人多半自取 ⇒ 不跟店內搶位子也不搶人手:`
+          + `一般日每天就多做 ${plainExtra} 單${sunnyTail}`,
       };
+    }
+    if (sunnyExtra > 0) {
+      return {
+        id,
+        tone: "good",
+        extraOrders: 0,
+        text: `✓ 一般日的客人你已經全吃得下(想上門 ${baseNow} 人／做得出 ${capNow.capacity} 單),`
+          + `所以一般日不會多;晴天多叫來的人有戶外區坐 ⇒ 晴天大約多做 ${sunnyExtra} 單`,
+      };
+    }
+    return {
+      id,
+      tone: "blocked",
+      extraOrders: 0,
+      text: `⚠️ 你現在連 ${capNow.capacity} 單的產能都還沒用滿(一般日只有 ${baseNow} 人想上門),`
+        + `戶外區多出來的位子沒有人坐 —— 先升招牌把人叫來,這 ${price} 才有著力點`,
+    };
   }
 
   if (def.id === CAFE_UPGRADE_IDS.secondMachine) {
@@ -1585,20 +1663,30 @@ export function cafeInvestOutlook(id: string, ctx: CafeInvestOutlookContext): Ca
     const maxPerishable = CAFE_INGREDIENTS
       .filter((item) => item.perishable)
       .reduce((best, item) => Math.max(best, stock[item.id] ?? 0), 0);
+    /**
+     * 🔴 2026-09-02:兩側都要點名**冷萃閘門**。
+     *
+     * 大型冷藏的價值有兩塊,而舊文案只講了損耗那塊 —— 於是 blocked 讀起來像
+     * 「這項沒用」,玩家不知道自己其實被擋在一整條研發線外面(`cafeResearch.ts` 的
+     * 冷萃 `requiresUpgrades: [coldStorage]`)。它是**保險 + 閘門**,不是產能:
+     * 損耗那條腿在保守備貨下本來就趨近 0,那不是 bug,是保險沒出險。
+     */
+    const gate = "它同時是「冷萃」研發的前置(沒有它那條線點不開)";
     return spoiledNow <= 0
       ? {
         id,
-        tone: "blocked",
+        tone: "note",
         extraOrders: 0,
-        text: `⚠️ 你的生鮮常備量最高 ${maxPerishable} 單位,以這個量算每天壞 0 單位`
-          + `(免損耗額度 ${SPOILAGE_FREE_UNITS} 單位,超出的部分還湊不滿一單位)`
-          + " ⇒ 這項暫時用不到。等常備量真的拉高了再回來買",
+        text: `📦 ${gate}。至於防損耗:你的生鮮常備量最高 ${maxPerishable} 單位,`
+          + `以這個量算每天壞 0 單位(免損耗額度 ${SPOILAGE_FREE_UNITS} 單位,超出的部分還湊不滿一單位)`
+          + " ⇒ 保險的那一半現在用不到,等你備貨備多了才會回本",
       }
       : {
         id,
         tone: "good",
         extraOrders: 0,
-        text: `✓ 以你的常備量算,現在最多每天壞 ${spoiledNow} 單位;買了會降到 ${spoiledNext} 單位`,
+        text: `✓ 以你的常備量算,現在最多每天壞 ${spoiledNow} 單位;買了會降到 ${spoiledNext} 單位。`
+          + `另外,${gate}`,
       };
   }
 

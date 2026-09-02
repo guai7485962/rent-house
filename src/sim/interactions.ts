@@ -13,8 +13,9 @@ import type { Tenant } from "../types";
 import { getRel, canRomance, pairKey, adjustRelationship } from "./social";
 import { feudActive } from "./conflicts";
 import { maybeWitness } from "./drama";
-import { state, clamp, roomOfTenant, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
-import { roomRect, getPlacements, placementFootprint, placementInteract, placementRotation } from "./placements";
+import { state, clamp, roomOfTenant, gameDayIndex, pushMemory, pushSocialLog, applySocialEffect, type TenantRuntime } from "./gameState";
+import { roomRect, getPlacements, placementFootprint, placementInteract, placementRotation, CAFE_PLACEMENT_REGIONS } from "./placements";
+import { CAFE_RECTS } from "../floor/map";
 import { getDef } from "../furniture/catalog";
 import { rotateGridVector } from "../furniture/rotation";
 import { spawnFx, type FxKind } from "../floor/fx";
@@ -28,14 +29,22 @@ export type InteractionTier = "close" | "crush" | "couple" | "cohabit";
  * 劇情前提閘(零 RNG)。刻意**不放進 `canInteract()`**——那個函式是「安全硬規則的唯一入口」
  * (分級/成年/私密),gate 只是劇情前提;混進去會稀釋語意,也會逼簽章從 Tenant 改成 TenantRuntime。
  */
-export type InteractionGate = "one_broke" | "one_unwell" | "both_adult" | "deep_couple";
+export type InteractionGate = "one_broke" | "one_unwell" | "both_adult" | "deep_couple" | "cafe_busy";
+
+/**
+ * 互動的三個分組。`cafe` 是 2026-09-03 啟用的第三分組(`at_cafe` 的租客人在一樓)。
+ *
+ * 🔴 `cafe` 這一支**整條路徑零 `Math.random()`**(抽籤與選句都走 `cafeHash()`),
+ * 理由見 `pickCafeInteraction()`。
+ */
+export type InteractionLocation = "room" | "lounge" | "cafe";
 
 export interface InteractionDef {
   id: string;
   /** 關係門檻:close=好友以上(50+)、crush=曖昧(75+ 且互有好感)、couple=情侶、cohabit=同居中的情侶 */
   tier: InteractionTier;
-  /** 發生地點:room=同房(情侶/同居)、lounge=交誼廳(兩人同時在場) */
-  location: "room" | "lounge";
+  /** 發生地點:room=同房(情侶/同居)、lounge=交誼廳(兩人同時在場)、cafe=一樓寵物咖啡廳 */
+  location: InteractionLocation;
   /** true = 需 🔞 成人模式 + 雙方成年(遮蔽式演出) */
   adult?: boolean;
   /** true = 需房內無第三人 */
@@ -681,6 +690,239 @@ export const INTERACTIONS: InteractionDef[] = [
     ],
     effects: { rel: 3, mood: 5, stress: -4 },
   },
+  // ——————————————————————————————————————————————————————————————————————
+  // ☕ 第三分組:一樓寵物咖啡廳(2026-09-03)。`interactionsPass()` 過去把
+  //    `visualState === "at_cafe"` 的租客整個 `continue` 掉,因為這裡一條 `location: "cafe"`
+  //    的內容都沒有 ⇒ 開了分組也是「一條沒有車的路」。本批把車開上去。
+  //
+  // ## 內容準則:只有咖啡廳會發生的事
+  //
+  // 這裡**不放交誼廳互動的換皮版**。每一條的切角都必須是一樓獨有的:
+  // 顧客、咖啡與餐點、店貓「辣椒」、打烊前的收尾、以及「房東就在樓上看著這一切」。
+  //
+  // ## 🔴 三條硬性結構限制(由 `cafe-interactions-test.ts` 逐條釘死)
+  //
+  // 1. **時段只能落在 10～19**:`routine.cafeSitHourForDay()` 的候選時段就是
+  //    `CAFE_SIT_HOURS`(10～19),而且**每人每個遊戲日只有一小時**。窗開在 20 點以後
+  //    的 def 會永遠啞掉 —— 所以「打烊」的戲一律寫成「打烊前最後一小時」(17～19)。
+  // 2. **不用 `seatOn` / `venue`**:`furnitureSeats()` 會讓兩人跨上家具格,咖啡廳的
+  //    `cafe_table` 是 1×2 的桌面(不是沙發),跨上去等於坐在桌上;`venue` 則會讓
+  //    `roomRect()` 回 null(咖啡廳四區不在 ROOM_RECTS/FACILITY_RECTS 裡)。
+  //    要指定演出位置一律用 `standAt`,走 `cafeStandingPair()`。
+  // 3. **戀愛向一律靠既有 `tier` + `gate: "both_adult"`**:與 G 批戀愛線同一套雙保險,
+  //    未成年永遠進不來(說明見上面那段長註解)。這裡也一律不標 `adult`(不需要遮蔽式)。
+  // ——————————————————————————————————————————————————————————————————————
+  {
+    id: "cafe_order_queue",
+    tier: "close",
+    location: "cafe",
+    pose: "stand_face",
+    standAt: ["cafe_counter"], // 開張贈品就有 ⇒ 空店也演得出來
+    requiresFurniture: ["cafe_counter"],
+    timeWindow: [10, 19],
+    weight: 3,
+    cooldownHours: 40,
+    chance: 0.45,
+    fx: "chat",
+    lines: [
+      "和{o}在點餐吧台前排到同一列,前面那位客人研究菜單研究了很久。",
+      "和{o}一起卡在點餐口,兩個人都假裝自己還沒決定要點什麼。",
+      "和{o}在吧台前互相推讓誰先點,後面的客人已經探出頭來看了。",
+      "和{o}點完才發現點了一模一樣的東西,店員忍住沒笑出來。",
+    ],
+    effects: { rel: 2, mood: 3, stress: -2 },
+  },
+  {
+    id: "cafe_people_watching",
+    tier: "close",
+    location: "cafe",
+    // 不掛 standAt:兩人就在自己坐的位子上演,錨點取他們現有的一樓座位格。
+    pose: "sit",
+    gate: "cafe_busy", // 店裡要真的有客人,不然「看客人」是看空氣
+    timeWindow: [10, 19],
+    weight: 3,
+    cooldownHours: 30,
+    chance: 0.45,
+    fx: "chat",
+    lines: [
+      "和{o}壓低聲音替每一桌客人編身世,編到自己都快信了。",
+      "和{o}打賭靠窗那位客人會不會回頭,結果兩個人都猜錯。",
+      "和{o}看著客人一桌換過一桌,話題也跟著換了好幾輪。",
+      "和{o}偷偷數今天有幾個人是為了貓來的,數到一半就數亂了。",
+    ],
+    effects: { rel: 2, mood: 4, stress: -3 },
+  },
+  {
+    id: "cafe_landlord_upstairs",
+    tier: "close",
+    location: "cafe",
+    pose: "stand_face",
+    timeWindow: [10, 19],
+    weight: 2,
+    cooldownHours: 96,
+    chance: 0.4,
+    fx: "chat",
+    lines: [
+      "和{o}同時抬頭看向樓梯口,壓低聲音說房東大概又在樓上看著。",
+      "和{o}聊到房東,兩個人不約而同往天花板瞄了一眼,然後都笑了。",
+      "和{o}小聲討論房東到底知不知道樓下發生的每一件事,結論是應該知道。",
+      "和{o}講到一半忽然安靜下來,像是想起這棟樓裡沒什麼事是藏得住的。",
+    ],
+    effects: { rel: 2, mood: 3 },
+  },
+  {
+    id: "cafe_chili_lap",
+    tier: "close",
+    location: "cafe",
+    pose: "sit",
+    // 寵物區的軟墊或貓跳台都行:兩者都是 2 格寬 ⇒ cafeStandingPair 站得下兩個人
+    standAt: ["cafe_pet_cushion", "cafe_cat_tower"],
+    timeWindow: [10, 19],
+    weight: 3,
+    cooldownHours: 36,
+    chance: 0.5,
+    fx: "care",
+    lines: [
+      "辣椒在和{o}之間挑了很久,最後選了另一個人的腿趴下。",
+      "和{o}一起蹲在寵物區,辣椒把尾巴掃過兩個人的手背才走開。",
+      "辣椒跳上跳台,和{o}仰著頭看牠,誰也捨不得先站起來。",
+      "和{o}為了辣椒剛剛那一聲是不是在撒嬌,認真討論了五分鐘。",
+    ],
+    effects: { rel: 2, mood: 5, stress: -4 },
+  },
+  {
+    id: "cafe_menu_bet",
+    tier: "close",
+    location: "cafe",
+    pose: "stand_face",
+    standAt: ["cafe_menu_board"],
+    timeWindow: [10, 17],
+    weight: 2,
+    cooldownHours: 48,
+    chance: 0.4,
+    fx: "chat",
+    lines: [
+      "和{o}站在手寫菜單板前猜今日限定,猜輸的人請客。",
+      "和{o}研究菜單板上那行歪掉的粉筆字,研究到店員過來解釋。",
+      "和{o}在菜單板前爭論哪一款才是招牌,最後兩種都點了。",
+    ],
+    effects: { rel: 2, mood: 3 },
+  },
+  {
+    id: "cafe_split_cake",
+    tier: "close",
+    location: "cafe",
+    pose: "sit",
+    requiresFurniture: ["cafe_display_stocked"],
+    timeWindow: [12, 19],
+    weight: 2,
+    cooldownHours: 44,
+    chance: 0.4,
+    fx: "chat",
+    lines: [
+      "展示櫃裡只剩最後一塊,和{o}切成兩半分著吃。",
+      "和{o}對著甜點櫃站了很久,最後各挑一塊再互相換一口。",
+      "和{o}分同一塊蛋糕,叉子在盤子上默默較勁了幾回合。",
+    ],
+    effects: { rel: 2, mood: 4, stress: -2 },
+  },
+  {
+    id: "cafe_coffee_cheers",
+    tier: "close",
+    location: "cafe",
+    pose: "cheers", // 側面相對舉杯(既有雙人姿勢,不新增)
+    requiresFurniture: ["espresso_machine"],
+    timeWindow: [13, 19],
+    weight: 2,
+    cooldownHours: 52,
+    chance: 0.4,
+    fx: "chat",
+    lines: [
+      "和{o}用咖啡杯碰了一下,蒸氣棒的聲音蓋過兩個人的笑。",
+      "和{o}各端一杯剛沖好的,先聞了很久才捨得喝第一口。",
+      "和{o}比賽誰先喝完,結果兩個人都被燙到,誰也沒贏。",
+      "和{o}舉杯敬今天沒有出錯的一切,杯子裡其實只剩半口。",
+    ],
+    effects: { rel: 2, mood: 4, stress: -3 },
+  },
+  {
+    id: "cafe_last_call",
+    tier: "close",
+    location: "cafe",
+    pose: "stand_face",
+    standAt: ["cafe_counter"],
+    requiresFurniture: ["cafe_counter"],
+    timeWindow: [17, 19], // 打烊前:at_cafe 的可用時段上限就是 19 點
+    weight: 2,
+    cooldownHours: 60,
+    chance: 0.45,
+    fx: "chat",
+    lines: [
+      "店員問還要不要加點,和{o}對看一眼,同時說了要。",
+      "和{o}在打烊前又追加了一輪,理由是「反正都坐到這時候了」。",
+      "和{o}同時指了櫃裡最後一份甜點,店員把托盤端出來時還熱著。",
+    ],
+    effects: { rel: 2, mood: 4, stress: -3 },
+  },
+  {
+    id: "cafe_closing_hands",
+    tier: "close",
+    location: "cafe",
+    pose: "cook_pair", // 並肩做事的既有姿勢:這裡是並肩把桌面收乾淨
+    standAt: ["cafe_table"], // 開張贈品就有
+    timeWindow: [18, 19],
+    weight: 2,
+    cooldownHours: 72,
+    chance: 0.4,
+    fx: "care",
+    lines: [
+      "打烊前和{o}順手把桌上的杯子疊好,店員回頭時愣了一下。",
+      "和{o}一個擦桌一個收椅子,誰也沒說要幫忙,就這樣做完了。",
+      "和{o}在關燈前把最後兩張椅子推回定位,店裡忽然很安靜。",
+    ],
+    effects: { rel: 3, mood: 4, stress: -3 },
+  },
+  // ——— 戀愛向:安全性一律靠 `tier` + `gate: "both_adult"`(未成年進不來)———
+  {
+    id: "cafe_shared_cup",
+    tier: "crush",
+    location: "cafe",
+    gate: "both_adult", // 雙保險:crush 已需 romantic 或 canRomance(含成年 + 取向雙檢)
+    pose: "sit",
+    requiresFurniture: ["espresso_machine"],
+    timeWindow: [12, 19],
+    weight: 3,
+    cooldownHours: 60,
+    chance: 0.4,
+    fx: "hearts",
+    memoryLabel: "[那杯拿鐵]",
+    memoryHint: "拉花上的圖案是什麼,兩個人記得的版本不一樣。",
+    lines: [
+      "和{o}為了拉花上到底是心還是葉子爭執不下,咖啡都涼了。",
+      "和{o}說好一人一半,結果兩個人都把最好喝的那幾口讓給了對方。",
+      "和{o}共用一個杯墊,手指碰到的時候誰都沒有先收回去。",
+    ],
+    effects: { rel: 3, mood: 5, stress: -3 },
+  },
+  {
+    id: "cafe_window_date",
+    tier: "couple",
+    location: "cafe",
+    gate: "both_adult", // 雙保險:tier couple 已需 rel.romantic ⇒ 已過 canRomance
+    pose: "sit",
+    timeWindow: [10, 19],
+    weight: 3,
+    cooldownHours: 72,
+    chance: 0.45,
+    fx: "hearts",
+    lines: [
+      "和{o}把自家樓下當成約會地點,坐到窗邊的光都斜了。",
+      "和{o}在店裡待了一整個下午,誰也沒提要上樓。",
+      "和{o}靠窗坐著,辣椒在腳邊繞了一圈,兩個人都沒有動。",
+      "和{o}說好只喝一杯,結果連續加點到店員都認得他們的口味。",
+    ],
+    effects: { rel: 3, mood: 6, stress: -5 },
+  },
 ];
 
 export interface InteractCtx {
@@ -745,9 +987,85 @@ export function furnitureStandingPair(roomId: string | null, standAt?: string[])
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// ☕ 咖啡廳分組專用的地點工具(2026-09-03)
+//
+// 三樓的房間/交誼廳都是**單一 roomId**,一樓咖啡廳卻是**四個 region**
+// (`cafe_floor` / `cafe_counter` / `cafe_pet` / `cafe_back`)—— 直接沿用
+// `furnitureSetOf(roomId)` / `furnitureStandingPair(roomId, …)` 只會查到其中一區,
+// 剩下三區的家具永遠當作不存在。所以另開這三支,語意與原版逐條對應。
+// ---------------------------------------------------------------------------
+
+/** 一樓四個咖啡廳區域的家具 defId 聯集(`requiresFurniture` 判定用)。 */
+export function cafeFurnitureSet(): Set<string> {
+  const s = new Set<string>();
+  const rooms: ReadonlySet<string> = new Set<string>(CAFE_PLACEMENT_REGIONS);
+  for (const p of getPlacements()) if (rooms.has(p.room)) s.add(p.defId);
+  return s;
+}
+
+/** `furnitureStandingPair()` 的咖啡廳版:依固定次序掃四個區域,第一個站得下兩人的就用。
+ *  次序寫死 ⇒ 同一份擺設永遠得到同一組格(決定性,離線補算與線上一致)。 */
+export function cafeStandingPair(standAt?: string[]): { a: { c: number; r: number }; b: { c: number; r: number } } | null {
+  if (!standAt) return null;
+  for (const room of CAFE_PLACEMENT_REGIONS) {
+    const pair = furnitureStandingPair(room, standAt);
+    if (pair) return pair;
+  }
+  return null;
+}
+
+/**
+ * 🔴 這一格是不是在一樓咖啡廳(含樓梯與店門)。**傳送 bug 的最後一道守衛。**
+ *
+ * `at_cafe` 的租客人在一樓,而 `startPairSession()` 登記的 tile 在
+ * `floor/agents.ts` 的 `group?.tile ?? ses?.tile ?? rt?.activityTile` 裡**排在
+ * `activityTile` 前面** ⇒ 錨點只要落在三樓,sprite 會被當場拉回樓上
+ * (2026-08-27 修掉的那個傳送 bug)。所以咖啡廳互動的錨點一律先過這一關,
+ * 過不了就**不掛任何 session/fx**(數值與日誌照常),寧可少一段演出也不傳送人。
+ *
+ * 純幾何、零 RNG、不查 `buildGrid()`(每小時呼叫,重建整張網格太貴)。
+ */
+export function inCafeArea(t: { c: number; r: number } | null | undefined): boolean {
+  if (!t) return false;
+  for (const box of Object.values(CAFE_RECTS)) {
+    if (t.c >= box.c0 && t.c <= box.c1 && t.r >= box.r0 && t.r <= box.r1) return true;
+  }
+  return false;
+}
+
+/**
+ * FNV-1a 32-bit + murmur3 的 fmix32 尾段雪崩:咖啡廳分組的**唯一**亂數來源
+ * (見 `pickCafeInteraction`)。同輸入同輸出。
+ *
+ * 🔴 **`fmix32` 那四行不是裝飾,拿掉會讓部分互動的觸發率精確歸零。**
+ * 純 FNV-1a 對「只差幾個位元的兩個 key」雪崩得很差:`pickCafeInteraction()` 要抽
+ * **兩個**數(選 def 的權重數、比 chance 的機率數),如果只靠字尾的 `|w` / `|c` 區分,
+ * 兩者的高位幾乎共用同一個中間狀態 ⇒ **兩個數強相關**,落在某些權重帶的 def
+ * 永遠配到一個大於自己 `chance` 的機率數。實測(20,000 個 seed):`cafe_menu_bet` /
+ * `cafe_split_cake` / `cafe_coffee_cheers` / `cafe_shared_cup` 的實測觸發率是
+ * **0.00%**(預期 3.2~5.2%),而前四種各多拿 1.7~2.5 倍。
+ * 兩道修法一起用:① 區分用的標籤改**前綴**(第一個 byte 就進迴圈,後面每一輪都在攪它);
+ * ② 尾段補 fmix32。回歸鎖在 `cafe-interactions-test.ts` 的「抽籤分布貼合 (w/W)·chance」。
+ */
+function cafeHash(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 /** standAt 是硬性演出條件：指定家具不在或前方兩格不可達時，本次互動不成立。 */
 function hasStandingStage(def: InteractionDef, roomId: string | null): boolean {
   if (!def.standAt) return true;
+  if (def.location === "cafe") return cafeStandingPair(def.standAt) !== null;
   const loc = def.venue ?? (def.location === "lounge" ? "lounge" : roomId);
   return furnitureStandingPair(loc, def.standAt) !== null;
 }
@@ -801,7 +1119,49 @@ export function gateOk(gate: InteractionGate | undefined, A: TenantRuntime, B: T
       const rel = getRel(A.tenant.id, B.tenant.id);
       return !!rel?.romantic && (rel.value >= 95 || rel.cohabitOffered);
     }
+    case "cafe_busy":
+      // 「看客人」得真的有客人。`cafeGuestPass()` 排在 `interactionsPass()` **之前**
+      // (tick.ts 的 pass 次序),所以這裡讀到的是本小時已經結算過的在店人數。
+      // 零 RNG、不看兩位租客 —— 純粹是劇情前提。
+      return (state.cafe?.guests?.length ?? 0) >= 2;
   }
+}
+
+/**
+ * 咖啡廳分組的抽籤:**逐位元決定性、零 `Math.random()`**。
+ *
+ * ## 為什麼不共用 `pickInteraction()`
+ *
+ * 共用就得擲兩顆 `Math.random()`。咖啡廳分組是**新增的**一組配對,以前那些人整個被
+ * `continue` 掉、一顆骰都不擲 ⇒ 一旦開始擲,整條亂數序列從咖啡廳互動發生的那一刻起
+ * 全部位移,交誼廳/同房互動、事件、天氣、退租…全跟著換一條軌跡。那正是
+ * `interaction-freq-sim.ts` 檔頭說的「分池造成的部分與序列位移造成的部分完全分不開」。
+ *
+ * 改成雜湊之後,咖啡廳這一支**一顆骰都不擲**:
+ *   - 既有 room / lounge 兩組的抽籤與擲骰次數**逐位元不變**(而且咖啡廳組排在最後跑);
+ *   - 咖啡廳互動發生與否,不會讓後面任何系統拿到不同的亂數。
+ * 這與 `routine.cafeSitHourForDay()`(挑下樓日/時段)同一套作法 —— 一樓的東西一律零 RNG。
+ *
+ * 抽法本身照搬 `pickInteraction()` 主池的語意:同一顆「權重數」按目錄順序累減選 def,
+ * 再用第二顆「機率數」與 `def.chance` 比大小(命中語意仍是 `<=`)。兩顆數都由
+ * `cafeHash(seedKey + 後綴)` 產生,`seedKey` 含配對 + 遊戲日 + 小時 ⇒ 同一對在同一小時
+ * 永遠得到同一個結果(離線補進度重跑也一致),不同日/不同小時則換一組。
+ */
+export function pickCafeInteraction(eligible: InteractionDef[], seedKey: string): InteractionDef | null {
+  if (eligible.length === 0) return null;
+  const total = eligible.reduce((s, d) => s + d.weight, 0);
+  if (total <= 0) return null;
+  // 🔴 區分兩個數的標籤一律放**前綴**(見 cafeHash 的說明);放字尾會讓兩個數相關。
+  let roll = (cafeHash(`w|${seedKey}`) / 4294967296) * total;
+  let def = eligible[0];
+  for (const d of eligible) {
+    roll -= d.weight;
+    if (roll <= 0) {
+      def = d;
+      break;
+    }
+  }
+  return cafeHash(`c|${seedKey}`) / 4294967296 <= def.chance ? def : null;
 }
 
 /** 依 `pool` 欄位把候選拆成主池/次池;filter 保序 ⇒ 無 extra 時 core 與原 eligible 逐位元相同。 */
@@ -919,9 +1279,10 @@ function applyPairEffect(rt: TenantRuntime, eff: InteractionDef["effects"]) {
 }
 
 /** 對一組同地點的租客跑兩兩互動;把觸發的 pairKey 收進 triggered(給 socialPass 去重) */
-function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId: string | null, hour: number, triggered: Set<string>) {
+function runGroup(present: TenantRuntime[], location: InteractionLocation, roomId: string | null, hour: number, triggered: Set<string>) {
   if (present.length < 2) return;
-  const furniture = furnitureSetOf(location === "lounge" ? "lounge" : roomId);
+  // 咖啡廳的家具散在四個 region ⇒ 必須用聯集,不能只查單一 roomId(見 cafeFurnitureSet)
+  const furniture = location === "cafe" ? cafeFurnitureSet() : furnitureSetOf(location === "lounge" ? "lounge" : roomId);
   const pairs: { A: TenantRuntime; B: TenantRuntime; visitPair: boolean }[] = [];
   for (let i = 0; i < present.length; i++) {
     for (let j = i + 1; j < present.length; j++) {
@@ -950,8 +1311,12 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
           && hasStandingStage(def, roomId)
           && offCooldown(A.tenant.id, B.tenant.id, def),
       );
-      // 主池/次池兩階段抽籤(見 pickInteraction):主池的擲骰次數與順序與擴充前逐位元相同
-      const def = pickInteraction(eligible, visitPair);
+      // 主池/次池兩階段抽籤(見 pickInteraction):主池的擲骰次數與順序與擴充前逐位元相同。
+      // 🔴 咖啡廳走**零 RNG 的雜湊抽籤**(見 pickCafeInteraction):既有兩組的亂數序列
+      //    因此一位元都不受影響 —— 這就是本批「零稀釋」的機制保證。
+      const def = location === "cafe"
+        ? pickCafeInteraction(eligible, `${pairKey(A.tenant.id, B.tenant.id)}|${gameDayIndex()}|${hour}`)
+        : pickInteraction(eligible, visitPair);
       if (!def) continue;
 
       performInteraction(A, B, def, roomId);
@@ -963,7 +1328,12 @@ function runGroup(present: TenantRuntime[], location: "room" | "lounge", roomId:
 
 /** 實際執行一次互動:雙方日誌 + 數值 + 關係 + 記憶 + 現場演出 + 冷卻 + 撞見判定 */
 function performInteraction(A: TenantRuntime, B: TenantRuntime, def: InteractionDef, roomId: string | null) {
-  const line = def.lines[Math.floor(Math.random() * def.lines.length)];
+  const isCafe = def.location === "cafe";
+  // 🔴 咖啡廳分組連「挑哪一句」都不准擲骰(見 pickCafeInteraction 的零 RNG 論證);
+  //    room / lounge 維持原本的 Math.random(),擲骰次數與序列逐位元不變。
+  const line = isCafe
+    ? def.lines[cafeHash(`${pairKey(A.tenant.id, B.tenant.id)}|${def.id}|${state.gameMs}`) % def.lines.length]
+    : def.lines[Math.floor(Math.random() * def.lines.length)];
   // 成人向日誌一律由執行層加圖式標記,新增文案時不必靠人工記得逐句補。
   const marker = def.adult ? "🔞 " : "";
   pushSocialLog(A, marker + line.replace(/\{o\}/g, B.tenant.name), "notable");
@@ -981,12 +1351,19 @@ function performInteraction(A: TenantRuntime, B: TenantRuntime, def: Interaction
   // 演出錨點:def.venue(指定共用設施,如一起洗澡在淋浴間)> 家具座位 > 兩人所在格 > 房間中心
   const venueRect = def.venue ? roomRect(def.venue) : null;
   const loc = def.venue ?? (def.location === "lounge" ? "lounge" : roomId);
-  const seats = furnitureSeats(loc, def.seatOn);
-  const standingPair = furnitureStandingPair(loc, def.standAt);
-  const pairTiles = seats ?? standingPair;
+  const seats = isCafe ? null : furnitureSeats(loc, def.seatOn);
+  const standingPair = isCafe ? cafeStandingPair(def.standAt) : furnitureStandingPair(loc, def.standAt);
+  let pairTiles = seats ?? standingPair;
   const rect = venueRect ?? (roomId ? roomRect(roomId) : null);
   const venueAnchor = venueRect ? { c: Math.floor((venueRect.c0 + venueRect.c1) / 2), r: Math.floor((venueRect.r0 + venueRect.r1) / 2) } : null;
-  const anchor = pairTiles?.a ?? venueAnchor ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
+  // 🔴 咖啡廳:錨點**只能**取一樓的格,而且每一個候選都逐一過 `inCafeArea()`。
+  //    at_cafe 的租客沒有離開自己房間的登記(`roomOfTenant()` 仍指向他的套房),所以
+  //    原本那條 `rect ? 房間中心` 的 fallback 會把兩人拉回三樓 —— 咖啡廳一律不吃那條。
+  //    全部候選都不在一樓 ⇒ anchor = null ⇒ 不掛 session、不掛 fx(數值與日誌照常)。
+  if (isCafe && pairTiles && !(inCafeArea(pairTiles.a) && inCafeArea(pairTiles.b))) pairTiles = null;
+  const anchor = isCafe
+    ? [pairTiles?.a, A.activityTile, A.targetTile, B.activityTile, B.targetTile].find((t) => inCafeArea(t)) ?? null
+    : pairTiles?.a ?? venueAnchor ?? A.targetTile ?? B.targetTile ?? (rect ? { c: Math.floor((rect.c0 + rect.c1) / 2), r: Math.floor((rect.r0 + rect.r1) / 2) } : null);
   if (anchor) {
     // 進行中的互動演出(泡泡/霧氣…)+ 姿勢:持續到下一個動作(1 遊戲小時);快轉時 gameUntil 收掉
     spawnFx(def.fx, anchor.c, anchor.r, REAL_MS_PER_GAME_HOUR, state.gameMs + MS_PER_GAME_HOUR);
@@ -1022,7 +1399,7 @@ export function forceInteraction(aId: string, bId: string, defId: string): boole
     (rt) => rt !== A && rt !== B && rt.tenant.visualState !== "away" && rt.tenant.visualState !== "at_cafe"
       && !rt.inLounge && roomOfTenant(rt.tenant.id) === roomId,
   );
-  const furniture = furnitureSetOf(def.location === "lounge" ? "lounge" : roomId);
+  const furniture = def.location === "cafe" ? cafeFurnitureSet() : furnitureSetOf(def.location === "lounge" ? "lounge" : roomId);
   if (def.adult) {
     const ctx: InteractCtx = {
       hour: new Date(state.gameMs).getHours(),
@@ -1050,6 +1427,7 @@ export function interactionsPass(): Set<string> {
   // 同房組(在這間房、沒外出、沒待決事件)
   const byRoom = new Map<string, TenantRuntime[]>();
   const loungeGroup: TenantRuntime[] = [];
+  const cafeGroup: TenantRuntime[] = [];
   for (const rt of Object.values(state.runtimes)) {
     if (rt.tenant.visualState === "away" || rt.pendingEvent) continue;
     // 🔴 `at_cafe`:人在**一樓**,不能併進「自己套房」那一組。
@@ -1058,14 +1436,16 @@ export function interactionsPass(): Set<string> {
     //    裡**排在 activityTile 前面** ⇒ sprite 被從咖啡廳拉回樓上(傳送 bug 的第三條路徑;
     //    另外兩條:本檔 `forceInteraction()` 的 thirdPresent、`tick.ts` 的 VISIT_UNAVAILABLE_STATES)。
     //
-    // 本批**刻意不做「咖啡廳第三分組」**:`runGroup()` 的
-    // `INTERACTIONS.filter(def => def.location === location)` 在 location === "cafe" 時
-    // 回傳**空陣列** ⇒ 沒有一整套咖啡廳互動內容的話,完整修法的可見效果是零(蓋一條沒有車的路)。
-    // 而「打烊後聚會」(`community.ts` 的 cafe_afterhours / cafe_weekend_night)本來就是
-    // 完整的咖啡廳雙人演出(走位/文案/好感 +2/心情 +4/壓力 −5)。
-    // 👉 指路牌:同框率已達 25%(種子局)～50%(4 人局),**補一套 location === "cafe" 的文案池
-    //    即可啟用第三分組**,把這行 continue 換成 cafeGroup.push(rt)。
-    if (rt.tenant.visualState === "at_cafe") continue;
+    // ✅ 2026-09-03:第三分組已啟用(`location: "cafe"` 的內容池寫好了)。
+    //    人**留在一樓**的保證有兩道,而不是靠「不分組」:
+    //      ① `performInteraction()` 的錨點對咖啡廳走獨立分支,每個候選格逐一過
+    //         `inCafeArea()`,而且**不吃**「房間中心」那條 fallback ⇒ 錨點不可能在三樓;
+    //      ② 全部候選都不在一樓時 anchor = null ⇒ 根本不呼叫 `startPairSession()`。
+    //    (`cafe-interactions-test.ts` 直接跑 `tickAgents()` 驗 sprite 真的留在一樓。)
+    if (rt.tenant.visualState === "at_cafe") {
+      cafeGroup.push(rt);
+      continue;
+    }
     if (rt.inLounge) {
       loungeGroup.push(rt);
       continue;
@@ -1079,5 +1459,8 @@ export function interactionsPass(): Set<string> {
 
   for (const [roomId, present] of byRoom) runGroup(present, "room", roomId, hour, triggered);
   runGroup(loungeGroup, "lounge", null, hour, triggered);
+  // 🔴 咖啡廳組**一定排在最後**。它本身零 RNG(見 pickCafeInteraction),排最後是第二道
+  //    保險:即使日後有人在這一支加進擲骰,前面兩組看到的亂數序列仍然一位元不變。
+  runGroup(cafeGroup, "cafe", null, hour, triggered);
   return triggered;
 }

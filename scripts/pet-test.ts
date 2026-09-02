@@ -317,6 +317,10 @@ check("lastBackupMs 存檔往返保留", state.lastBackupMs === bk);
 // --- 飼主退租 → 貓跟著走 ---
 moveIn("r303", generateApplicants("r303")[0]);
 const newId = state.occupancy.r303;
+// 應徵者有 PET_CHANCE(0.45)機率自帶寵物,而 `adoptPet()` 第一行就是「一人最多一隻」。
+// 本節要驗的是「領養 → 退租 → 寵物跟著走」,不是自帶率,所以先把自帶的那隻清掉;
+// 否則測試結果會跟著 ARCHETYPES 的池子大小(shuffle 的擲骰次數)一起抖動。
+delete state.pets[newId];
 adoptPet(newId, { name: "搬家狗", color: 0, kind: "dog" });
 check("新住戶領養狗成功", state.pets[newId]?.kind === "dog");
 moveOut(newId, "測試退租");

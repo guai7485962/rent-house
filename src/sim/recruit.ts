@@ -292,6 +292,126 @@ export const ARCHETYPES: Archetype[] = [
     preferences: { tech: 6, storage: 5, style: 4 },
     monthlyRent: 15000,
   },
+  // ── 2026-09-03 擴充:24 → 32 種(使用者要求更多職業)────────────────────────
+  // 一律 append 在最後,既有 24 筆的內容與順序一字未動。
+  //
+  // ## 這一批的差異化準則(不是換名字,是佔住空著的格子)
+  //
+  // 2026-08-09 那批把 `wishes.ts` 的死引用補完了 ⇒ **現在一條缺口都沒有**
+  // (`ARCHETYPES` 的職業與 `WISH_DEFS.occupations` 完全互相覆蓋)。所以本批的
+  // 「接回心願系統」是反方向的:14 條心願裡有 6 條**只掛著一個職業**
+  // (recover_rhythm / own_studio → 2、certify_pro、keep_home_clean、feel_at_home、
+  // grow_channel…),抽到那條心願的機率因此極低。本批 8 筆**刻意各掛一條不同的心願**,
+  // 而且優先補在只有 1~2 個職業的那幾條上 —— 心願系統的可見度是這樣拉起來的,
+  // 不是靠新增第 15 條心願。🔴 8 筆全部同步寫進 `wishes.ts` 的 `occupations`,
+  // 否則 `wish-test.ts` 的「沒有人掉進 settle_life fallback」會直接紅燈。
+  //
+  // 三個軸都要求與既有 24 筆**明顯不同**(`archetypes-test.ts` 有機器驗證的釘子):
+  //   1. **核心標籤配對**:8 組全是既有 24 筆從未用過的組合,而且刻意撿冷門 tag ——
+  //      `gamer` / `foodie` / `busybody` / `noisy` 原本各只出現 1 次,本批讓它們各多一條
+  //      不同性格的路(噪音權重、自然口角、偷吃冰箱那些既有規則才吃得到更多人)。
+  //   2. **偏好權重**:8 組的權重組合在既有 24 筆裡都不存在;同時把三個軸推上新高
+  //      (`tech 9` / `cozy 8` / `storage 9`),讓「頂規房間」第一次真的有人專門想要。
+  //   3. **月租**:既有 24 筆全是整千,本批刻意用 8,000(新下界)、18,000(新上界)
+  //      與 9,500 / 11,500 / 12,500 / 12,800 / 13,500 / 16,500 這些空著的價帶。
+  //
+  // 🔴 `coreTags` 一律沿用既有 13 個 tag id(acoustics 的噪音權重、drama 的偷吃冰箱、
+  //    social 的相容度都靠 id 掛勾;自創 id 不會壞掉,但等於這個角色不進那些系統)。
+  {
+    key: "night_shift",
+    occupation: "夜市滷味攤主",
+    bio: "在夜市擺滷味攤的老闆,收攤後帶著一身滷汁香回來,冰箱永遠塞滿明天的備料。",
+    coreTags: [
+      { id: "foodie", label: "[一鍋在手]", behaviorHint: "深夜回家還會再煮一鍋,香味整層樓都聞得到。" },
+      { id: "noisy", label: "[市場嗓門]", behaviorHint: "講話音量是夜市練出來的,自己完全沒察覺。" },
+    ],
+    // 全目錄唯一「要收納、能忍噪音、完全不要求隔音」的人:攤車備料佔空間,
+    // 而他自己就是噪音來源之一 ⇒ 擺在吵的房間反而相安無事。
+    preferences: { storage: 8, noise: 5, cozy: 2 },
+    monthlyRent: 8000,
+  },
+  {
+    key: "night_creator",
+    occupation: "電競戰隊教練",
+    bio: "帶隊打線上聯賽的教練,凌晨還在回放每一場團戰,連鄰居幾點洗澡都被他記成表格。",
+    coreTags: [
+      { id: "gamer", label: "[逐幀回放]", behaviorHint: "醒著幾乎都在看比賽錄影,勝負直接寫在臉上。" },
+      { id: "busybody", label: "[什麼都要管]", behaviorHint: "看不慣就會直接說,連別人的作息都想幫忙排。" },
+    ],
+    // tech 9 是全目錄最高:多螢幕 + 錄影機 + 網路設備,頂規科技房第一次有人專門想要。
+    preferences: { tech: 9, soundproof: 4, style: 3 },
+    monthlyRent: 18000,
+  },
+  {
+    key: "early_riser",
+    occupation: "幼兒園老師",
+    bio: "帶小班的幼兒園老師,一天講的話比誰都多,回到房裡只想關上門安安靜靜地坐著。",
+    coreTags: [
+      { id: "caring", label: "[看得見別人]", behaviorHint: "誰狀態不對她第一個發現,還會記得對方不吃什麼。" },
+      { id: "punctual", label: "[分秒不差]", behaviorHint: "點名、交租、垃圾車,時間表刻在腦子裡。" },
+    ],
+    // cozy 8 是全目錄最高,而且和 soundproof 6 同時要:白天太吵 ⇒ 家要是「軟的、靜的」。
+    preferences: { cozy: 8, soundproof: 6, storage: 4 },
+    monthlyRent: 9500,
+  },
+  {
+    key: "night_shift",
+    occupation: "夜班重訓教練",
+    bio: "在 24 小時健身房顧大夜的教練,把別人的身體照顧得很好,自己的作息卻是全樓最亂的一個。",
+    coreTags: [
+      { id: "night_owl", label: "[日夜顛倒]", behaviorHint: "天亮才睡,醒來第一件事是量體脂。" },
+      { id: "fitness", label: "[練不完]", behaviorHint: "在房裡也照練,壺鈴落地的悶響偶爾會傳出去。" },
+    ],
+    preferences: { noise: 6, storage: 5, cozy: 3 },
+    monthlyRent: 11500,
+  },
+  {
+    key: "homebody",
+    occupation: "二手黑膠店主",
+    bio: "在自己房裡經營網路黑膠店,唱針一落下就不准有人敲門,唱片按年份排到公分為單位。",
+    coreTags: [
+      { id: "sound_sensitive", label: "[唱針潔癖]", behaviorHint: "一點雜訊就整張重放,對環境噪音零容忍。" },
+      { id: "perfectionist", label: "[以公分為單位]", behaviorHint: "唱片架的間距會用尺量,誰動過他一眼就看出來。" },
+    ],
+    // storage 8 + style 7:唯一同時把「收納」與「品味」都推到高位的人 ——
+    // 正好對上 own_studio 的槓桿(收納 + 品味 ≥ 24),職業與心願的達成條件是同一件事。
+    preferences: { style: 7, storage: 8, soundproof: 5 },
+    monthlyRent: 12500,
+  },
+  {
+    key: "freelancer",
+    occupation: "獨立遊戲開發者",
+    bio: "一個人做一款遊戲的開發者,美術程式音樂全都自己來,發售日一延再延。",
+    coreTags: [
+      { id: "wfh", label: "[整天不出門]", behaviorHint: "一天 14 小時待在房裡,只有領外送才開門。" },
+      { id: "gamer", label: "[做的也是玩的]", behaviorHint: "測自己的遊戲測到半夜,分不清是工作還是玩。" },
+    ],
+    preferences: { tech: 7, cozy: 5, soundproof: 2 },
+    monthlyRent: 16500,
+  },
+  {
+    key: "office",
+    occupation: "社區里幹事",
+    bio: "里辦公室的里幹事,誰家水管漏、誰家換了門鎖他都第一個知道,公文卻永遠準時送出去。",
+    coreTags: [
+      { id: "busybody", label: "[全樓包打聽]", behaviorHint: "在走廊遇到誰都能聊十分鐘,消息傳得比公告快。" },
+      { id: "punctual", label: "[公文不隔夜]", behaviorHint: "該辦的事當天辦完,交租從不用人提醒。" },
+    ],
+    preferences: { storage: 6, cozy: 5, style: 4 },
+    monthlyRent: 13500,
+  },
+  {
+    key: "early_riser",
+    occupation: "到府收納師",
+    bio: "到府收納師,一進門就看得出哪一格該空出來;自己的房間反而是最後才輪到的那一間。",
+    coreTags: [
+      { id: "perfectionist", label: "[分類強迫症]", behaviorHint: "所有東西都要有固定的位置,錯一格就會回頭改。" },
+      { id: "fitness", label: "[搬得動]", behaviorHint: "一整天搬箱爬櫃,體力是這一行的門檻。" },
+    ],
+    // storage 9 是全目錄最高:她的專業就是收納,房間的收納力直接等於工作品質。
+    preferences: { storage: 9, style: 6, cozy: 2 },
+    monthlyRent: 12800,
+  },
 ];
 
 /**

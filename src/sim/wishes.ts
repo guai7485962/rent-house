@@ -153,7 +153,7 @@ export const WISH_DEFS = {
     icon: "☕",
     label: "存一筆自己的小店基金",
     hint: "達成方式：避免欠租與財務困難，並讓他保留至少約八成月租的存款；符合時每天進度最快。",
-    occupations: ["咖啡師", "甜點師", "調酒師", "健身教練", "花藝師"],
+    occupations: ["咖啡師", "甜點師", "調酒師", "健身教練", "花藝師", "夜市滷味攤主"],
     gain: (rt) => {
       if (inHardship(rt) || (rt.arrears ?? 0) > 0) return SETBACK;
       return (rt.wallet ?? 0) >= rt.tenant.finance.monthlyRent * 0.8 ? GAIN_GOOD : GAIN_SLOW;
@@ -168,7 +168,7 @@ export const WISH_DEFS = {
     label: "完成一部代表作",
     hint: "達成方式：把壓力維持在 65 以下、精力維持在 35 以上；壓力達 85 會讓進度倒退。",
     // 2026-08-09:`ASMR 實況主` 移到自己的 grow_channel(它的槓桿是隔音,不是壓力)。
-    occupations: ["漫畫家", "推理小說家", "自由接案設計師"],
+    occupations: ["漫畫家", "推理小說家", "自由接案設計師", "獨立遊戲開發者"],
     gain: (rt) => {
       const s = rt.tenant.stats;
       if (s.stress >= 85) return SETBACK;
@@ -213,7 +213,7 @@ export const WISH_DEFS = {
     icon: "🌿",
     label: "把身體養回健康的節奏",
     hint: "達成方式：把健康維持在 60 以上、壓力維持在 60 以下；健康降到 35 以下會倒退。",
-    occupations: ["夜班護理師"],
+    occupations: ["夜班護理師", "夜班重訓教練"],
     gain: (rt) => {
       const s = rt.tenant.stats;
       if (s.wellbeing <= 35) return SETBACK;
@@ -228,7 +228,7 @@ export const WISH_DEFS = {
     icon: "🎤",
     label: "站上一次正式的舞台",
     hint: "達成方式：把心情維持在 55 以上、精力維持在 40 以上；心情降到 30 以下會倒退。",
-    occupations: ["樂團鼓手", "電競系學生"],
+    occupations: ["樂團鼓手", "電競系學生", "電競戰隊教練"],
     gain: (rt) => {
       const s = rt.tenant.stats;
       if (s.mood <= 30) return SETBACK;
@@ -248,7 +248,7 @@ export const WISH_DEFS = {
     icon: "🏺",
     label: "擁有一間自己的工作室",
     hint: "達成方式：把房間的收納與品味加起來養到 24 以上（買收納櫃、有質感的家具）；14 以上會緩慢前進。",
-    occupations: ["陶藝工作者", "婚禮攝影師"],
+    occupations: ["陶藝工作者", "婚禮攝影師", "二手黑膠店主"],
     gain: (rt) => {
       const attrs = roomAttributesOf(rt);
       const craft = (attrs.storage ?? 0) + (attrs.style ?? 0);
@@ -282,7 +282,7 @@ export const WISH_DEFS = {
     icon: "📜",
     label: "考到那張執照",
     hint: "達成方式：把精力維持在 45 以上、壓力維持在 65 以下（好睡的床與安靜的房間）；精力低於 25 會倒退。",
-    occupations: ["獸醫助理", "補習班英文老師"],
+    occupations: ["獸醫助理", "補習班英文老師", "幼兒園老師"],
     gain: (rt) => {
       const s = rt.tenant.stats;
       if (s.energy <= 25) return SETBACK;
@@ -311,7 +311,7 @@ export const WISH_DEFS = {
     icon: "🧹",
     label: "把生活維持在乾淨的樣子",
     hint: "達成方式：把房間整潔維持在 70 以上、滿意維持在 55 以上（及時修繕、掃地機器人）；整潔低於 35 會倒退。",
-    occupations: ["獨立書店店員"],
+    occupations: ["獨立書店店員", "到府收納師"],
     gain: (rt) => {
       if (rt.cleanliness <= 35) return SETBACK;
       return rt.cleanliness >= 70 && rt.satisfaction >= 55 ? GAIN_GOOD : GAIN_SLOW;
@@ -341,7 +341,7 @@ export const WISH_DEFS = {
     label: "把這棟樓住成自己的家",
     hint: "達成方式：安排公共空間相處，讓他與至少一位鄰居的關係達到 50；30 以上也會緩慢前進。",
     // 2026-08-09:`退休教師` 移到 teach_someone(那條的槓桿相同但終點不同:教會一個人)。
-    occupations: ["瑜伽老師"],
+    occupations: ["瑜伽老師", "社區里幹事"],
     gain: (rt) => {
       const best = bestNeighborRel(rt.tenant.id);
       return best >= 50 ? GAIN_GOOD : best >= 30 ? GAIN_SLOW : 0;

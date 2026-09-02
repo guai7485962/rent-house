@@ -274,9 +274,18 @@ check("needyBonus:夾在 0~100", CA.tenant.stats.wellbeing === 100);
 // ---------------------------------------------------------------------------
 // 7. 真實目錄的現況把關(批次 3 + 4:主池 18 + 次池 10)
 // ---------------------------------------------------------------------------
-const realSplit = splitPools(INTERACTIONS);
-check("真實目錄共 28 種", INTERACTIONS.length === 28, `${INTERACTIONS.length}`);
+// 🔴 2026-09-03:目錄多了 11 種 `location: "cafe"`。它們**不經過 pickInteraction**
+//    (咖啡廳走 pickCafeInteraction 的零 RNG 雜湊抽籤),而且 `runGroup()` 依 location 過濾
+//    ⇒ 永遠不會和 room/lounge 進同一次抽籤。所以本節的「主池 18 / 次池 10」是
+//    **三樓那 28 種**的不變式,判準先把咖啡廳濾掉再算 —— 混在一起算會把兩件事攪成一件。
+const UPSTAIRS = INTERACTIONS.filter((d) => d.location !== "cafe");
+const realSplit = splitPools(UPSTAIRS);
+check("真實目錄共 39 種(三樓 28 + 一樓咖啡廳 11)", INTERACTIONS.length === 39, `${INTERACTIONS.length}`);
+check("三樓目錄仍恰好 28 種", UPSTAIRS.length === 28, `${UPSTAIRS.length}`);
 check("主池仍恰好是原本的 18 種(零稀釋的前提)", realSplit.core.length === 18, `${realSplit.core.length}`);
+check("咖啡廳 11 種一律不進 pickInteraction 的抽籤(location 過濾 + 專用抽籤函式)",
+  INTERACTIONS.filter((d) => d.location === "cafe").length === 11,
+  `${INTERACTIONS.filter((d) => d.location === "cafe").length}`);
 check("次池恰好是新加的 10 種(批次 3 的 6 + 批次 4 的 4)", realSplit.extra.length === 10, `${realSplit.extra.length}`);
 check("次池 id 就是規格上的那 10 種",
   realSplit.extra.map((d) => d.id).sort().join(",")
@@ -288,8 +297,11 @@ check("沒有新增更低的 tier(acquaintance 會讓全樓低關係配對多擲
   INTERACTIONS.every((d) => TIERS.has(d.tier)));
 check("次池的 def 一律 tier close 以上(擲骰次數變動只發生在朋友以上的配對)",
   realSplit.extra.every((d) => TIERS.has(d.tier)));
-check("gate/lend/needyBonus 只出現在次池",
-  realSplit.core.every((d) => !d.gate && !d.lend && !d.needyBonus));
+check("gate/lend/needyBonus 只出現在次池(三樓;咖啡廳有自己的抽籤路徑)",
+  realSplit.core.every((d) => !d.gate && !d.lend && !d.needyBonus),
+  realSplit.core.filter((d) => d.gate || d.lend || d.needyBonus).map((d) => d.id).join(","));
+check("lend / needyBonus 一種都沒有溢出到咖啡廳池(咖啡廳只用 gate)",
+  INTERACTIONS.filter((d) => d.location === "cafe").every((d) => !d.lend && !d.needyBonus));
 check("lend 只有 lend_money 用,且只搭 one_broke",
   INTERACTIONS.filter((d) => d.lend).map((d) => `${d.id}:${d.gate}`).join(",") === "lend_money:one_broke");
 

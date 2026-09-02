@@ -65,6 +65,26 @@ check("新職業各自對到不同槓桿的心願",
     && wishes.wishIdForOccupation("退休教師") === "teach_someone"
     && wishes.wishIdForOccupation("花藝師") === "open_shop"
     && wishes.wishIdForOccupation("後端工程師") === "career_step");
+// 2026-09-03:新增 8 種職業,**刻意各掛一條不同的心願**,而且優先補在原本只掛 1~2 個職業的
+// 那幾條上(recover_rhythm / certify_pro / keep_home_clean / feel_at_home / own_studio…)。
+// 心願系統的可見度是這樣拉起來的,不是靠新增第 15 條心願。
+check("2026-09-03 的 8 種新職業各自對到一條**不同**的既有心願",
+  (() => {
+    const map: Record<string, string> = {
+      夜市滷味攤主: "open_shop", 電競戰隊教練: "stage_dream", 幼兒園老師: "certify_pro",
+      夜班重訓教練: "recover_rhythm", 二手黑膠店主: "own_studio", 獨立遊戲開發者: "finish_masterwork",
+      社區里幹事: "feel_at_home", 到府收納師: "keep_home_clean",
+    };
+    const got = Object.entries(map).map(([job, id]) => wishes.wishIdForOccupation(job) === id);
+    return got.every(Boolean) && new Set(Object.values(map)).size === 8;
+  })(),
+  ["夜市滷味攤主", "電競戰隊教練", "幼兒園老師", "夜班重訓教練", "二手黑膠店主",
+    "獨立遊戲開發者", "社區里幹事", "到府收納師"].map((j) => `${j}=${wishes.wishIdForOccupation(j)}`).join(" "));
+check("本批補的三條「原本只有一個職業」的心願都變成 ≥2(抽得到人)",
+  (["recover_rhythm", "keep_home_clean", "feel_at_home"] as const)
+    .every((id) => (wishes.WISH_DEFS[id].occupations as readonly string[]).length >= 2),
+  (["recover_rhythm", "keep_home_clean", "feel_at_home"] as const)
+    .map((id) => `${id}=${(wishes.WISH_DEFS[id].occupations as readonly string[]).length}`).join(" "));
 check("每個原型職業都指派得到心願,沒有人掉進 settle_life fallback(除非刻意)",
   ARCHETYPES.every((a) => wishes.wishIdForOccupation(a.occupation) !== "settle_life"),
   ARCHETYPES.filter((a) => wishes.wishIdForOccupation(a.occupation) === "settle_life").map((a) => a.occupation).join(" "));

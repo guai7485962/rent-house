@@ -325,8 +325,13 @@ check("批次 2 的 cheers 已被 bar_cheers 用上(新 pose 不是只寫給測�
 check("became_couple 里程碑演出 = confess + confetti(玩家真的看到告白那一幕)",
   /became_couple" \? "confess"/.test(tickSrc) && /spawnFx\("confetti"/.test(tickSrc));
 check("broke_up 里程碑演出 = apart(各自退開)", /broke_up" \? "apart"/.test(tickSrc));
-check("互動目錄 28 種(主池 18 + 次池 6 + 批次 4 的戀愛線 4)",
-  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 28, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
+// 2026-09-03:28 → 39(加了 11 種 location: "cafe")。除了總數,另外釘住「三樓那 28 種一種都沒少」,
+// 才擋得到真正該擋的事(既有 def 被誤刪),而不是每次擴充只把數字往上改一格。
+check("互動目錄 39 種(三樓 28 + 一樓咖啡廳 11)",
+  (interactionsSrc.match(/^    id: "/gm) ?? []).length === 39, `defs=${(interactionsSrc.match(/^    id: "/gm) ?? []).length}`);
+check("三樓的 room / lounge 目錄仍是原本的 28 種(咖啡廳池沒有偷改既有內容)",
+  (interactionsSrc.match(/^    location: "cafe",$/gm) ?? []).length === 11
+    && (interactionsSrc.match(/^    id: "/gm) ?? []).length - 11 === 28);
 // 批次 4:kiss / confess 兩個 pose 終於被真的 def 用上(不再只有里程碑演出在用)
 check("批次 2 的 kiss 已被 first_kiss / morning_kiss 用上",
   /id: "first_kiss"[\s\S]*?pose: "kiss"/.test(interactionsSrc) && /id: "morning_kiss"[\s\S]*?pose: "kiss"/.test(interactionsSrc));

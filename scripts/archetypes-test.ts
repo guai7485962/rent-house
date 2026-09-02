@@ -51,6 +51,45 @@ check("核心標籤都用既有的 id(才吃得到噪音/口角/偷吃等既有�
   ARCHETYPES.every((a) => a.coreTags.every((t) => KNOWN_TAG_IDS.has(t.id))),
   ARCHETYPES.flatMap((a) => a.coreTags.filter((t) => !KNOWN_TAG_IDS.has(t.id)).map((t) => `${a.occupation}:${t.id}`)).join(" "));
 
+// ── 2026-09-03:24 → 32 種。這一節是「不可以只是換名字」的機器判準 ──────────────
+// 光看職業名稱看不出差異,所以直接量三個軸:標籤配對、偏好權重組合、月租價帶。
+// 新增的 8 筆在三個軸上都必須是**目錄裡沒出現過的**組合。
+check("原型至少 32 種", ARCHETYPES.length >= 32, `實際 ${ARCHETYPES.length}`);
+{
+  const NEW_JOBS = ["夜市滷味攤主", "電競戰隊教練", "幼兒園老師", "夜班重訓教練",
+    "二手黑膠店主", "獨立遊戲開發者", "社區里幹事", "到府收納師"];
+  const olds = ARCHETYPES.filter((a) => !NEW_JOBS.includes(a.occupation));
+  const news = ARCHETYPES.filter((a) => NEW_JOBS.includes(a.occupation));
+  check("2026-09-03 這批 8 筆都在目錄裡", news.length === 8, `${news.length}`);
+
+  const tagPair = (a: (typeof ARCHETYPES)[number]) => a.coreTags.map((t) => t.id).sort().join("+");
+  const oldPairs = new Set(olds.map(tagPair));
+  check("新原型的核心標籤配對是全新的組合(不是既有配對換個 label)",
+    news.every((a) => !oldPairs.has(tagPair(a)) )
+      && new Set(news.map(tagPair)).size === news.length,
+    news.filter((a) => oldPairs.has(tagPair(a))).map((a) => `${a.occupation}:${tagPair(a)}`).join(" "));
+
+  const prefSig = (a: (typeof ARCHETYPES)[number]) =>
+    JSON.stringify(Object.entries(a.preferences).sort(([x], [y]) => x.localeCompare(y)));
+  const allSigs = ARCHETYPES.map(prefSig);
+  check("全目錄的偏好權重組合互不重複(新原型不是既有偏好的複製品)",
+    new Set(allSigs).size === allSigs.length,
+    allSigs.filter((s, i) => allSigs.indexOf(s) !== i).join(" | "));
+
+  const oldRents = new Set(olds.map((a) => a.monthlyRent));
+  check("新原型的月租都落在既有目錄沒有的價帶", news.every((a) => !oldRents.has(a.monthlyRent)),
+    news.filter((a) => oldRents.has(a.monthlyRent)).map((a) => `${a.occupation}:${a.monthlyRent}`).join(" "));
+  const rents = ARCHETYPES.map((a) => a.monthlyRent);
+  check("價帶真的被拉寬(下界 ≤ 8000、上界 ≥ 18000)",
+    Math.min(...rents) <= 8000 && Math.max(...rents) >= 18000, `${Math.min(...rents)}~${Math.max(...rents)}`);
+
+  // 冷門 tag 原本各只出現 1 次 ⇒ 掛在它們身上的既有規則幾乎抽不到人
+  for (const tag of ["gamer", "foodie", "busybody", "noisy"]) {
+    const n = ARCHETYPES.filter((a) => a.coreTags.some((t) => t.id === tag)).length;
+    check(`冷門標籤 ${tag} 至少有 2 種職業帶得到(既有規則抽得到人)`, n >= 2, `n=${n}`);
+  }
+}
+
 // --- 作息資料健全(載入零警告 = 無非法 role/state、無缺漏小時) ---
 check("作息目錄載入零警告", warns.length === 0, warns.slice(0, 3).join(" | "));
 check("7 套作息原型 24 小時全覆蓋", Object.values(ARCHETYPE_ROUTINES).every((t) => t.length === 24 && t.every((s) => !!s.role && !!s.state)));
